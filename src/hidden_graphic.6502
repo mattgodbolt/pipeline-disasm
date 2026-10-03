@@ -70,6 +70,7 @@ KEY_F6     = 256-118
 KEY_F8     = 256-119
 KEY_F9     = 256-120
 KEY_RIGHT  = 256-122
+NO_KEY     = &57                ; in shortcut_keys: below &80, so not a key
 
 ; Codes OSRDCH returns: the cursor keys once OSBYTE 4,1 has made them
 ; ordinary keys, and the function keys once OSBYTE &E1 has based them at &E0.
@@ -99,7 +100,7 @@ WINDOW_ERROR       = 7
 ; Sprite numbers beyond the sheet: the two buffers Animate shows frames in.
 SPRITE_FRAME_A = &57
 SPRITE_FRAME_B = &58
-MIRRORED       = &80            ; in animation_frames: show the frame flipped
+UPSIDE_DOWN    = &80            ; in animation_frames: show the frame turned over
 
 ; Screen layout: MODE 5, 20 character cells of 8 bytes across each row.
 SCREEN = &5800
@@ -802,7 +803,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA #&0F                        ; flush the keyboard buffer
     LDX #&00
     JSR OSBYTE
-    LDX #&B6
+    LDX #KEY_RETURN
     JSR wait_key_release
     LDX item
     INX
@@ -1433,7 +1434,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     PHA
     TYA
     PHA
-    LDX #&FF
+    LDX #KEY_SHIFT
     JSR key_pressed
     BPL not_ctrl
     STA escape_latch                ; A = &FF
@@ -1593,6 +1594,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     EQUS " Return to menu", CR, " Please insert", CR, " Pipeline disc", CR, "and press SPACE", CR
     EQUB TEXT_END
 
+; Draw every sprite in the sheet, positions &28 down to 0 (&10-&1F being the
+; small sprites).
+; Clobbers: A, X, Y, screen_ptr, data_ptr, count_x, count_y, sprite_width
 .draw_sheet
 {
     LDA #&28
@@ -1606,6 +1610,12 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; Mark the selected sprite in the sheet with a box in colour 2, and show its
+; number and name under the editing grid if it is an object (a small sprite),
+; or blank them if not.
+; In:  A = sprite number (the selection box is drawn over the sprite; drawing
+;      the sprite again removes it)
+; Clobbers: A, X, Y, screen_ptr, aux_ptr, count_y, sprite_width
 .show_selection
 {
     JSR sprite_class
@@ -1614,6 +1624,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR selection_edge
     LDA sprite_width
     STA count_y
+
+    ; Down each character row: the rightmost pixel of the last cell, the leftmost of the first.
 .column
     LDA sprite_width
     ASL A
@@ -1624,7 +1636,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .left
     DEY
     LDA (screen_ptr), Y
-    AND #&EE
+    AND #&EE                        ; pixel 3 becomes colour 2
     ORA #&10
     STA (screen_ptr), Y
     DEX
@@ -1632,7 +1644,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDY #&07
 .right
     LDA (screen_ptr), Y
-    AND #&77
+    AND #&77                        ; pixel 0 becomes colour 2
     ORA #&80
     STA (screen_ptr), Y
     DEY
@@ -1654,13 +1666,16 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA sprite_width
     CMP #&02
     BEQ small
-    TXA
+    TXA                             ; X is 0 here: blank the name box
     LDY #&77
 .clear_name
     STA name_box, Y
     DEY
     BPL clear_name
     RTS
+
+    ; An object: its number, 1-16 (the small sprite less &0F), then ":" and
+    ; its name.
 .small
     LDA #&E0
     STA screen_ptr
@@ -1682,7 +1697,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BCC units
     SBC #&0A
 .units
-    SEC
+    SEC                             ; carry set: store the characters
     ORA #&30
     JSR print_char_advance
     LDA #&3A
@@ -1700,6 +1715,11 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; Draw a horizontal edge of the selection box: line Y of each cell across
+; the sprite, in colour 2.
+; In:  Y = line within the character row, screen_ptr = the row
+; Out: X = 0
+; Clobbers: A, Y
 .selection_edge
 {
     LDX sprite_width
@@ -1715,6 +1735,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; Where an object's name is in object_names.
+; In:  sprite = the small sprite (or, at of_a, A)
+; Out: A = Y = (sprite AND &0F) * 12
+; Clobbers: nothing else
 .name_offset
 {
     LDA sprite
@@ -1731,6 +1755,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     EQUB &00
 }
 
+; Unused copies of down_a_row, width_times_32 and clear_rows: nothing
+; calls these three.
 .unused_down_a_row
 {
     LDA screen_ptr
@@ -1769,6 +1795,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; Fill the colour swatch with the current colour.
+; Clobbers: A, X, Y
 .show_colour
 {
     LDX colour
@@ -1781,27 +1809,38 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; The stack pointer when the designer first started (bit 7 set once it has
+; been saved), for the main loop to reset the stack to.
 .stack_pointer
     EQUB &00
 
+; Bit 7 set once the graphics area has been cleared and DEFAULT loaded,
+; so starting again after an error keeps the user's work.
 .graphics_loaded
     EQUB &00
 
+; Bit 7 set if the filing system is a disc one (number 4 or more); the
+; other three bytes are the physical colours for logical 1-3 (blue, yellow,
+; red).
 .disc_fs
-    EQUB &00, &04, &03, &01
+    EQUB 0
+    EQUB 4, 3, 1
 
+; The graphics set to start with, and the command that goes back to the menu.
 .default_name
-    EQUS "DEFAULT"
-    EQUB &0D
-
+    EQUS "DEFAULT", CR
 .mrun_command
-    EQUS "/MRUN"
-    EQUB &0D
+    EQUS "/MRUN", CR
 
+; BRKV points here: show the error's message in the error window, wait for
+; a key, close any open files and start again.
+; In:  ERROR_PTR = the error (as the OS leaves it)
 .error_handler
 {
     LDY #&00
     LDX #&00
+
+    ; Copy the message, breaking it into lines of 14 characters.
 .copy
     INY
     INX
@@ -1830,22 +1869,28 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDY #&00
     JSR OSBYTE
 .wait
-    JSR OSRDCH
+    JSR OSRDCH                      ; wait for a key, acknowledging any Escape
     BCC restart
     LDA #&7E
     JSR OSBYTE
     JMP wait
 .restart
     JSR close_all_windows
-    JSR close_files
+    JSR close_files                 ; and fall into start
 }
 
+; The entry point, from the GRAPHIC stub; and where errors start again.
+; On first entry it takes over BRKV and the event vector (keeping the old ones
+; in IND1V and IND2V to put back at the end) and enables the Escape event; then
+; sets up MODE 5 and the palette, draws the screen, clears the graphics area and
+; loads DEFAULT (only the first time), and draws the sheet and the first
+; sprite. main_loop then runs until Escape.
 .start
 {
-    LDA #&04
+    LDA #&04                        ; cursor keys give codes
     LDX #&01
     JSR OSBYTE
-    LDA BRKV+1
+    LDA BRKV+1                      ; BRKV still in the ROMs: not ours yet
     BPL installed
     LDX #LO(error_handler)
     LDY #HI(error_handler)
@@ -1865,50 +1910,50 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA #HI(escape_event)
     STA EVNTV+1
     CLI
-    LDA #&0E
+    LDA #&0E                        ; enable event 6, Escape (A = &0E)
     STA escape_latch
     LDX #&06
     JSR OSBYTE
 .installed
-    LDA #&87
+    LDA #&87                        ; read the screen mode into Y
     JSR OSBYTE
     CPY #&05
     BEQ setup
-    LDA #&16
+    LDA #&16                        ; MODE 5
     JSR OSWRCH
     LDA #&05
     JSR OSWRCH
-    LDA #&03
+    LDA #&03                        ; logical colours 3 to 1
 .palette
     PHA
     TAX
-    LDA disc_fs, X
+    LDA disc_fs, X                  ; the physical colour for logical colour X
     JSR write_palette
     PLA
     SEC
     SBC #&01
     BNE palette
 .setup
-    LDA #&97
+    LDA #&97                        ; CRTC register 10: no cursor
     LDX #&00
     LDY #&0A
     JSR OSBYTE
     LDY #&20
     INX
     JSR OSBYTE
-    LDA #&00
+    LDA #&00                        ; the filing system's number
     TAY
     JSR OSARGS
-    CMP #&04
+    CMP #&04                        ; carry set for a disc filing system
     LDA #&00
     STA by_slot
     TAY
-    ROR A
+    ROR A                           ; into disc_fs bit 7
     STA disc_fs
     BMI opt
     INY
 .opt
-    LDA #&00
+    LDA #&00                        ; *OPT 1,Y: messages off on disc (Y = 0), on for tape
     LDX #&01
     JSR fscv
     JSR reset_timer
@@ -1916,27 +1961,29 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BIT stack_pointer
     BMI saved_sp
     STX stack_pointer
+
+    ; Draw the screen's furniture.
 .saved_sp
     LDY #&FF
 .layout
     INY
     LDA screen_layout, Y
-    CMP #&EA
+    CMP #&EA                        ; the end of the list
     BEQ layout_done
     JSR OSWRCH
     JMP layout
 .layout_done
-    LDX #&13
+    LDX #&13                        ; all twenty
     LDA #&00
 .clear_windows
     STA window_open, X
     DEX
     BPL clear_windows
-    LDA #&0A
+    LDA #&0A                        ; the cursor off again, after the CLS
     STA CRTC_ADDR
     LDA #&20
     STA CRTC_DATA
-    LDA #LO(logo)
+    LDA #LO(logo)                   ; not needed: the copy below is indexed
     STA data_ptr
     LDA #HI(logo)
     STA data_ptr+1
@@ -1949,16 +1996,18 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA logo+2*&B0, Y
     STA logo_screen+2*ROW, Y
     INY
-    CPY #&B0
+    CPY #&B0                        ; a band of 22 cells
     BCC logo_copy
+
+    ; The first time only: clear the graphics area and load DEFAULT into it.
     BIT graphics_loaded
     BMI redraw
     LDA #&00
     TAY
     STA screen_ptr
-    LDX #&40
+    LDX #HI(graphics)
     STX screen_ptr+1
-    LDX #&10
+    LDX #&10                        ; 16 pages, to &4FFF
 .clear
     STA (screen_ptr), Y
     INY
@@ -1968,14 +2017,14 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BNE clear
     DEX
     STX graphics_loaded
-    LDA disc_fs
+    LDA disc_fs                     ; on tape there's no DEFAULT to load: the name becomes ""
     BMI load_default
     LDX #&06
 .tape_name
     STA default_name, X
     DEX
     BPL tape_name
-    LDA #&22
+    LDA #&22                        ; a quote
     STA default_name
     STA default_name+1
     BNE redraw
@@ -1987,13 +2036,15 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA #&FF
     STA graphics_loaded
     JSR osfile_graphics
+
+    ; Redraw everything; the file commands come back here after loading.
 .redraw
     BIT disc_fs
     BMI cls_done
     LDA #&0C
     JSR OSWRCH
 .cls_done
-    LDX #&0B
+    LDX #&0B                        ; "Finish Block"
 .mark_end
     LDA finish_block, X
     STA graphics_end, X
@@ -2003,30 +2054,36 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA #&00
     STA sprite
     JSR show_selection
-    LDA #&00
+    LDA #&00                        ; the pixel cursor to the top left
     STA cursor_x
     STA cursor_y
-    SEC
+    SEC                             ; carry set: and take an undo copy
     JSR redraw_grid
-    LDA #&03
+    LDA #&03                        ; start in colour 3
     STA colour
     JSR show_colour
+}
+
+; The main loop: one pass each time round, at least two centiseconds apart
+; (select_sprite waits): move the selection, blink the pixel cursor, paint,
+; run a command from a menu or shortcut, and offer to leave on Escape.
 .main_loop
+{
     LDX stack_pointer
     TXS
     JSR close_all_windows
-    LDA #&00
+    LDA #&00                        ; move the selection
     JSR select_sprite
-    BMI edit
+    BMI edit                        ; CTRL held: no blinking
     LDX cursor_x
     LDY cursor_y
-    JSR toggle_cursor
+    JSR toggle_cursor               ; blink the pixel cursor
 .edit
     JSR edit_pixels
-    LDA colour
+    LDA colour                      ; commands may use colour as a scratch value
     STA saved_colour
     JSR read_command
-    ASL A
+    ASL A                           ; &FF: no command
     BCS command_done
     TAY
     LDA command_table, Y
@@ -2034,16 +2091,16 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA command_table+1, Y
     STA dispatch+2
 .dispatch
-    JSR &1234
-    LDX #&B6
+    JSR &1234                       ; the command (self-modified)
+    LDX #KEY_RETURN                 ; so a menu choice made with Return doesn't plot too
     JSR wait_key_release
 .command_done
     LDA saved_colour
     STA colour
-    LDA #&13
+    LDA #&13                        ; wait for the vsync, which leaves A = &13...
     JSR OSBYTE
-    STA by_slot
-    LDA ESCAPE_FLAG
+    STA by_slot                     ; ...so by_slot bit 7 is clear again
+    LDA ESCAPE_FLAG                 ; Escape, or SHIFT-Escape latched
     ORA escape_latch
     BPL loop
     LSR escape_latch
@@ -2053,8 +2110,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDX #LO(text_escape)
     LDY #HI(text_escape)
     LDA #&05
-    JSR menu
-    CMP #&02
+    JSR menu                        ; Escape? No/Yes
+    CMP #&02                        ; Yes
     BNE loop
     LDX #LO(text_insert_disc)
     LDY #HI(text_insert_disc)
@@ -2063,12 +2120,14 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA #&0F
     JSR OSBYTE
 .wait_key
-    JSR OSRDCH
+    JSR OSRDCH                      ; wait for a key, acknowledging any Escape
     PHP
     LDA #&7E
     JSR OSBYTE
     PLP
     BCS wait_key
+
+    ; Leave: put the vectors back and return to the menu.
     LDA IND1V
     STA BRKV
     LDA IND1V+1
@@ -2077,44 +2136,67 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA EVNTV
     LDA IND2V+1
     STA EVNTV+1
-    LDA #&04
+    LDA #&04                        ; X = &FF from open_window, so OSBYTE 4,0: cursor keys edit again
     INX
     JSR OSBYTE
-    LDA #&E1
+    LDA #&E1                        ; function keys back to strings
     LDX #&01
     JSR OSBYTE
     BIT disc_fs
     BMI run_mrun
-    LDA #&C8
+    LDA #&C8                        ; *FX200,3: on tape, BREAK clears memory...
     LDX #&03
     JSR OSBYTE
-    JMP (RESET_VECTOR)
+    JMP (RESET_VECTOR)              ; ...and here is a BREAK
 .run_mrun
-    LDX #LO(mrun_command)
+    LDX #LO(mrun_command)           ; *RUN MRUN, which goes back to the menu
     LDY #HI(mrun_command)
     JMP OSCLI
 .loop
     JMP main_loop
 }
 
+; Written after the graphics set in memory, at graphics_end.
 .finish_block
     EQUS "Finish Block"
 
+; The colour, kept while a command runs.
 .saved_colour
     EQUB &00
 
+; The commands: read_command's number for each menu item (menu * 8 + item)
+; and CTRL shortcut, and where it goes. no_command is the main loop's own
+; tail (command_done), harmless to call because main_loop resets the
+; stack.
 .command_table
-    EQUS ">-F."
-    EQUB &C5, &2E, &FE, &2D, &05, &2F, &6E, &32
-    EQUB &CA
-    EQUS "7>->-"
-    EQUB &15, &30, &02
-    EQUS "0G/./"
-    EQUB &B0
-    EQUS "/</>->-e6q5"
-    EQUB &1F
-    EQUS "7&5A1>->->-"
+    EQUW main_loop.command_done     ; 0: none
+    EQUW cmd_flip_x                 ; OptionsA
+    EQUW cmd_flip_y
+    EQUW cmd_delete
+    EQUW cmd_undo
+    EQUW cmd_animate
+    EQUW cmd_obj_name
+    EQUW main_loop.command_done
+    EQUW main_loop.command_done
+    EQUW cmd_swap                   ; OptionsB
+    EQUW cmd_copy
+    EQUW cmd_overlay
+    EQUW cmd_underlay
+    EQUW cmd_remove
+    EQUW cmd_backing
+    EQUW main_loop.command_done
+    EQUW main_loop.command_done
+    EQUW cmd_load_sprite            ; Environment
+    EQUW cmd_save_sprite
+    EQUW cmd_load_file
+    EQUW cmd_save_file
+    EQUW cmd_def_colour
+    EQUW main_loop.command_done
+    EQUW main_loop.command_done
+    EQUW main_loop.command_done
 
+; OptionsA Delete (CTRL-Delete): clear the sprite to colour 0, and an
+; object's name to zeros.
 .cmd_delete
 {
     LDA sprite
@@ -2128,7 +2210,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDX sprite_width
     CPX #&02
     BNE redraw
-    LDA sprite
+    LDA sprite                      ; the man has no name to clear
     CMP #&1F
     BEQ redraw
     JSR name_offset
@@ -2148,6 +2230,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP redraw_grid
 }
 
+; Draw the selected sprite in the editing grid and put the pixel cursor
+; back on it.
+; In:  carry set to take an undo copy of the sprite first
+; Clobbers: A, X, Y, and as draw_grid
 .redraw_grid
 {
     LDA sprite
@@ -2160,16 +2246,19 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP toggle_cursor
 }
 
+; OptionsA Flip X (CTRL-X): mirror the sprite left to right, pixel by pixel,
+; swapping each pixel in the left half of a row with its opposite. colour
+; carries the pixels across (main_loop puts it back).
 .cmd_flip_x
 {
     LDA sprite
     JSR sprite_address
-    LDA sprite_width
+    LDA sprite_width                ; item = pixels in half a row
     ASL A
     STA item
-    ASL A
+    ASL A                           ; aux_ptr = the last pixel's x
     STA aux_ptr
-    ASL A
+    ASL A                           ; count_y = the last row
     STA count_y
     DEC aux_ptr
     DEC count_y
@@ -2208,7 +2297,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BCC pixel
     DEC count_y
     BPL row
-    LDX #&BD
+    LDX #&BD                        ; the shortcut, to wait for
+
+    ; Show the sprite as changed, then wait for the key in X to be released so
+    ; a shortcut acts once.
 .redraw
     TXA
     PHA
@@ -2216,22 +2308,29 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     PHA
     JSR draw_sheet_sprite
     PLA
-    JSR redraw_grid
+    JSR redraw_grid                 ; carry is clear from draw_sheet_sprite: no undo copy
     PLA
     TAX
     JMP wait_key_release
 }
 
+; Flip X's mirrored pixel.
 .flip_x
     EQUB &00
 
 .flip_y
     EQUB &00
 
+; The OSGBPB block for moving sprites and names to and from files: the
+; handle, the address in memory, the byte count, the pointer in the file.
 .gbpb_block
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00
+    EQUB 0                          ; handle
+    EQUD 0                          ; address
+    EQUD 0                          ; count
+    EQUD 0                          ; pointer
+    EQUB 0, 0, 0
 
+; OptionsA Flip Y (CTRL-Y): turn the sprite upside down.
 .cmd_flip_y
 {
     JSR flip_vertically
@@ -2239,6 +2338,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP cmd_flip_x.redraw
 }
 
+; Turn the selected sprite upside down, by reversing each column of bytes.
+; In:  sprite = the sprite (Animate uses this on its frame buffers)
+; Clobbers: A, X, Y, data_ptr, count_x, count_y, sprite_width
 .flip_vertically
 {
     LDA sprite
@@ -2267,7 +2369,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     DEY
     DEY
     BPL swap
-    LDA count_y
+    LDA count_y                     ; on to the next column
     LSR A
     CLC
     ADC data_ptr
@@ -2280,6 +2382,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; OptionsA Undo (CTRL-U): swap the sprite with the copy taken when it was
+; selected, so a second Undo puts the changes back.
 .cmd_undo
 {
     LDA sprite
@@ -2303,6 +2407,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP wait_key_release
 }
 
+; OptionsB Underlay: put this sprite under another - fill the other's
+; colour 0 pixels from this one.
 .cmd_underlay
 {
     LDX #LO(text_underlay)
@@ -2313,15 +2419,19 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP combine_sprites
 }
 
+; OptionsB Backing (CTRL-B): fill the sprite's colour 0 pixels from the
+; background tile (sheet position 0).
 .cmd_backing
 {
     LDX sprite
     STX combine_test
-    LDA #&00
+    LDA #&00                        ; the background tile
     CLC
     JMP combine_sprites
 }
 
+; OptionsB Overlay (CTRL-O): put this sprite over another - copy its
+; pixels other than colour 0 onto the other.
 .cmd_overlay
 {
     LDX #LO(text_overlay)
@@ -2331,20 +2441,26 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     SEC
 }
 
+; Combine two sprites a pixel at a time.
+; In:  X = the sprite to change, A = the sprite to take pixels from,
+;      combine_test = the sprite whose pixels decide, carry set to copy
+;      combine_test's pixels where they aren't colour 0 (overlay), clear to
+;      copy A's pixels where combine_test's are colour 0 (underlay, backing)
+; Then shows both sprites again, through redraw_pair.
 .combine_sprites
 {
     STX combine_target
     STA combine_source
-    LDA #&00
+    LDA #&00                        ; carry into bit 7
     ROR A
     STA combine_over
-    LDA sprite_width
+    LDA sprite_width                ; count_x = the last pixel across
     ASL A
     ASL A
     SBC #&00
     STA count_x
 .column
-    LDA sprite_width
+    LDA sprite_width                ; count_y = the last row
     ASL A
     ASL A
     ASL A
@@ -2356,14 +2472,14 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDY count_y
     JSR read_pixel
     BIT combine_over
-    BPL under
+    BPL under                       ; overlay: copy the pixel where it isn't 0
     CMP #&00
     BEQ next
     BNE plot
 .under
-    CMP #&00
+    CMP #&00                        ; underlay: where it's 0...
     BNE next
-    LDA combine_source
+    LDA combine_source              ; ...copy the source's
     LDX count_x
     LDY count_y
     JSR read_pixel
@@ -2382,6 +2498,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP redraw_pair
 }
 
+; Combine's sprites: the one to change, the one to take pixels from, the
+; one whose pixels decide, and bit 7 set to overlay rather than underlay.
 .combine_target
     EQUB &00
 
@@ -2394,6 +2512,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .combine_over
     EQUB &00
 
+; OptionsB Remove (CTRL-R): take this sprite from another - clear to 0 the
+; other's pixels that match this one's.
 .cmd_remove
 {
     LDX #LO(text_remove)
@@ -2423,9 +2543,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDX count_x
     LDY count_y
     JSR read_pixel
-    EOR temp
+    EOR temp                        ; the same colour in both...
     BNE next
-    STA colour
+    STA colour                      ; ...becomes 0
     LDA combine_target
     LDX count_x
     LDY count_y
@@ -2439,6 +2559,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP redraw_pair
 }
 
+; OptionsB Copy (CTRL-COPY): copy this sprite onto another.
 .cmd_copy
 {
     LDX #LO(text_copy)
@@ -2454,6 +2575,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP redraw_pair
 }
 
+; OptionsB Swap (CTRL-S): swap this sprite with another, and two objects'
+; names with them (not the man's: he has none).
 .cmd_swap
 {
     LDX #LO(text_swap)
@@ -2478,6 +2601,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     PHA
     CMP #&1F
     BEQ done
+
+    ; Swap the names: data_ptr and aux_ptr hold the two names' offsets now.
     JSR name_offset
     STA data_ptr
     PLA
@@ -2503,6 +2628,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     PLA
 }
 
+; Show both sprites of a two-sprite command as they are now, select the
+; first again and close the picking window.
+; In:  A = the other sprite
+; Clobbers: A, X, Y, and as draw_grid
 .redraw_pair
 {
     JSR draw_sheet_sprite
@@ -2517,11 +2646,18 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP close_window
 }
 
+; Ask for the second sprite of a two-sprite command: show the question with
+; a picture of this sprite, and let the selection move until Return.
+; In:  X/Y = the question
+; Out: X = the sprite picked, A = this sprite, data_ptr = the picked one's
+;      bytes, aux_ptr = this one's, Y = the offset of their last byte
+; If they are different sizes it says "Wrong Types"; then, as on Escape, it
+; abandons the command and goes back to the main loop.
 .pick_second_sprite
 {
     LDA #&04
     JSR open_window
-    LDX #&B6
+    LDX #KEY_RETURN                 ; the Return that chose the command
     JSR wait_key_release
     LDA sprite
     PHA
@@ -2530,7 +2666,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA first_address
     LDA data_ptr+1
     STA first_address+1
-    LDA window_address+2*4
+    LDA window_address+2*4          ; the picture goes in the picking window's title line, eight cells in
     CLC
     ADC #&C0
     STA screen_ptr
@@ -2542,10 +2678,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA first_width
 .select
     LDA #&01
-    JSR select_sprite
+    JSR select_sprite               ; move the selection; function keys escape
     BIT ESCAPE_FLAG
     BMI abandon
-    LDX #&B6
+    LDX #KEY_RETURN
     JSR key_pressed
     BPL select
     LDA sprite
@@ -2557,7 +2693,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA aux_ptr+1
     LDX sprite
     LDA sprite_width
-    CMP first_width
+    CMP first_width                 ; the same size?
     BNE wrong_type
     PLA
     RTS
@@ -2572,13 +2708,13 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .wait_space
     JSR OSRDCH
     BCS close
-    CMP #&20
+    CMP #&20                        ; until Space
     BNE wait_space
 .close
     LDA #&07
     JSR close_window
 .abandon
-    PLA
+    PLA                             ; drop this sprite and our return address
     PLA
     PLA
 .abandon_menu
@@ -2586,9 +2722,12 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR close_window
     LDA #&7E
     JSR OSBYTE
-    JMP start.command_done
+    JMP main_loop.command_done
 }
 
+; Show an error in the error window until a key other than Escape is
+; pressed, then go back to the main loop.
+; In:  X/Y = the error's text
 .show_error
 {
     STX error_text
@@ -2603,18 +2742,24 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR OSRDCH
     BIT ESCAPE_FLAG
     BMI show
-    JMP start.main_loop
+    JMP main_loop
 }
 
+; pick_second_sprite's first sprite: its address and width.
 .first_address
     EQUB &00, &00
 
 .first_width
     EQUB &00
 
+; show_error's text, kept while it waits.
 .error_text
     EQUB &00, &00
 
+; Read the palette.
+; In:  A = logical colour
+; Out: A = the physical colour it shows
+; Clobbers: X, Y, osfile_block
 .read_palette
 {
     STA osfile_block
@@ -2626,23 +2771,28 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; A menu with nothing in it: the palette window opens empty and
+; show_palette fills it.
 .empty_text
     EQUB &FF, &FF
 
+; Environment Def. Colour (CTRL-C): change the palette. Up and down pick a
+; logical colour, left and right step its physical colour through the eight;
+; Return, Space, Escape or a function key finish.
 .cmd_def_colour
 {
     LDA #&05
     LDX #LO(empty_text)
     LDY #HI(empty_text)
     JSR open_window
-    LDA #&04
+    LDA #&04                        ; cursor keys give codes
     LDX #&01
     JSR OSBYTE
-    LDA #&E1
+    LDA #&E1                        ; f0-f9 give &E0-&E9
     LDX #&E0
     LDY #&00
     JSR OSBYTE
-    LDA #&0F
+    LDA #&0F                        ; flush the keyboard buffer
     LDX #&00
     JSR OSBYTE
     LDA #&00
@@ -2682,10 +2832,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR palette_highlight.toggle
     JSR palette_highlight
     PLA
-    LDX #&01
+    LDX #&01                        ; right: the next physical colour
     CMP #&89
     BEQ change
-    LDX #&FF
+    LDX #&FF                        ; left: the one before
     CMP #&88
     BNE read_key
 .change
@@ -2703,6 +2853,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP redraw
 }
 
+; Set the palette.
+; In:  X = logical colour, A = physical colour
+; Clobbers: A, X, Y, osfile_block
 .write_palette
 {
     STA osfile_block+1
@@ -2713,9 +2866,14 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP OSWORD
 }
 
+; +1 or -1: the way Def. Colour steps.
 .colour_step
     EQUB &00
 
+; Write each logical colour's physical colour's name into the palette
+; window's text, and show the text again in place.
+; Clobbers: A, X, Y, screen_ptr, data_ptr, save_ptr, aux_ptr, border_ptr,
+;      count_y, osfile_block
 .show_palette
 {
     LDA #&03
@@ -2727,10 +2885,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .entry
     LDA osfile_block
     JSR read_palette
+    ASL A                           ; eight characters to each name
     ASL A
     ASL A
-    ASL A
-    ORA #&06
+    ORA #&06                        ; the end of the seventh
     TAX
     LDY #&06
 .name
@@ -2748,6 +2906,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .next
     DEC osfile_block
     BPL entry
+
+    ; Rewrite the window's text without opening it again.
     LDA window_address+2*5
     STA save_ptr
     STA screen_ptr
@@ -2764,14 +2924,25 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; The parameter block for OSFILE, also used for OSWORD 11 and 12: the
+; filename's address, then load and exec addresses, start (or length) and
+; end (or attributes), four bytes each.
 .osfile_block
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00
-    EQUB &00, &00, &00, &00
+    EQUW 0                          ; filename
+    EQUD 0                          ; load address
+    EQUD 0                          ; exec address
+    EQUD 0                          ; start address, or length
+    EQUD 0                          ; end address, or attributes
+    EQUB 0, 0
 
+; Where each line of the palette window is, from its corner.
 .palette_row_offset
-    EQUB &40, &01, &80, &02, &C0, &03, &00, &05
+    EQUW 1*ROW, 2*ROW, 3*ROW, 4*ROW
 
+; Highlight the palette window's selected line.
+; In:  item = the logical colour, 0-3
+; Entry toggle: unhighlight the line highlighted last
+; Clobbers: A, X, Y, screen_ptr
 .palette_highlight
 {
     LDA item
@@ -2792,16 +2963,25 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP invert_menu_row
 }
 
+; The palette line highlighted.
 .highlight_address
     EQUB &00, &00
 
+; The selection, kept while Animate runs.
 .animate_sprite
     EQUB &00
 
+; OptionsA Animate (CTRL-A): for a sprite with a partner, show the two in
+; turn, six vsyncs each, in the animation window and the editing grid until
+; Space or Escape (a function key counts as Escape). The flames, &0E and &0F,
+; alternate; &20 and &21 each alternate with themselves upside down, and &22
+; and &23 with each other upside down. Nothing happens for other sprites.
+; Both frames are copied to frame_a and frame_b first, so the turning upside
+; down doesn't touch the graphics set.
 .cmd_animate
 {
     LDA #&FF
-    STA by_slot
+    STA by_slot                     ; sprite numbers are slots from here
     LDA sprite
     STA animate_sprite
     TAX
@@ -2811,9 +2991,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR slot_index
     TAX
     LDA slot_of_position, X
-    CMP #&24
+    CMP #&24                        ; slots &24-&28: no
     BCS none
-    CMP #&20
+    CMP #&20                        ; &20-&23
     BCS second_of_pair
     CMP #&0E
     BEQ first_of_pair
@@ -2823,19 +3003,19 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 .first_of_pair
     PHA
-    AND #&FE
+    AND #&FE                        ; &0E and &0F: copy both
     BNE pair
 .second_of_pair
     PHA
 .pair
-    CMP #&22
+    CMP #&22                        ; &22 and &23: copy both
     BCC even
     AND #&FE
 .even
     JSR sprite_address
     LDY #&00
 .copy
-    LDA (data_ptr), Y
+    LDA (data_ptr), Y               ; two sprites' worth: the frame and the next slot
     STA frame_a, Y
     DEY
     BNE copy
@@ -2849,10 +3029,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA slot_of_position, X
     CMP #&10
     BCS large
-    LDA #&08
+    LDA #&08                        ; the flames' pair of entries
     BNE chosen
 .large
-    AND #&03
+    AND #&03                        ; &20-&23: their own pair
     ASL A
 .chosen
     STA frame_index
@@ -2862,7 +3042,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA frame_delay
     LDA animation_frames, X
     STA sprite
-    BPL draw
+    BPL draw                        ; upside down?
     JSR flip_vertically
     LDA #&06
     STA frame_delay
@@ -2874,14 +3054,14 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA sprite
     JSR draw_sheet_sprite
 .wait
-    JSR flush_menu_keys
+    JSR menu_keys_escape
     BIT ESCAPE_FLAG
     BMI stop
-    LDX #&9D
+    LDX #KEY_SPACE
     JSR key_pressed
     BMI stop
     LDA #&13
-    JSR OSBYTE
+    JSR OSBYTE                      ; wait for the vsync
     DEC frame_delay
     BNE wait
     LDA frame_index
@@ -2889,24 +3069,28 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     EOR #&01
     STA frame_index
     PHA
-    LDA animation_frames, X
+    LDA animation_frames, X         ; back the right way up before it's shown again
     BPL other_frame
     JSR flip_vertically
 .other_frame
     PLA
     JMP show
 .stop
-    PLA
+    PLA                             ; drop the slot
     LDX animate_sprite
     STX sprite
     LDA #&7E
     JSR OSBYTE
-    LDA #&04
+    LDA #&04                        ; by_slot bit 7 clear: sheet positions again
     STA by_slot
     JSR close_window
     JMP redraw_grid
 }
 
+; Turn a sheet position into an index into slot_of_position: positions
+; &20-&28 follow &00-&0F.
+; In:  A = a large sprite's position
+; Out: A = the index
 .slot_index
 {
     CMP #&10
@@ -2917,25 +3101,38 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; Animate's place in animation_frames, and its countdown to the next
+; frame.
 .frame_index
     EQUB &00
 
 .frame_delay
     EQUB &00
 
+; Animate's frames, a pair for each animated slot: SPRITE_FRAME_A or _B,
+; with UPSIDE_DOWN to show it turned over.
 .animation_frames
-    EQUB &57, &D7, &57, &D7, &57, &D8, &58, &D7
-    EQUB &58, &57
+    EQUB SPRITE_FRAME_A, SPRITE_FRAME_A + UPSIDE_DOWN    ; &20
+    EQUB SPRITE_FRAME_A, SPRITE_FRAME_A + UPSIDE_DOWN    ; &21
+    EQUB SPRITE_FRAME_A, SPRITE_FRAME_B + UPSIDE_DOWN    ; &22
+    EQUB SPRITE_FRAME_B, SPRITE_FRAME_A + UPSIDE_DOWN    ; &23
+    EQUB SPRITE_FRAME_B, SPRITE_FRAME_A                  ; &0E, &0F
 
+; Read one of the cursor keys that move the selection, with auto-repeat:
+; a press moves at once, then after twenty passes of the main loop every
+; five.
+; In:  X = the key's negative INKEY number
+; Out: Y = &FF (N set) to move now, else 0
+; Clobbers: A, X
 .repeat_key
 {
     JSR key_pressed
     BPL not_now
-    STX key_held
-    LDY repeat_count
+    STX key_held                    ; a key is held this pass
+    LDY repeat_count                ; 0: time to repeat
     BEQ move
     STY key_repeating
-    CPY #&14
+    CPY #&14                        ; &14: a fresh press
     BEQ move
 .not_now
     LDY #&00
@@ -2946,13 +3143,22 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; The selection's auto-repeat countdown: &14 while no key is held.
 .repeat_count
     EQUB &00
 
+; Move the selection with the cursor keys, and pace the main loop: it waits
+; until two centiseconds have passed since the last call. If the selection
+; moves, the old sprite is drawn again without its box, the new one is boxed
+; and drawn in the editing grid (with an undo copy).
+; In:  A = 0 normally, else function keys count as Escape (picking a second
+;      sprite)
+; Out: N set if nothing changed (or CTRL is held: then nothing is done)
+; Clobbers: A, X, Y, and as draw_grid
 .select_sprite
 {
     STA select_mode
-    LDX #&FE
+    LDX #KEY_CTRL
     JSR key_pressed
     BMI repeat_key.done
     LDA sprite
@@ -2960,21 +3166,21 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA #&00
     STA key_held
     STA key_repeating
-    LDX #&86
+    LDX #KEY_RIGHT
     JSR repeat_key
     BPL left
-    JSR sheet_column
+    JSR sheet_column                ; the last column of the row?
     CMP last_column
     BEQ left
     INC sprite
     LDA sprite
     CMP #&10
     BNE wrap_right
-    LDA #&20
+    LDA #&20                        ; after &0F comes &20
 .wrap_right
     STA sprite
 .left
-    LDX #&E6
+    LDX #KEY_LEFT
     JSR repeat_key
     BPL left_done
     JSR sheet_column
@@ -2984,25 +3190,25 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA sprite
     CMP #&1F
     BNE wrap_left
-    LDA #&0F
+    LDA #&0F                        ; before &20 comes &0F
 .wrap_left
     STA sprite
 .left_done
-    LDX #&D6
+    LDX #KEY_DOWN
     JSR repeat_key
     BPL down_done
     JSR sheet_row
-    CPX #&08
+    CPX #&08                        ; the bottom row of small sprites
     BEQ down_done
     LDA sprite
-    CMP #&28
+    CMP #&28                        ; nothing below the last large sprite
     BEQ down_done
-    CMP #&0F
+    CMP #&0F                        ; the sheet's own order: &0F is at the start of row 3...
     BNE not_a
     LDA #&24
     BNE store_down
 .not_a
-    CMP #&0A
+    CMP #&0A                        ; ...and &0A above it
     BNE step_down
     LDA #&0F
     BNE store_down
@@ -3012,7 +3218,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .store_down
     STA sprite
 .down_done
-    LDX #&C6
+    LDX #KEY_UP
     JSR repeat_key
     BPL up_done
     JSR sheet_row
@@ -3034,6 +3240,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     SBC row_down_step-1, X
 .store_up
     STA sprite
+
+    ; The auto-repeat: back to &14 while no key is held, else count down.
 .up_done
     LDA repeat_count
     BNE delay
@@ -3051,7 +3259,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STX repeat_count
     LDA select_mode
     BEQ wait
-    JSR flush_menu_keys
+    JSR menu_keys_escape
+
+    ; Wait until the interval timer reaches two centiseconds.
 .wait
     LDA #&03
     JSR reset_timer.timer
@@ -3070,12 +3280,14 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA #&00
     STA timer_value
     JSR reset_timer
-    LDA old_sprite
+    LDA old_sprite                  ; moved?
     CMP sprite
-    BEQ sheet_row.small_row
-    JSR draw_sheet_sprite
+    BEQ sheet_row.return_negative
+    JSR draw_sheet_sprite           ; the old sprite, without its box
     LDA sprite
     JSR show_selection
+
+    ; A small sprite's grid is 8x16: keep the cursor in it.
     LDA sprite_width
     CMP #&02
     BNE changed
@@ -3091,16 +3303,23 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDY #&0F
     STY cursor_y
 .changed
-    LDA sprite
+    LDA sprite                      ; and take an undo copy
     ORA #&80
     JSR draw_grid
     LDA #&00
     RTS
 }
 
+; How far down a step moves the selection from each row of the sheet:
+; large rows 0-4, then small rows 0-3. Up uses the row above's. (Some
+; moves are special cases in select_sprite.)
 .row_down_step
-    EQUB &05, &05, &15, &05, &EC, &04, &04, &04
+    EQUB 5, 5, &15, 5               ; large rows: &0B-&0E go to &20-&23
+    EQUB LO(-&14)                   ; from the bottom large row to the small sprites
+    EQUB 4, 4, 4                    ; small rows
 
+; Set the interval timer to zero, the start of the main loop's pacing.
+; Clobbers: A, X, Y
 .reset_timer
 {
     LDX #&04
@@ -3116,9 +3335,13 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP OSWORD
 }
 
+; Set while a held cursor key is counting down to its next repeat.
 .key_repeating
     EQUB &00
 
+; The selected sprite's row in the sheet.
+; Out: X = row (0-4 for the large sprites, 5-8 for the small ones),
+;      last_column = 4; A = its column for a large sprite, &80 for a small
 .sheet_row
 {
     LDX #&04
@@ -3134,7 +3357,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     CLC
     ADC #&05
     TAX
-.small_row
+.return_negative
     LDA #&80
     RTS
 .large
@@ -3142,6 +3365,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BCS sheet_column.large
 }
 
+; The selected sprite's column in the sheet.
+; Out: A = column, last_column = the last in its row (4 large, 3 small)
+; Clobbers: X
 .sheet_column
 {
     LDA #&04
@@ -3161,6 +3387,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP divide_by_5
 }
 
+; Where a pixel of the editing grid is on the screen.
+; In:  X = pixel x, Y = pixel y
+; Out: screen_ptr = its top line (four lines tall, one byte wide)
+; Clobbers: A
 .grid_address
 {
     TYA
@@ -3178,7 +3408,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     ADC #&00
     STA screen_ptr+1
     PLA
-    LSR A
+    LSR A                           ; odd rows are the bottom half of the character row
     BCC done
     LDA screen_ptr
     ORA #&04
@@ -3187,6 +3417,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; Draw or rub out the pixel cursor: dots in the corners of a grid pixel,
+; exclusive-ORed on.
+; In:  X = pixel x, Y = pixel y
+; Clobbers: A, Y, screen_ptr
 .toggle_cursor
 {
     JSR grid_address
@@ -3200,9 +3434,16 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; The pixel cursor's four lines: the outer pixels' high bits, top and
+; bottom.
 .cursor_shape
     EQUB &90, &00, &00, &90
 
+; Ask for the name of a file to save to. If it exists it must be a graphics
+; set or an IO file (setting io_file), and the user is asked whether to
+; replace it: Cancel abandons the command.
+; Out: input_buffer = the name; io_file bit 7 set for an IO file
+; Clobbers: A, X, Y, and as open_window
 .ask_save_name
 {
     LDA #&06
@@ -3214,16 +3455,18 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR close_window
     JSR file_info
     BCS done
-    CMP #&01
+    CMP #&01                        ; it exists
     BNE new
     JMP file_exists
 .new
-    LDA #&00
+    LDA #&00                        ; a new file is a graphics set
     STA io_file
 .done
     RTS
 }
 
+; Environment Save File (CTRL-f7): save the graphics set, &4000-&4F33, or
+; write its three pieces into an IO file in place.
 .cmd_save_file
 {
     LDX #&03
@@ -3237,11 +3480,11 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA osfile_block+2, Y
     DEY
     BPL clear
-    LDA #&40
+    LDA #&40                        ; load and start address &4000...
     STA osfile_block+3
     STA osfile_block+11
     CLC
-    ADC #&0F
+    ADC #&0F                        ; ...end &4F34
     STA osfile_block+15
     LDA #&34
     STA osfile_block+14
@@ -3249,6 +3492,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR osfile_graphics
 .return_
     RTS
+
+    ; An IO file: write the three pieces in.
 .io
     JSR open_file.update
     LDA #&00
@@ -3266,6 +3511,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP return_
 }
 
+; Environment Save Sprite (CTRL-f9): write the selected sprite (and an
+; object's name) into its place in an existing graphics set or IO file.
 .cmd_save_sprite
 {
     LDX #&01
@@ -3292,6 +3539,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP start.redraw
 }
 
+; The file to save to exists: check what it is, and ask whether to replace
+; it. Cancel returns from the command that asked (ask_save_name's caller).
 .file_exists
 {
     JSR ask_load_name.found
@@ -3299,20 +3548,24 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDY #HI(text_exists)
     LDA #&05
     JSR menu
-    CMP #&02
+    CMP #&02                        ; Replace
     BNE cancel
     JMP ask_save_name.done
 .cancel
-    PLA
+    PLA                             ; drop ask_save_name's return
     PLA
     JMP cmd_save_file.return_
 }
 
+; Call the filing system control vector.
 .fscv
 {
     JMP (FSCV)
 }
 
+; Point gbpb_block at the sprite's place in the file.
+; In:  data_ptr = the sprite's bytes; io_file
+; Clobbers: A
 .sprite_file_offset
 {
     LDA data_ptr
@@ -3327,7 +3580,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 .io
     LDA gbpb_block+10
-    CMP #&0E
+    CMP #&0E                        ; slot &28, at the start of IO
     BNE io_graphics
     LDA #&00
     STA gbpb_block+10
@@ -3343,6 +3596,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; Point gbpb_block at the object's name in the file.
+; In:  sprite = the object; io_file
+; Out: Y = the name's offset in object_names
+; Clobbers: A, X
 .name_file_offset
 {
     JSR name_offset
@@ -3362,6 +3619,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; Unused: read a file's pointer.
 .unused_read_ptr
 {
     LDY gbpb_block
@@ -3369,6 +3627,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP OSARGS
 }
 
+; Clear gbpb_block, and refuse a command the filing system can't do.
+; In:  X = 0 or 1 for the sprite commands, which need random access (not on
+;      tape), 2 or 3 for whole files
+; Clobbers: A, Y
 .check_filing_system
 {
     LDY #&0F
@@ -3384,11 +3646,12 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .tape
     CPX #&02
     BCS done
-    LDX #LO(text_not_available)
-    LDY #HI(text_not_available)
+    LDX #&78
+    LDY #&29
     JMP show_error
 }
 
+; Unused: an error saying "Not implemented".
 .unused_not_implemented
 {
     LDX #LO(text)
@@ -3400,6 +3663,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     EQUB TEXT_END
 }
 
+; Open the file named by osfile_block for reading; at update, for reading
+; and writing. A missing file is "Bad File".
+; Out: gbpb_block's handle
+; Clobbers: A, X, Y
 .open_file
 {
     LDA #&40
@@ -3417,6 +3684,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; Environment Load Sprite (CTRL-f8): read the selected sprite (and an
+; object's name) from its place in a graphics set or IO file.
 .cmd_load_sprite
 {
     LDX #&00
@@ -3443,6 +3712,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP start.redraw
 }
 
+; Write the selected object's name to the file, unless it's the man.
 .write_name
 {
     JSR name_transfer
@@ -3450,6 +3720,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; Point gbpb_block at the selected object's name, in memory and in the file.
+; Out: carry set (and nothing done) for the man, who has no name
+; Clobbers: A, X, Y
 .name_transfer
 {
     LDA sprite
@@ -3473,12 +3746,15 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; Read the selected object's name from the file, unless it's the man.
 .read_name
 {
     JSR name_transfer
     BCS name_transfer.done
 }
 
+; Read the block gbpb_block describes from the file; at write, write it.
+; Clobbers: A, X, Y
 .read_block
 {
     LDA #3
@@ -3490,6 +3766,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP OSGBPB
 }
 
+; Close all open files.
 .close_files
 {
     LDA #&00
@@ -3497,6 +3774,12 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP OSFIND
 }
 
+; Ask for the name of a file to load from: it must exist ("No Such File")
+; and, on a disc, be a graphics set (loading at &40xx, &Fxx long) or an IO
+; file (&33xx long) - anything else is "Bad File".
+; Entry found: just check what the file is
+; Out: io_file bit 7 set for an IO file
+; Clobbers: A, X, Y, and as open_window
 .ask_load_name
 {
     LDA #&06
@@ -3508,7 +3791,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR close_window
     JSR file_info
     BCS found
-    CMP #&01
+    CMP #&01                        ; not there
     BNE cmd_load_file.no_file
 .found
     LDA #&00
@@ -3517,20 +3800,21 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BMI disc
     RTS
 .disc
-    LDA osfile_block+3
+    LDA osfile_block+3              ; the load address's second byte
     CMP #&40
     BNE not_graphics
     LDA osfile_block+11
-    CMP #&0F
+    CMP #&0F                        ; the length's
     BNE not_graphics
     RTS
 }
 
+; Bit 7 set when the file being loaded or saved is IO, not a graphics set.
 .io_file
     EQUB &00
 .not_graphics
     LDA osfile_block+11
-    CMP #&33
+    CMP #&33                        ; an IO file is &33xx long
     BEQ io
     JMP bad_file
 .io
@@ -3538,6 +3822,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA io_file
     RTS
 
+; Environment Load File (CTRL-f6): load a graphics set, or the three pieces
+; of one from an IO file.
 .cmd_load_file
 {
     LDX #&02
@@ -3545,7 +3831,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR ask_load_name
     BIT io_file
     BMI load_io
-    LDA #&FF
+    LDA #&FF                        ; OSFILE &FF: load
     JSR osfile_graphics
     JMP start.redraw
 .no_file
@@ -3554,6 +3840,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP show_error
 }
 
+; Point gbpb_block at one of the pieces of an IO file.
+; In:  X = 0, 6 or 12: the piece's entry in io_segments
+; Clobbers: A
 .set_segment
 {
     LDA io_segments, X
@@ -3571,6 +3860,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; Load the graphics set's three pieces from an IO file.
 .load_io
 {
     JSR open_file
@@ -3589,11 +3879,17 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP start.redraw
 }
 
+; Where the graphics set is in an IO file (as MISSION builds it): each piece's
+; address in the set, its offset in the file and its length.
 .io_segments
-    EQUB &00, &4E, &00, &00, &80, &00, &80, &4E
-    EQUB &80, &00, &B4, &00, &00, &40, &D3, &25
-    EQUB &00, &0E
+    EQUW graphics + &E00, &0000, &80        ; large slot &28
+    EQUW object_names, &0080, 15*12         ; the names
+    EQUW graphics, &25D3, &E00              ; slots &00-&27
 
+; Read the catalogue entry of the file named in input_buffer (OSFILE 5).
+; Out: carry set if the filing system isn't a disc one (nothing read); else
+;      carry clear, A = the object type (1 for a file), osfile_block filled
+; Clobbers: X, Y
 .file_info
 {
     LDX #LO(input_buffer)
@@ -3606,10 +3902,15 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA #&05
 }
 
+; OSFILE on the graphics set at &4000.
+; In:  A = OSFILE reason (0 save, &FF load, 5 read catalogue entry),
+;      osfile_block's name and, to save, its start and end
+; Out: carry clear
+; Clobbers: A, X, Y
 .osfile_graphics
 {
     LDX #&00
-    STX osfile_block+6
+    STX osfile_block+6              ; exec address 0: load where we say
     LDX #&00
     STX osfile_block+2
     LDX #&40
@@ -3617,7 +3918,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BIT disc_fs
     BMI call
     PHA
-    LDA #&0C
+    LDA #&0C                        ; on tape, clear the screen for the filing system's messages
     JSR OSWRCH
     PLA
 .call
@@ -3628,6 +3929,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; The "Bad File" error.
 .bad_file
 {
     LDX #LO(text_bad_file)
@@ -3635,6 +3937,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP show_error
 }
 
+; OptionsA Obj name (CTRL-N): rename the selected object (not the man).
 .cmd_obj_name
 {
     LDA sprite_width
@@ -3667,17 +3970,24 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP show_selection
 }
 
+; The line input_line edits: twelve characters, padded with spaces, and a
+; CR after the sixteen bytes it clears.
 .input_buffer
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00
-    EQUB &00, &00, &00, &00, &0D, &0D, &0D, &0D
-    EQUB &0D
+    SKIP 12
+    EQUB CR, CR, CR, CR, CR
 
+; Read a line of up to input_limit characters into input_buffer, echoing
+; it at screen_ptr. Delete rubs out a character, CTRL-U the lot; Return
+; ends it; Escape or a function key abandons the command.
+; In:  screen_ptr = where to echo it (open_window leaves it after the text)
+; Out: input_buffer, Y = its length
+; Clobbers: A, X, screen_ptr, aux_ptr
 .input_line
 {
     LDY #&0C
     STY input_limit
     LDY #&00
-    LDA #&0F
+    LDA #&0F                        ; flush the keyboard buffer
     JSR OSBYTE
     LDY #&0F
     LDA #&20
@@ -3687,7 +3997,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BPL blank
     INY
 .read
-    LDA #&20
+    LDA #&20                        ; the end of the line, so far
     STA input_buffer, Y
     JSR OSRDCH
     BCC got_key
@@ -3701,14 +4011,14 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 .edit
     AND #&7F
-    CMP #&15
+    CMP #&15                        ; CTRL-U
     BNE not_wipe
     TYA
     TAX
     BNE rub_out
     BEQ read
 .not_wipe
-    CMP #&7F
+    CMP #&7F                        ; Delete
     BNE add
     CPY #&00
     BEQ read
@@ -3721,7 +4031,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BCS erase
     DEC screen_ptr+1
 .erase
-    CLC
+    CLC                             ; exclusive-OR it off again
     LDA input_buffer-1, Y
     JSR print_char
     DEY
@@ -3735,16 +4045,21 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BCS read
     STA input_buffer, Y
     INY
-    JSR print_char_advance
+    JSR print_char_advance          ; carry clear: exclusive-OR it on
     JMP read
 }
 
+; The longest line input_line takes.
 .input_limit
     EQUB &00
 
+; Paint: move the pixel cursor with Z X : /, accelerating as a key is held;
+; choose the colour with 0-4; plot with Return or clear with Delete. Does
+; nothing while CTRL is held, for the shortcuts.
+; Clobbers: A, X, Y, and as draw_sheet_sprite
 .edit_pixels
 {
-    LDX #&FE
+    LDX #KEY_CTRL
     JSR key_pressed
     BPL move
     RTS
@@ -3753,83 +4068,87 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDY cursor_y
     STX old_cursor_x
     STY old_cursor_y
-    LDA sprite_width
+    LDA sprite_width                ; the last pixel across...
     ASL A
     ASL A
     STA count_x
-    ASL A
+    ASL A                           ; ...and down
     STA count_y
     DEC count_x
     DEC count_y
-    LDX #&BD
+    LDX #KEY_X
     JSR key_pressed
     BPL not_right
     LDX cursor_x
     CPX count_x
     BCS not_right
-    LDX #&BD
+    LDX #KEY_X
     JSR key_delay
     INC cursor_x
 .not_right
-    LDX #&9E
+    LDX #KEY_Z
     JSR key_pressed
     BPL not_left
     LDX cursor_x
     BEQ not_left
-    LDX #&9E
+    LDX #KEY_Z
     JSR key_delay
     DEC cursor_x
 .not_left
-    LDX #&97
+    LDX #KEY_SLASH
     JSR key_pressed
     BPL not_down
     LDY cursor_y
     CPY count_y
     BCS not_down
-    LDX #&97
+    LDX #KEY_SLASH
     JSR key_delay
     INC cursor_y
 .not_down
-    LDX #&B7
+    LDX #KEY_COLON
     JSR key_pressed
     BPL not_up
     LDY cursor_y
     BEQ not_up
-    LDX #&B7
+    LDX #KEY_COLON
     JSR key_delay
     DEC cursor_y
 .not_up
-    LDX #&CF
+    LDX #KEY_1
     JSR key_pressed
     BPL not_1
     LDA #&01
     STA colour
     JSR show_colour
 .not_1
-    LDX #&CE
+    LDX #KEY_2
     JSR key_pressed
     BPL not_2
     LDA #&02
     STA colour
     JSR show_colour
 .not_2
-    LDX #&EE
+    LDX #KEY_3
     JSR key_pressed
     BPL not_3
     LDA #&03
     STA colour
     JSR show_colour
 .not_3
-    LDX #&ED
+    LDX #KEY_4
     JSR key_pressed
     BMI colour_0
-    LDX #&D8
+    LDX #KEY_0
     JSR key_pressed
     BPL not_0
+
+    ; 4 and 0 both give colour 0.
 .colour_0
     LDA #&00
     STA colour
     JSR show_colour
+
+    ; Moved: shorten the repeat delay and move the cursor.
 .not_0
     LDA old_cursor_x
     EOR cursor_x
@@ -3840,7 +4159,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .moved
     LDA repeat_delay
     SEC
-    SBC #&0A
+    SBC #&0A                        ; down to a minimum of 10
     CMP #&0A
     BCS delay_ok
     LDA #&0A
@@ -3848,30 +4167,33 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA repeat_delay
     LDX cursor_x
     LDY cursor_y
-    JSR toggle_cursor
+    JSR toggle_cursor               ; draw it at the new place...
     LDX old_cursor_x
     LDY old_cursor_y
-    JSR toggle_cursor
+    JSR toggle_cursor               ; ...and rub it out at the old
     JMP plot_keys
 .still
-    LDA #&B9
+    LDA #&B9                        ; the delay before a held key first repeats
     STA repeat_delay
 .plot_keys
-    LDX #&A6
+    LDX #KEY_DELETE
     JSR key_pressed
     BPL not_delete
     LDA colour
     PHA
-    INX
+    INX                             ; X = &FF + 1: colour 0
     STX colour
     JSR plot
     PLA
     STA colour
     RTS
 .not_delete
-    LDX #&B6
+    LDX #KEY_RETURN
     JSR key_pressed
     BPL done
+
+    ; Plot: fill the grid pixel (keeping the cursor on it), set the pixel in
+    ; the sprite, and show the sprite in the sheet.
 .plot
     LDX cursor_x
     LDY cursor_y
@@ -3890,7 +4212,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR plot_pixel
     LDA sprite
     BNE not_background
-    JSR repeat_background
+    JSR repeat_background           ; the background tile repeats every eight bytes
 .not_background
     LDA sprite
     JSR draw_sheet_sprite
@@ -3898,6 +4220,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; Sheet position 0 is the background: a 4x8 pixel tile repeated. Copy the
+; eight bytes just changed through the whole sprite and redraw it.
+; In:  data_ptr = the byte plot_pixel changed
 .repeat_background
 {
     LDA data_ptr
@@ -3924,9 +4249,14 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP redraw_grid
 }
 
+; The background tile's eight bytes.
 .background_tile
     EQUB &00, &00, &00, &00, &00, &00, &00, &00
 
+; The pixel cursor's key repeat: wait while the key is held, up to
+; repeat_delay * 256 trips round a loop.
+; In:  X = the key's negative INKEY number
+; Clobbers: A, X, Y
 .key_delay
 {
     STX temp
@@ -3947,9 +4277,14 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; The bits of each of the four pixels in a MODE 5 byte.
 .pixel_mask
     EQUB &88, &44, &22, &11
 
+; Find a pixel of a sprite.
+; In:  A = sprite, X = pixel x, Y = pixel y
+; Out: data_ptr = its byte, A = mask = its bits
+; Clobbers: X, Y, pixel_x, pixel_y
 .pixel_address
 {
     STX pixel_x
@@ -3965,7 +4300,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LSR A
     TAX
 .column
-    DEX
+    DEX                             ; a column of bytes for each four pixels across
     BMI got_column
     TYA
     CLC
@@ -3984,6 +4319,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; Set a pixel of a sprite to colour.
+; In:  A = sprite, X = pixel x, Y = pixel y, colour
+; Clobbers: A, X, Y, data_ptr, temp, mask
 .plot_pixel
 {
     JSR pixel_address
@@ -3999,11 +4337,17 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; Read a pixel of a sprite.
+; In:  A = sprite, X = pixel x, Y = pixel y
+; Out: A = its colour, 0-3
+; Clobbers: X, Y, data_ptr, mask
 .read_pixel
 {
     JSR pixel_address
     LDY #&00
     AND (data_ptr), Y
+
+    ; Shift the pixel's two bits down to make its colour.
 .find_bit
     LSR mask
     BCS got_bit
@@ -4020,15 +4364,20 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; Each menu's text, and the function key that opens it.
 .menu_text
-    EQUB &81, &26, &B7, &26, &EC, &26, &32, &27
-
+    EQUW text_options_a, text_options_b, text_environment, text_credits
 .menu_keys
-    EQUB &DF, &8E, &8D, &8C
+    EQUB KEY_F0, KEY_F1, KEY_F2, KEY_F3
 
+; Read a command: a CTRL shortcut, or a choice from the menu whose function
+; key is pressed.
+; Out: A = the command's number in command_table (menu * 8 + item), 0 for
+;      the credits, or &FF for none
+; Clobbers: X, Y, and as menu
 .read_command
 {
-    LDX #&FE
+    LDX #KEY_CTRL
     JSR key_pressed
     BPL menus
     LDA #&17
@@ -4036,7 +4385,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .shortcut
     LDY temp
     LDX shortcut_keys, Y
-    BPL next_shortcut
+    BPL next_shortcut               ; not a key: an unused entry
     JSR key_pressed
     BMI found
 .next_shortcut
@@ -4045,7 +4394,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA #&FF
     RTS
 .found
-    INC temp
+    INC temp                        ; the shortcut's command is one more than its place
     LDA temp
     RTS
 .menus
@@ -4066,7 +4415,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     PLA
     PHA
     JSR menu
-    CMP #&00
+    CMP #&00                        ; the credits: nothing to pick
     BNE picked
     PLA
     LDA #&00
@@ -4074,7 +4423,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .picked
     STA temp
     PLA
-    ASL A
+    ASL A                           ; menu * 8 + item, or &FF if nothing was picked
     ASL A
     ASL A
     ORA temp
@@ -4087,21 +4436,27 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; The CTRL shortcuts, in command order from command 1; entries that aren't
+; keys (below &80) have none.
 .shortcut_keys
-    EQUB &BD, &BB, &A6, &CA, &BE, &AA, &57, &57
-    EQUB &AE, &96, &C9, &57, &CC, &9B, &57, &57
-    EQUB &89, &88, &8A, &E9, &AD, &00, &00, &00
+    EQUB KEY_X, KEY_Y, KEY_DELETE, KEY_U, KEY_A, KEY_N, NO_KEY, NO_KEY   ; OptionsA
+    EQUB KEY_S, KEY_COPY, KEY_O, NO_KEY, KEY_R, KEY_B, NO_KEY, NO_KEY    ; OptionsB
+    EQUB KEY_F8, KEY_F9, KEY_F6, KEY_F7, KEY_C, 0, 0, 0                  ; Environment
 
+; Which cursor key the selection last saw held.
 .key_held
-    EQUB &00, &00
-
+    EQUB 0, 0
+; Non-zero while picking a second sprite.
 .select_mode
-    EQUB &00
-
+    EQUB 0
+; The interval timer, as OSWORD 3 reads it.
 .timer_value
-    EQUB &00, &00, &00, &00, &00
+    EQUB 0, 0, 0, 0, 0
 
-.flush_menu_keys
+; While picking a second sprite or animating, f0-f3 count as Escape: raise
+; one (OSBYTE &7D) if any of them is pressed.
+; Clobbers: A, X, Y
+.menu_keys_escape
 {
     LDA #&03
 .loop
@@ -4120,6 +4475,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; Not part of the program: what was in memory after it when it was saved
+; (a pointer table and graphics, from the look of it).
 .leftover
     EQUB &FF, &9A, &4C, &C3, &12, &FC, &1F, &01
     EQUB &1F, &44, &1F, &CD, &1F, &D7, &20, &56
