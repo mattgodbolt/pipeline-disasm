@@ -1,4 +1,11 @@
-; $.LDATA: &3200 bytes at sector &0AA.
+; $.LDATA: the Level Designer's title picture, "PIPELINE Level Designer"
+; over a landscape, with "Press SPACE" below.
+;
+; It is screen memory, *LOADed by the designer straight onto the screen at
+; &3400: character rows 2-26 of its MODE 1 screen narrowed to 64 columns
+; (512 bytes a row, each column 8 bytes, one per scan line, 4 pixels a byte),
+; in the title palette (black, blue, yellow, red). None of it is code; the
+; exec address &3820 means nothing. tools/screen2png.py draws it.
 SECTION ldata, filename="LDATA", org=&3400, load=&3400, exec=&3820
     INCBIN "../data/ldata.bin"
 ENDSECTION
