@@ -4138,342 +4138,249 @@ SECTION low_code, org=&0880
     EQUB 0
     SKIP 5                      ; to the end of the moved code
 ENDSECTION
+; The font, glyphs 0-63 (wdata_glyphs gives their order). entry moves it to
+; &0400. Copying the low code also puts its first four glyphs at &0CC0, past
+; the end of that code, where nothing looks at them.
 .font_load
 SECTION font, org=&0400
 .font
-    EQUS "<iixiii"                  ; 0400
-    EQUB &0F, &C3, &69, &69, &E1, &69, &69, &69; 0407
-    EQUB &0F                        ; 040F
-    EQUS "xiixiix"                  ; 0410
-    EQUB &0F, &C3, &69, &69, &C3, &69, &69, &C3; 0417
-    EQUB &0F                        ; 041F
-    EQUS "<iiiii<"                  ; 0420
-    EQUB &0F, &C3, &69, &0F, &0F, &0F, &69, &C3; 0427
-    EQUB &0F                        ; 042F
-    EQUS "xiiiiix"                  ; 0430
-    EQUB &0F, &87, &C3, &69, &69, &69, &C3, &87; 0437
-    EQUB &0F                        ; 043F
-    EQUS "xiixiix"                  ; 0440
-    EQUB &0F, &E1, &0F, &0F, &C3, &0F, &0F, &E1; 0447
-    EQUB &0F                        ; 044F
-    EQUS "xiixiii"                  ; 0450
-    EQUB &0F, &E1, &0F, &0F, &C3, &0F, &0F, &0F; 0457
-    EQUB &0F                        ; 045F
-    EQUS "<iiiii<"                  ; 0460
-    EQUB &0F, &C3, &69, &0F, &E1, &69, &69, &C3; 0467
-    EQUB &0F                        ; 046F
-    EQUS "iiixiii"                  ; 0470
-    EQUB &0F, &69, &69, &69, &E1, &69, &69, &69; 0477
-    EQUB &0F, &78, &1E, &1E, &1E, &1E, &1E, &78; 047F
-    EQUB &0F, &E1, &87, &87, &87, &87, &87, &E1; 0487
-    EQUB &0F, &3C, &0F, &0F, &0F, &0F, &69, &3C; 048F
-    EQUB &0F, &E1, &C3, &C3, &C3, &C3, &C3, &87; 0497
-    EQUB &0F                        ; 049F
-    EQUS "iixxxii"                  ; 04A0
-    EQUB &0F, &69, &C3, &87, &0F, &87, &C3, &69; 04A7
-    EQUB &0F                        ; 04AF
-    EQUS "iiiiiix"                  ; 04B0
-    EQUB &0F, &0F, &0F, &0F, &0F, &0F, &0F, &E1; 04B7
-    EQUB &0F                        ; 04BF
-    EQUS "ixxiiii"                  ; 04C0
-    EQUB &0F, &3C, &78, &F0, &B4, &B4, &3C, &3C; 04C7
-    EQUB &0F                        ; 04CF
-    EQUS "iixxiii"                  ; 04D0
-    EQUB &0F, &69, &69, &69, &E1, &E1, &69, &69; 04D7
-    EQUB &0F                        ; 04DF
-    EQUS "<iiiii<"                  ; 04E0
-    EQUB &0F, &C3                   ; 04E7
-    EQUS "iiiii"                    ; 04E9
-    EQUB &C3, &0F                   ; 04EE
-    EQUS "xiixiii"                  ; 04F0
-    EQUB &0F, &C3, &69, &69, &C3, &0F, &0F, &0F; 04F7
-    EQUB &0F                        ; 04FF
-    EQUS "<iiiii<"                  ; 0500
-    EQUB &0F, &C3, &69, &69, &69, &A5, &C3, &69; 0507
-    EQUB &0F                        ; 050F
-    EQUS "xiixiii"                  ; 0510
-    EQUB &0F, &C3, &69, &69, &C3, &C3, &69, &69; 0517
-    EQUB &0F                        ; 051F
-    EQUS "<ii<"                     ; 0520
-    EQUB &0F, &69, &3C, &0F, &C3, &69, &0F, &C3; 0524
-    EQUB &69, &69, &C3, &0F, &78, &1E, &1E, &1E; 052C
-    EQUB &1E, &1E, &1E, &0F, &E1, &87, &87, &87; 0534
-    EQUB &87, &87, &87, &0F         ; 053C
-    EQUS "iiiiii<"                  ; 0540
-    EQUB &0F                        ; 0547
-    EQUS "iiiiii"                   ; 0548
-    EQUB &C3, &0F                   ; 054E
-    EQUS "iiiii<"                   ; 0550
-    EQUB &1E, &0F                   ; 0556
-    EQUS "iiiii"                    ; 0558
-    EQUB &C3, &87, &0F              ; 055D
-    EQUS "iiiixxi"                  ; 0560
-    EQUB &0F, &3C, &3C, &B4, &B4, &F0, &78, &3C; 0567
-    EQUB &0F, &69, &69, &3C, &1E, &3C, &69, &69; 056F
-    EQUB &0F, &69, &69, &C3, &87, &C3, &69, &69; 0577
-    EQUB &0F                        ; 057F
-    EQUS "iii<"                     ; 0580
-    EQUB &1E, &1E, &1E, &0F, &69, &69, &69, &C3; 0584
-    EQUB &87, &87, &87, &0F, &78, &0F, &0F, &1E; 058C
-    EQUB &3C, &69, &78, &0F, &E1, &69, &C3, &87; 0594
-    EQUB &0F, &0F, &E1, &0F, &0F, &0F, &0F, &0F; 059C
-    EQUB &0F, &1E, &1E, &0F, &0F, &0F, &0F, &0F; 05A4
-    EQUB &0F, &87, &87, &0F, &0F, &0F, &1E, &1E; 05AC
-    EQUB &0F, &1E, &1E, &0F, &0F, &0F, &87, &87; 05B4
-    EQUB &0F, &87, &87, &0F, &3C, &69, &0F, &1E; 05BC
-    EQUB &1E, &0F, &1E, &0F, &C3, &69, &C3, &87; 05C4
-    EQUB &87, &0F, &87, &0F, &0F, &1E, &3C, &69; 05CC
-    EQUB &3C, &1E, &0F, &0F, &C3, &87, &0F, &0F; 05D4
-    EQUB &0F, &87, &C3, &0F, &3C, &1E, &0F, &0F; 05DC
-    EQUB &0F, &1E, &3C, &0F, &0F, &87, &C3, &69; 05E4
-    EQUB &C3, &87, &0F, &0F, &0F, &0F, &0F, &0F; 05EC
-    EQUB &0F, &0F, &0F, &0F, &0F, &0F, &0F, &0F; 05F4
-    EQUB &0F, &0F, &0F, &0F, &0F, &0F, &3C, &0F; 05FC
-    EQUB &3C, &69, &3C, &0F, &0F, &0F, &C3, &69; 0604
-    EQUB &E1, &69, &E1, &0F         ; 060C
-    EQUS "iixiiix"                  ; 0610
-    EQUB &0F, &0F, &0F, &C3, &69, &69, &69, &C3; 0617
-    EQUB &0F, &0F, &0F              ; 061F
-    EQUS "<iii<"                    ; 0622
-    EQUB &0F, &0F, &0F, &C3, &69, &0F, &69, &C3; 0627
-    EQUB &0F, &0F, &0F              ; 062F
-    EQUS "<iii<"                    ; 0632
-    EQUB &0F, &69, &69, &E1, &69, &69, &69, &E1; 0637
-    EQUB &0F, &0F, &0F              ; 063F
-    EQUS "<ixi<"                    ; 0642
-    EQUB &0F, &0F, &0F, &C3, &69, &E1, &0F, &C3; 0647
-    EQUB &0F, &1E                   ; 064F
-    EQUS "<<x<<<"                   ; 0651
-    EQUB &0F, &C3, &0F, &0F, &C3, &0F, &0F, &0F; 0657
-    EQUB &0F, &0F, &0F              ; 065F
-    EQUS "<ii<"                     ; 0662
-    EQUB &0F, &3C, &0F, &0F, &E1, &69, &69, &E1; 0666
-    EQUB &69, &C3                   ; 066E
-    EQUS "iixiiii"                  ; 0670
-    EQUB &0F, &0F, &0F, &C3         ; 0677
-    EQUS "iiii"                     ; 067B
-    EQUB &0F, &1E, &0F, &3C, &1E, &1E, &1E, &3C; 067F
-    EQUB &0F, &87, &0F, &87, &87, &87, &87, &C3; 0687
-    EQUB &0F, &1E, &0F, &3C, &1E, &1E, &1E, &1E; 068F
-    EQUB &78, &87, &0F, &87, &87, &87, &87, &87; 0697
-    EQUB &0F                        ; 069F
-    EQUS "iiiixii"                  ; 06A0
-    EQUB &0F, &0F, &0F, &69, &C3, &87, &C3, &69; 06A7
-    EQUB &0F, &3C, &1E, &1E, &1E, &1E, &1E, &3C; 06AF
-    EQUB &0F, &87, &87, &87, &87, &87, &87, &C3; 06B7
-    EQUB &0F, &0F, &0F              ; 06BF
-    EQUS "<xiii"                    ; 06C2
-    EQUB &0F, &0F, &0F, &69, &F0, &B4, &B4, &3C; 06C7
-    EQUB &0F, &0F, &0F              ; 06CF
-    EQUS "xiiii"                    ; 06D2
-    EQUB &0F, &0F, &0F, &C3         ; 06D7
-    EQUS "iiii"                     ; 06DB
-    EQUB &0F, &0F, &0F              ; 06DF
-    EQUS "<iii<"                    ; 06E2
-    EQUB &0F, &0F, &0F, &C3, &69, &69, &69, &C3; 06E7
-    EQUB &0F, &0F, &0F              ; 06EF
-    EQUS "xiixii"                   ; 06F2
-    EQUB &0F, &0F, &C3, &69, &69, &C3, &0F, &0F; 06F8
-    EQUB &0F, &0F                   ; 0700
-    EQUS "<ii<"                     ; 0702
-    EQUB &0F, &0F, &0F, &0F, &E1, &69, &69, &E1; 0706
-    EQUB &69, &78, &0F, &0F         ; 070E
-    EQUS "ixiii"                    ; 0712
-    EQUB &0F, &0F, &0F, &C3, &69, &0F, &0F, &0F; 0717
-    EQUB &0F, &0F, &0F, &3C, &69, &3C, &0F, &78; 071F
-    EQUB &0F, &0F, &0F, &E1, &0F, &C3, &69, &C3; 0727
-    EQUB &0F                        ; 072F
-    EQUS "<<x<<<"                   ; 0730
-    EQUB &1E, &0F, &0F, &0F, &C3, &0F, &0F, &0F; 0736
-    EQUB &C3, &0F, &0F, &0F         ; 073E
-    EQUS "iiii<"                    ; 0742
-    EQUB &0F, &0F, &0F              ; 0747
-    EQUS "iiii"                     ; 074A
-    EQUB &E1, &0F, &0F, &0F         ; 074E
-    EQUS "iii<"                     ; 0752
-    EQUB &1E, &0F, &0F, &0F, &69, &69, &69, &C3; 0756
-    EQUB &87, &0F, &0F, &0F         ; 075E
-    EQUS "iiix<"                    ; 0762
-    EQUB &0F, &0F, &0F, &3C, &B4, &B4, &F0, &69; 0767
-    EQUB &0F, &0F, &0F, &69, &3C, &1E, &3C, &69; 076F
-    EQUB &0F, &0F, &0F, &69, &C3, &87, &C3, &69; 0777
-    EQUB &0F, &0F, &0F              ; 077F
-    EQUS "iii<"                     ; 0782
-    EQUB &0F, &3C, &0F, &0F, &69, &69, &69, &E1; 0786
-    EQUB &69, &C3, &0F, &0F, &78, &0F, &1E, &3C; 078E
-    EQUB &78, &0F, &0F, &0F, &E1, &C3, &87, &0F; 0796
-    EQUB &E1, &0F, &1E, &3C, &1E, &1E, &1E, &1E; 079E
-    EQUB &78, &0F, &87, &87, &87, &87, &87, &87; 07A6
-    EQUB &E1, &0F, &3C, &69, &0F, &0F, &1E, &3C; 07AE
-    EQUB &78, &0F, &C3, &69, &69, &C3, &87, &0F; 07B6
-    EQUB &E1, &0F, &3C, &69, &0F, &1E, &0F, &69; 07BE
-    EQUB &3C, &0F, &C3, &69, &69, &C3, &69, &69; 07C6
-    EQUB &C3, &0F, &0F, &1E, &3C, &69, &78, &0F; 07CE
-    EQUB &0F, &0F, &C3, &C3, &C3, &C3, &E1, &C3; 07D6
-    EQUB &C3, &0F, &78, &69, &78, &0F, &0F, &69; 07DE
-    EQUB &3C, &0F, &E1, &0F, &C3, &69, &69, &69; 07E6
-    EQUB &C3, &0F, &1E              ; 07EE
-    EQUS "<ixii<"                   ; 07F1
-    EQUB &0F, &C3, &0F, &0F, &C3, &69, &69, &C3; 07F7
-    EQUB &0F                        ; 07FF
+    GLYPH "..####..", ".##..##.", ".##..##.", ".######.", ".##..##.", ".##..##.", ".##..##.", "........"   ; 0: A
+    GLYPH ".#####..", ".##..##.", ".##..##.", ".#####..", ".##..##.", ".##..##.", ".#####..", "........"   ; 1: B
+    GLYPH "..####..", ".##..##.", ".##.....", ".##.....", ".##.....", ".##..##.", "..####..", "........"   ; 2: C
+    GLYPH ".####...", ".##.##..", ".##..##.", ".##..##.", ".##..##.", ".##.##..", ".####...", "........"   ; 3: D
+    GLYPH ".######.", ".##.....", ".##.....", ".#####..", ".##.....", ".##.....", ".######.", "........"   ; 4: E
+    GLYPH ".######.", ".##.....", ".##.....", ".#####..", ".##.....", ".##.....", ".##.....", "........"   ; 5: F
+    GLYPH "..####..", ".##..##.", ".##.....", ".##.###.", ".##..##.", ".##..##.", "..####..", "........"   ; 6: G
+    GLYPH ".##..##.", ".##..##.", ".##..##.", ".######.", ".##..##.", ".##..##.", ".##..##.", "........"   ; 7: H
+    GLYPH ".######.", "...##...", "...##...", "...##...", "...##...", "...##...", ".######.", "........"   ; 8: I
+    GLYPH "..#####.", "....##..", "....##..", "....##..", "....##..", ".##.##..", "..###...", "........"   ; 9: J
+    GLYPH ".##..##.", ".##.##..", ".####...", ".###....", ".####...", ".##.##..", ".##..##.", "........"   ; 10: K
+    GLYPH ".##.....", ".##.....", ".##.....", ".##.....", ".##.....", ".##.....", ".######.", "........"   ; 11: L
+    GLYPH ".##...##", ".###.###", ".#######", ".##.#.##", ".##.#.##", ".##...##", ".##...##", "........"   ; 12: M
+    GLYPH ".##..##.", ".##..##.", ".###.##.", ".######.", ".##.###.", ".##..##.", ".##..##.", "........"   ; 13: N
+    GLYPH "..####..", ".##..##.", ".##..##.", ".##..##.", ".##..##.", ".##..##.", "..####..", "........"   ; 14: O
+    GLYPH ".#####..", ".##..##.", ".##..##.", ".#####..", ".##.....", ".##.....", ".##.....", "........"   ; 15: P
+    GLYPH "..####..", ".##..##.", ".##..##.", ".##..##.", ".##.#.#.", ".##.##..", "..##.##.", "........"   ; 16: Q
+    GLYPH ".#####..", ".##..##.", ".##..##.", ".#####..", ".##.##..", ".##..##.", ".##..##.", "........"   ; 17: R
+    GLYPH "..####..", ".##..##.", ".##.....", "..####..", ".....##.", ".##..##.", "..####..", "........"   ; 18: S
+    GLYPH ".######.", "...##...", "...##...", "...##...", "...##...", "...##...", "...##...", "........"   ; 19: T
+    GLYPH ".##..##.", ".##..##.", ".##..##.", ".##..##.", ".##..##.", ".##..##.", "..####..", "........"   ; 20: U
+    GLYPH ".##..##.", ".##..##.", ".##..##.", ".##..##.", ".##..##.", "..####..", "...##...", "........"   ; 21: V
+    GLYPH ".##...##", ".##...##", ".##.#.##", ".##.#.##", ".#######", ".###.###", ".##...##", "........"   ; 22: W
+    GLYPH ".##..##.", ".##..##.", "..####..", "...##...", "..####..", ".##..##.", ".##..##.", "........"   ; 23: X
+    GLYPH ".##..##.", ".##..##.", ".##..##.", "..####..", "...##...", "...##...", "...##...", "........"   ; 24: Y
+    GLYPH ".######.", ".....##.", "....##..", "...##...", "..##....", ".##.....", ".######.", "........"   ; 25: Z
+    GLYPH "........", "........", "........", "........", "........", "...##...", "...##...", "........"   ; 26: .
+    GLYPH "........", "........", "...##...", "...##...", "........", "...##...", "...##...", "........"   ; 27: :
+    GLYPH "..####..", ".##..##.", "....##..", "...##...", "...##...", "........", "...##...", "........"   ; 28: ?
+    GLYPH "....##..", "...##...", "..##....", ".##.....", "..##....", "...##...", "....##..", "........"   ; 29: <
+    GLYPH "..##....", "...##...", "....##..", ".....##.", "....##..", "...##...", "..##....", "........"   ; 30: >
+    GLYPH "........", "........", "........", "........", "........", "........", "........", "........"   ; 31: space
+    GLYPH "........", "........", "..####..", ".....##.", "..#####.", ".##..##.", "..#####.", "........"   ; 32: a
+    GLYPH ".##.....", ".##.....", ".#####..", ".##..##.", ".##..##.", ".##..##.", ".#####..", "........"   ; 33: b
+    GLYPH "........", "........", "..####..", ".##..##.", ".##.....", ".##..##.", "..####..", "........"   ; 34: c
+    GLYPH ".....##.", ".....##.", "..#####.", ".##..##.", ".##..##.", ".##..##.", "..#####.", "........"   ; 35: d
+    GLYPH "........", "........", "..####..", ".##..##.", ".######.", ".##.....", "..####..", "........"   ; 36: e
+    GLYPH "...###..", "..##....", "..##....", ".#####..", "..##....", "..##....", "..##....", "........"   ; 37: f
+    GLYPH "........", "........", "..#####.", ".##..##.", ".##..##.", "..#####.", ".....##.", "..####.."   ; 38: g
+    GLYPH ".##.....", ".##.....", ".#####..", ".##..##.", ".##..##.", ".##..##.", ".##..##.", "........"   ; 39: h
+    GLYPH "...##...", "........", "..###...", "...##...", "...##...", "...##...", "..####..", "........"   ; 40: i
+    GLYPH "...##...", "........", "..###...", "...##...", "...##...", "...##...", "...##...", ".###...."   ; 41: j
+    GLYPH ".##.....", ".##.....", ".##..##.", ".##.##..", ".####...", ".##.##..", ".##..##.", "........"   ; 42: k
+    GLYPH "..###...", "...##...", "...##...", "...##...", "...##...", "...##...", "..####..", "........"   ; 43: l
+    GLYPH "........", "........", "..##.##.", ".#######", ".##.#.##", ".##.#.##", ".##...##", "........"   ; 44: m
+    GLYPH "........", "........", ".#####..", ".##..##.", ".##..##.", ".##..##.", ".##..##.", "........"   ; 45: n
+    GLYPH "........", "........", "..####..", ".##..##.", ".##..##.", ".##..##.", "..####..", "........"   ; 46: o
+    GLYPH "........", "........", ".#####..", ".##..##.", ".##..##.", ".#####..", ".##.....", ".##....."   ; 47: p
+    GLYPH "........", "........", "..#####.", ".##..##.", ".##..##.", "..#####.", ".....##.", ".....###"   ; 48: q
+    GLYPH "........", "........", ".##.##..", ".###.##.", ".##.....", ".##.....", ".##.....", "........"   ; 49: r
+    GLYPH "........", "........", "..#####.", ".##.....", "..####..", ".....##.", ".#####..", "........"   ; 50: s
+    GLYPH "..##....", "..##....", ".#####..", "..##....", "..##....", "..##....", "...###..", "........"   ; 51: t
+    GLYPH "........", "........", ".##..##.", ".##..##.", ".##..##.", ".##..##.", "..#####.", "........"   ; 52: u
+    GLYPH "........", "........", ".##..##.", ".##..##.", ".##..##.", "..####..", "...##...", "........"   ; 53: v
+    GLYPH "........", "........", ".##...##", ".##.#.##", ".##.#.##", ".#######", "..##.##.", "........"   ; 54: w
+    GLYPH "........", "........", ".##..##.", "..####..", "...##...", "..####..", ".##..##.", "........"   ; 55: x
+    GLYPH "........", "........", ".##..##.", ".##..##.", ".##..##.", "..#####.", ".....##.", "..####.."   ; 56: y
+    GLYPH "........", "........", ".######.", "....##..", "...##...", "..##....", ".######.", "........"   ; 57: z
+    GLYPH "...##...", "..###...", "...##...", "...##...", "...##...", "...##...", ".######.", "........"   ; 58: 1
+    GLYPH "..####..", ".##..##.", ".....##.", "....##..", "...##...", "..##....", ".######.", "........"   ; 59: 2
+    GLYPH "..####..", ".##..##.", ".....##.", "...###..", ".....##.", ".##..##.", "..####..", "........"   ; 60: 3
+    GLYPH "....##..", "...###..", "..####..", ".##.##..", ".######.", "....##..", "....##..", "........"   ; 61: 4
+    GLYPH ".######.", ".##.....", ".#####..", ".....##.", ".....##.", ".##..##.", "..####..", "........"   ; 62: 5
+    GLYPH "...###..", "..##....", ".##.....", ".#####..", ".##..##.", ".##..##.", "..####..", "........"   ; 63: 6
 ENDSECTION
+
+; Where the LEVDES stub jumps. Move the low code, the font and zero page to
+; where they run, set the screen up (MODE 1 narrowed to 64 columns), load the
+; windows and the title picture, wait for Space and start the editor. All of
+; this, from &25A1 up, becomes the level once it's done.
 .entry
-    LDY #&80                        ; 2E21: A0 80
-    LDX #&04                        ; 2E23: A2 04
+    ; The low code, &0880-&0CFF; the loop runs the source from low_code_load
+    ; less &80 so that Y starts at &80, and takes the font's first &40 bytes
+    ; along with it.
+    LDY #&80
+    LDX #4                      ; half a page, then four pages
 .entry_copy_code
-    LDA low_code_load - &80, Y      ; 2E25: B9 61 25
+    LDA low_code_load - &80, Y
 .entry_copy_code_store
-    STA low_code - &80, Y           ; 2E28: 99 00 08
-    INY                             ; 2E2B: C8
-    BNE entry_copy_code             ; 2E2C: D0 F7
-    INC entry_copy_code+2           ; 2E2E: EE 27 2E
-    INC entry_copy_code_store+2     ; 2E31: EE 2A 2E
-    DEX                             ; 2E34: CA
-    BPL entry_copy_code             ; 2E35: 10 EE
-    LDX #&03                        ; 2E37: A2 03
+    STA low_code - &80, Y
+    INY
+    BNE entry_copy_code
+    INC entry_copy_code+2
+    INC entry_copy_code_store+2
+    DEX
+    BPL entry_copy_code
+    LDX #(64 * 16) DIV 256 - 1  ; four pages
 .entry_copy_font
-    LDA font_load, Y                ; 2E39: B9 21 2A
+    LDA font_load, Y
 .entry_copy_font_store
-    STA font, Y                     ; 2E3C: 99 00 04
-    INY                             ; 2E3F: C8
-    BNE entry_copy_font             ; 2E40: D0 F7
-    INC entry_copy_font+2           ; 2E42: EE 3B 2E
-    INC entry_copy_font_store+2     ; 2E45: EE 3E 2E
-    DEX                             ; 2E48: CA
-    BPL entry_copy_font             ; 2E49: 10 EE
-    LDX #&3F                        ; 2E4B: A2 3F
+    STA font, Y
+    INY
+    BNE entry_copy_font
+    INC entry_copy_font+2
+    INC entry_copy_font_store+2
+    DEX
+    BPL entry_copy_font
+    LDX #&3F
 .entry_copy_zero_page
-    LDA zero_page_init_load, X      ; 2E4D: BD A1 25
-    STA menu_tables, X              ; 2E50: 95 00
-    DEX                             ; 2E52: CA
-    BPL entry_copy_zero_page        ; 2E53: 10 F8
-    TXS                             ; 2E55: 9A
-    LDA #&C0                        ; 2E56: A9 C0
-    STA unused_66                   ; 2E58: 85 66
-    INX                             ; 2E5A: E8
-    STX cursor_shown                ; 2E5B: 86 56
-    STX simulate_window             ; 2E5D: 86 68
-    STX simulating                  ; 2E5F: 86 6A
-    STX brush                       ; 2E61: 86 59
-    STX loading                     ; 2E63: 86 67
-    STX in_main_loop                ; 2E65: 86 6B
-    LDA #&16                        ; 2E67: A9 16
-    JSR OSWRCH                      ; 2E69: 20 EE FF
-    INX                             ; 2E6C: E8
-    TXA                             ; 2E6D: 8A
-    JSR OSWRCH                      ; 2E6E: 20 EE FF
-    LDA #&40                        ; 2E71: A9 40
-    JSR vector_crtc_write           ; 2E73: 20 00 11
-    INX                             ; 2E76: E8
-    LDA #&5A                        ; 2E77: A9 5A
-    JSR vector_crtc_write           ; 2E79: 20 00 11
-    JSR vector_cursor_off           ; 2E7C: 20 03 11
-    LDA #&0C                        ; 2E7F: A9 0C
-    LDX #&04                        ; 2E81: A2 04
-    JSR OSBYTE                      ; 2E83: 20 F4 FF
-    LDA #&C8                        ; 2E86: A9 C8
-    LDX #&02                        ; 2E88: A2 02
-    JSR osbyte_y0                   ; 2E8A: 20 06 2F
-    LDA #&D6                        ; 2E8D: A9 D6
-    LDX #&02                        ; 2E8F: A2 02
-    JSR osbyte_y0                   ; 2E91: 20 06 2F
-    LDA #&E1                        ; 2E94: A9 E1
-    LDX #&80                        ; 2E96: A2 80
-    JSR osbyte_y0                   ; 2E98: 20 06 2F
-    LDY #&03                        ; 2E9B: A0 03
+    LDA zero_page_init_load, X
+    STA menu_tables, X
+    DEX
+    BPL entry_copy_zero_page
+    TXS
+    LDA #&C0
+    STA unused_66
+    INX
+    STX cursor_shown
+    STX simulate_window
+    STX simulating
+    STX brush
+    STX loading
+    STX in_main_loop
+    LDA #22                     ; MODE 1
+    JSR OSWRCH
+    INX
+    TXA
+    JSR OSWRCH
+    LDA #64                     ; 64 columns displayed (R1)
+    JSR vector_crtc_write
+    INX
+    LDA #90                     ; and the sync moved to centre them (R2)
+    JSR vector_crtc_write
+    JSR vector_cursor_off
+    LDA #&0C                    ; *FX12,4: fast auto-repeat
+    LDX #4
+    JSR OSBYTE
+    LDA #&C8                    ; *FX200,2: Break clears memory
+    LDX #2
+    JSR osbyte_y0
+    LDA #&D6                    ; *FX214,2: a short beep
+    LDX #2
+    JSR osbyte_y0
+    LDA #&E1                    ; *FX225,128: f0-f9 give &80-&89
+    LDX #&80
+    JSR osbyte_y0
+    LDY #3
 .entry_palette
-    LDA title_palette, Y            ; 2E9D: B9 0B 2F
-    JSR vector_set_palette          ; 2EA0: 20 0D 11
-    DEY                             ; 2EA3: 88
-    BPL entry_palette               ; 2EA4: 10 F7
-    LDA rdchv_filter_operand_address ; 2EA6: AD 06 11
-    STA ptr                         ; 2EA9: 85 52
-    LDA rdchv_filter_operand_address+1 ; 2EAB: AD 07 11
-    STA ptr+1                       ; 2EAE: 85 53
-    LDA #&1F                        ; 2EB0: A9 1F
-    STA cursor_x                    ; 2EB2: 85 50
-    STA cursor_y                    ; 2EB4: 85 51
-    LDY #&01                        ; 2EB6: A0 01
-    LDA RDCHV+1                     ; 2EB8: AD 11 02
-    STA (ptr), Y                    ; 2EBB: 91 52
-    DEY                             ; 2EBD: 88
-    LDA RDCHV                       ; 2EBE: AD 10 02
-    STA (ptr), Y                    ; 2EC1: 91 52
-    LDA #&8B                        ; 2EC3: A9 8B
-    LDX #&01                        ; 2EC5: A2 01
-    JSR OSBYTE                      ; 2EC7: 20 F4 FF
-    LDA #&E5                        ; 2ECA: A9 E5
-    JSR OSBYTE                      ; 2ECC: 20 F4 FF
-    SEI                             ; 2ECF: 78
-    LDX #&0F                        ; 2ED0: A2 0F
-    LDY #&2F                        ; 2ED2: A0 2F
-    JSR OSCLI                       ; 2ED4: 20 F7 FF
-    LDX #&17                        ; 2ED7: A2 17
-    LDY #&2F                        ; 2ED9: A0 2F
-    JSR OSCLI                       ; 2EDB: 20 F7 FF
-    CLI                             ; 2EDE: 58
-    LDA #&8B                        ; 2EDF: A9 8B
-    LDX #&00                        ; 2EE1: A2 00
-    LDY #&00                        ; 2EE3: A0 00
-    JSR OSBYTE                      ; 2EE5: 20 F4 FF
+    LDA title_palette, Y
+    JSR vector_set_palette
+    DEY
+    BPL entry_palette
+    ; Put the OS's RDCHV into rdchv_filter's JSR.
+    LDA rdchv_filter_operand_address
+    STA ptr
+    LDA rdchv_filter_operand_address+1
+    STA ptr+1
+    LDA #31                     ; the cursor in the middle of the map
+    STA cursor_x
+    STA cursor_y
+    LDY #1
+    LDA RDCHV+1
+    STA (ptr), Y
+    DEY
+    LDA RDCHV
+    STA (ptr), Y
+    LDA #&8B                    ; *OPT 1,0: no filing system messages
+    LDX #1
+    JSR OSBYTE
+    LDA #&E5                    ; *FX229,1 (X is still 1): Escape is just a key
+    JSR OSBYTE
+    SEI
+    LDX #LO(load_wdata_command)
+    LDY #HI(load_wdata_command)
+    JSR OSCLI
+    LDX #LO(load_ldata_command) ; straight onto the screen
+    LDY #HI(load_ldata_command)
+    JSR OSCLI
+    CLI
+    LDA #&8B                    ; *OPT 0,0
+    LDX #0
+    LDY #0
+    JSR OSBYTE
 .entry_wait_space
-    JSR OSRDCH                      ; 2EE8: 20 E0 FF
-    CMP #&20                        ; 2EEB: C9 20
-    BNE entry_wait_space            ; 2EED: D0 F9
-    LDA #&E5                        ; 2EEF: A9 E5
-    JSR OSBYTE                      ; 2EF1: 20 F4 FF
-    JSR vector_text_colours         ; 2EF4: 20 4D 23
-    LDA brk_handler_address         ; 2EF7: AD 08 11
-    STA BRKV                        ; 2EFA: 8D 02 02
-    LDA brk_handler_address+1       ; 2EFD: AD 09 11
-    STA BRKV+1                      ; 2F00: 8D 03 02
-    JMP vector_main                 ; 2F03: 4C 0A 11
+    JSR OSRDCH
+    CMP #asc(" ")
+    BNE entry_wait_space
+    LDA #&E5                    ; *FX229,0: Escape back on
+    JSR OSBYTE
+    JSR vector_text_colours
+    LDA brk_handler_address
+    STA BRKV
+    LDA brk_handler_address+1
+    STA BRKV+1
+    JMP vector_main
+
+; In: A, X = an OSBYTE call.
 .osbyte_y0
-    LDY #&00                        ; 2F06: A0 00
-    JMP OSBYTE                      ; 2F08: 4C F4 FF
+    LDY #0
+    JMP OSBYTE
+
+; Black, blue, yellow and red for the title, as set_palette_entry wants them.
 .title_palette
-    EQUB &31, &23, &14, &00         ; 2F0B
+    EQUB 3 * 16 + 1, 2 * 16 + 3, 1 * 16 + 4, 0 * 16 + 0
 .load_wdata_command
-    EQUS "L.WDATA"                  ; 2F0F
-    EQUB &0D                        ; 2F16
+    EQUS "L.WDATA", 13
 .load_ldata_command
-    EQUS "L.LDATA"                  ; 2F17
-    EQUB &0D                        ; 2F1E
+    EQUS "L.LDATA", 13
+
+; The rest of the last sector: bytes from H.GRAPH, the Graphics Designer, at
+; the same place in its file (code that ran at &38CF there). The level
+; designer's file was evidently written over a buffer that held it.
 .junk
-    EQUB &A2, &97, &20, &CA, &39, &E6, &74, &A2; 2F1F
-    EQUB &B7, &20, &86, &21, &10, &0B, &A4, &74; 2F27
-    EQUB &F0, &07, &A2, &B7, &20, &CA, &39, &C6; 2F2F
-    EQUB &74, &A2, &CF, &20, &86, &21, &10, &07; 2F37
-    EQUB &A9, &01, &85              ; 2F3F
-    EQUS "w @+"                     ; 2F42
-    EQUB &A2, &CE, &20, &86, &21, &10, &07, &A9; 2F46
-    EQUB &02, &85                   ; 2F4E
-    EQUS "w @+"                     ; 2F50
-    EQUB &A2, &EE, &20, &86, &21, &10, &07, &A9; 2F54
-    EQUB &03, &85                   ; 2F5C
-    EQUS "w @+"                     ; 2F5E
-    EQUB &A2, &ED, &20, &86, &21, &30, &07, &A2; 2F62
-    EQUB &D8, &20, &86, &21, &10, &07, &A9, &00; 2F6A
-    EQUB &85                        ; 2F72
-    EQUS "w @+"                     ; 2F73
-    EQUB &A5, &75, &45, &73, &D0, &06; 2F77
-    EQUS "EtEv"                     ; 2F7D
-    EQUB &F0, &1E, &A5, &78, &38, &E9, &0A, &C9; 2F81
-    EQUB &0A, &B0, &02, &A9, &0A, &85, &78, &A6; 2F89
-    EQUB &73, &A4, &74, &20, &EF, &34, &A6, &75; 2F91
-    EQUB &A4, &76, &20, &EF         ; 2F99
-    EQUS "4LU9"                     ; 2F9D
-    EQUB &A9, &B9, &85, &78, &A2, &A6, &20, &86; 2FA1
-    EQUB &21, &10, &0D, &A5, &77, &48, &E8, &86; 2FA9
-    EQUS "w p9h"                    ; 2FB1
-    EQUB &85, &77, &60, &A2, &B6, &20, &86, &21; 2FB6
-    EQUB &10, &2B, &A6, &73, &A4, &74, &20, &CE; 2FBE
-    EQUB &34, &A0, &03, &A6, &77, &BD, &42, &23; 2FC6
-    EQUB &59, &FF, &34, &91, &50, &88, &10, &F5; 2FCE
-    EQUB &A5, &71, &A6, &73, &A4, &74, &20, &14; 2FD6
-    EQUB &3A, &A5, &71, &D0, &03, &20, &9C, &39; 2FDE
-    EQUB &A5, &71, &20, &D4, &24, &60, &A5, &52; 2FE6
-    EQUB &29, &F8, &85, &52, &A0, &07, &B1, &52; 2FEE
-    EQUB &99, &C2, &39, &88, &10, &F8, &A0, &7F; 2FF6
-    EQUB &A2, &07                   ; 2FFE
+    EQUB &A2, &97, &20, &CA, &39, &E6, &74, &A2
+    EQUB &B7, &20, &86, &21, &10, &0B, &A4, &74
+    EQUB &F0, &07, &A2, &B7, &20, &CA, &39, &C6
+    EQUB &74, &A2, &CF, &20, &86, &21, &10, &07
+    EQUB &A9, &01, &85
+    EQUS "w @+"
+    EQUB &A2, &CE, &20, &86, &21, &10, &07, &A9
+    EQUB &02, &85
+    EQUS "w @+"
+    EQUB &A2, &EE, &20, &86, &21, &10, &07, &A9
+    EQUB &03, &85
+    EQUS "w @+"
+    EQUB &A2, &ED, &20, &86, &21, &30, &07, &A2
+    EQUB &D8, &20, &86, &21, &10, &07, &A9, &00
+    EQUB &85
+    EQUS "w @+"
+    EQUB &A5, &75, &45, &73, &D0, &06
+    EQUS "EtEv"
+    EQUB &F0, &1E, &A5, &78, &38, &E9, &0A, &C9
+    EQUB &0A, &B0, &02, &A9, &0A, &85, &78, &A6
+    EQUB &73, &A4, &74, &20, &EF, &34, &A6, &75
+    EQUB &A4, &76, &20, &EF
+    EQUS "4LU9"
+    EQUB &A9, &B9, &85, &78, &A2, &A6, &20, &86
+    EQUB &21, &10, &0D, &A5, &77, &48, &E8, &86
+    EQUS "w p9h"
+    EQUB &85, &77, &60, &A2, &B6, &20, &86, &21
+    EQUB &10, &2B, &A6, &73, &A4, &74, &20, &CE
+    EQUB &34, &A0, &03, &A6, &77, &BD, &42, &23
+    EQUB &59, &FF, &34, &91, &50, &88, &10, &F5
+    EQUB &A5, &71, &A6, &73, &A4, &74, &20, &14
+    EQUB &3A, &A5, &71, &D0, &03, &20, &9C, &39
+    EQUB &A5, &71, &20, &D4, &24, &60, &A5, &52
+    EQUB &29, &F8, &85, &52, &A0, &07, &B1, &52
+    EQUB &99, &C2, &39, &88, &10, &F8, &A0, &7F
+    EQUB &A2, &07
 ENDSECTION
