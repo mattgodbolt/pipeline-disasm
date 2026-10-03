@@ -26,6 +26,11 @@ with baron pinned by commit; bumping the pin is its own commit.
   (`[[raw]]`) the stub loaders read directly.
 - `tools/mkssd.py` builds the image; `tools/ssdcmp.py` compares and names the
   file and offset (and load address) of any difference.
+- The hidden runs' sectors had deleted data address marks, which an .ssd
+  can't hold (`deleted = true` in the layout). `tools/mkhfe.mjs` builds
+  `build/pipeline.hfe` with them, and `tools/disccmp.mjs` checks it reads
+  the same as the original flux capture `original/E447ED5E.hfe`. Needs
+  `npm ci` once.
 
 ## Tools
 

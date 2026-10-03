@@ -18,8 +18,11 @@ make verify
 ```
 
 needs baron (looked for at `../baron/build/src/baron`, else on the `PATH`;
-override with `BARON=...`) and Python 3.11 or later. It writes
-`build/pipeline.ssd` and compares it with `original/pipeline.ssd`. Baron's
+override with `BARON=...`), Python 3.11 or later, and node with `npm ci` run
+once (for jsbeeb's disc code). It writes `build/pipeline.ssd` and compares
+it with `original/pipeline.ssd`, and `build/pipeline.hfe`, a flux image with
+the original's deleted data marks on its hidden sectors, which it compares
+with the original flux capture. Baron's
 symbol dump lands in `build/symbols.json`, and a listing in
 `build/listing.txt`.
 

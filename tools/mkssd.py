@@ -8,9 +8,14 @@ each file in its last sector, and data hidden in sectors no catalogue entry
 mentions. So baron saves each piece as a raw binary with a .inf sidecar
 (`-p DIR --inf`) and the layout (src/disc.toml) says where each one goes.
 
-usage: mkssd.py LAYOUT.toml BUILD_DIR OUT.ssd
+An .ssd holds sector contents only. Sectors the layout marks `deleted = true`
+had deleted data address marks on the original; `--marks FILE` lists them as
+JSON ({"deleted": [sector, ...]}) for tools/mkhfe.mjs to put back.
+
+usage: mkssd.py [--marks MARKS.json] LAYOUT.toml BUILD_DIR OUT.ssd
 """
 
+import json
 import sys
 import tomllib
 from pathlib import Path
@@ -97,13 +102,31 @@ def build(layout: dict, build_dir: Path) -> bytes:
     return bytes(image.data)
 
 
+def deleted_sectors(layout: dict) -> list:
+    out = []
+    for spec in layout.get("file", []) + layout.get("raw", []):
+        if spec.get("deleted"):
+            length = spec.get("length")
+            if length is None:
+                raise SystemExit(f"{spec['name']}: a deleted run needs its length in the layout")
+            out += range(spec["start"], spec["start"] + (length + SECTOR - 1) // SECTOR)
+    return out
+
+
 def main():
-    if len(sys.argv) != 4:
+    args = sys.argv[1:]
+    marks = None
+    if args[:1] == ["--marks"]:
+        marks = args[1]
+        args = args[2:]
+    if len(args) != 3:
         raise SystemExit(__doc__)
-    layout_path, build_dir, out = sys.argv[1:]
+    layout_path, build_dir, out = args
     with open(layout_path, "rb") as f:
         layout = tomllib.load(f)
     Path(out).write_bytes(build(layout, Path(build_dir)))
+    if marks:
+        Path(marks).write_text(json.dumps({"deleted": deleted_sectors(layout)}) + "\n")
 
 
 if __name__ == "__main__":

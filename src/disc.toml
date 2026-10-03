@@ -107,19 +107,24 @@ locked = true
 slack = "708554A9288555ADDE3120E2300A0A0A0906AAA006BDDC259154CA8810F7A554 38E9088554B002C655CEDE3110D9AD3E2085548550AD3F2085558551A24FA028 86528453A9054CBC2060AC37004000000000000000400000344F000000004001 8002C0030005A5640AA8B9F2"
 
 # Runs of sectors no catalogue entry mentions, read directly by the stub
-# loaders catalogued as GAME, GRAPHIC and LEVDES.
+# loaders catalogued as GAME, GRAPHIC and LEVDES. Every sector of them was
+# written with a deleted data address mark (see original/README.md); the
+# .ssd can't hold that, the .hfe the build also makes does.
 
 [[raw]]
 name = "H.GAME"
+deleted = true
 start = 0x122
 length = 0x2100
 
 [[raw]]
 name = "H.GRAPH"
+deleted = true
 start = 0x145
 length = 0x2100
 
 [[raw]]
 name = "H.LEVDES"
+deleted = true
 start = 0x16D
 length = 0x1F00

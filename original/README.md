@@ -23,6 +23,11 @@ stub loaders read with "read data and deleted data" through OSWORD &7F and
 ignore the result, so the game runs from this .ssd regardless; the marks
 themselves are lost from it. See `src/hidden_loader.6502inc`.
 
+So the capture itself is here too, as `E447ED5E.hfe`. The build makes
+`build/pipeline.hfe` with the marks put back (`src/disc.toml` says which
+sectors), and `tools/disccmp.mjs` checks that it reads the same as this
+capture, sector by sector: IDs, data, and data marks.
+
 ## Other copies considered
 
 - The FSD-reconstructed image in the same archive (`8b8a721db2359be9.hfe`,

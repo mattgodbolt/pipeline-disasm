@@ -17,6 +17,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # The flux image is built and checked with jsbeeb's disc code.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
       - name: Cache baron
         id: baron-cache
         uses: actions/cache@v4
@@ -47,5 +55,6 @@ jobs:
           name: pipeline-build
           path: |
             build/pipeline.ssd
+            build/pipeline.hfe
             build/symbols.json
             build/listing.txt
