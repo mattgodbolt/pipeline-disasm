@@ -1,0 +1,102 @@
+; WDATA: the Level Designer's windows and messages, loaded at &7000.
+;
+; A table of 2-byte pointers at &7000, ended by a zero word; entry n-1 is
+; window or message n, so numbering starts at 1.
+;
+; A window: x, y, width, height (glyph columns and half-character rows), then
+; height+1 lines, the title first and then one per menu item. Each line is a
+; length byte, bit 7 set to start it at the left rather than centre it, and
+; that many glyph codes (see glyphs below). With bit 7 of x set the window
+; stays where it says; clear, it moves out of the cursor's way, measured from
+; the right when the cursor is in the left half and from the bottom when it
+; is in the top half. Space in a window's menu picks its last item (usually
+; OK), or with bit 7 of y set, the item the menu started on.
+;
+; A message: VDU codes and text ended by "|"; &FF switches to highlighted
+; colours. A message without the "|" runs on into the next.
+
+wdata = &7000
+
+; Glyph codes in a window line, by position in this string. "*" stands for
+; the tick, glyph 68. Codes from 64 come from the program (font_digits)
+; rather than the font.
+wdata_glyphs = "ABCDEFGHIJKLMNOPQRSTUVWXYZ.:?<> abcdefghijklmnopqrstuvwxyz1234567890*-"
+GLYPH_X         = 55            ; "x", for a cross
+GLYPH_TICK      = 68
+
+W_SELECT_BLOCK      = 1     ; the sixteen blocks
+W_OPTIONS           = 2
+W_OPTIONS_LOCATION  = 3     ; "Select location:" for the start and finish
+M_WHICH_OBJECT      = 4
+W_OBJECT            = 5
+M_RECORD_NUMBER     = 6     ; where a window's title number goes
+M_OLD_SPRITE        = 7
+M_CHARGES           = 8
+M_ERROR             = 9     ; runs into M_PRESS_ANY_KEY
+M_PRESS_ANY_KEY     = 10
+M_WHICH_MONSTER     = 11
+W_MONSTER           = 12
+W_DIRECTION         = 13    ; north, south, east, west, dead
+W_PRIORITIES        = 14    ; a special monster pattern
+W_RELATIVE_DIRECTION = 15   ; forwards, backwards, left, right
+M_PATTERN_AT        = 16    ; where the special pattern's letters go
+M_INITIAL_TIME      = 17
+M_ENTER_NEW_VALUE   = 18
+M_COLLECTABLES      = 19
+M_REQUIRED          = 20
+W_GRAPHICS          = 21
+W_SPRITES           = 22
+W_COLOURS           = 23
+M_WHICH_PUZZLE      = 24
+W_PUZZLE            = 25
+M_PUZZLE_NAME_AT    = 26    ; where the puzzle window's title name goes
+M_OLD_NAME          = 27
+M_PUZZLE_NAME       = 28
+W_PUZZLE_TYPES      = 29
+W_OBJECT_LOCATION   = 30
+W_MONSTER_LOCATION  = 31
+W_PUZZLE_STATUS     = 32
+M_STATUS_NUMBER_AT  = 33    ; where the status window's number goes
+W_CONDITIONS        = 34
+W_COMPASS           = 35    ; four directions, or eight with the height patched
+W_PUZZLE_LOCATION   = 36
+W_FILES             = 37
+W_SURE              = 38
+M_LOADING           = 39
+M_SAVING            = 40
+M_ENTER_FILENAME    = 41
+W_DISORIENTATE      = 42
+W_PLACE_BLOCK       = 43
+W_SET_LEVELS        = 44
+M_REVISED_TIME      = 45
+M_COLLECTABLES_REQUIRED = 46
+W_SWAP_NEXT         = 47
+W_MOVE_BLOCK        = 48
+W_THROW_OBJECT      = 49
+M_OBJECT_NUMBER     = 50
+M_DISTANCE          = 51
+W_CHARGE_OBJECT     = 52
+W_DEFINE_DISPLAY    = 53
+W_SELECT_PUZZLES    = 54    ; puzzles A, B, C to turn on or off
+M_OLD_PUZZLE_NUMBER = 55
+M_NUMBER_OF_CRATES  = 56
+W_MOVE_MONSTER      = 57
+M_MONSTER_NUMBER    = 58
+W_PLACE_MONSTER     = 59
+M_NAME_QUOTE        = 60    ; 'Name: "'
+M_QUOTE_PUZZLE      = 61    ; '" Puzzle '
+W_HELP              = 62
+W_ABOUT             = 63
+M_ENTER_CODE        = 64
+M_WRONG_CODE        = 65
+W_LOST_LIFE         = 66
+W_SIMULATE          = 67
+M_ERROR_NUMBER_AT   = 68
+M_ERROR_TEXT_AT     = 69
+W_PATTERNS          = 70
+M_FILING_WINDOW     = 71    ; a one-line text window for the filing system
+M_TOO_MANY          = 72    ; runs into M_RESET_WINDOWS
+M_RESET_WINDOWS     = 73
+W_MONSTER_NUMBER    = 74
+M_INSERT_DISC       = 75
+M_NOTHING           = 76

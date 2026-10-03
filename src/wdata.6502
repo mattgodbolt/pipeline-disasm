@@ -1,4 +1,650 @@
-; $.WDATA: &C4E bytes at sector &104.
-SECTION wdata, filename="WDATA", org=&7000, load=&7000, exec=&0
-    INCBIN "../data/wdata.bin"
+; $.WDATA: the Level Designer's windows and messages, loaded at &7000
+; (format and numbering in wdata.6502inc).
+INCLUDE "wdata.6502inc"
+
+; Window lines are glyph codes, by position in wdata_glyphs.
+FUNCTION glyph_codes(s) = FIND(CODES(wdata_glyphs), CODES(s))
+FIXED = &80                     ; in x: the window stays put
+SPACE_STAYS = &80               ; in y: Space picks the item the menu
+                                ; started on, not the last
+MACRO WINDOW x, y, width, height
+    EQUB x, y, width, height
+ENDMACRO
+MACRO LINE s                    ; centred
+    EQUB LEN(s), glyph_codes(s)
+ENDMACRO
+MACRO LEFT s                    ; from the left
+    EQUB LEN(s) OR &80, glyph_codes(s)
+ENDMACRO
+
+; Message codes besides text.
+TAB = 31                        ; VDU 31, x, y
+HIGHLIGHT = &FF                 ; highlighted colours from here
+VDU_CLS = 12
+VDU_RESET_WINDOWS = 26
+VDU_TEXT_WINDOW = 28            ; VDU 28, left, bottom, right, top
+
+SECTION wdata, filename="WDATA", org=wdata, load=wdata, exec=0
+.wdata_table
+    ASSERT * == wdata + (W_SELECT_BLOCK - 1) * 2
+    EQUW win_select_block
+    ASSERT * == wdata + (W_OPTIONS - 1) * 2
+    EQUW win_options
+    ASSERT * == wdata + (W_OPTIONS_LOCATION - 1) * 2
+    EQUW win_options_location
+    ASSERT * == wdata + (M_WHICH_OBJECT - 1) * 2
+    EQUW msg_which_object
+    ASSERT * == wdata + (W_OBJECT - 1) * 2
+    EQUW win_object
+    ASSERT * == wdata + (M_RECORD_NUMBER - 1) * 2
+    EQUW msg_record_number
+    ASSERT * == wdata + (M_OLD_SPRITE - 1) * 2
+    EQUW msg_old_sprite
+    ASSERT * == wdata + (M_CHARGES - 1) * 2
+    EQUW msg_charges
+    ASSERT * == wdata + (M_ERROR - 1) * 2
+    EQUW msg_error
+    ASSERT * == wdata + (M_PRESS_ANY_KEY - 1) * 2
+    EQUW msg_press_any_key
+    ASSERT * == wdata + (M_WHICH_MONSTER - 1) * 2
+    EQUW msg_which_monster
+    ASSERT * == wdata + (W_MONSTER - 1) * 2
+    EQUW win_monster
+    ASSERT * == wdata + (W_DIRECTION - 1) * 2
+    EQUW win_direction
+    ASSERT * == wdata + (W_PRIORITIES - 1) * 2
+    EQUW win_priorities
+    ASSERT * == wdata + (W_RELATIVE_DIRECTION - 1) * 2
+    EQUW win_relative_direction
+    ASSERT * == wdata + (M_PATTERN_AT - 1) * 2
+    EQUW msg_pattern_at
+    ASSERT * == wdata + (M_INITIAL_TIME - 1) * 2
+    EQUW msg_initial_time
+    ASSERT * == wdata + (M_ENTER_NEW_VALUE - 1) * 2
+    EQUW msg_enter_new_value
+    ASSERT * == wdata + (M_COLLECTABLES - 1) * 2
+    EQUW msg_collectables
+    ASSERT * == wdata + (M_REQUIRED - 1) * 2
+    EQUW msg_required
+    ASSERT * == wdata + (W_GRAPHICS - 1) * 2
+    EQUW win_graphics
+    ASSERT * == wdata + (W_SPRITES - 1) * 2
+    EQUW win_sprites
+    ASSERT * == wdata + (W_COLOURS - 1) * 2
+    EQUW win_colours
+    ASSERT * == wdata + (M_WHICH_PUZZLE - 1) * 2
+    EQUW msg_which_puzzle
+    ASSERT * == wdata + (W_PUZZLE - 1) * 2
+    EQUW win_puzzle
+    ASSERT * == wdata + (M_PUZZLE_NAME_AT - 1) * 2
+    EQUW msg_puzzle_name_at
+    ASSERT * == wdata + (M_OLD_NAME - 1) * 2
+    EQUW msg_old_name
+    ASSERT * == wdata + (M_PUZZLE_NAME - 1) * 2
+    EQUW msg_puzzle_name
+    ASSERT * == wdata + (W_PUZZLE_TYPES - 1) * 2
+    EQUW win_puzzle_types
+    ASSERT * == wdata + (W_OBJECT_LOCATION - 1) * 2
+    EQUW win_object_location
+    ASSERT * == wdata + (W_MONSTER_LOCATION - 1) * 2
+    EQUW win_monster_location
+    ASSERT * == wdata + (W_PUZZLE_STATUS - 1) * 2
+    EQUW win_puzzle_status
+    ASSERT * == wdata + (M_STATUS_NUMBER_AT - 1) * 2
+    EQUW msg_status_number_at
+    ASSERT * == wdata + (W_CONDITIONS - 1) * 2
+    EQUW win_conditions
+    ASSERT * == wdata + (W_COMPASS - 1) * 2
+    EQUW win_compass
+    ASSERT * == wdata + (W_PUZZLE_LOCATION - 1) * 2
+    EQUW win_puzzle_location
+    ASSERT * == wdata + (W_FILES - 1) * 2
+    EQUW win_files
+    ASSERT * == wdata + (W_SURE - 1) * 2
+    EQUW win_sure
+    ASSERT * == wdata + (M_LOADING - 1) * 2
+    EQUW msg_loading
+    ASSERT * == wdata + (M_SAVING - 1) * 2
+    EQUW msg_saving
+    ASSERT * == wdata + (M_ENTER_FILENAME - 1) * 2
+    EQUW msg_enter_filename
+    ASSERT * == wdata + (W_DISORIENTATE - 1) * 2
+    EQUW win_disorientate
+    ASSERT * == wdata + (W_PLACE_BLOCK - 1) * 2
+    EQUW win_place_block
+    ASSERT * == wdata + (W_SET_LEVELS - 1) * 2
+    EQUW win_set_levels
+    ASSERT * == wdata + (M_REVISED_TIME - 1) * 2
+    EQUW msg_revised_time
+    ASSERT * == wdata + (M_COLLECTABLES_REQUIRED - 1) * 2
+    EQUW msg_collectables_required
+    ASSERT * == wdata + (W_SWAP_NEXT - 1) * 2
+    EQUW win_swap_next
+    ASSERT * == wdata + (W_MOVE_BLOCK - 1) * 2
+    EQUW win_move_block
+    ASSERT * == wdata + (W_THROW_OBJECT - 1) * 2
+    EQUW win_throw_object
+    ASSERT * == wdata + (M_OBJECT_NUMBER - 1) * 2
+    EQUW msg_object_number
+    ASSERT * == wdata + (M_DISTANCE - 1) * 2
+    EQUW msg_distance
+    ASSERT * == wdata + (W_CHARGE_OBJECT - 1) * 2
+    EQUW win_charge_object
+    ASSERT * == wdata + (W_DEFINE_DISPLAY - 1) * 2
+    EQUW win_define_display
+    ASSERT * == wdata + (W_SELECT_PUZZLES - 1) * 2
+    EQUW win_select_puzzles
+    ASSERT * == wdata + (M_OLD_PUZZLE_NUMBER - 1) * 2
+    EQUW msg_old_puzzle_number
+    ASSERT * == wdata + (M_NUMBER_OF_CRATES - 1) * 2
+    EQUW msg_number_of_crates
+    ASSERT * == wdata + (W_MOVE_MONSTER - 1) * 2
+    EQUW win_move_monster
+    ASSERT * == wdata + (M_MONSTER_NUMBER - 1) * 2
+    EQUW msg_monster_number
+    ASSERT * == wdata + (W_PLACE_MONSTER - 1) * 2
+    EQUW win_place_monster
+    ASSERT * == wdata + (M_NAME_QUOTE - 1) * 2
+    EQUW msg_name_quote
+    ASSERT * == wdata + (M_QUOTE_PUZZLE - 1) * 2
+    EQUW msg_quote_puzzle
+    ASSERT * == wdata + (W_HELP - 1) * 2
+    EQUW win_help
+    ASSERT * == wdata + (W_ABOUT - 1) * 2
+    EQUW win_about
+    ASSERT * == wdata + (M_ENTER_CODE - 1) * 2
+    EQUW msg_enter_code
+    ASSERT * == wdata + (M_WRONG_CODE - 1) * 2
+    EQUW msg_wrong_code
+    ASSERT * == wdata + (W_LOST_LIFE - 1) * 2
+    EQUW win_lost_life
+    ASSERT * == wdata + (W_SIMULATE - 1) * 2
+    EQUW win_simulate
+    ASSERT * == wdata + (M_ERROR_NUMBER_AT - 1) * 2
+    EQUW msg_error_number_at
+    ASSERT * == wdata + (M_ERROR_TEXT_AT - 1) * 2
+    EQUW msg_error_text_at
+    ASSERT * == wdata + (W_PATTERNS - 1) * 2
+    EQUW win_patterns
+    ASSERT * == wdata + (M_FILING_WINDOW - 1) * 2
+    EQUW msg_filing_window
+    ASSERT * == wdata + (M_TOO_MANY - 1) * 2
+    EQUW msg_too_many
+    ASSERT * == wdata + (M_RESET_WINDOWS - 1) * 2
+    EQUW msg_reset_windows
+    ASSERT * == wdata + (W_MONSTER_NUMBER - 1) * 2
+    EQUW win_monster_number
+    ASSERT * == wdata + (M_INSERT_DISC - 1) * 2
+    EQUW msg_insert_disc
+    ASSERT * == wdata + (M_NOTHING - 1) * 2
+    EQUW msg_nothing
+    EQUW 0
+    ALIGN &100
+
+.win_select_block
+    WINDOW 2, SPACE_STAYS + 1, 22, 16
+    LINE "Select:"
+    LINE "Blank"
+    LINE "SE curve"
+    LINE "SW curve"
+    LINE "NE curve"
+    LINE "NW curve"
+    LINE "Wall 1"
+    LINE "Wall 2"
+    LINE "Collectable"
+    LINE "Fatal trap"
+    LINE "S.Monster"
+    LINE "Crate"
+    LINE "Marker"
+    LINE "Horz.Pipe"
+    LINE "Vert.Pipe"
+    LINE "Junction"
+    LINE "Barricade"
+
+.win_options
+    WINDOW 24, 1, 18, 10
+    LINE "Options:"
+    LINE "Start"
+    LINE "Finish"
+    LINE "Object"
+    LINE "M.Monster"
+    LINE "Puzzle"
+    LINE "Collects"
+    LINE "Graphics"
+    LINE "Time"
+    LINE "Clear"
+    LINE "<< OK >>"
+
+.win_options_location
+    WINDOW 6, 3, 18, 2
+    LINE "OPTIONS"
+    LINE "Select"
+    LINE "location:"
+
+.msg_which_object
+    EQUS "Which object ?|"
+
+.win_object
+    WINDOW FIXED + 14, 3, 20, 8
+    LINE "Object  "
+    LEFT "Position"
+    LEFT "Exists ?"
+    LINE "Sprite no."
+    LINE "Charge"
+    LEFT "Charges:"
+    LEFT "Vanish:"
+    LEFT "Throw:"
+    LINE "<< OK >>"
+
+.msg_record_number
+    EQUS TAB, TAB, 2, HIGHLIGHT, "|"
+
+.msg_old_sprite
+    EQUS "Old sprite no.:|"
+
+.msg_charges
+    EQUS "No. of charges:|"
+
+.msg_error
+    ; (no "|": runs on into M_PRESS_ANY_KEY)
+    EQUS "Error", TAB, 20, 11, "has occurred !"
+
+.msg_press_any_key
+    EQUS TAB, VDU_TEXT_WINDOW, 13, "Press any key...|"
+
+.msg_which_monster
+    EQUS "Which monster ?|"
+
+.win_monster
+    WINDOW FIXED + 14, 3, 18, 6
+    LEFT "Monster"
+    LINE "Position"
+    LINE "Direction"
+    LINE "Pattern"
+    LINE "Killed by"
+    LINE "Result"
+    LINE "<< OK >>"
+
+.win_direction
+    WINDOW 7, SPACE_STAYS + 18, 18, 5
+    LINE "Direction"
+    LINE "North"
+    LINE "South"
+    LINE "East"
+    LINE "West"
+    LINE "DEAD"
+
+.win_priorities
+    WINDOW FIXED + 16, 13, 30, 5
+    LINE "Pattern:     "
+    LINE "First priority"
+    LINE "Second priority"
+    LINE "Third priority"
+    LINE "Fourth priority"
+    LINE "<< OK >>"
+
+.win_relative_direction
+    WINDOW FIXED + 7, SPACE_STAYS + 18, 20, 4
+    LINE "Direction:"
+    LINE "Forwards"
+    LINE "Backwards"
+    LINE "Left"
+    LINE "Right"
+
+.msg_pattern_at
+    EQUS TAB, """", 10, HIGHLIGHT, "|"
+
+.msg_initial_time
+    EQUS "Initial time:|"
+
+.msg_enter_new_value
+    EQUS "Enter new value:|"
+
+.msg_collectables
+    EQUS "Collectables:|"
+
+.msg_required
+    EQUS " Required:|"
+
+.win_graphics
+    WINDOW 2, 5, 26, 9
+    LINE "Graphics:"
+    LINE "Wall one"
+    LINE "Wall two"
+    LINE "Collectable"
+    LINE "Fatal trap"
+    LINE "First colour"
+    LINE "Second colour"
+    LINE "Third colour"
+    LINE "Fourth colour"
+    LINE "<< OK >>"
+
+.win_sprites
+    WINDOW 20, SPACE_STAYS + 17, 18, 3
+    LINE "Sprites"
+    LINE "Sprite A"
+    LINE "Sprite B"
+    LINE "Patterned"
+
+.win_colours
+    WINDOW 23, SPACE_STAYS + 16, 14, 8
+    LINE "Colours"
+    LINE "Black"
+    LINE "Red"
+    LINE "Green"
+    LINE "Yellow"
+    LINE "Blue"
+    LINE "Magenta"
+    LINE "Cyan"
+    LINE "White"
+
+.msg_which_puzzle
+    EQUS "Which puzzle ?|"
+
+.win_puzzle
+    WINDOW FIXED + 14, 2, 20, 6
+    LINE " "
+    LINE "Name"
+    LINE "Type"
+    LINE "Status"
+    LINE "Conditions"
+    LINE "Effects"
+    LINE "<< OK >>"
+
+.msg_puzzle_name_at
+    EQUS TAB, TAB, 1, HIGHLIGHT, "|"
+
+.msg_old_name
+    EQUS "Old name: |"
+
+.msg_puzzle_name
+    EQUS "Puzzle name:|"
+
+.win_puzzle_types
+    WINDOW 2, SPACE_STAYS + 11, 30, 16
+    LINE "Puzzle types"
+    LINE "Place block"
+    LINE "Move block"
+    LINE "Next block"
+    LINE "Set levels"
+    LINE "Throw object"
+    LINE "Detonate object"
+    LINE "Move monster"
+    LINE "Place monster"
+    LINE "Teleport"
+    LINE "Swap next block"
+    LINE "Turn on puzzle"
+    LINE "Turn off puzzle"
+    LINE "Charge object"
+    LINE "Push crates"
+    LINE "Move next block"
+    LINE "Disorientate"
+
+.win_object_location
+    WINDOW 3, 2, 18, 2
+    LINE "OBJECT"
+    LINE "Select"
+    LINE "location:"
+
+.win_monster_location
+    WINDOW 2, 3, 18, 2
+    LINE "MONSTER"
+    LINE "Select"
+    LINE "location:"
+
+.win_puzzle_status
+    WINDOW FIXED + 18, 7, 30, 4
+    LINE "Puzzle status:"
+    LEFT "Use object 1:"
+    LEFT "Turned on:"
+    LEFT "Re-usable:"
+    LINE "<< OK >>"
+
+.msg_status_number_at
+    EQUS TAB, "$", 6, "|"
+
+.win_conditions
+    WINDOW 1, 3, 26, 9
+    LINE "Conditions:"
+    LINE "Position"
+    LEFT "Check X:"
+    LEFT "Check Y:"
+    LINE "Next block"
+    LEFT "Check next:"
+    LINE "Direction"
+    LEFT "Check dir.:"
+    LEFT "Collects.:"
+    LINE "<< OK >>"
+
+.win_compass
+    WINDOW 8, SPACE_STAYS + 5, 20, 4
+    LINE "Direction"
+    LINE "North"
+    LINE "South"
+    LINE "East"
+    LINE "West"
+    ; Four more, for when set_direction_menu_size makes it eight.
+    LINE "North-west"
+    LINE "North-east"
+    LINE "South-west"
+    LINE "South-east"
+
+.win_puzzle_location
+    WINDOW 2, 2, 18, 2
+    LINE "PUZZLE"
+    LINE "Select"
+    LINE "location:"
+
+.win_files
+    WINDOW 11, 5, 20, 5
+    LINE "Files:"
+    LINE "Load level"
+    LINE "Save level"
+    LINE "Edit code"
+    LINE "Exit"
+    LINE "<< OK >>"
+
+.win_sure
+    WINDOW 13, 7, 16, 2
+    LINE "SURE ?"
+    LINE "Press Y"
+    LINE "or N"
+
+.msg_loading
+    EQUS "Loading new level|"
+
+.msg_saving
+    EQUS "Saving current level|"
+
+.msg_enter_filename
+    EQUS "Enter filename:|"
+
+.win_disorientate
+    WINDOW 12, 7, 24, 2
+    LINE "Disorientate"
+    LINE "Reverses"
+    LINE "control keys"
+
+.win_place_block
+    WINDOW 15, 5, 28, 3
+    LINE "Place block"
+    LINE "Block position"
+    LINE "Block type"
+    LINE "<< OK >>"
+
+.win_set_levels
+    WINDOW 13, 6, 20, 5
+    LINE "Set levels"
+    LINE "Time"
+    LEFT "Change:"
+    LINE "Collects."
+    LEFT "Change:"
+    LINE "<< OK >>"
+
+.msg_revised_time
+    EQUS "Revised amount of time:|"
+
+.msg_collectables_required
+    EQUS "Collectables required:|"
+
+.win_swap_next
+    WINDOW 4, 8, 18, 3
+    LINE "Swap next"
+    LINE "Block A"
+    LINE "Block B"
+    LINE "<< OK >>"
+
+.win_move_block
+    WINDOW 17, 7, 28, 3
+    LINE "Move block"
+    LINE "Block position"
+    LINE "Direction"
+    LINE "<< OK >>"
+
+.win_throw_object
+    WINDOW 6, 4, 24, 3
+    LINE "Throw object"
+    LINE "Object no."
+    LINE "Distance"
+    LINE "<< OK >>"
+
+.msg_object_number
+    EQUS "Object number:|"
+
+.msg_distance
+    EQUS "Distance in blocks:|"
+
+.win_charge_object
+    WINDOW 5, 3, 26, 3
+    LINE "Charge object"
+    LINE "Object no."
+    LINE "No.of charges"
+    LINE "<< OK >>"
+
+.win_define_display
+    WINDOW 5, 11, 16, 3
+    LINE "Options"
+    LINE "Define"
+    LINE "Display"
+    LINE "<< OK >>"
+
+.win_select_puzzles
+    WINDOW 2, 19, 18, 5
+    LINE "Select:"
+    LINE "Puzzle A"
+    LINE "Puzzle B"
+    LINE "Puzzle C"
+    LEFT "Single:"
+    LINE "<< OK >>"
+
+.msg_old_puzzle_number
+    EQUS "Old puzzle no.:", 9, "|"
+
+.msg_number_of_crates
+    EQUS "Number of crates:|"
+
+.win_move_monster
+    WINDOW 16, 5, 24, 3
+    LINE "Move monster"
+    LINE "Monster no."
+    LINE "Direction"
+    LINE "<< OK >>"
+
+.msg_monster_number
+    EQUS "Monster number:|"
+
+.win_place_monster
+    WINDOW FIXED + 9, 6, 26, 5
+    LINE "Place monster"
+    LINE "Monster no."
+    LINE "Position"
+    LINE "Direction"
+    LINE "Pattern"
+    LINE "<< OK >>"
+
+.msg_name_quote
+    EQUS "Name: ""|"
+
+.msg_quote_puzzle
+    EQUS """ Puzzle |"
+
+.win_help
+    WINDOW 7, 1, 22, 3
+    LINE "Help:"
+    LINE "Find puzzle"
+    LEFT "Simulate"
+    LINE "<< OK >>"
+
+.win_about
+    WINDOW FIXED + 32, 1, 30, 8
+    LINE "PIPELINE"
+    LINE " "
+    LINE "LEVEL DESIGNER"
+    LINE " "
+    LINE "By:"
+    LINE "IAN HOLMES"
+    LINE "And:"
+    LINE "WILLIAM REEVE"
+    LINE " "
+
+.msg_enter_code
+    EQUS "Enter editing code:|"
+
+.msg_wrong_code
+    EQUS "Sorry! Wrong code.|"
+
+.win_lost_life
+    WINDOW 7, 9, 16, 3
+    LINE "Simulate"
+    LINE "You have"
+    LINE "lost one"
+    LINE "life."
+
+.win_simulate
+    WINDOW 1, 3, 16, 2
+    LINE "Simulate"
+    LINE "Move"
+    LINE "cursor"
+
+.msg_error_number_at
+    EQUS TAB, 16, 11, "|"
+
+.msg_error_text_at
+    EQUS TAB, "#", VDU_CLS, "|"
+
+.win_patterns
+    WINDOW FIXED + 1, SPACE_STAYS + 14, 28, 5
+    LINE "Patterns:"
+    LINE "Back and forth"
+    LINE "Follow edges"
+    LINE "Left wall"
+    LINE "Right wall"
+    LINE "Special"
+
+.msg_filing_window
+    EQUS "       ", VDU_TEXT_WINDOW, 0, 13, 22, 13, VDU_CLS, "|"
+
+.msg_too_many
+    ; (no "|": runs on into M_RESET_WINDOWS)
+    EQUS TAB, 2, VDU_CLS, "Too many collectables"
+
+.msg_reset_windows
+    EQUS VDU_RESET_WINDOWS, "|"
+
+.win_monster_number
+    WINDOW 13, SPACE_STAYS + 17, 24, 5
+    LINE "Monster no."
+    LINE "Monster 1"
+    LINE "Monster 2"
+    LINE "Monster 3"
+    LINE "Monster 4"
+    LINE "All monsters"
+
+.msg_insert_disc
+    ; (no "|": runs on into M_NOTHING)
+    EQUS "Please insert PIPELINE disk"
+
+.msg_nothing
+    EQUS "|"
+
 ENDSECTION

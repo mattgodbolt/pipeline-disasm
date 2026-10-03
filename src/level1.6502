@@ -1,4 +1,235 @@
-; $.LEVEL1: &A5F bytes at sector &0DC.
-SECTION level1, filename="LEVEL1", org=&25A1, load=&25A1, exec=&8380
-    INCBIN "../data/level1.bin"
+; $.LEVEL1: the first level
+;
+; A level as the Level Designer saves it (layout in level.6502inc). Its
+; editing code is 677636.
+INCLUDE "level.6502inc"
+
+SECTION level1, filename="LEVEL1", org=level, load=level, exec=&8380
+
+; The puzzles' names, kept as two tables: the first eight characters of each,
+; then the last two.
+names_1_4 = {"First Door", "Telept Bck", "Strength  ", "Detonate  "}
+names_5_8 = {"Boob Obj 1", "Hammer    ", "Puzzle 7  ", "Tel Bck On"}
+names_9_12 = {"Telept Est", "Recharge  ", "Boob obj 1", "Booby 1   "}
+names_13_16 = {"Boob Obj 2", "Real Start", "Monleap on", "Monleap   "}
+names_17_20 = {"Monleap of", "Repl Obj 4", "Throw Obj ", "Telept Et2"}
+names_21_24 = {"One way 2 ", "Tel Bck   ", "3rd door  ", "One way   "}
+names_25_28 = {"2nd door  ", "Relocate  ", "Order 1   ", "Order 2   "}
+names_29_32 = {"Order 3   ", "Order 4   ", "4th door  ", "One way 3 "}
+puzzle_names = CONCAT(names_1_4, names_5_8, names_9_12, names_13_16, names_17_20, names_21_24, names_25_28, names_29_32)
+    ASSERT * == level_names
+FOR n = 0..PUZZLES-1 : EQUS puzzle_names[n][0..7] : NEXT
+    ASSERT * == level_name_ends
+FOR n = 0..PUZZLES-1 : EQUS puzzle_names[n][8..9] : NEXT
+
+    ASSERT * == level_code
+    EDITING_CODE "677636"
+    ASSERT * == level_palette
+    EQUB 0 * 16 + 0, 1 * 16 + 4, 2 * 16 + 3, 3 * 16 + 1    ; black, blue, yellow, red
+    ASSERT * == level_start_x
+    EQUB 62 - 4, 35 - 4            ; start (62, 35)
+    EQUB 124                       ; collectables needed
+    EQUB 250                       ; time
+    EQUB 31, 28                    ; finish
+    EQUB TILE_COLLECTABLE * 16 + TILE_WALL_2  ; monsters die on wall 2 and
+                                ; leave a collectable
+    EQUB %00000111              ; sprites: wall one, wall two, collectable, trap
+
+    ASSERT * == level_objects
+    OBJECT 32, 30, 0, OBJECT_NO_THROW + 2
+    OBJECT 57, 15, 3, OBJECT_NO_CHARGES + OBJECT_NO_THROW + 2
+    OBJECT 24, 30, 8, OBJECT_VANISHES + OBJECT_NO_THROW + 1
+    OBJECT 31, 47, 13, OBJECT_NO_THROW + 1
+    OBJECT 12, 48, 5, OBJECT_VANISHES + 1
+    OBJECT 38, 46, 4, 10
+    OBJECT 54, 36, 2, OBJECT_NO_THROW + 3
+    OBJECT 30, 38, 14, OBJECT_NO_CHARGES + OBJECT_VANISHES + OBJECT_NO_THROW + 1
+
+    ASSERT * == level_monsters
+    MONSTER 45, 32, 2, PATTERN_FOLLOW_EDGES   ; north
+    MONSTER 8, 31, 1, PATTERN_LEFT_WALL   ; east
+    MONSTER 1, 5, 2, PATTERN_FOLLOW_EDGES   ; north
+    MONSTER 15, 3, 3, PATTERN_FOLLOW_EDGES   ; south
+
+    ASSERT * == level_puzzle_types
+    EQUB PUZZLE_MOVE_BLOCK + PUZZLE_USES_OBJECT + PUZZLE_REUSABLE   ; 1: First Door
+    EQUB PUZZLE_TELEPORT + PUZZLE_USES_OBJECT + PUZZLE_REUSABLE   ; 2: Telept Bck
+    EQUB PUZZLE_PUSH_CRATES + PUZZLE_USES_OBJECT + PUZZLE_REUSABLE   ; 3: Strength  
+    EQUB PUZZLE_DETONATE_OBJECT + PUZZLE_USES_OBJECT   ; 4: Detonate  
+    EQUB PUZZLE_PLACE_BLOCK + PUZZLE_USES_OBJECT   ; 5: Boob Obj 1
+    EQUB PUZZLE_NEXT_BLOCK + PUZZLE_USES_OBJECT + PUZZLE_REUSABLE   ; 6: Hammer    
+    EQUB PUZZLE_DISORIENTATE + PUZZLE_USES_OBJECT + PUZZLE_OFF   ; 7: Puzzle 7  
+    EQUB PUZZLE_TURN_ON + PUZZLE_REUSABLE   ; 8: Tel Bck On
+    EQUB PUZZLE_TELEPORT + PUZZLE_REUSABLE   ; 9: Telept Est
+    EQUB PUZZLE_SET_LEVELS + PUZZLE_REUSABLE   ; 10: Recharge  
+    EQUB PUZZLE_PLACE_BLOCK + PUZZLE_USES_OBJECT   ; 11: Boob obj 1
+    EQUB PUZZLE_PLACE_BLOCK   ; 12: Booby 1   
+    EQUB PUZZLE_PLACE_BLOCK + PUZZLE_USES_OBJECT   ; 13: Boob Obj 2
+    EQUB PUZZLE_TELEPORT + PUZZLE_REUSABLE   ; 14: Real Start
+    EQUB PUZZLE_TURN_ON + PUZZLE_REUSABLE   ; 15: Monleap on
+    EQUB PUZZLE_MOVE_NEXT_BLOCK + PUZZLE_OFF + PUZZLE_REUSABLE   ; 16: Monleap   
+    EQUB PUZZLE_TURN_OFF + PUZZLE_REUSABLE   ; 17: Monleap of
+    EQUB PUZZLE_PLACE_BLOCK   ; 18: Repl Obj 4
+    EQUB PUZZLE_THROW_OBJECT   ; 19: Throw Obj 
+    EQUB PUZZLE_TELEPORT + PUZZLE_REUSABLE   ; 20: Telept Et2
+    EQUB PUZZLE_MOVE_BLOCK   ; 21: One way 2 
+    EQUB PUZZLE_TELEPORT + PUZZLE_OFF + PUZZLE_REUSABLE   ; 22: Tel Bck   
+    EQUB PUZZLE_PLACE_BLOCK + PUZZLE_USES_OBJECT   ; 23: 3rd door  
+    EQUB PUZZLE_PLACE_BLOCK   ; 24: One way   
+    EQUB PUZZLE_MOVE_BLOCK + PUZZLE_USES_OBJECT   ; 25: 2nd door  
+    EQUB PUZZLE_PLACE_MONSTER   ; 26: Relocate  
+    EQUB PUZZLE_PLACE_BLOCK   ; 27: Order 1   
+    EQUB PUZZLE_PLACE_BLOCK   ; 28: Order 2   
+    EQUB PUZZLE_PLACE_BLOCK   ; 29: Order 3   
+    EQUB PUZZLE_PLACE_BLOCK   ; 30: Order 4   
+    EQUB PUZZLE_PLACE_BLOCK + PUZZLE_USES_OBJECT   ; 31: 4th door  
+    EQUB PUZZLE_PLACE_BLOCK   ; 32: One way 3 
+
+    ASSERT * == level_puzzle_positions
+    EQUB 31, 32   ; 1
+    EQUB IGNORE + 0, IGNORE + 0   ; 2
+    EQUB IGNORE + 0, IGNORE + 0   ; 3
+    EQUB 31, IGNORE + 47   ; 4
+    EQUB 6, 46   ; 5
+    EQUB IGNORE + 0, IGNORE + 0   ; 6
+    EQUB IGNORE + 0, IGNORE + 0   ; 7
+    EQUB 38, 9   ; 8
+    EQUB 22, 61   ; 9
+    EQUB 30, 33   ; 10
+    EQUB 6, 46   ; 11
+    EQUB 31, 48   ; 12
+    EQUB 6, 46   ; 13
+    EQUB IGNORE + 24, 61   ; 14
+    EQUB 1, 59   ; 15
+    EQUB IGNORE + 0, IGNORE + 0   ; 16
+    EQUB 31, 30   ; 17
+    EQUB 31, 48   ; 18
+    EQUB 11, 46   ; 19
+    EQUB 19, 61   ; 20
+    EQUB 51, 2   ; 21
+    EQUB IGNORE + 0, IGNORE + 0   ; 22
+    EQUB 3, 16   ; 23
+    EQUB 19, 53   ; 24
+    EQUB 24, 52   ; 25
+    EQUB 49, 25   ; 26
+    EQUB 41, 4   ; 27
+    EQUB 43, 5   ; 28
+    EQUB 45, 5   ; 29
+    EQUB 47, 4   ; 30
+    EQUB 40, 9   ; 31
+    EQUB 59, 0   ; 32
+
+    ASSERT * == level_puzzle_effects
+; Each puzzle's effect (meaning by type), then its conditions byte.
+    EQUB &01, &1F, &21, &F9   ; 1: move the block at (31, 33) east; if next block TILE_MARKER and going south
+    EQUB &00, &1B, &1A, &00   ; 2: teleport to (31, 30)
+    EQUB &0F, &00, &00, &00   ; 3: push 15 crates
+    EQUB &07, &00, &1C, &48   ; 4: detonate object 8; if next block TILE_CRATE
+    EQUB &0C, &07, &30, &CD   ; 5: place TILE_HORZ_PIPE at (7, 48); if next block TILE_VERT_PIPE and going west
+    EQUB &00, &00, &00, &46   ; 6: next block TILE_BLANK; if next block TILE_FATAL_TRAP
+    EQUB &15, &15, &15, &00   ; 7: disorientate
+    EQUB &15, &15, &15, &A0   ; 8: turn on puzzles 22, 22, 22; if going north
+    EQUB &00, &2B, &1B, &90   ; 9: teleport to (47, 31); if going east
+    EQUB &01, &FA, &00, &80   ; 10: set time 250; if going west
+    EQUB &0C, &07, &30, &CD   ; 11: place TILE_HORZ_PIPE at (7, 48); if next block TILE_VERT_PIPE and going west
+    EQUB &08, &1F, &31, &A0   ; 12: place TILE_CRATE at (31, 49); if going north
+    EQUB &0C, &09, &30, &CD   ; 13: place TILE_HORZ_PIPE at (9, 48); if next block TILE_VERT_PIPE and going west
+    EQUB &00, &1B, &1A, &EA   ; 14: teleport to (31, 30); if next block TILE_WALL_2 and going north
+    EQUB &0F, &0F, &0F, &00   ; 15: turn on puzzles 16, 16, 16
+    EQUB &02, &00, &00, &5E   ; 16: move the next block backwards; if next block TILE_BARRICADE
+    EQUB &0F, &15, &0F, &00   ; 17: turn off puzzles 16, 22, 16
+    EQUB &08, &1F, &2F, &E0   ; 18: place TILE_CRATE at (31, 47); if next block TILE_BLANK and going north
+    EQUB &04, &09, &39, &8D   ; 19: throw object 5 57 blocks; if going west
+    EQUB &00, &22, &06, &90   ; 20: teleport to (38, 10); if going east
+    EQUB &01, &31, &00, &A0   ; 21: move the block at (49, 0) east; if going north
+    EQUB &00, &25, &03, &4E   ; 22: teleport to (41, 7); if next block TILE_BARRICADE
+    EQUB &00, &04, &10, &D9   ; 23: place TILE_BLANK at (4, 16); if next block TILE_MARKER and going east
+    EQUB &0C, &13, &2F, &B0   ; 24: place TILE_HORZ_PIPE at (19, 47); if going south
+    EQUB &00, &18, &35, &F9   ; 25: move the block at (24, 53) west; if next block TILE_MARKER and going south
+    EQUB &A8, &B1, &25, &A0   ; 26: place monster 1 at (42, 9) going east, PATTERN_BACK_AND_FORTH; if going north
+    EQUB &0A, &29, &00, &90   ; 27: place TILE_WALL_2 at (41, 0); if going east
+    EQUB &0A, &2B, &00, &90   ; 28: place TILE_WALL_2 at (43, 0); if going east
+    EQUB &0A, &2D, &00, &90   ; 29: place TILE_WALL_2 at (45, 0); if going east
+    EQUB &0A, &2F, &00, &90   ; 30: place TILE_WALL_2 at (47, 0); if going east
+    EQUB &00, &28, &0A, &F9   ; 31: place TILE_BLANK at (40, 10); if next block TILE_MARKER and going south
+    EQUB &09, &3D, &02, &90   ; 32: place TILE_MARKER at (61, 2); if going east
+
+; The map as it looks, a string a row (MAP_KEY gives the blocks).
+map_row_00 = "%c.%%%%%%%ccccc%%%%%%%c%%%%c%%%.--M..#o..........m..-----------M"
+map_row_01 = "%........c.............cco.....co.|7r#|----------|..LLLBB...Bor|"
+map_row_02 = "...%%%%%.c.o.cccc.7r7r.c..c.cc.cco|JL#|....x...o.|r|......oB..r|"
+map_row_03 = "%.%r##7%.c..o..Bc.LJLJ.c..c.cc....|..#|..B.o.%.x.|r|.....B..B.r|"
+map_row_04 = "%.%####%.c....c.c......c..c.cc..c.|7r#|..o.x.B...|r|BB..B...B.r|"
+map_row_05 = "%B%####%.cccccc.cccc...c..c.cc..c.|JLJ|-.B...o.x..r|.....B....r|"
+map_row_06 = "%.%L##Jc...........ccc.o..c...ccc.|..%-|----------r|.....B..B.r|"
+map_row_07 = "%.%%c%%cc.ccccc.cc.....c..c.....c.|7r7................B...B...-M"
+map_row_08 = "c....c.......cc.cc.o.o.c..cocc..o.|JL#o..|ccc|ccc|ccB..BB....B%c"
+map_row_09 = "%coc....ccc............c..cocc....|..J.c.|......+o+%cB%%%c%Bccc."
+map_row_10 = "%ccc.ccocccc..c.cc.o.occ..ccccc.c.|7r..cm|cccccccccM---------|.|"
+map_row_11 = "c..........cc.c.cc.c.ccc...ccoo.c.|JL--coM-M.......|.........|.-"
+map_row_12 = "c.r7..%%%%.cc......c.c.....ccoc.o.|..|.------------MM--------M.."
+map_row_13 = "c.LJ.%%%.%...o...ccc.c.ccc.cccc.c.|7r..M----M.......|...r..7.|.|"
+map_row_14 = "c....c%%|c.............ooc........|..|.|..M---------M..rJ..L7M-M"
+map_row_15 = "%c..co%%|%.%%%%..cccocccccccooo.ccM--Mx|xx|||..r.7....rJr+.7L7.."
+map_row_16 = "%oo.mo%%|%.o..c.................cc...|....|||.rJ|L7..rJrJ..L7L7."
+map_row_17 = "%...%%%%|%%%%%%coc%%%%c.co-----Mcc.M-M.o..--Mr.-M-o##JrJr..7L7L7"
+map_row_18 = "%%%%%%M-M|-------------|----------M|M-....||r###|####.JrJ..L7L.#"
+map_row_19 = "%M----|----------M%%%M-|----------|M|x....||#J..|L###..........#"
+map_row_20 = "%|%%%%|.....|%%%%|%%%|.....|-..-.-|-Mx|x-x||#7....##c.cccccc.cc%"
+map_row_21 = "%.----M.---|-----|---M.M---------.M---|--M||#####.##c.c......c.%"
+map_row_22 = "%ccccc%cccc.|--------M.|.......|..M---M.||||#.ox#.##c.c.oooo.c.%"
+map_row_23 = "c..o..c.c..c....c|J.L|.M-------|--|----M||||#.x...##c.c.o..o.c.%"
+map_row_24 = "c.ccc.c....c..c.c|...|.|BBBB.......cccc|||||#...#.##c.c.oooo.c.%"
+map_row_25 = "c.c...cc..c.....c|...|.|BB...........cc|||M-.####.##c........c.%"
+map_row_26 = "c.c.ccc.....oo..c|...|.|B.............c|||||#o.o..##c.cccccccc.%"
+map_row_27 = "c.c...c.ooc....cc|...|.|B..m.......%..c|||||#++++%##c.------Mc.%"
+map_row_28 = "c.ccc.c.......c.c|7.r|.|......r+7......|||||.oo.om##cccccccc|c.%"
+map_row_29 = "c.c.+.c...o.c...cM-Mc|||.....rJ.L7......|||||.....##c......c|c.%"
+map_row_30 = "c.c.ccccc.......##7|#|||+....#..+#.....-|||M|..o..##c.c.oo.c|c.%"
+map_row_31 = "c.c.o.c.B......|-.||-||-x....#...#.....-|||M|.o.o.##c.c....c|c.%"
+map_row_32 = "c.ccc.c....o....##J|c|||...L##7.r##J...-|||-MB....##c.cccc.c|c.%"
+map_row_33 = "c.c...c...o+o...cM-ML|||....L#om.#J.....||M--------Mc..........c"
+map_row_34 = "coc.ccc..o+x+o..c|M--M||...B.LJ.LJ.x...||.--------M|cccccccccc.c"
+map_row_35 = "..c.o....o+o+o..c||rc7||c.............B||-........||..........+c"
+map_row_36 = "%%%ccccc.xxxxxxxc||#.#||c.............B||M-----M..||.o+o.ccccccc"
+map_row_37 = "%%%%%%%c.mmmmmmmc||c.c||cc...........BB|||+.+.+|..||..o..c%%%%%%"
+map_row_38 = "%%%%%%%c........c||c.c||cccc..+....BBBB|||.+.+.M-.|M----------M%"
+map_row_39 = "%%%M--Mc.m.m.m..c||#.#|M-------.-------M||M-----|.|...%%%%%%%%|%"
+map_row_40 = "%%%|%%|cccccccccc||LcJ|r7+.+.+r.7+.+.+M-M||.-|.---M...%%%%%%%%|%"
+map_row_41 = "ooo|%%M-.|-------MM--M|JL7+.+rJ|L7+.+r|M-M|.|-----------------M%"
+map_row_42 = ".%.M-M..-------------|-----MM---------M|M-MM-M-M---------------M"
+map_row_43 = "...%.|.%###7..-|.----MM----||-------.--M|r7|######M--M%%M----M%|"
+map_row_44 = ".%.%...%####7.|-------------|-------....|##M-M#M#M|--|---M-M%|%|"
+map_row_45 = "..B%%|%%###################..##M-M######|##|#|#|#||Jr|7%||%|%|%|"
+map_row_46 = "B....|......-..............##.ccc|#...+#|##|#M-|-M|rJ.L7||%|%|%|"
+map_row_47 = ".o.Bo|##|###%.###.r|#7..r7.##.c+c-#.%..#|##M---M----.o.--M-|-M-M"
+map_row_48 = ".o...|%|M|%#+.#o#.#...7.LJ.##.c.c.o....#|##|#M--M#|L7.rJ||%M-M%|"
+map_row_49 = "..B..|##|###%#oo..#.7.#.r7.##.......o..#|##|#|##|#|7L|J%|M-----M"
+map_row_50 = "B....|J...L#o####.#.#.#.LJ.###.........#|LJ|#M-M|-|--|--------M|"
+map_row_51 = ".B...|..%..#o.....#.#.#....#############M--|---||#M-M|%%|%r7%|||"
+map_row_52 = ".o.B.|7...r#.###oo#.#.#7.r%###ooo####..xm.r|7L#||#|M-|-M|rJL7|||"
+map_row_53 = "..B..|L7.rJ#.#o.##%.%.#.mmxxxxx.#####..xmrJ.L7L|M-M|#M----..--M|"
+map_row_54 = "B.B.B|7o.or#.##...#.J.#J.L%####.#####..xrJ...L7M-M-M#|%||L7rJ|%|"
+map_row_55 = "B...B|L7.rJ#..#.o.#...J...L####.#####..rJ..o..L7L|#M-|-M|%LJ%|%|"
+map_row_56 = ".BB..|.L.J.##.#.#.#o#J.ro7.####.#####.rJ.......L7|#|#M-M|%M--Mr|"
+map_row_57 = ".BBB.|7o.or#..o.#.o############.xxxxx......o....-M#M-M%||M|%%rJ."
+map_row_58 = "..o..M######o#..##........xxxxx.################JM---|-|||M%rJ.."
+map_row_59 = "%-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%........M-M-MM-M-M--o..."
+map_row_60 = "%|%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%........|||M|---|---.|||"
+map_row_61 = "%|%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%|.......||M||%%%M----M||"
+map_row_62 = "%|%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%M-|--|--MM-MM---------M|"
+map_row_63 = "%M-------------------------------------------------------------M"
+map_rows_00 = {map_row_00, map_row_01, map_row_02, map_row_03, map_row_04, map_row_05, map_row_06, map_row_07}
+map_rows_08 = {map_row_08, map_row_09, map_row_10, map_row_11, map_row_12, map_row_13, map_row_14, map_row_15}
+map_rows_16 = {map_row_16, map_row_17, map_row_18, map_row_19, map_row_20, map_row_21, map_row_22, map_row_23}
+map_rows_24 = {map_row_24, map_row_25, map_row_26, map_row_27, map_row_28, map_row_29, map_row_30, map_row_31}
+map_rows_32 = {map_row_32, map_row_33, map_row_34, map_row_35, map_row_36, map_row_37, map_row_38, map_row_39}
+map_rows_40 = {map_row_40, map_row_41, map_row_42, map_row_43, map_row_44, map_row_45, map_row_46, map_row_47}
+map_rows_48 = {map_row_48, map_row_49, map_row_50, map_row_51, map_row_52, map_row_53, map_row_54, map_row_55}
+map_rows_56 = {map_row_56, map_row_57, map_row_58, map_row_59, map_row_60, map_row_61, map_row_62, map_row_63}
+map_rows = CONCAT(map_rows_00, map_rows_08, map_rows_16, map_rows_24, map_rows_32, map_rows_40, map_rows_48, map_rows_56)
+    ASSERT * == level_map
+    MAP map_rows
+    ASSERT * == level_end
+
 ENDSECTION

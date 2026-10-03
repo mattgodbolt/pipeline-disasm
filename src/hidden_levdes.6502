@@ -1,4 +1,4386 @@
-; The level designer, hidden in sectors &16D-&18B.
-SECTION hidden_levdes, filename="H.LEVDES"
-    INCBIN "../data/hidden_levdes.bin"
+; H.LEVDES: the PIPELINE Level Designer, by Ian Holmes and William Reeve.
+;
+; Hidden in sectors &16D-&18B; the LEVDES stub reads it to &1100 and jumps
+; to entry (&2E21). Entry moves three pieces of the file to where they run
+; (initial zero page, the low code at &0880 and the font at &0400), loads
+; WDATA (windows and messages) and LDATA (the title screen), and waits for
+; Space. After that &25A1-&2FFF, where those pieces and entry itself were, is
+; the level being edited (src/level.6502inc).
+;
+; The screen is MODE 1 narrowed to 64 columns, so each of the 64x64 map cells
+; is one byte of four pixels by four scan lines and the map fills it. Menus
+; are windows drawn over the map with the program's own font and then
+; repaired from the map when closed; prompts go in a message box drawn the
+; same way and printed into with the OS's text output.
+;
+; Keys: Z X : / move the cursor, Return plots the current block, Delete
+; blanks the cell, 0-9 A-F choose a block, S runs the simulator, f0-f4 are the
+; commands (block menu, Options, Files, Help, About). Leaving goes back to
+; the menu by *RUNning /MRUN.
+
+INCLUDE "os.6502inc"
+INCLUDE "level.6502inc"
+INCLUDE "wdata.6502inc"
+
+FUNCTION asc(s) = CODES(s)[0]  ; a character's code, as BASIC's ASC
+; jump_to_handler's number for a handler table, from its pointer in zero page.
+FUNCTION handlers(p) = (p - menu_tables) / 2 + 1
+
+; Zero page. The low code's variables are its own; the rest is the editor's.
+input_buffer    = &40           ; OSWORD 0 line input, up to 16 characters
+cursor_x        = &50           ; the map cursor, 0-63 across
+cursor_y        = &51           ; and down
+ptr             = &52           ; a pointer, or two bytes of scratch
+work            = &54           ; another; also a saved position or a count
+cursor_shown    = &56           ; 1 while the cursor's cell is inverted
+key_pressed     = &57           ; what get_key read
+keys_acted_on   = &58           ; how many held keys get_key acted on this pass
+brush           = &59           ; the block Return plots
+plot_enabled    = &5A           ; nonzero lets Return and Delete plot
+record          = &5B           ; the object, monster or puzzle being edited,
+                                ; times 4 (the size of its records)
+puzzle          = &5C           ; the puzzle being edited
+kept_window     = &5D           ; a window to keep on screen while the cursor
+                                ; moves, or negative
+choices         = &5E           ; four two-bit fields, unpacked (priorities,
+                                ; sprites)
+arg             = &62           ; a message number, offset or field in hand
+number          = &63           ; the number being asked for
+effect_window   = &64           ; the effect editor's window
+effect_table    = &65           ; and its handler table
+unused_66       = &66           ; set to &C0 at startup, never read
+loading         = &67           ; nonzero while a level loads, so an error
+                                ; clears what was half loaded
+simulate_window = &68           ; W_SIMULATE+1 while simulating, else 0
+direction       = &69           ; the simulator's direction of travel (0 left,
+                                ; 1 up, 2 right, 3 down)
+simulating      = &6A           ; nonzero while the simulator is moving
+in_main_loop    = &6B           ; nonzero while the main loop waits for a key,
+                                ; when function keys are commands, not aborts
+menu_window     = &6C           ; choose_from_window's window, less 1
+; The low code's.
+screen_ptr      = &72
+glyph_ptr       = &74           ; also a second screen pointer
+window_ptr      = &76           ; into a window definition or message
+byte_count      = &78
+line_count      = &79
+saved_x         = &7A
+nibble_mask     = &7B           ; &F0 or &0F: which half of a map byte
+run_length      = &7C
+map_ptr         = &7E
+restore_x       = &80           ; close_window's area
+restore_row     = &81
+menu_item       = &82           ; window_menu's choice
+menu_shown_item = &83           ; and the item it has highlighted
+window_x        = &84           ; the window being drawn, in glyph columns
+window_y        = &85           ; and half rows
+window_width    = &86
+window_height   = &87           ; also its number of menu items
+window_flags    = &88           ; its y byte with bit 7
+menu_first_item = &89
+
+error_ptr       = &FD           ; the OS's pointer to the last error
+startup_options = &028F         ; the keyboard links, read by the OS at reset
+
+screen          = &3000
+SCREEN_ROW      = 512           ; bytes per character row: 64 columns of 8
+SCREEN_END      = &7000
+FUNCTION screen_address(column, row) = screen + row * SCREEN_ROW + column * 8
+; The message box, character rows 14-17 and columns 2-61; the OS's TAB(10,11)
+; and TAB(34,12) land on its first and third rows.
+MESSAGE_BOX_ROW = 14
+MESSAGE_BOX_ROWS = 4
+MESSAGE_BOX_COLUMNS = 60
+message_box     = screen_address(2, MESSAGE_BOX_ROW)
+
+SECTION hidden_levdes, filename="H.LEVDES", org=&1100
+
+; Entry points at fixed addresses, with two pointers the startup code uses.
+.vector_crtc_write
+    JMP crtc_write
+.vector_cursor_off
+    JMP cursor_off
+.rdchv_filter_operand_address
+    EQUW rdchv_filter+1         ; where entry saves the OS's RDCHV
+.brk_handler_address
+    EQUW brk_handler
+.vector_main
+    JMP main
+.vector_set_palette
+    JMP set_palette_entry
+
+; Clear the screen, &3000-&6FFF.
+; Clobbers: A, X, Y, ptr.
+.clear_screen
+    LDA #HI(screen)
+    STA ptr+1
+    LDA #0
+    TAY
+    STA ptr
+    LDX #HI(SCREEN_END - screen)
+.clear_screen_loop
+    STA (ptr), Y
+    INY
+    BNE clear_screen_loop
+    INC ptr+1
+    DEX
+    BNE clear_screen_loop
+    RTS
+
+; Open a window, let the user pick from its menu, close it.
+; choose_from_window starts on the first item; choose_from_window_at on item
+; Y. Window W_SELECT_BLOCK is special: Y and the result are blocks, not menu
+; items, translated through tile_menu_map.
+; In: A = window number, Y = first item.
+; Out: A = the item (or block) chosen.
+; Clobbers: X, Y, ptr; Escape restarts the main loop.
+.choose_from_window
+    LDY #0
+.choose_from_window_at
+    TAX
+    DEX
+    STX menu_window
+    BNE choose_show_window
+    LDA tile_menu_map, Y        ; the block's position in the menu
+    LSR A
+    LSR A
+    LSR A
+    LSR A
+    TAY
+    INX
+    TXA
+.choose_show_window
+    STY ptr
+    JSR open_window
+    LDA ptr
+    JSR menu_select
+    PHA
+    JSR vector_close_window
+    PLA
+    LDX menu_window
+    BNE choose_done
+    TAY
+    LDA tile_menu_map, Y        ; the menu item's block
+    AND #&0F
+.choose_done
+    RTS
+
+; Run the menu of the window just opened.
+; In: A = the item to start on.
+; Out: A = the item chosen.
+; Clobbers: X, Y. Escape (the OS's escape condition) is acknowledged, the
+; screen repaired and the main loop restarted.
+.menu_select
+    JSR vector_menu_select
+    BCC choose_done
+.menu_select_escaped
+    LDA #&7E                    ; acknowledge Escape
+    JSR OSBYTE
+    TXA
+    BEQ menu_select_escaped
+    JSR escape_reset
+    JMP restart_main_loop
+
+; After Escape: cursor off, any key allowed, the map redrawn. With Shift
+; held as well, offer to leave the designer.
+; Clobbers: A, X, Y.
+.escape_reset
+    JSR cursor_off
+    JSR allow_any_key
+    JSR vector_draw_map
+    LDX #&FF                    ; INKEY -1: Shift
+    JSR test_key
+    BNE choose_done
+.confirm_and_exit
+    JSR confirm                 ; returns to our caller on N
+; Files menu, Exit: back to the PIPELINE menu by way of /MRUN, once the
+; PIPELINE disc is back in.
+.files_exit
+    JSR vector_open_message_box
+    LDA #M_INSERT_DISC
+    JSR vector_print_line1
+    LDA #M_PRESS_ANY_KEY
+    JSR vector_print_message
+    JSR wait_for_key
+    LDX #LO(mrun_command)
+    LDY #HI(mrun_command)
+    JSR OSCLI
+    RTS
+.mrun_command
+    EQUS "/MRUN", 13
+
+; BRKV: report an error in the message box, wait for a key and go back to
+; the main loop. A level half loaded is cleared rather than kept. Typing "i"
+; with the keyboard links set to &CF leaves for BASIC instead, with the error
+; pointer in ptr: the authors' way out.
+.brk_handler
+    LDX #&FF
+    TXS
+    STX in_main_loop
+    LDA loading
+    BEQ brk_handler_report
+    JSR new_level
+    DEC loading
+.brk_handler_report
+    LDA error_ptr
+    STA work
+    LDA error_ptr+1
+    STA work+1
+    JSR hide_cursor
+    JSR cursor_off
+    LDA rdchv_filter+1          ; put the OS's RDCHV back
+    STA RDCHV
+    LDA rdchv_filter+2
+    STA RDCHV+1
+    JSR level_file_done
+    JSR vector_open_message_box
+    LDY #0
+    LDA (work), Y               ; the error number
+    CMP #&1B                    ; Escape: just the message
+    BNE brk_handler_numbered
+    LDA #M_PRESS_ANY_KEY
+    JSR vector_print_message
+    LDA #M_NOTHING
+    JSR vector_print_line1
+    JMP brk_handler_message
+.brk_handler_numbered
+    PHA
+    LDA #M_ERROR                ; "Error <n> has occurred !"
+    JSR vector_print_line1
+    LDA #M_ERROR_NUMBER_AT
+    JSR vector_print_message
+    PLA
+    JSR print_decimal
+    LDA #M_ERROR_TEXT_AT
+    JSR vector_print_message
+.brk_handler_message
+    LDY #1
+.brk_handler_message_loop
+    LDA (work), Y
+    BEQ brk_handler_wait
+    JSR OSWRCH
+    INY
+    BNE brk_handler_message_loop
+.brk_handler_wait
+    JSR wait_for_key
+    INC in_main_loop
+    CMP #asc("i")
+    BEQ debug_exit_check
+.restart_main_loop
+    JSR vector_draw_map
+    JMP main_reset_input
+.debug_exit_check
+    LDA startup_options
+    CMP #&CF
+    BNE restart_main_loop
+    JSR hide_cursor
+    JSR cursor_on
+    JSR cursor_on
+    LDA #&0C                    ; *FX12,2: auto-repeat period
+    LDX #2
+    JSR OSBYTE
+    LDA error_ptr
+    STA ptr
+    LDA error_ptr+1
+    STA ptr+1
+    LDX #LO(basic_command)
+    LDY #HI(basic_command)
+    JSR OSCLI
+.basic_command
+    EQUS "BASIC", 13
+; Wait for a key, ignoring any typed ahead.
+; Out: A = the key.
+; Clobbers: X, Y.
+.wait_for_key
+    JSR flush_input
+.wait_for_key_loop
+    LDA #&7E                    ; acknowledge any Escape
+    JSR OSBYTE
+    JSR OSRDCH
+    BCS wait_for_key_loop
+    RTS
+
+; Clobbers: A, X, Y.
+.flush_input
+    LDA #&0F                    ; *FX15,1: flush the input buffer
+    LDX #1
+    JMP OSBYTE
+
+; RDCHV while input_line runs: OSWORD 0 sees only Return, Delete and keys
+; from input_min_char to input_max_char, and a function key abandons the
+; input for its command. entry saves the OS's RDCHV in the JSR here.
+.rdchv_filter_retry
+    PLP
+.rdchv_filter
+    JSR &FFA6                   ; the OS's RDCHV, filled in at startup
+    BCS do_nothing
+    PHP
+    JSR check_function_key
+    CMP #13
+    BEQ rdchv_filter_accept
+    CMP #&7F
+    BEQ rdchv_filter_accept
+    CMP input_min_char
+    BCC rdchv_filter_retry
+    CMP input_max_char
+    BEQ rdchv_filter_accept
+    BCS rdchv_filter_retry
+.rdchv_filter_accept
+    PLP
+.do_nothing                     ; Options menu, OK
+    RTS
+
+; A function key (*FX225,128 makes f0-f5 &80-&85) abandons whatever is going
+; on and runs its command from the main loop.
+; In: A = a key.
+; Out: A preserved, unless it doesn't return.
+.check_function_key
+    PHA
+    EOR #&80
+    CMP #6
+    BCC abort_to_command
+    PLA
+    RTS
+.abort_to_command
+    LDX #&FF
+    TXS
+    PHA
+    JSR vector_draw_map
+    JSR allow_any_key
+    JSR cursor_off
+    PLA
+    JMP main_dispatch
+
+; The map cursor is the cursor's cell inverted; hide_cursor puts the cell
+; back if it's showing, toggle_cursor flips it, after waiting for the vertical
+; sync so it doesn't flicker.
+; Clobbers: A, X, Y.
+.hide_cursor
+    LDA cursor_shown
+    BEQ do_nothing
+.toggle_cursor
+    LDA cursor_shown
+    EOR #1
+    STA cursor_shown
+    LDA #&13                    ; wait for vertical sync
+    JSR OSBYTE
+    LDX cursor_x
+    LDY cursor_y
+    JMP vector_invert_cell
+
+; Put a block in the map at the cursor and on the screen.
+; In: A = the block.
+; Clobbers: A, X, Y, ptr, work.
+.plot_at_cursor
+    PHA
+    JSR hide_cursor
+    LDX cursor_x
+    LDY cursor_y
+    PLA
+    JMP vector_write_map
+
+; Ask which object, monster or puzzle, until the answer is 1 to A.
+; In: A = how many there are; X = the question's message.
+; Out: record = (the answer - 1) * 4.
+; Clobbers: A, X, Y, ptr, work.
+.choose_record
+    STX work
+    STA record
+.choose_record_ask
+    JSR vector_open_message_box
+    LDX work
+    JSR input_number
+    DEX
+    BPL choose_record_ask
+    SEC
+    SBC #1
+    BCC choose_record_ask
+    CMP record
+    BCS choose_record_ask
+    ASL A
+    ASL A
+    STA record
+    JMP vector_close_message_box
+
+; Read a number of up to three digits in the message box.
+; In: X = the prompt's message.
+; Out: X = 0 and A = the number; X = 1 if nothing was typed; X = 3 if it was
+; over 255. (X = 2 would be a number 256 digits long.)
+; Clobbers: Y, ptr, the input buffer.
+.input_number
+    LDA #asc("0")
+    STA input_min_char
+    LDA #asc("9")
+    STA input_max_char
+    LDA #3
+    JSR input_line
+    LDA #0
+    TAY
+.input_number_digit
+    PHA
+    LDA input_buffer, Y
+    SEC
+    SBC #asc("0")
+    BCC input_number_not_digit  ; the Return
+    STA input_buffer, Y
+    PLA
+    ASL A                       ; times 10, watching for overflow
+    BCS input_number_overflow
+    STA ptr
+    ASL A
+    BCS input_number_overflow
+    ASL A
+    BCS input_number_overflow
+    ADC ptr
+    BCS input_number_overflow
+    ADC input_buffer, Y
+    BCS input_number_overflow
+    INY
+    BNE input_number_digit
+    LDX #2
+    RTS
+.input_number_not_digit
+    LDX #0
+    TYA
+    BNE menu_ok_return          ; just pull the number and return
+    PLA
+    INX
+    RTS
+
+; Place monster window, OK: keep the monster's position, with its number and
+; direction in the bottom bits.
+.place_monster_ok
+    LDY record
+    LDA cursor_x
+    ASL A
+    ASL A
+    ORA arg                     ; monster number
+    STA level_puzzle_effects, Y
+    LDA cursor_y
+    ASL A
+    ASL A
+    ORA work+1                  ; direction
+    STA level_puzzle_effects+2, Y
+; The OK item of an editing window: close it and return from the routine
+; that runs the window's menu, dropping the choice it pushed first if it did.
+.menu_ok_drop_choice
+    PLA
+.menu_ok
+    JSR vector_close_window
+    PLA
+.menu_ok_return
+    PLA
+    RTS
+
+.input_number_overflow
+    LDX #3
+    RTS
+
+; "SURE ? Press Y or N". Returns on Y; on N returns from the caller instead.
+; Clobbers: A, X, Y.
+.confirm
+    LDA #W_SURE
+    JSR open_window
+.confirm_loop
+    JSR wait_for_key
+    ORA #&20                    ; lower case
+    CMP #asc("n")
+    BEQ menu_ok
+    CMP #asc("y")
+    BNE confirm_loop
+    JMP vector_close_window
+
+; Read a line of text, or of characters input_min_char to input_max_char
+; (input_line), into input_buffer, after a prompt on the message box's
+; second line. Escape is an error.
+; In: A = the most characters; X = the prompt's message.
+; Out: ptr = the number of characters; input_buffer, Return-terminated and
+; padded with spaces.
+; Clobbers: A, X, Y.
+.input_text
+    LDY #&20
+    STY input_min_char
+    LDY #&7E
+    STY input_max_char
+.input_line
+    STA input_max_length
+    TXA
+    JSR vector_print_line2
+    JSR cursor_on
+    LDA #asc(" ")
+    JSR OSWRCH
+    LDY #15
+.input_line_clear
+    STA input_buffer, Y
+    DEY
+    BNE input_line_clear
+    LDX #LO(input_block)
+    LDY #HI(input_block)
+    LDA #0                      ; OSWORD 0: read a line
+    JSR OSWORD
+    STY ptr
+    JSR allow_any_key
+    BCC cursor_off
+    JMP escape_pressed
+
+; The text cursor: off, with the cursor keys giving codes rather than
+; editing (*FX4,2: they act as f11-f15, &8B-&8F); or on and editing.
+; Clobbers: A, X, Y.
+.cursor_off
+    LDA #&20                    ; cursor start register: no cursor
+    JSR crtc_set_cursor_start
+    LDX #2
+    BNE set_cursor_key_mode
+.cursor_on
+    LDA #&67                    ; blinking, from line 7
+    JSR crtc_set_cursor_start
+    LDX #0
+.set_cursor_key_mode
+    LDA #4
+    JMP OSBYTE
+
+; Clobbers: X.
+.allow_any_key
+    LDX #0
+    STX input_min_char
+    DEX
+    STX input_max_char
+    RTS
+
+; In: A = the value for CRTC register 10 (cursor start), or X for the register.
+.crtc_set_cursor_start
+    LDX #10
+.crtc_write
+    STX CRTC_ADDR
+    STA CRTC_DATA
+    RTS
+
+.escape_pressed
+    JSR escape_reset
+    BRK
+    EQUB &1B
+    EQUS "Escape key pressed", 0
+; get_key's loop while the simulator is running: no key means take another
+; step the way it's going.
+.get_key_simulating
+    ASL A                       ; C set if no key came
+    BCC get_key_step
+    INC keys_acted_on           ; keep going round
+.get_key_step
+    LDY #handlers(cursor_handlers_ptr)
+    LDA direction
+    JSR jump_to_handler
+    JMP get_key_check_simulate
+
+; Wait for a key, meanwhile flashing the cursor and doing the editing keys
+; themselves: Z X : / move the cursor (with the simulator's rules when it's
+; on), S switches the simulator, and if plotting is enabled Delete blanks the
+; cursor's cell and Return plots the brush there. Held keys repeat. A window
+; can be kept on screen meanwhile, moving out of the cursor's way.
+; get_key_no_plot doesn't plot.
+; In: A = nonzero to enable plotting; X = a window to keep, or negative.
+; Out: A = the key that isn't an editing key.
+; Clobbers: X, Y, ptr, work; function keys and Escape don't return.
+.get_key_no_plot
+    LDA #0
+.get_key
+    STA plot_enabled
+    STX kept_window
+    TXA
+    BMI get_key_poll
+    JSR open_window
+.get_key_poll
+    JSR toggle_cursor
+    LDX #&20                    ; caps lock on, shift lock off
+    LDY #&4F
+    LDA #&CA                    ; keyboard status byte
+    JSR OSBYTE
+    LDX simulating              ; a centisecond a step when simulating,
+    BNE get_key_inkey
+    LDX #20                     ; else flash every fifth of a second
+.get_key_inkey
+    LDA #&81                    ; INKEY
+    LDY #0
+    STY keys_acted_on
+    JSR OSBYTE
+    PHP                         ; C set: no key
+    STX key_pressed
+    LDA in_main_loop
+    BNE get_key_got
+    TXA
+    JSR check_function_key
+.get_key_got
+    PLP
+    ROR A
+    CPY #&1B
+    BEQ escape_pressed
+    LDY simulating
+    BNE get_key_simulating
+    ASL A
+    BCS get_key_poll
+    ; A key came: now see which keys are held, so a held key repeats at the
+    ; keyboard's rate without the buffer filling.
+    JSR flush_input
+    LDX #&9E                    ; INKEY -98: Z
+    JSR test_key
+    BNE get_key_check_right
+    INC keys_acted_on
+    JSR cursor_left
+.get_key_check_right
+    LDX #&BD                    ; X
+    JSR test_key
+    BNE get_key_check_up
+    INC keys_acted_on
+    JSR cursor_right
+.get_key_check_up
+    LDX #&B7                    ; :
+    JSR test_key
+    BNE get_key_check_down
+    INC keys_acted_on
+    JSR cursor_up
+.get_key_check_down
+    LDX #&97                    ; /
+    JSR test_key
+    BNE get_key_check_simulate
+    INC keys_acted_on
+    JSR cursor_down
+.get_key_check_simulate
+    LDX #&AE                    ; S
+    JSR test_key
+    BNE get_key_check_plot
+    INC keys_acted_on
+    JSR beep
+    JSR switch_simulate
+.get_key_check_plot
+    LDA plot_enabled
+    BEQ get_key_handled
+    LDX #&A6                    ; Delete
+    JSR test_key
+    BNE get_key_check_return
+    INC keys_acted_on
+    LDA #TILE_BLANK
+    JSR plot_at_cursor
+.get_key_check_return
+    LDX #&B6                    ; Return
+    JSR test_key
+    BNE get_key_handled
+    INC keys_acted_on
+    LDA brush
+    JSR plot_at_cursor
+.get_key_handled
+    LDA keys_acted_on
+    BEQ get_key_done
+    JMP get_key_poll
+.get_key_done
+    JSR hide_cursor
+    LDA kept_window
+    BMI get_key_return
+    JSR vector_close_window
+.get_key_return
+    LDA key_pressed
+    RTS
+
+; Move the cursor a cell (cursor_handlers). Crossing the middle of the screen
+; moves the kept window to the other side.
+; Out: C set if the cursor couldn't move.
+; Clobbers: A, X, Y, ptr, work.
+.cursor_left
+    LDY #0
+    JSR move_cursor
+    BCS cursor_move_done
+    CPX #MAP_SIZE/2 - 1
+    BEQ reopen_window
+    RTS
+.cursor_right
+    LDY #2
+    JSR move_cursor
+    BCS cursor_move_done
+    CPX #MAP_SIZE/2
+    BEQ reopen_window
+    RTS
+.cursor_up
+    LDY #1
+    JSR move_cursor
+    BCS cursor_move_done
+    CPY #MAP_SIZE/2 - 1
+    BEQ reopen_window
+.cursor_move_done
+    RTS
+.cursor_down
+    LDY #3
+    JSR move_cursor
+    BCS cursor_move_done
+    CPY #MAP_SIZE/2
+    BNE cursor_move_done
+; Close the kept window and draw it again, wherever it now goes.
+.reopen_window
+    LDA kept_window
+    BMI cursor_move_done
+    JSR vector_close_window
+    LDA kept_window
+; Draw window A.
+; Clobbers: A, X, Y.
+.open_window
+    JSR vector_window_address
+    JMP vector_draw_window
+
+; Is a key held down?
+; In: X = its INKEY number, negated.
+; Out: Z set if it is.
+; Clobbers: A, X, Y.
+.test_key
+    LDY #&FF
+    LDA #&81
+    JSR OSBYTE
+    INX
+    RTS
+
+; The cell next to the cursor.
+; In: Y = direction, 0 left, 1 up, 2 right, 3 down.
+; Out: X, Y = its position.
+; Clobbers: A.
+.neighbour
+    LDA cursor_x
+    CLC
+    ADC direction_dx, Y
+    TAX
+    LDA cursor_y
+    CLC
+    ADC direction_dy, Y
+    TAY
+    RTS
+
+.move_blocked
+    SEC
+.move_pop
+    PLA
+    RTS
+
+; Move the cursor a cell, if it can go there. Normally it can go anywhere on
+; the map; while simulating (the Help menu's Simulate) it moves like the
+; player: it walks onto blank cells and collectables, dies on wall 2, a
+; barricade or the map's edge, and enters a pipe that runs its way, which
+; starts it travelling (simulating) until it comes out. Shift lets it go
+; anywhere regardless.
+; In: Y = direction, 0 left, 1 up, 2 right, 3 down.
+; Out: C clear and X, Y = the new position if it moved.
+; Clobbers: A, ptr, work.
+.move_cursor
+    TYA
+    PHA
+    JSR neighbour
+    JSR vector_read_map         ; negative off the map
+    BMI move_into_tile
+    PHA
+    LDX #&FF                    ; Shift
+    JSR test_key
+    PLA
+    DEX
+    BEQ move_into_tile
+    INX
+    STX simulating
+    BEQ move_to_neighbour
+.move_into_tile
+    LDX simulating
+    BNE simulate_travel
+    TAX
+    BEQ move_to_neighbour       ; anyone can go onto a blank
+    LDX simulate_window
+    BEQ move_to_neighbour       ; and anywhere when not simulating
+    CMP #TILE_COLLECTABLE
+    BEQ move_to_neighbour
+    CMP #TILE_WALL_2
+    BEQ simulate_lose_life
+    CMP #TILE_BARRICADE
+    BEQ simulate_lose_life
+    TAX
+    BMI simulate_lose_life
+    PLA
+    PHA
+    TAY
+    TXA
+    CMP pipe_across, Y
+    SEC
+    BNE move_pop
+    ; Into a pipe: start travelling, and finish our caller (the cursor_*
+    ; handler) by calling the rest of it, before getting on with get_key.
+    INC simulating
+    PLA
+    JSR move_push
+    PLA
+    ADC #1
+    STA ptr
+    PLA
+    ADC #0
+    STA ptr+1
+    JSR jump_via_ptr
+    PLA
+    PLA
+    JMP get_key_check_simulate
+.jump_via_ptr
+    JMP (ptr)
+.move_push
+    PHA
+.move_to_neighbour
+    TAX
+    BMI move_blocked
+    JSR hide_cursor
+    PLA
+    STA direction
+    TAY
+    JSR neighbour
+    STX cursor_x
+    STY cursor_y
+    CLC
+    RTS
+
+; The simulated player died: say so and stop travelling.
+.simulate_lose_life
+    PLA
+    JSR hide_cursor
+    JSR toggle_cursor
+    JSR beep
+    LDA #W_LOST_LIFE
+    JSR open_window
+    JSR wait_for_key
+    JSR reopen_window
+    LDA #0
+    STA simulating
+    RTS
+
+; One step of travelling: along pipes whatever their direction, out onto a
+; blank or a collectable (which stops it), back the way it came off curves,
+; walls, crates, markers, traps and junctions, and at an S.Monster block into
+; the first pipe it finds turning one way, the other, or straight on.
+.simulate_travel
+    LDY direction
+    JSR neighbour
+    JSR vector_read_map
+    BEQ simulate_set_running
+    BMI simulate_lose_life
+    CMP #TILE_COLLECTABLE
+    BEQ simulate_collect
+    CMP #TILE_MONSTER
+    BEQ simulate_monster
+    CMP #TILE_WALL_2
+    BEQ simulate_lose_life
+    BCC simulate_bounce
+    CMP #TILE_BARRICADE
+    BEQ simulate_lose_life
+    BCC move_to_neighbour       ; the two pipes
+.simulate_bounce
+    PLA
+    EOR #2                      ; the opposite direction
+    STA direction
+    RTS
+.simulate_collect
+    LDA #0
+.simulate_set_running
+    STA simulating
+    BEQ move_to_neighbour
+.simulate_monster
+    PLA
+    JSR move_push
+    LDY direction
+    DEY
+    JSR simulate_try_turn
+    INY
+    INY
+    JSR simulate_try_turn
+    DEY
+    JSR simulate_try_turn
+    TYA
+    EOR #2
+    TAY
+    BPL simulate_set_direction
+.simulate_try_turn
+    TYA
+    AND #3
+    TAY
+    PHA
+    JSR neighbour
+    JSR vector_read_map
+    TAX
+    PLA
+    TAY
+    TXA
+    CMP pipe_across, Y
+    BEQ simulate_turn
+    RTS
+.simulate_turn
+    PLA
+    PLA
+.simulate_set_direction
+    STY direction
+    CLC
+    LDX cursor_x
+    LDY cursor_y
+    RTS
+; VDU 19: set a logical colour's physical colour.
+; In: A = logical colour * 16 + physical colour (the OS ignores the top
+; nibble of the physical colour).
+; Clobbers: A, X.
+.set_palette_entry
+    TAX
+    LDA #19
+    JSR OSWRCH
+    TXA
+    LSR A
+    LSR A
+    LSR A
+    LSR A
+    JSR OSWRCH
+    TXA
+    JSR OSWRCH
+    LDA #0
+    JSR OSWRCH
+    JSR OSWRCH
+    JMP OSWRCH
+
+; The editor proper, after the title: a blank level, then commands for ever.
+.main
+    JSR new_level
+.main_reset_input
+    JSR allow_any_key
+    LDA #LO(rdchv_filter)
+    STA RDCHV
+    LDA #HI(rdchv_filter)
+    STA RDCHV+1
+.main_loop
+    DEC in_main_loop
+    LDA #1                      ; plotting allowed
+    LDX simulate_window         ; keep the Simulate window up if simulating
+    DEX
+    JSR get_key
+    INC in_main_loop
+    PHA
+    JSR hex_key
+    PLA
+    EOR #&80                    ; function keys f0-f4 are commands 0-4
+.main_dispatch
+    JSR do_command
+    JMP main_loop
+
+; In the main loop, 0-9 and A-F choose the brush directly, and the cursor up
+; and down keys open the block menu, going on to move its bar.
+; In: A = the key.
+; Clobbers: A, X, Y.
+.hex_key
+    CMP #asc("0")
+    BCC hex_key_done
+    CMP #asc("F") + 1
+    BCS hex_key_cursor
+    CMP #asc("9") + 1
+    BCC hex_key_tile
+    SBC #asc("A")
+    BCC hex_key_cursor
+    ADC #asc("9")               ; A-F follow 0-9 (the carry adds one)
+.hex_key_tile
+    TAY
+    LDA tile_menu_map - asc("0"), Y
+    AND #&0F
+    STA brush
+.beep
+    LDA #7
+    JMP OSWRCH
+.hex_key_cursor
+    CMP #&8E                    ; cursor down
+    BEQ hex_key_cursor_flush
+    CMP #&8F                    ; cursor up
+    BNE hex_key_done
+.hex_key_cursor_flush
+    TAY
+    LDX #0
+    LDA #&8A                    ; put the key back for the menu to read
+    JSR OSBYTE
+; f0: choose the brush from the block menu.
+.select_brush
+    LDA #0
+    STA simulate_window
+    STA simulating
+    LDA #W_SELECT_BLOCK
+    LDY brush
+    JSR choose_from_window_at
+    STA brush
+.hex_key_done
+    RTS
+
+; Run a command: 0 the block menu, 1 Options, 2 Files, 3 Help, 4 About.
+; Commands stop the simulator; anything else leaves it alone.
+; In: A = the command.
+; Clobbers: A, X, Y, and whatever the command does.
+.do_command
+    TAY
+    BEQ select_brush
+    LDA simulate_window
+    PHA
+    LDA simulating
+    LDX #0
+    STX simulate_window
+    STX simulating
+    TAX
+    PLA
+    DEY
+    BEQ options_menu
+    DEY
+    BEQ files_menu
+    DEY
+    BEQ help_menu
+    DEY
+    BEQ show_about
+    STX simulating
+    STA simulate_window
+    RTS
+
+; f4: the credits.
+.show_about
+    LDA #W_ABOUT
+    JSR open_window
+    JSR wait_for_key
+    JMP vector_close_window
+
+; f1: the Options menu.
+.options_menu
+    LDA #W_OPTIONS
+    JSR choose_from_window
+    LDY #handlers(options_handlers_ptr)
+; Jump to the handler for a menu item.
+; In: A = the item; Y = the handler table's number (handlers()).
+.jump_to_handler
+    PHA
+    TYA
+    ASL A
+    TAY
+    ; The table numbers start at 1 and the pointers at zero page's start, so
+    ; this indexes from &FFFE and wraps round into zero page.
+    LDA &10000 + menu_tables - 2, Y
+    STA ptr
+    LDA &10000 + menu_tables - 1, Y
+    STA ptr+1
+    PLA
+    ASL A
+    TAY
+    LDA (ptr), Y
+    STA jump_to_handler_jmp+1
+    INY
+    LDA (ptr), Y
+    STA jump_to_handler_jmp+2
+.jump_to_handler_jmp
+    JMP &FFA6                   ; the handler, filled in above
+
+; f2: the Files menu, after checking the user is sure.
+.files_menu
+    LDA #W_FILES
+    JSR choose_from_window
+    CMP #4                      ; OK, after the four handled items
+    BEQ hex_key_done
+    STA work
+    JSR confirm
+    LDA work
+    LDY #handlers(files_handlers_ptr)
+    BNE jump_to_handler
+
+; f3: the Help menu, which shows whether the simulator is on and stays up
+; until OK.
+.help_menu
+    LDA #W_HELP
+    JSR open_window
+    LDA #0
+    BEQ help_menu_show
+; Help menu, Simulate: switch it and go round again.
+.help_simulate
+    SEC                         ; leave the Simulate window to the main loop
+    JSR switch_simulate
+    LDA #1
+.help_menu_show
+    PHA
+    LDA simulate_window
+    LDY #2
+    JSR vector_tick_line
+    PLA
+    TAY
+    JSR menu_select
+    LDY #handlers(help_handlers_ptr)
+    BNE jump_to_handler
+
+; Switch the simulator on or off. With C clear (the S key) the Simulate
+; window is kept on screen while it's on.
+; Clobbers: A, X, Y.
+.switch_simulate
+    LDA simulate_window
+    EOR #W_SIMULATE + 1
+    STA simulate_window
+    BNE switch_simulate_on
+    STA simulating
+    BCS switch_simulate_done
+    LDA kept_window
+    CMP #W_SIMULATE
+    BNE switch_simulate_done
+    JSR vector_close_window
+    LDA #&FF
+    STA kept_window
+.switch_simulate_done
+    RTS
+.switch_simulate_on
+    BCS switch_simulate_done
+    LDA kept_window
+    BPL switch_simulate_done
+    LDA #W_SIMULATE
+    STA kept_window
+    JMP open_window
+; Options menu, Start and Finish: Define lets the user put the start or
+; finish with the cursor; Display just moves the cursor there. The start is
+; kept 4 less than where it's put in each direction. The position is marked
+; in the map with a junction block.
+.option_start
+    LDY #level_start_x - level_start_x
+    BEQ edit_marker
+.option_finish
+    LDY #level_finish_x - level_start_x
+.edit_marker
+    STY record
+    LDA #W_DEFINE_DISPLAY
+    JSR choose_from_window
+    CMP #2                      ; OK
+    BEQ switch_simulate_done
+    PHA
+    LDY record
+    TYA
+    EOR #4                      ; 4 for the start, 0 for the finish
+    CLC
+    ADC level_start_x, Y
+    STA cursor_x
+    STA work
+    TYA
+    EOR #4
+    CLC
+    ADC level_start_y, Y
+    STA cursor_y
+    STA work+1
+    PLA
+    BNE switch_simulate_done    ; Display
+.edit_marker_define
+    LDX #W_OPTIONS_LOCATION
+    JSR get_key_no_plot
+    CMP #asc(" ")
+    BEQ switch_simulate_done
+    CMP #13
+    BNE edit_marker_define
+    LDY record
+    TYA
+    SEC
+    SBC #4                      ; -4 for the start, 0 for the finish
+    CLC
+    ADC cursor_x
+    STA level_start_x, Y
+    TYA
+    SEC
+    SBC #4
+    CLC
+    ADC cursor_y
+    STA level_start_y, Y
+    LDA #TILE_JUNCTION
+; Mark a position in the map: put block A at the cursor, and blank the old
+; position if it has the same block.
+; In: A = the block; work = the old position.
+; Clobbers: A, X, Y, ptr.
+.plot_marker
+    PHA
+    LDX work
+    LDY work+1
+    JSR vector_read_map
+    STA ptr
+    PLA
+    PHA
+    EOR ptr
+    BNE plot_marker_new
+    LDX work
+    LDY work+1
+    JSR vector_write_map        ; A is 0, a blank
+.plot_marker_new
+    LDX cursor_x
+    LDY cursor_y
+    PLA
+    JMP vector_write_map
+
+; Options menu, Object: which one, then its window until OK.
+.option_object
+    LDX #M_WHICH_OBJECT
+    LDA #OBJECTS
+    JSR choose_record
+    JSR show_object_window
+    LDA #0
+.option_object_loop
+    JSR menu_select
+    PHA
+    LDY #handlers(object_handlers_ptr)
+    JSR jump_to_handler
+    PLA
+    BPL option_object_loop
+
+; Object window, Position: put it with the cursor, marked in the map with a
+; junction.
+.object_position
+    JSR vector_close_window
+    LDY record
+    LDA level_objects, Y
+    AND #&3F
+    STA cursor_x
+    STA work
+    LDA level_objects+1, Y
+    AND #&3F
+    STA cursor_y
+    STA work+1
+.object_position_define
+    LDX #W_OBJECT_LOCATION
+    JSR get_key_no_plot
+    CMP #asc(" ")
+    BEQ show_object_window
+    CMP #13
+    BNE object_position_define
+    LDY record
+    LDA cursor_x                ; which also makes it exist
+    STA level_objects, Y
+    LDA cursor_y
+    STA level_objects+1, Y
+    LDA #TILE_JUNCTION
+    JSR plot_marker
+; Open the object window with ticks showing the object's flags.
+.show_object_window
+    LDA #W_OBJECT
+    JSR show_record_window
+.show_object_ticks
+    LDY record
+    LDA level_objects, Y
+    ORA level_objects+1, Y
+    AND #&C0
+    BEQ show_object_exists
+    LDA #1
+.show_object_exists
+    EOR #1
+    LDY #2                      ; Exists ?
+    JSR vector_tick_line
+    LDY record
+    LDA level_objects+3, Y
+    AND #&20
+    EOR #&20
+    LDY #5                      ; Charges:
+    JSR vector_tick_line
+    LDY record
+    LDA level_objects+3, Y
+    PHA
+    AND #&40
+    LDY #6                      ; Vanish:
+    JSR vector_tick_line
+    PLA
+    AND #&80
+    EOR #&80
+    LDY #7                      ; Throw:
+    JMP vector_tick_line
+
+; Object window, Charge: how many charges, 0-31 (which gives it charges).
+.object_charge
+    LDY #31
+    TYA
+    LDX record
+    AND level_objects+3, X
+    TAX
+    LDA #M_CHARGES
+    SEC                         ; 0 allowed
+    JSR ask_number_limited
+    STA ptr
+    LDY record
+    LDA level_objects+3, Y
+    AND #&C0
+    ORA ptr
+    STA level_objects+3, Y
+    JMP show_object_window
+
+; Object window, Sprite no.: 1-15, kept as 0-14.
+.object_sprite
+    LDY record
+    LDX level_objects+2, Y
+    INX
+    LDA #M_OLD_SPRITE
+    LDY #15
+    CLC                         ; 0 not allowed
+    JSR ask_number_limited
+    SEC
+    SBC #1
+    LDY record
+    STA level_objects+2, Y
+    BPL show_object_window
+
+; Object window, Charges:, Vanish: and Throw:, which flip a flag.
+.object_charges_toggle
+    LDA #&20
+    BNE object_toggle_flag
+.object_vanish_toggle
+    LDA #&40
+    BNE object_toggle_flag
+.object_throw_toggle
+    LDA #&80
+.object_toggle_flag
+    LDY record
+    EOR level_objects+3, Y
+    STA level_objects+3, Y
+    JMP show_object_ticks
+
+; Object window, Exists ?: flip OBJECT_ABSENT in both coordinates.
+.object_exists_toggle
+    LDY record
+    LDA level_objects, Y
+    AND #&BF
+    EOR #OBJECT_ABSENT
+    STA level_objects, Y
+    AND #OBJECT_ABSENT
+    STA ptr
+    LDA level_objects+1, Y
+    AND #&3F
+    ORA ptr
+    STA level_objects+1, Y
+    JMP show_object_ticks
+; Print A in decimal without leading zeros (they go out as VDU 0, which does
+; nothing).
+; Clobbers: A, X, Y, ptr.
+.print_decimal
+    STA ptr
+    LDY #0                      ; nonzero once a digit has been printed
+    LDA #100
+    JSR print_digit
+    LDA #10
+    JSR print_digit
+    LDA #1
+.print_digit
+    STA ptr+1
+    LDA ptr
+    LDX #&FF
+.print_digit_count
+    INX
+    STA ptr
+    SEC
+    SBC ptr+1
+    BCS print_digit_count
+    TXA
+    BNE print_digit_out
+    DEY
+    INY
+    BNE print_digit_out
+    DEC ptr+1
+    BEQ print_digit_out         ; always print the units
+    LDA #-asc("0")              ; a leading zero: VDU 0
+    DEY
+.print_digit_out
+    INY
+    ADC #asc("0")
+    JMP OSWRCH
+
+; Options menu, M.Monster: which one, then its window until OK.
+.option_monster
+    LDX #M_WHICH_MONSTER
+    LDA #MONSTERS
+    JSR choose_record
+    JSR show_monster_window
+    LDA #0
+.option_monster_loop
+    JSR menu_select
+    PHA
+    LDY #handlers(monster_handlers_ptr)
+    JSR jump_to_handler
+    PLA
+    BPL option_monster_loop
+
+; Monster window, Position: put it with the cursor, marked in the map with a
+; barricade.
+.monster_position
+    JSR vector_close_window
+    LDY record
+    LDA level_monsters, Y
+    LSR A
+    LSR A
+    STA work
+    STA cursor_x
+    LDA level_monsters+1, Y
+    LSR A
+    LSR A
+    STA work+1
+    STA cursor_y
+.monster_position_define
+    LDX #W_MONSTER_LOCATION
+    JSR get_key_no_plot
+    CMP #asc(" ")
+    BEQ show_monster_window
+    CMP #13
+    BNE monster_position_define
+    LDY record
+    LDA cursor_x
+    ASL A
+    ASL A
+    STA level_monsters, Y
+    LDA cursor_y
+    ASL A
+    ASL A
+    STA level_monsters+1, Y
+    LDA #TILE_BARRICADE
+    JSR plot_marker
+.show_monster_window
+    LDA #W_MONSTER
+; Open an object's, monster's or puzzle's window with its number in the
+; title.
+; In: A = the window.
+; Clobbers: A, X, Y.
+.show_record_window
+    JSR open_window
+    LDA #M_RECORD_NUMBER
+    JSR vector_print_message
+    LDA record
+    LSR A
+    LSR A
+    ADC #asc("1")
+    JSR OSWRCH
+    JMP vector_text_colours
+
+; Monster window, Direction.
+.monster_direction
+    LDY record
+    LDX level_monsters+2, Y
+    JSR choose_direction
+    STA level_monsters+2, Y
+    BPL show_monster_window
+
+; Choose a direction from the north, south, east, west, dead menu.
+; In: X = the current direction code (0 west, 1 east, 2 north, 3 south, 8 or
+; anything over 4 dead).
+; Out: A = the code chosen; Y = record.
+; Clobbers: X, ptr.
+.choose_direction
+    CPX #5
+    BCC choose_direction_menu
+    LDX #4
+.choose_direction_menu
+    LDY direction_items, X
+    LDA #W_DIRECTION
+    JSR choose_from_window_at
+    TAY
+    LDA direction_codes, Y
+    LDY record
+    RTS
+; The code for each item of the direction menu, and the item for each code.
+.direction_codes
+    EQUB 2, 3, 1, 0, 8          ; north, south, east, west, dead
+.direction_items
+    EQUB 3, 2, 0, 1, 4          ; west, east, north, south, dead
+
+; Monster window, Pattern.
+.monster_pattern
+    LDY record
+    LDA level_monsters+3, Y
+    JSR choose_pattern
+    STA level_monsters+3, Y
+    JMP show_monster_window
+
+; Choose a monster's pattern: one of four presets, or Special, four choices
+; of which way to turn made one by one.
+; In: A = the current pattern.
+; Out: A = the new one; Y = record.
+; Clobbers: X, ptr, choices.
+.choose_pattern
+    STA ptr+1
+    LDY #0
+.choose_pattern_find
+    CMP pattern_presets, Y
+    BEQ choose_pattern_menu
+    INY
+    CPY #pattern_presets_end - pattern_presets
+    BCC choose_pattern_find
+.choose_pattern_menu
+    LDA #W_PATTERNS
+    JSR choose_from_window_at
+    CMP #pattern_presets_end - pattern_presets      ; Special
+    BEQ choose_pattern_special
+    TAY
+    LDA pattern_presets, Y
+    LDY record
+    RTS
+.choose_pattern_special
+    LDA ptr+1
+    JSR unpack_priorities
+    PHA
+.choose_pattern_special_loop
+    LDA #W_PRIORITIES
+    JSR open_window
+    LDA #M_PATTERN_AT           ; the four choices as letters in the title
+    JSR vector_print_message
+    LDX #3
+.choose_pattern_print
+    LDY choices, X
+    LDA priority_letters, Y
+    JSR OSWRCH
+    DEX
+    BPL choose_pattern_print
+    PLA
+    JSR menu_select
+    CMP #4                      ; OK
+    BEQ choose_pattern_done
+    PHA
+    EOR #3                      ; the first priority is the last field
+    TAX
+    LDA choices, X
+    JSR choose_relative_direction
+    TAY
+    PLA
+    PHA
+    EOR #3
+    TAX
+    TYA
+    STA choices, X
+    BPL choose_pattern_special_loop
+
+; Choose forwards, backwards, left or right.
+; In: A = the current one as a pattern field (0 backwards, 1 forwards, 2
+; right, 3 left).
+; Out: A = the one chosen, likewise.
+; Clobbers: X, Y, ptr.
+.choose_relative_direction
+    EOR #1                      ; field to menu item and back
+    TAY
+    LDA #W_RELATIVE_DIRECTION
+    JSR choose_from_window_at
+    EOR #1
+    RTS
+
+.choose_pattern_done
+    JSR vector_close_window
+    LDY record
+; Pack choices into a byte, choices+0 in the top two bits.
+; Out: A = the byte.
+; Clobbers: X.
+.pack_priorities
+    LDA #0
+    TAX
+.pack_priorities_loop
+    ASL A
+    ASL A
+    ORA choices, X
+    INX
+    CPX #4
+    BCC pack_priorities_loop
+    RTS
+
+.priority_letters
+    EQUS "BFRL"                 ; backwards, forwards, right, left
+; The named patterns, in the order of their menu; the first choice is in
+; the bottom two bits.
+.pattern_presets
+    EQUB PATTERN_BACK_AND_FORTH ; forwards, backwards, left, right
+    EQUB PATTERN_FOLLOW_EDGES   ; forwards, right, left, backwards
+    EQUB PATTERN_LEFT_WALL      ; left, forwards, right, backwards
+    EQUB PATTERN_RIGHT_WALL     ; right, forwards, left, backwards
+.pattern_presets_end
+
+; Monster window, Killed by and Result: the block that kills monsters and
+; the block a dead one leaves, for every monster in the level.
+.monster_killed_by
+    LDA level_monster_rules
+    AND #&0F
+    TAY
+    LDA #W_SELECT_BLOCK
+    JSR choose_from_window_at
+    LDX #&F0
+    BMI monster_rules_store
+.monster_result
+    LDA level_monster_rules
+    LSR A
+    LSR A
+    LSR A
+    LSR A
+    TAY
+    LDA #W_SELECT_BLOCK
+    JSR choose_from_window_at
+    LDX #&0F
+    ASL A
+    ASL A
+    ASL A
+    ASL A
+.monster_rules_store
+    STA ptr
+    TXA
+    AND level_monster_rules
+    ORA ptr
+    STA level_monster_rules
+    JMP show_monster_window
+
+; Unpack a byte into choices, its top two bits into choices+0.
+; In: A = the byte.
+; Clobbers: A, X.
+.unpack_priorities
+    LDX #3
+.unpack_priorities_loop
+    PHA
+    AND #3
+    STA choices, X
+    PLA
+    LSR A
+    LSR A
+    DEX
+    BPL unpack_priorities_loop
+    RTS
+
+.count_collectable
+    INC work
+    BNE count_collectable_done
+    INC work+1
+.count_collectable_done
+    RTS
+; Options menu, Collects: count the collectables in the map, then ask how many
+; the player must collect.
+.option_collects
+    LDY #0
+    STY ptr
+    STY work
+    STY work+1
+    LDA #HI(level_map)
+    STA ptr+1
+    LDX #HI(level_end - level_map)
+.option_collects_count
+    LDA (ptr), Y
+    PHA
+    AND #&0F
+    CMP #TILE_COLLECTABLE
+    BNE option_collects_high
+    JSR count_collectable
+.option_collects_high
+    PLA
+    LSR A
+    LSR A
+    LSR A
+    LSR A
+    CMP #TILE_COLLECTABLE
+    BNE option_collects_next
+    JSR count_collectable
+.option_collects_next
+    INY
+    BNE option_collects_count
+    INC ptr+1
+    DEX
+    BNE option_collects_count
+.option_collects_ask
+    JSR vector_open_message_box
+    LDA work
+    LDX work+1
+    BEQ option_collects_show
+    LDA #M_TOO_MANY             ; 256 or more: say so, and call it 250
+    JSR vector_print_message
+    LDA #250
+.option_collects_show
+    PHA
+    LDA #M_COLLECTABLES
+    JSR vector_print_line1
+    PLA
+    JSR print_decimal
+    LDA #M_REQUIRED
+    JSR vector_print_message
+    LDA level_collects
+    JSR print_decimal
+    LDX #M_ENTER_NEW_VALUE
+    JSR input_number
+    DEX
+    BEQ option_collects_done    ; nothing typed
+    BPL option_collects_ask     ; too big
+    STA level_collects
+.option_collects_done
+    JMP vector_close_message_box
+
+; Options menu, Time: the time allowed, 1-255.
+.option_time
+    LDA #M_INITIAL_TIME
+    LDX level_time
+    JSR ask_number
+    STA level_time
+    RTS
+
+; Ask for a new value of a number, showing the old one, until it's in range.
+; Return keeps the old one; one out of range starts at 1.
+; ask_number allows 0-255.
+; In: A = the message; X = the old value; Y = the maximum; C set if 0 is
+; allowed.
+; Out: A = the value.
+; Clobbers: X, Y, ptr, arg, number, plot_enabled (borrowed for the maximum).
+.ask_number
+    SEC
+    LDY #255
+.ask_number_limited
+    PHP
+    STA arg
+    STY plot_enabled
+    TXA
+    BNE ask_number_check
+    BCC ask_number_default
+.ask_number_check
+    CPX plot_enabled
+    BEQ ask_number_start
+    BCC ask_number_start
+.ask_number_default
+    LDX #1
+.ask_number_start
+    STX number
+.ask_number_loop
+    JSR vector_open_message_box
+    LDA arg
+    JSR vector_print_line1
+    LDA number
+    JSR print_decimal
+    LDX #M_ENTER_NEW_VALUE
+    JSR input_number
+    CMP plot_enabled
+    BEQ ask_number_entered
+    BCS ask_number_loop
+.ask_number_entered
+    DEX
+    BMI ask_number_check_zero   ; a number
+    BNE ask_number_loop         ; too big
+    LDA number                  ; nothing typed: the old one
+.ask_number_check_zero
+    PLP
+    PHP
+    TAY
+    BNE ask_number_done
+    BCC ask_number_loop
+.ask_number_done
+    PLP
+    PHA
+    JSR vector_close_message_box
+    PLA
+    RTS
+
+; Options menu, Graphics: the sprite for walls one and two, the collectable
+; and the fatal trap, and the level's four colours.
+.option_graphics
+    LDA level_sprites
+    JSR unpack_priorities
+    LDA #0
+.option_graphics_loop
+    PHA
+    LDA #W_GRAPHICS
+    JSR open_window
+    PLA
+    JSR menu_select
+    CMP #8                      ; OK
+    BNE option_graphics_choice
+    JSR pack_priorities
+    STA level_sprites
+    JMP vector_close_window
+.option_graphics_choice
+    PHA
+    CMP #4
+    BCC option_graphics_sprite
+    SBC #4                      ; first to fourth colour
+    STA work
+    TAY
+    ASL A
+    ASL A
+    ASL A
+    ASL A
+    STA work+1
+    LDA level_palette, Y
+    AND #&0F
+    TAY
+    LDA #W_COLOURS
+    JSR choose_from_window_at
+    ORA work+1
+    LDY work
+    STA level_palette, Y
+    JSR set_palette_entry
+.option_graphics_next
+    JSR vector_close_window
+    PLA
+    JMP option_graphics_loop
+.option_graphics_sprite
+    TAY
+    STY work
+    LDX choices, Y
+    LDY sprite_items, X
+    LDA #W_SPRITES
+    JSR choose_from_window_at
+    TAX
+    LDA sprite_codes, X
+    LDX work
+    STA choices, X
+    BPL option_graphics_next
+; The code for each item of the sprites menu (sprite A, sprite B,
+; patterned), and the item for each code; nothing chooses code 2.
+.sprite_codes
+    EQUB 0, 3, 1, 2
+.sprite_items
+    EQUB 0, 2, 3, 1
+; Options menu, Puzzle: which one, then its window for ever (its OK pops
+; back out of here).
+.option_puzzle
+    LDA #PUZZLES
+    LDX #M_WHICH_PUZZLE
+    JSR choose_record
+.edit_puzzle
+    LDA record
+    LSR A
+    LSR A
+    STA puzzle
+    LDA #0
+    STA work
+.edit_puzzle_loop
+    LDA #W_PUZZLE
+    JSR open_window
+    LDA #M_PUZZLE_NAME_AT
+    JSR vector_print_message
+    JSR print_puzzle_name
+    LDA work
+    JSR menu_select
+    STA work
+    LDY #handlers(puzzle_handlers_ptr)
+    JSR jump_to_handler
+    JMP edit_puzzle_loop
+
+; Puzzle window, Type. A swap-next-block puzzle can't check the next block.
+.puzzle_type
+    LDA #W_PUZZLE_TYPES
+    JSR open_window
+    LDY puzzle
+    LDA level_puzzle_types, Y
+    AND #&0F
+    JSR menu_select
+    STA ptr
+    CMP #PUZZLE_SWAP_NEXT
+    BNE puzzle_type_store
+    LDY record
+    LDA level_puzzle_effects+3, Y
+    AND #&BF
+    STA level_puzzle_effects+3, Y
+.puzzle_type_store
+    LDY puzzle
+    LDA level_puzzle_types, Y
+    AND #&F0
+    ORA ptr
+    STA level_puzzle_types, Y
+    JMP vector_close_window
+
+; Print a puzzle's ten-character name: the first eight from record (or A),
+; the last two from puzzle.
+; In: A = the puzzle times 4, for print_puzzle_name_at.
+; Clobbers: A, X, Y.
+.print_puzzle_name
+    LDA record
+.print_puzzle_name_at
+    ASL A
+    TAY
+    LDX #8
+.print_puzzle_name_loop
+    LDA level_names, Y
+    JSR OSWRCH
+    INY
+    DEX
+    BNE print_puzzle_name_loop
+    LDA puzzle
+    ASL A
+    TAY
+    LDA level_name_ends, Y
+    JSR OSWRCH
+    LDA level_name_ends+1, Y
+    JMP OSWRCH
+
+; Puzzle window, Name. Return alone keeps the old one; a shorter one is padded
+; with spaces.
+.puzzle_name
+    JSR vector_open_message_box
+    LDA #M_OLD_NAME
+    JSR vector_print_line1
+    JSR print_puzzle_name
+    LDA #NAME_LENGTH
+    LDX #M_PUZZLE_NAME
+    JSR input_text
+    JSR pad_input
+    LDA ptr
+    BEQ puzzle_name_done
+    LDA record
+    ASL A
+    TAY
+    LDX #0
+.puzzle_name_copy
+    JSR name_char
+    STA level_names, Y
+    INY
+    INX
+    CPX #8
+    BCC puzzle_name_copy
+    LDA puzzle
+    ASL A
+    TAY
+    JSR name_char
+    STA level_name_ends, Y
+    INX
+    JSR name_char
+    STA level_name_ends+1, Y
+.puzzle_name_done
+    JSR vector_close_message_box
+    JMP vector_close_window
+
+; In: X = a position in the input buffer.
+; Out: A = the character there, the Return as a space.
+.name_char
+    LDA input_buffer, X
+    CMP #asc(" ")
+    BCS name_char_done
+    LDA #asc(" ")
+.name_char_done
+    RTS
+
+; Puzzle window, Status: three flags in a window of their own, until OK. The
+; title gets a one-digit number, the puzzle's mod 8.
+.puzzle_status
+    LDA #W_PUZZLE_STATUS
+    JSR open_window
+    LDA #M_STATUS_NUMBER_AT
+    JSR vector_print_message
+    LDA puzzle
+    AND #7
+    CLC
+    ADC #asc("1")
+    JSR OSWRCH
+    LDA #0
+    STA work+1
+.puzzle_status_loop
+    LDY puzzle
+    LDA level_puzzle_types, Y
+    PHA
+    AND #&80
+    LDY #1                      ; Use object 1:
+    JSR vector_tick_line
+    PLA
+    PHA
+    AND #&20
+    EOR #&20
+    LDY #2                      ; Turned on:
+    JSR vector_tick_line
+    PLA
+    AND #&10
+    LDY #3                      ; Re-usable:
+    JSR vector_tick_line
+    LDA work+1
+    JSR menu_select
+    STA work+1
+    LDY #handlers(status_handlers_ptr)
+    JSR jump_to_handler
+    JMP puzzle_status_loop
+
+; Conditions window, Collects.:, and the status window's flags.
+.condition_collects
+    LDA #&40
+    BNE puzzle_toggle_flag
+.status_use_object
+    LDA #&80
+    BNE puzzle_toggle_flag
+.status_turned_on
+    LDA #&20
+    BNE puzzle_toggle_flag
+.status_reusable
+    LDA #&10
+.puzzle_toggle_flag
+    LDY puzzle
+    EOR level_puzzle_types, Y
+    STA level_puzzle_types, Y
+    RTS
+
+; Puzzle window, Conditions: what has to be true for the puzzle to happen,
+; in its own window until OK.
+.puzzle_conditions
+    JSR vector_close_window
+    JSR open_conditions_window
+    LDA #0
+    STA work+1
+.puzzle_conditions_loop
+    LDA puzzle
+    ASL A
+    PHA
+    TAY
+    LDA level_puzzle_positions, Y
+    AND #&80
+    EOR #&80
+    LDY #2                      ; Check X:
+    JSR vector_tick_line
+    PLA
+    TAY
+    LDA level_puzzle_positions+1, Y
+    AND #&80
+    EOR #&80
+    LDY #3                      ; Check Y:
+    JSR vector_tick_line
+    LDY record
+    LDA level_puzzle_effects+3, Y
+    PHA
+    LDY puzzle
+    LDA level_puzzle_types, Y
+    AND #&0F
+    CMP #PUZZLE_SWAP_NEXT
+    BEQ puzzle_conditions_check_next
+    PLA
+    PHA
+    AND #&40
+.puzzle_conditions_check_next
+    LDY #5                      ; Check next:
+    JSR vector_tick_line
+    PLA
+    AND #&80
+    LDY #7                      ; Check dir.:
+    JSR vector_tick_line
+    LDY puzzle
+    LDA level_puzzle_types, Y
+    AND #&40
+    LDY #8                      ; Collects.:
+    JSR vector_tick_line
+    LDA work+1
+    JSR menu_select
+    STA work+1
+    LDY #handlers(conditions_handlers_ptr)
+    JSR jump_to_handler
+    JMP puzzle_conditions_loop
+
+; Return from the caller instead if the puzzle swaps the next block.
+.unless_swap_next
+    LDY puzzle
+    LDA level_puzzle_types, Y
+    AND #&0F
+    CMP #PUZZLE_SWAP_NEXT
+    BNE unless_swap_next_done
+    PLA
+    PLA
+.unless_swap_next_done
+    RTS
+
+; Conditions window, Check next: and Check dir.: flags.
+.condition_check_next
+    JSR unless_swap_next
+    LDA #&40
+    BNE condition_toggle_flag
+.condition_check_direction
+    LDA #&80
+.condition_toggle_flag
+    LDY record
+    EOR level_puzzle_effects+3, Y
+    STA level_puzzle_effects+3, Y
+    RTS
+
+; Conditions window, Check X: and Check Y:, the flags in the position.
+.condition_check_x
+    CLC
+    BCC condition_toggle_position
+.condition_check_y
+    SEC
+.condition_toggle_position
+    LDA puzzle
+    ROL A
+    TAY
+    LDA level_puzzle_positions, Y
+    AND #&BF
+    EOR #&80
+    STA level_puzzle_positions, Y
+    RTS
+
+; Make the compass window offer four directions or eight, by changing its
+; height in WDATA.
+; In: A = 4 or 8.
+; Clobbers: X, Y, ptr.
+.set_direction_menu_size
+    PHA
+    LDA #W_COMPASS
+    JSR vector_window_address
+    STX ptr
+    STY ptr+1
+    LDY #3                      ; the height
+    PLA
+    STA (ptr), Y
+    RTS
+
+; Conditions window, Next block: which block must be next, which also turns
+; the check on.
+.condition_next_block
+    JSR unless_swap_next
+    LDY record
+    LDA level_puzzle_effects+3, Y
+    AND #&0F
+    TAY
+    LDA #W_SELECT_BLOCK
+    JSR choose_from_window_at
+    ORA #&40
+    LDX #&B0
+    BMI condition_store
+; Conditions window, Direction: which way the player must be going, which
+; also turns the check on.
+.condition_direction
+    LDA #4
+    JSR set_direction_menu_size
+    LDY record
+    LDA level_puzzle_effects+3, Y
+    AND #&30
+    LSR A
+    LSR A
+    LSR A
+    LSR A
+    TAX
+    LDY direction_items, X
+    LDA #W_COMPASS
+    JSR choose_from_window_at
+    TAY
+    LDA direction_codes, Y
+    ASL A
+    ASL A
+    ASL A
+    ASL A
+    ORA #&80
+    LDX #&4F
+.condition_store
+    STA ptr
+    LDY record
+    TXA
+    AND level_puzzle_effects+3, Y
+    ORA ptr
+    STA level_puzzle_effects+3, Y
+.open_conditions_window
+    LDA #W_CONDITIONS
+    JMP open_window
+
+; Conditions window, Position: where the puzzle is, with the cursor.
+.condition_position
+    JSR vector_close_window
+    LDA puzzle
+    ASL A
+    TAY
+    LDA level_puzzle_positions, Y
+    AND #&3F
+    STA cursor_x
+    LDA level_puzzle_positions+1, Y
+    AND #&3F
+    STA cursor_y
+.condition_position_define
+    LDX #W_PUZZLE_LOCATION
+    JSR get_key_no_plot
+    CMP #asc(" ")
+    BEQ open_conditions_window
+    CMP #13
+    BNE condition_position_define
+    LDA puzzle
+    ASL A
+    TAY
+    LDA level_puzzle_positions, Y
+    AND #&80
+    ORA cursor_x
+    STA level_puzzle_positions, Y
+    LDA level_puzzle_positions+1, Y
+    AND #&80
+    ORA cursor_y
+    STA level_puzzle_positions+1, Y
+    JMP open_conditions_window
+; Files menu, Load level: ask for the file and its editing code, load it, and
+; keep it only if the code matches; otherwise start a new level.
+.files_load
+    LDA #M_LOADING
+    JSR ask_filename
+    JSR vector_open_message_box
+    LDA #M_LOADING
+    JSR vector_print_line1
+    JSR input_editing_code
+    INC loading                 ; an error now clears the level
+    LDA #&FF                    ; OSFILE &FF: load
+    JSR level_file
+    DEC loading
+    LDX #2
+.files_load_check_code
+    LDA level_code, X
+    CMP ptr+1, X
+    BNE files_load_wrong_code
+    DEX
+    BPL files_load_check_code
+    JMP vector_draw_map
+.files_load_wrong_code
+    JSR new_level
+    JSR vector_open_message_box
+    LDA #M_WRONG_CODE
+    JSR vector_print_line1
+    LDA #M_PRESS_ANY_KEY
+    JSR vector_print_message
+    JSR wait_for_key
+    JMP vector_close_message_box
+
+; Read a six-digit editing code and encode it as level_code is kept: each
+; pair of digits as a BCD byte, its odd and even bits swapped and then
+; rotated right a place.
+; Out: ptr+1 to ptr+3 = the code.
+; Clobbers: A, X, Y, ptr, the input buffer.
+.input_editing_code
+    LDA #asc("0")
+    STA input_min_char
+    LDA #asc("9")
+    STA input_max_char
+    LDA #6
+    LDX #M_ENTER_CODE
+    JSR input_line
+    LDY #2
+    LDX #4
+.input_editing_code_pair
+    LDA input_buffer+1, X
+    SEC
+    SBC #asc("0")
+    STA ptr
+    LDA input_buffer, X
+    SEC
+    SBC #asc("0")
+    ASL A
+    ASL A
+    ASL A
+    ASL A
+    ORA ptr
+    PHA
+    AND #%01010101
+    ASL A
+    STA ptr
+    PLA
+    AND #%10101010
+    LSR A
+    ORA ptr
+    PHA
+    LSR A                       ; bit 0 into the carry
+    PLA
+    ROR A                       ; and round to bit 7
+    STA ptr+1, Y
+    DEX
+    DEX
+    DEY
+    BPL input_editing_code_pair
+    RTS
+
+; Files menu, Edit code: give the level a new editing code.
+.files_edit_code
+    JSR vector_open_message_box
+    JSR input_editing_code
+    LDX #2
+.files_edit_code_store
+    LDA ptr+1, X
+    STA level_code, X
+    DEX
+    BPL files_edit_code_store
+    JMP vector_close_message_box
+
+; Files menu, Save level.
+.files_save
+    LDA #M_SAVING
+    JSR ask_filename
+    LDA #0                      ; OSFILE 0: save
+    JSR level_file
+    JMP vector_close_message_box
+
+; Load or save the level, with a one-line text window for the filing
+; system's messages, then set the level's palette.
+; In: A = the OSFILE call; osfile_block filled in by ask_filename.
+; Clobbers: A, X, Y.
+.level_file
+    PHA
+    LDA #M_FILING_WINDOW
+    JSR vector_print_line2
+    PLA
+    LDX #LO(osfile_block)
+    LDY #HI(osfile_block)
+    SEI
+    JSR OSFILE
+    JSR vector_set_level_palette
+.level_file_done
+    CLI
+    LDA #M_RESET_WINDOWS
+    JMP vector_print_message
+
+; Ask for a filename and set up osfile_block for it.
+; In: A = the message saying what's happening.
+; Clobbers: A, X, Y, ptr, the input buffer.
+.ask_filename
+    PHA
+    JSR vector_open_message_box
+    PLA
+    JSR vector_print_line1
+    LDA #12
+    LDX #M_ENTER_FILENAME
+    JSR input_text
+    LDY ptr
+.ask_filename_copy
+    LDA input_buffer, Y
+    STA filename, Y
+    DEY
+    BPL ask_filename_copy
+    LDY #osfile_template_end - osfile_template - 1
+.ask_filename_block
+    LDA osfile_template, Y
+    STA osfile_block, Y
+    DEY
+    BPL ask_filename_block
+    RTS
+
+; Room for a filename of 12 characters, with an author's mark in it.
+.filename
+    EQUS "_Ian Holmes_"
+; OSFILE's control block, filled in from the template before use (left over
+; bytes until then).
+.osfile_block
+    EQUB &00, &00, &A1, &25, &00, &00, &23, &A5
+    EQUB &63, &20, &4C, &18, &A2, &12, &20, &C4
+    EQUB &12, &C5
+; The level is saved with its own address as load address, and an exec
+; address of &8380 that means nothing here.
+.osfile_template
+    EQUW filename
+    EQUD level                  ; load address
+    EQUD &8380                  ; exec address; loading, nonzero means load the
+                                ; file at its own address
+    EQUD level                  ; start of the data to save
+    EQUD level_end              ; and its end
+.osfile_template_end
+; Puzzle window, Effects: what the puzzle does, by type. Each effect keeps
+; its details in the puzzle's first three effect bytes (the fourth is the
+; conditions); see each editor below. Most run a window of their own until
+; its OK.
+
+; Place monster: +0 x * 4 + monster number, +1 pattern, +2 y * 4 +
+; direction (north, south, east or west, as compass_codes).
+.effect_place_monster
+    JSR vector_close_window
+    LDY record
+    LDA level_puzzle_effects, Y
+    PHA
+    LSR A
+    LSR A
+    STA cursor_x
+    PLA
+    AND #3
+    STA arg                     ; monster number
+    LDA level_puzzle_effects+2, Y
+    PHA
+    LSR A
+    LSR A
+    STA cursor_y
+    PLA
+    AND #3
+    STA work+1                  ; direction
+    LDA #W_PLACE_MONSTER
+    LDY #handlers(place_monster_handlers_ptr)
+    BNE effect_editor
+; Move monster: +0 direction (as choose_direction), +1 monster number * 4
+; (4 for all of them).
+.effect_move_monster
+    LDA #W_MOVE_MONSTER
+    LDY #handlers(move_monster_handlers_ptr)
+    BNE effect_editor
+; Charge object: +0 object number, +2 charges.
+.effect_charge_object
+    LDA #W_CHARGE_OBJECT
+    LDY #handlers(charge_handlers_ptr)
+    BNE effect_editor
+; Throw object: +0 object number, +2 distance.
+.effect_throw_object
+    LDA #W_THROW_OBJECT
+    LDY #handlers(throw_handlers_ptr)
+    BNE effect_editor
+; Move block: +0 direction (compass_codes, eight ways), +1 x, +2 y.
+.effect_move_block
+    LDA #W_MOVE_BLOCK
+    LDY #handlers(move_block_handlers_ptr)
+    BNE effect_editor
+; Place block: +0 block, +1 x, +2 y.
+.effect_place_block
+    LDA #W_PLACE_BLOCK
+    LDY #handlers(place_block_handlers_ptr)
+; Run an effect's window: its menu goes to its handler table, until the
+; handler for OK pops out of here.
+; In: A = the window; Y = the handler table's number.
+.effect_editor
+    STA effect_window
+    STY effect_table
+    JSR vector_close_window
+    LDA #0
+    PHA
+.effect_editor_loop
+    LDA effect_window
+    JSR open_window
+    PLA
+    JSR menu_select
+    PHA
+    LDY effect_table
+    JSR jump_to_handler
+    JMP effect_editor_loop
+
+.puzzle_effects
+    LDY puzzle
+    LDA level_puzzle_types, Y
+    AND #&0F
+    LDY #handlers(effect_handlers_ptr)
+    JMP jump_to_handler
+
+; Disorientate: nothing to set, just a window saying what it does.
+.effect_disorientate
+    JSR beep
+    LDA #W_DISORIENTATE
+    JSR open_window
+    JSR wait_for_key
+    JMP vector_close_window
+
+; Place and move block windows, Block position: +1 x, +2 y.
+.effect_block_position
+    LDA #0
+    BEQ effect_position
+; Teleport: +1 and +2 where to, kept 4 less as the start is.
+.effect_teleport
+    LDA #4
+.effect_position
+    STA arg
+    JSR vector_close_window
+    LDY record
+    LDA level_puzzle_effects+1, Y
+    CLC
+    ADC arg
+    AND #&3F
+    STA cursor_x
+    LDA level_puzzle_effects+2, Y
+    CLC
+    ADC arg
+    AND #&3F
+    STA cursor_y
+.effect_position_define
+    LDX #W_PUZZLE_LOCATION
+    JSR get_key_no_plot
+    CMP #asc(" ")
+    BEQ effect_position_done
+    CMP #13
+    BNE effect_position_define
+    LDY record
+    LDA cursor_x
+    SEC
+    SBC arg
+    STA level_puzzle_effects+1, Y
+    LDA cursor_y
+    SEC
+    SBC arg
+    STA level_puzzle_effects+2, Y
+.effect_position_done
+    RTS
+
+; Next block, and the place block window's Block type: +0 block.
+.effect_block_type
+    LDX record
+    LDY level_puzzle_effects, X
+    LDA #W_SELECT_BLOCK
+    JSR choose_from_window_at
+    LDY record
+    STA level_puzzle_effects, Y
+    RTS
+
+; Set levels: +0 bit 7 set to leave the time alone, bit 0 set to leave the
+; collectables needed alone; +1 the new time, +2 the new number needed.
+.effect_set_levels
+    LDA #W_SET_LEVELS
+    JSR open_window
+    LDA #0
+    PHA
+.effect_set_levels_loop
+    LDY record
+    LDA level_puzzle_effects, Y
+    PHA
+    AND #&80
+    EOR #&80
+    LDY #2                      ; time Change:
+    JSR vector_tick_line
+    PLA
+    AND #1
+    EOR #1
+    LDY #4                      ; collectables Change:
+    JSR vector_tick_line
+    PLA
+    JSR menu_select
+    PHA
+    LDY #handlers(set_levels_handlers_ptr)
+    JSR jump_to_handler
+    JMP effect_set_levels_loop
+.levels_change_time
+    LDA #&80
+    BMI levels_toggle_flag
+.levels_change_collects
+    LDA #1
+.levels_toggle_flag
+    LDY record
+    EOR level_puzzle_effects, Y
+    STA level_puzzle_effects, Y
+    RTS
+; Giving a new value also turns its change on.
+.levels_time
+    LDY record
+    LDX level_puzzle_effects+1, Y
+    LDA #M_REVISED_TIME
+    JSR ask_number
+    LDY record
+    STA level_puzzle_effects+1, Y
+    LDA #1
+    BPL levels_clear_flag
+.levels_collects
+    LDY record
+    LDX level_puzzle_effects+2, Y
+    LDA #M_COLLECTABLES_REQUIRED
+    JSR ask_number
+    LDY record
+    STA level_puzzle_effects+2, Y
+    LDA #&80
+.levels_clear_flag
+    AND level_puzzle_effects, Y
+    STA level_puzzle_effects, Y
+    RTS
+
+; Swap next block: +0 block A, +1 block B.
+.effect_swap_next
+    LDA #0
+    PHA
+.effect_swap_next_loop
+    LDA #W_SWAP_NEXT
+    JSR open_window
+    PLA
+    JSR menu_select
+    CMP #2                      ; OK
+    BEQ effect_swap_next_done
+    PHA
+    ADC record
+    TAX
+    LDY level_puzzle_effects, X
+    LDA #W_SELECT_BLOCK
+    JSR choose_from_window_at
+    TAX
+    PLA
+    PHA
+    CLC
+    ADC record
+    TAY
+    TXA
+    STA level_puzzle_effects, Y
+    JMP effect_swap_next_loop
+.effect_swap_next_done
+    JMP vector_close_window
+
+; Move block window, Direction: +0, one of eight.
+.effect_block_direction
+    LDY record
+    LDA level_puzzle_effects, Y
+    AND #7
+    LDX #8
+    JSR choose_compass_direction
+    LDY record
+    STA level_puzzle_effects, Y
+    RTS
+
+; Choose from the compass window, four directions or eight.
+; In: A = the current direction code; X = 4 or 8.
+; Out: A = the code chosen.
+; Clobbers: X, Y, ptr.
+.choose_compass_direction
+    PHA
+    TXA
+    JSR set_direction_menu_size
+    PLA
+    LDY #compass_codes_end - compass_codes - 1
+.choose_compass_find
+    CMP compass_codes, Y
+    BEQ choose_compass_menu
+    DEY
+    BNE choose_compass_find
+.choose_compass_menu
+    LDA #W_COMPASS
+    JSR choose_from_window_at
+    TAY
+    LDA compass_codes, Y
+    RTS
+; The direction code for each item: north, south, east, west, north-west,
+; north-east, south-west, south-east.
+.compass_codes
+    EQUB 2, 3, 1, 0, 4, 5, 6, 7
+.compass_codes_end
+
+; Detonate object: +0 object number, +2 the same times 4.
+.effect_detonate_object
+    JSR choose_object_number
+    ASL A
+    ASL A
+    STA level_puzzle_effects+2, Y
+    RTS
+
+; Throw and charge object windows, Object no.: +0, asked 1-8, kept 0-7.
+; Out: A = it; Y = record.
+.choose_object_number
+    CLC
+    LDA #M_OBJECT_NUMBER
+    LDY record
+    LDX level_puzzle_effects, Y
+    INX
+    LDY #OBJECTS
+    JSR ask_number_limited
+    SEC
+    SBC #1
+    LDY record
+    STA level_puzzle_effects, Y
+    RTS
+
+; Throw object window, Distance: +2, 1-63.
+.throw_distance
+    LDA #M_DISTANCE
+    LDX #1                      ; the first value offered
+    LDY #63                     ; the most (and a mask for the old value)
+    CLC
+    BNE effect_ask_amount
+; Charge object window, No.of charges: +2, 0-31.
+.charge_count
+    LDA #M_CHARGES
+    LDX #0
+    LDY #31
+    SEC
+.effect_ask_amount
+    PHA
+    STX ptr
+    LDX record
+    TYA
+    AND level_puzzle_effects+2, X
+    BNE effect_ask_amount_current
+    LDA ptr
+.effect_ask_amount_current
+    TAX
+    PLA
+    JSR ask_number_limited
+    LDY record
+    STA level_puzzle_effects+2, Y
+    RTS
+
+; Turn on and turn off puzzle: +0, +1, +2 puzzles A, B and C, asked 1-32 and
+; kept 0-31. "Single:" is ticked when they're all the same, and choosing it
+; makes them so.
+.effect_turn_puzzle
+    LDA #0
+.effect_turn_puzzle_loop
+    PHA
+    LDA #W_SELECT_PUZZLES
+    JSR open_window
+    LDX #0
+    LDY record
+    LDA level_puzzle_effects, Y
+    CMP level_puzzle_effects+1, Y
+    BNE effect_turn_puzzle_tick
+    CMP level_puzzle_effects+2, Y
+    BNE effect_turn_puzzle_tick
+    INX
+.effect_turn_puzzle_tick
+    STX ptr
+    TXA
+    LDY #4                      ; Single:
+    JSR vector_tick_line
+    PLA
+    JSR menu_select
+    CMP #4                      ; OK
+    BCC effect_turn_puzzle_single
+    JMP vector_close_window
+.effect_turn_puzzle_single
+    CMP #3
+    BCC effect_turn_puzzle_choose
+    LDX ptr
+    BNE effect_turn_puzzle_loop
+    LDY record
+    LDA level_puzzle_effects, Y
+    STA level_puzzle_effects+1, Y
+    STA level_puzzle_effects+2, Y
+    LDA #3
+    BNE effect_turn_puzzle_loop
+.effect_turn_puzzle_choose
+    PHA
+    ADC record
+    STA keys_acted_on           ; borrowed: which byte
+    TAY
+    LDX level_puzzle_effects, Y
+    INX
+    LDY #PUZZLES
+    LDA #M_OLD_PUZZLE_NUMBER
+    CLC
+    JSR ask_number_limited
+    SEC
+    SBC #1
+    LDY keys_acted_on
+    STA level_puzzle_effects, Y
+    PLA
+    BPL effect_turn_puzzle_loop
+
+; Push crates: +0 how many.
+.effect_push_crates
+    LDY record
+    LDX level_puzzle_effects, Y
+    LDA #M_NUMBER_OF_CRATES
+    JSR ask_number
+    LDY record
+    STA level_puzzle_effects, Y
+    RTS
+
+; Move monster window, Monster no.
+.move_monster_number
+    LDY record
+    LDA level_puzzle_effects+1, Y
+    LSR A
+    LSR A
+    TAY
+    LDA #W_MONSTER_NUMBER
+    JSR choose_from_window_at
+    ASL A
+    ASL A
+    LDY record
+    STA level_puzzle_effects+1, Y
+    RTS
+
+; Move monster window, Direction.
+.move_monster_direction
+    LDY record
+    LDX level_puzzle_effects, Y
+    JSR choose_direction
+    STA level_puzzle_effects, Y
+    RTS
+
+; Move next block: +0 a pattern field (0 backwards, 1 forwards, 2 right,
+; 3 left) times 4.
+.effect_move_next_block
+    LDY record
+    LDA level_puzzle_effects, Y
+    LSR A
+    LSR A
+    JSR choose_relative_direction
+    ASL A
+    ASL A
+    LDY record
+    STA level_puzzle_effects, Y
+    RTS
+
+; Place monster window: Monster no., Position, Direction and Pattern work
+; on copies until OK (place_monster_ok) puts them back.
+.place_monster_number
+    LDA #M_MONSTER_NUMBER
+    LDY #MONSTERS
+    LDX arg
+    INX
+    CLC
+    JSR ask_number_limited
+    SEC
+    SBC #1
+    STA arg
+    RTS
+.place_monster_position
+    JSR vector_close_window
+    LDA cursor_x
+    PHA
+    LDA cursor_y
+    PHA
+.place_monster_position_loop
+    LDX #W_MONSTER_LOCATION
+    JSR get_key_no_plot
+    CMP #13
+    BEQ place_monster_position_keep
+    CMP #asc(" ")
+    BNE place_monster_position_loop
+    PLA
+    STA cursor_y
+    PLA
+    STA cursor_x
+    RTS
+.place_monster_position_keep
+    PLA
+    PLA
+    RTS
+.place_monster_direction
+    LDX #4
+    LDA work+1
+    JSR choose_compass_direction
+    STA work+1
+    RTS
+.place_monster_pattern
+    LDY record
+    LDA level_puzzle_effects+1, Y
+    JSR choose_pattern
+    STA level_puzzle_effects+1, Y
+    RTS
+
+.find_puzzle_next
+    DEC record
+    BPL find_puzzle_compare
+    JMP vector_close_message_box
+
+; Pad the input buffer with spaces to NAME_LENGTH, from the end of the text.
+; In: ptr = the number of characters.
+; Clobbers: A, Y.
+.pad_input
+    LDY ptr
+    LDA #asc(" ")
+.pad_input_loop
+    STA input_buffer, Y
+    INY
+    CPY #NAME_LENGTH + 1
+    BCC pad_input_loop
+    RTS
+; Help menu, Find puzzle: look a puzzle up by name, ignoring case, and edit
+; it.
+.help_find_puzzle
+    JSR vector_close_window
+    JSR vector_open_message_box
+    LDA #NAME_LENGTH
+    LDX #M_PUZZLE_NAME
+    JSR input_text
+    JSR pad_input
+    LDA #PUZZLES - 1
+    STA record                  ; the puzzle number, for now
+.find_puzzle_compare
+    LDA record
+    ASL A
+    ASL A
+    ASL A
+    TAY
+    LDX #0
+.find_puzzle_compare_name
+    LDA level_names, Y
+    EOR input_buffer, X
+    AND #&DF
+    BNE find_puzzle_next
+    INY
+    INX
+    CPX #8
+    BCC find_puzzle_compare_name
+    LDA record
+    ASL A
+    TAY
+.find_puzzle_compare_end
+    LDA level_name_ends, Y
+    EOR input_buffer, X
+    AND #&DF
+    BNE find_puzzle_next
+    INY
+    INX
+    CPX #NAME_LENGTH
+    BCC find_puzzle_compare_end
+    JSR vector_open_message_box
+    LDA #M_NAME_QUOTE           ; Name: "<name>" Puzzle <n>
+    JSR vector_print_line1
+    LDA record
+    STA puzzle
+    ASL A
+    ASL A
+    JSR print_puzzle_name_at
+    LDA #M_QUOTE_PUZZLE
+    JSR vector_print_message
+    LDX record
+    INX
+.find_puzzle_found
+    TXA
+    JSR print_decimal
+    LDA #M_PRESS_ANY_KEY
+    JSR vector_print_line2
+    JSR wait_for_key
+    JSR vector_close_message_box
+    LDA record
+    ASL A
+    ASL A
+    STA record
+    JMP edit_puzzle
+
+; Options menu, Clear: start a new level, if the user is sure.
+.option_clear
+    JSR vector_close_window
+    JSR confirm
+    JMP new_level
+
+.unused_rts
+    RTS
+
+; OSWORD 0's control block for input_line.
+.input_block
+    EQUW input_buffer
+.input_max_length
+    EQUB 0
+.input_min_char                 ; also the RDCHV filter's limits
+    EQUB 0
+.input_max_char
+    EQUB &FF
+
+; The pipe a direction (0 left, 1 up, 2 right, 3 down) can go into.
+.pipe_across
+    EQUB TILE_HORZ_PIPE, TILE_VERT_PIPE, TILE_HORZ_PIPE, TILE_VERT_PIPE
+; A direction's step: dy for direction n is at direction_dy+n, dx at
+; direction_dx+n, the two tables overlapping.
+.direction_dy
+    EQUB 0
+.direction_dx
+    EQUB -1, 0, 1, 0
+
+; The blocks in the order of the block menu, and the order of the keys 0-9,
+; A-F that choose them directly: for each key, the block's menu item * 16 +
+; the block.
+FUNCTION key_block(item, tile) = item * 16 + tile
+.tile_menu_map
+    EQUB key_block(0, TILE_BLANK)           ; 0
+    EQUB key_block(1, TILE_SE_CURVE)        ; 1
+    EQUB key_block(2, TILE_SW_CURVE)        ; 2
+    EQUB key_block(3, TILE_NE_CURVE)        ; 3
+    EQUB key_block(4, TILE_NW_CURVE)        ; 4
+    EQUB key_block(5, TILE_WALL_1)          ; 5
+    EQUB key_block(10, TILE_CRATE)          ; 6
+    EQUB key_block(7, TILE_COLLECTABLE)     ; 7
+    EQUB key_block(6, TILE_WALL_2)          ; 8
+    EQUB key_block(15, TILE_BARRICADE)      ; 9
+    EQUB key_block(8, TILE_FATAL_TRAP)      ; A
+    EQUB key_block(14, TILE_JUNCTION)       ; B
+    EQUB key_block(12, TILE_HORZ_PIPE)      ; C
+    EQUB key_block(13, TILE_VERT_PIPE)      ; D
+    EQUB key_block(9, TILE_MONSTER)         ; E
+    EQUB key_block(11, TILE_MARKER)         ; F
+
+; Each menu's handlers, one per item (zero page points at these tables).
+.options_handlers
+    EQUW option_start, option_finish, option_object, option_monster
+    EQUW option_puzzle, option_collects, option_graphics, option_time
+    EQUW option_clear, do_nothing
+.object_handlers
+    EQUW object_position, object_exists_toggle, object_sprite, object_charge
+    EQUW object_charges_toggle, object_vanish_toggle, object_throw_toggle
+    EQUW menu_ok_drop_choice
+.monster_handlers
+    EQUW monster_position, monster_direction, monster_pattern
+    EQUW monster_killed_by, monster_result, menu_ok_drop_choice
+.puzzle_handlers
+    EQUW puzzle_name, puzzle_type, puzzle_status, puzzle_conditions
+    EQUW puzzle_effects, menu_ok
+.status_handlers
+    EQUW status_use_object, status_turned_on, status_reusable, menu_ok
+.conditions_handlers
+    EQUW condition_position, condition_check_x, condition_check_y
+    EQUW condition_next_block, condition_check_next, condition_direction
+    EQUW condition_check_direction, condition_collects, menu_ok
+.files_handlers
+    EQUW files_load, files_save, files_edit_code, files_exit
+; By puzzle type.
+.effect_handlers
+    EQUW effect_place_block, effect_move_block, effect_block_type
+    EQUW effect_set_levels, effect_throw_object, effect_detonate_object
+    EQUW effect_move_monster, effect_place_monster, effect_teleport
+    EQUW effect_swap_next, effect_turn_puzzle, effect_turn_puzzle
+    EQUW effect_charge_object, effect_push_crates, effect_move_next_block
+    EQUW effect_disorientate
+.place_block_handlers
+    EQUW effect_block_position, effect_block_type, menu_ok_drop_choice
+.set_levels_handlers
+    EQUW levels_time, levels_change_time, levels_collects
+    EQUW levels_change_collects, menu_ok_drop_choice
+.move_block_handlers
+    EQUW effect_block_position, effect_block_direction, menu_ok_drop_choice
+.throw_handlers
+    EQUW choose_object_number, throw_distance, menu_ok_drop_choice
+.charge_handlers
+    EQUW choose_object_number, charge_count, menu_ok_drop_choice
+.move_monster_handlers
+    EQUW move_monster_number, move_monster_direction, menu_ok_drop_choice
+.place_monster_handlers
+    EQUW place_monster_number, place_monster_position, place_monster_direction
+    EQUW place_monster_pattern, place_monster_ok
+.help_handlers
+    EQUW help_find_puzzle, help_simulate, vector_close_window
+; get_key's steps while simulating, by direction.
+.cursor_handlers
+    EQUW cursor_left, cursor_up, cursor_right, cursor_down
+
+; Spare, all zero but for one stray byte.
+.unused_space
+    SKIP 115
+    EQUB &20
+    SKIP 76
+; Entry points at fixed addresses.
+.vector_text_colours
+    JMP text_colours
+.vector_set_level_palette
+    JMP set_level_palette
+.vector_print_line2
+    JMP print_line2
+.vector_print_line1
+    JMP print_line1
+.vector_print_message
+    JMP print_message
+.vector_vdu_sequence            ; (unused)
+    JMP vdu_sequence_loop
+.vector_window_address
+    JMP window_address
+.vector_read_map
+    JMP read_map
+.vector_write_map
+    JMP write_map
+
+; Start a new level: blank map, default names "Puzzle  1 " to "Puzzle 32 ",
+; the default header, four dead monsters, no objects, and puzzles that do
+; nothing; then clear the screen and set the level's palette.
+; Clobbers: A, X, Y, ptr.
+.new_level
+    LDA #HI(level_map)
+    STA ptr+1
+    LDA #0
+    STA ptr
+    TAY
+    LDX #HI(level_end - level_map)
+.new_level_clear_map
+    STA (ptr), Y
+    INY
+    BNE new_level_clear_map
+    INC ptr+1
+    DEX
+    BNE new_level_clear_map
+    ; The eighth character of each name is the tens digit: space for 1-9,
+    ; then 1, 2 and 3. Fill three overlapping runs and let "Puzzle " below
+    ; overwrite the rest.
+    LDA #asc("3")
+    STA level_names + 29*8 + 7
+    STA level_names + 30*8 + 7
+    STA level_names + 31*8 + 7
+    LDX #79
+.new_level_tens
+    LDA #asc(" ")
+    STA level_names, X
+    LDA #asc("1")
+    STA level_names + 9*8, X
+    LDA #asc("2")
+    STA level_names + 19*8, X
+    DEX
+    BPL new_level_tens
+    ; The last two are the units digit and a space.
+    LDX #(PUZZLES - 1) * 2
+.new_level_units
+    LDA #asc(" ")
+    STA level_name_ends+1, X
+    TXA
+    LSR A
+    ADC #1
+    JSR reduce_mod_10
+    JSR reduce_mod_10
+    JSR reduce_mod_10
+    CLC
+    ADC #asc("0")
+    STA level_name_ends, X
+    DEX
+    DEX
+    BPL new_level_units
+    ; "Puzzle " into the first seven, from the last name back.
+    LDY #0
+.new_level_names
+    DEY
+    LDX #default_puzzle_name_end - default_puzzle_name - 1
+.new_level_name
+    LDA default_puzzle_name, X
+    STA level_names - 1, Y
+    DEY
+    DEX
+    BPL new_level_name
+    TYA
+    BNE new_level_names
+    LDY #15                     ; one more than the header: harmless, as the
+.new_level_header               ; objects are set below
+    LDA default_header, Y
+    STA level_code, Y
+    DEY
+    BPL new_level_header
+    LDA #MONSTERS
+    STA ptr
+    INY
+.new_level_monsters
+    LDX #0
+.new_level_monster
+    LDA default_monster, X
+    STA level_monsters, Y
+    INY
+    INX
+    CPX #4
+    BCC new_level_monster
+    DEC ptr
+    BNE new_level_monsters
+    ; Objects absent, and every puzzle byte (types, positions and effects)
+    ; &A0: needs object 1, turned off, type place block, at x 32 but with
+    ; neither coordinate checked.
+    LDA #OBJECT_ABSENT + &20
+    LDX #OBJECTS * 4 - 1
+.new_level_objects
+    STA level_objects, X
+    DEX
+    BPL new_level_objects
+    LDX #level_map - level_puzzle_types
+.new_level_puzzles
+    STA level_puzzle_types - 1, X
+    DEX
+    BNE new_level_puzzles
+    JSR clear_screen
+; Set the four colours from the level's palette.
+; Clobbers: A, X, Y.
+.set_level_palette
+    LDY #3
+.set_level_palette_loop
+    LDA level_palette, Y
+    JSR vector_set_palette
+    DEY
+    BPL set_level_palette_loop
+    RTS
+
+; In: A < 40, C clear.
+; Out: A less 10 if it was 10 or more (call three times for A mod 10).
+.reduce_mod_10
+    CMP #10
+    BCC reduce_mod_10_done
+    SBC #10
+.reduce_mod_10_done
+    RTS
+
+.default_puzzle_name
+    EQUS "Puzzle "
+.default_puzzle_name_end
+; A new level's code, palette, start, collectables, time, finish, monster
+; rules and sprites.
+.default_header
+    EDITING_CODE "123456"
+    EQUB &00, &14, &23, &31     ; black, blue, yellow, red
+    EQUB 28, 28                 ; start (32, 32)
+    EQUB 0                      ; collectables needed
+    EQUB 250                    ; time
+    EQUB 32, 32                 ; finish
+    EQUB TILE_WALL_2 * 16 + TILE_WALL_2         ; monsters die on wall 2
+    EQUB 0                      ; sprites
+; Each monster: at (32, 32), dead, back and forth.
+.default_monster
+    MONSTER 32, 32, 8, PATTERN_BACK_AND_FORTH
+
+; Print a message on the message box's second line (print_line2), its first
+; (print_line1), or wherever the text cursor is (print_message). The OS
+; thinks the screen is 40 columns of 640 bytes, so TAB(34,12) and TAB(10,11)
+; are two rows down from each other in the 64-column screen, 4 columns in.
+; In: A = the message number.
+; Clobbers: A, X, Y, window_ptr.
+.print_line2
+    JSR window_address
+    LDA #31
+    JSR OSWRCH
+    LDA #34
+    JSR OSWRCH
+    LDA #12
+    JSR OSWRCH
+    JMP print_message_at
+.print_line1
+    JSR window_address
+    LDA #31
+    JSR OSWRCH
+    LDA #10
+    JSR OSWRCH
+    LDA #11
+    JSR OSWRCH
+    JMP print_message_at
+.print_message
+    JSR window_address
+.print_message_at
+    STX window_ptr
+    STY window_ptr+1
+    JSR text_colours
+.print_message_loop
+    LDY #0
+    LDA (window_ptr), Y
+    CMP #asc("|")
+    BEQ print_message_done
+    CMP #&FF
+    BEQ print_message_highlight
+    JSR OSWRCH
+.print_message_next
+    INC window_ptr
+    BNE print_message_loop
+    INC window_ptr+1
+    JMP print_message_loop
+.print_message_highlight
+    LDY #highlight_colours + 3 - colour_sequences
+    JSR vdu_sequence
+    JMP print_message_next
+
+; Text colours for the message box: yellow on blue (text_colours), or a
+; sequence from colour_sequences ending at Y.
+; Clobbers: A, X, Y.
+.text_colours
+    LDY #normal_colours + 3 - colour_sequences
+.vdu_sequence
+    LDX #3
+.vdu_sequence_loop
+    LDA colour_sequences, Y
+    JSR OSWRCH
+    DEY
+    DEX
+    BPL vdu_sequence_loop
+.print_message_done
+    RTS
+; Four-byte VDU sequences, sent last byte first.
+.colour_sequences
+.normal_colours
+    EQUB 2, 17, 129, 17         ; COLOUR 129 : COLOUR 2
+    EQUB 12, 128, 17            ; VDU 0, COLOUR 128 : CLS (with the next
+.highlight_colours              ; byte; unused)
+    EQUB 0, 17, 131, 17         ; COLOUR 131 : COLOUR 0
+
+; Find a window or message in WDATA.
+; In: A = its number.
+; Out: X, Y = its address, low and high.
+.window_address
+    ASL A
+    TAY
+    LDA wdata - 2, Y
+    TAX
+    LDA wdata - 1, Y
+    TAY
+    RTS
+
+; Put a block in the map, and on the screen.
+; In: A = the block; X, Y = the cell.
+; Clobbers: A, X, Y, ptr, work.
+.write_map
+    PHA
+    STX ptr
+    STY ptr+1
+    JSR vector_plot_cell
+    LDX ptr
+    LDY ptr+1
+    JSR map_address
+    PLA
+    LDX #&F0
+    BCS write_map_nibble        ; odd y: the bottom nibble
+    LDX #&0F
+    ASL A
+    ASL A
+    ASL A
+    ASL A
+.write_map_nibble
+    STA work
+    TXA
+    LDY #0
+    AND (ptr), Y
+    ORA work
+    STA (ptr), Y
+    RTS
+
+; Read a block from the map.
+; In: X, Y = the cell.
+; Out: A = the block, or negative if the cell is off the map.
+; Clobbers: Y, ptr; X too if on the map.
+.read_map
+    TXA
+    ASL A
+    BMI read_map_done
+    TYA
+    ASL A
+    BMI read_map_done
+    JSR map_address
+    LDY #0
+    LDA (ptr), Y
+    BCS read_map_nibble
+    LSR A
+    LSR A
+    LSR A
+    LSR A
+.read_map_nibble
+    AND #&0F
+.read_map_done
+    RTS
+
+; The map is a column of 32 bytes for each x, top to bottom, two cells a
+; byte, the even y in the top nibble.
+; In: X, Y = the cell.
+; Out: ptr = its byte; C set if it's the bottom nibble.
+; Clobbers: A, X.
+.map_address
+    TXA
+    LDX #3                      ; also ptr's start: its bits fall out of the
+    STX ptr                     ; bottom, leaving C clear
+.map_address_shift
+    LSR A
+    ROR ptr
+    DEX
+    BNE map_address_shift
+    ADC #HI(level_map)
+    STA ptr+1
+    TYA
+    LSR A
+    CLC
+    ADC ptr
+    STA ptr
+    TYA
+    LSR A
+    RTS
+
+; Pixel art for the font and the map's blocks: each character a pixel in
+; MODE 1 colours " " 0 (black), "." 1, "#" 2, "o" 3 (blue, yellow and red
+; in the designer's palette).
+FUNCTION pixel_colours(s) = FIND(CODES(" .#o"), CODES(s))
+FUNCTION mode1_byte(s) = SUM((pixel_colours(s) >> 1) * {128, 64, 32, 16} + (pixel_colours(s) AND 1) * {8, 4, 2, 1})
+; A glyph: eight rows of eight pixels, kept as the left four pixels of each
+; row and then the right four, as they go on the screen.
+MACRO GLYPH r0, r1, r2, r3, r4, r5, r6, r7
+    EQUB mode1_byte(r0[0..3]), mode1_byte(r1[0..3]), mode1_byte(r2[0..3]), mode1_byte(r3[0..3])
+    EQUB mode1_byte(r4[0..3]), mode1_byte(r5[0..3]), mode1_byte(r6[0..3]), mode1_byte(r7[0..3])
+    EQUB mode1_byte(r0[4..7]), mode1_byte(r1[4..7]), mode1_byte(r2[4..7]), mode1_byte(r3[4..7])
+    EQUB mode1_byte(r4[4..7]), mode1_byte(r5[4..7]), mode1_byte(r6[4..7]), mode1_byte(r7[4..7])
+ENDMACRO
+; A block as the map shows it: four rows of four pixels, kept bottom row
+; first.
+MACRO TILE r0, r1, r2, r3
+    EQUB mode1_byte(r3), mode1_byte(r2), mode1_byte(r1), mode1_byte(r0)
+ENDMACRO
+
+; Glyphs 64 to 69, past the end of the font (draw_glyph takes them from
+; here).
+.font_digits
+    GLYPH ".######.", ".....##.", "....##..", "...##...", "..##....", "..##....", "..##....", "........"   ; 64: 7
+    GLYPH "..####..", ".##..##.", ".##..##.", "..####..", ".##..##.", ".##..##.", "..####..", "........"   ; 65: 8
+    GLYPH "..####..", ".##..##.", ".##..##.", "..#####.", ".....##.", "....##..", "..###...", "........"   ; 66: 9
+    GLYPH "..####..", ".##..##.", ".##.###.", ".######.", ".###.##.", ".##..##.", "..####..", "........"   ; 67: 0
+    GLYPH "........", "........", ".....##.", "....##..", "##.##...", ".###....", "..#.....", "........"   ; 68: tick
+    GLYPH "........", "........", "........", ".######.", "........", "........", "........", "........"   ; 69: -
+; The map's blocks, by number, drawn a byte (four pixels) wide.
+.tile_patterns
+    TILE "    ", "    ", "    ", "    "   ; 0: blank
+    TILE "   #", "  ##", " ###", "####"   ; 1: SE curve
+    TILE "#   ", "##  ", "### ", "####"   ; 2: SW curve
+    TILE "####", " ###", "  ##", "   #"   ; 3: NE curve
+    TILE "####", "### ", "##  ", "#   "   ; 4: NW curve
+    TILE "####", "####", "####", "####"   ; 5: wall 1
+    TILE " .. ", ".##.", ".##.", " .. "   ; 6: fatal trap
+    TILE "oooo", " oo ", " oo ", " oo "   ; 7: collectable
+    TILE "...o", "..o.", ".o..", "o..."   ; 8: crate
+    TILE "oooo", " ## ", " ## ", "oooo"   ; 9: marker
+    TILE " ## ", "#  #", "#  #", " ## "   ; A: wall 2
+    TILE " .. ", "....", "....", " .. "   ; B: S.monster
+    TILE "    ", "....", "....", "    "   ; C: horizontal pipe
+    TILE " .. ", " .. ", " .. ", " .. "   ; D: vertical pipe
+    TILE "####", "#..#", "#..#", "####"   ; E: barricade
+    TILE " oo ", "oooo", "oooo", " oo "   ; F: junction
+    EQUB 0                      ; spare
+; Zero page as entry leaves it: pointers to the menus' handler tables, which
+; jump_to_handler finds by number (from 1), and spare bytes.
+.zero_page_init_load
+SECTION zero_page_init, org=&0000
+.menu_tables
+.options_handlers_ptr       EQUW options_handlers
+.object_handlers_ptr        EQUW object_handlers
+.monster_handlers_ptr       EQUW monster_handlers
+.puzzle_handlers_ptr        EQUW puzzle_handlers
+.status_handlers_ptr        EQUW status_handlers
+.conditions_handlers_ptr    EQUW conditions_handlers
+.files_handlers_ptr         EQUW files_handlers
+.effect_handlers_ptr        EQUW effect_handlers
+.place_block_handlers_ptr   EQUW place_block_handlers
+.set_levels_handlers_ptr    EQUW set_levels_handlers
+.move_block_handlers_ptr    EQUW move_block_handlers
+.throw_handlers_ptr         EQUW throw_handlers
+.charge_handlers_ptr        EQUW charge_handlers
+.move_monster_handlers_ptr  EQUW move_monster_handlers
+.place_monster_handlers_ptr EQUW place_monster_handlers
+.help_handlers_ptr          EQUW help_handlers
+.cursor_handlers_ptr        EQUW cursor_handlers
+.zero_page_spare
+    SKIP &40 - (zero_page_spare - menu_tables)
+ENDSECTION
+; The low code: drawing the map, windows, menus and the message box. entry
+; moves it to &0880.
+.low_code_load
+SECTION low_code, org=&0880
+.low_code
+.vector_draw_window
+    JMP draw_window
+.vector_close_window
+    JMP close_window
+.vector_menu_select
+    JMP window_menu
+.vector_tick_line
+    JMP tick_line
+.vector_draw_map
+    JMP draw_map
+.vector_invert_cell
+    JMP invert_cell
+.vector_plot_cell
+    JMP plot_cell
+.vector_open_message_box
+    JMP open_message_box
+.vector_close_message_box
+    JMP close_message_box
+
+; Draw the whole map, a row of cells (half a character row) at a time.
+; Clobbers: A, X, Y, the low code's zero page.
+.draw_map
+    LDY #0
+    STY map_ptr
+    LDA #HI(level_map)
+    STA map_ptr+1
+    STY screen_ptr
+    LDA #HI(screen)
+    STA screen_ptr+1
+    LDA #&F0                    ; even rows are the top nibbles
+    STA nibble_mask
+    STY line_count              ; the row
+    DEY
+.draw_map_band
+    LDA #HI(level_end - level_map)
+    STA byte_count
+.draw_map_cell
+    INY                         ; Y is always 0 here
+    LDA (map_ptr), Y
+    BIT nibble_mask
+    BPL draw_map_nibble
+    LSR A
+    LSR A
+    LSR A
+    LSR A
+.draw_map_nibble
+    AND #&0F
+    ASL A
+    ASL A
+    TAX
+    LDY #3
+.draw_map_pattern
+    LDA tile_patterns, X
+    STA (screen_ptr), Y
+    INX
+    DEY
+    BPL draw_map_pattern
+    LDA screen_ptr
+    ADC #8                      ; next column
+    STA screen_ptr
+    BCC draw_map_next
+    INC screen_ptr+1
+.draw_map_next
+    LDA map_ptr
+    CLC
+    ADC #MAP_COLUMN_BYTES       ; next x
+    STA map_ptr
+    BCC draw_map_cell
+    INC map_ptr+1
+    DEC byte_count
+    BNE draw_map_cell
+    INC line_count
+    LDA map_ptr+1
+    SBC #HI(level_end - level_map)
+    STA map_ptr+1
+    LDA line_count
+    AND #&FE                    ; two pages a character row
+    ADC #HI(screen) - 1         ; (C is set)
+    STA screen_ptr+1
+    LDA line_count
+    LDX #&0F
+    AND #1
+    BNE draw_map_next_band
+    LDX #&F0
+    INC map_ptr                 ; next byte down the columns
+    BNE draw_map_next_band
+    INC map_ptr+1
+.draw_map_next_band
+    STX nibble_mask
+    ASL A                       ; odd rows four lines down
+    ASL A
+    STA screen_ptr
+    BIT line_count
+    BVC draw_map_band           ; until 64
+    RTS
+
+; Where a cell is on the screen: a column of 8 bytes for each x, and four
+; scan lines for each y.
+; In: X, Y = the cell.
+; Out: screen_ptr.
+; Clobbers: A.
+.cell_address
+    LDA #0
+    STA screen_ptr+1
+    TXA
+    ASL A
+    ASL A
+    ROL screen_ptr+1
+    ASL A
+    ROL screen_ptr+1
+    STA screen_ptr
+    TYA
+    AND #&FE
+    ADC #HI(screen)
+    ADC screen_ptr+1
+    STA screen_ptr+1
+    TYA
+    LSR A
+    LDA #0
+    BCC cell_address_half
+    LDA #4
+.cell_address_half
+    ORA screen_ptr
+    STA screen_ptr
+    RTS
+
+; Out: A = the block at map_ptr, nibble_mask's half.
+; Clobbers: Y.
+.read_map_ptr
+    LDY #0
+    LDA (map_ptr), Y
+    BIT nibble_mask
+    BPL read_map_ptr_nibble
+    LSR A
+    LSR A
+    LSR A
+    LSR A
+.read_map_ptr_nibble
+    AND #&0F
+    RTS
+
+; Redraw a run of cells along a row.
+; In: A = how many; X, Y = the first.
+; Clobbers: A, X, Y, the low code's zero page.
+.draw_map_run
+    STA byte_count
+    STX saved_x
+    LDA #0
+    STA map_ptr+1
+    TXA
+    LDX #5                      ; x * MAP_COLUMN_BYTES
+.draw_map_run_column
+    ASL A
+    ROL map_ptr+1
+    DEX
+    BNE draw_map_run_column
+    STA map_ptr
+    TYA
+    LSR A
+    LDX #&F0
+    BCC draw_map_run_mask
+    LDX #&0F
+.draw_map_run_mask
+    STX nibble_mask
+    ORA map_ptr
+    CLC
+    STA map_ptr
+    LDA map_ptr+1
+    ADC #HI(level_map)
+    STA map_ptr+1
+    LDX saved_x
+    JSR cell_address
+.draw_map_run_loop
+    JSR read_map_ptr
+    ASL A
+    ASL A
+    TAX
+    LDY #3
+.draw_map_run_pattern
+    LDA tile_patterns, X
+    INX
+    STA (screen_ptr), Y
+    DEY
+    BPL draw_map_run_pattern
+    LDA screen_ptr
+    CLC
+    ADC #8
+    STA screen_ptr
+    BCC draw_map_run_next
+    INC screen_ptr+1
+.draw_map_run_next
+    LDA map_ptr
+    CLC
+    ADC #MAP_COLUMN_BYTES
+    STA map_ptr
+    BCC draw_map_run_count
+    INC map_ptr+1
+.draw_map_run_count
+    DEC byte_count
+    BNE draw_map_run_loop
+    RTS
+
+; The message box: character rows 14-17, columns 2-61, in colour 1 with a
+; colour 3 line round it; the OS prints into it.
+; Clobbers: A, X, Y, screen_ptr, glyph_ptr.
+.open_message_box
+    LDA #LO(message_box)
+    STA screen_ptr
+    LDA #HI(message_box)
+    STA screen_ptr+1
+    LDX #MESSAGE_BOX_ROWS
+.open_message_box_fill
+    LDY #0
+    LDA #&0F                    ; four pixels of colour 1
+.open_message_box_page
+    STA (screen_ptr), Y
+    DEY
+    BNE open_message_box_page
+    INC screen_ptr+1
+    LDY #MESSAGE_BOX_COLUMNS * 8 - 256 - 1
+.open_message_box_rest
+    STA (screen_ptr), Y
+    DEY
+    CPY #&FF
+    BNE open_message_box_rest
+    INC screen_ptr+1
+    DEX
+    BNE open_message_box_fill
+    ; Lines along the bottom and the top, each in two halves.
+    LDX #30 * 8
+.open_message_box_edges
+    LDA #&FF                    ; four pixels of colour 3
+    STA screen_address(2, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS), X
+    STA screen_address(31, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS), X
+    STA screen_address(2, MESSAGE_BOX_ROW - 1) + 7, X
+    STA screen_address(31, MESSAGE_BOX_ROW - 1) + 7, X
+    TXA
+    SEC
+    SBC #8
+    TAX
+    BCS open_message_box_edges
+    ; And the sides, from the bottom row up.
+    LDA #LO(screen_address(1, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS - 1))
+    STA screen_ptr
+    LDX #HI(screen_address(1, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS - 1))
+    STX screen_ptr+1
+    INX
+    STX glyph_ptr+1
+    LDA #LO(screen_address(62, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS - 1))
+    STA glyph_ptr
+    LDX #MESSAGE_BOX_ROWS
+.open_message_box_sides
+    LDY #7
+.open_message_box_side
+    LDA #&11                    ; the rightmost pixel of the column left of
+    ORA (screen_ptr), Y         ; the box, in colour 3
+    STA (screen_ptr), Y
+    LDA #&88                    ; the leftmost of the column right of it
+    ORA (glyph_ptr), Y
+    STA (glyph_ptr), Y
+    DEY
+    BPL open_message_box_side
+    DEC screen_ptr+1
+    DEC screen_ptr+1
+    DEC glyph_ptr+1
+    DEC glyph_ptr+1
+    DEX
+    BNE open_message_box_sides
+    ; The corners.
+    LDA #&11
+    ORA screen_address(1, MESSAGE_BOX_ROW - 1) + 7
+    STA screen_address(1, MESSAGE_BOX_ROW - 1) + 7
+    LDA #&11
+    ORA screen_address(1, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS)
+    STA screen_address(1, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS)
+    LDA #&88
+    ORA screen_address(62, MESSAGE_BOX_ROW - 1) + 7
+    STA screen_address(62, MESSAGE_BOX_ROW - 1) + 7
+    LDA #&88
+    ORA screen_address(62, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS)
+    STA screen_address(62, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS)
+    RTS
+; Draw a window from WDATA (format in wdata.6502inc): x and width in screen
+; columns, y in character rows, height+1 lines of glyphs two columns wide.
+; It's filled in colour 1 with a colour 3 line down the right and along the
+; bottom, and the title line inverted. Relative windows go on the other side
+; of the screen from the cursor.
+; In: X, Y = the window's address.
+; Out: window_x, window_y (in cells, so doubled), window_width and
+; window_height describe it, for close_window and the menu.
+; Clobbers: A, X, Y, the low code's zero page.
+.draw_window
+    STX window_ptr
+    STY window_ptr+1
+    LDX #3
+    LDY #3
+.draw_window_header
+    LDA (window_ptr), Y
+    STA window_x, X
+    DEX
+    DEY
+    BPL draw_window_header
+    LDA window_y
+    STA window_flags
+    AND #&7F
+    STA window_y
+    LDA window_x
+    PHP
+    AND #&7F
+    STA window_x
+    PLP
+    BMI draw_window_placed      ; fixed
+    LDA cursor_x
+    CMP #MAP_SIZE/2
+    BCS draw_window_place_y
+    LDA #MAP_SIZE + 1           ; x = 64 - width - x (C is clear)
+    SBC window_width
+    SBC window_x
+    STA window_x
+.draw_window_place_y
+    LDA cursor_y
+    CMP #MAP_SIZE/2
+    BCS draw_window_placed
+    LDA #MAP_SIZE/2             ; y = 31 - height - y
+    SBC window_height
+    SBC window_y
+    STA window_y
+.draw_window_placed
+    ASL window_y
+    LDY window_y
+    LDA window_x
+    TAX
+    JSR cell_address
+    LDA screen_ptr+1
+    PHA
+    STA glyph_ptr+1
+    LDA screen_ptr
+    PHA
+    STA glyph_ptr
+    SEC                         ; one back, for counting down to 1
+    SBC #1
+    STA screen_ptr
+    BCS draw_window_frame
+    DEC screen_ptr+1
+.draw_window_frame
+    LDA window_width
+    ASL A
+    ASL A
+    ASL A
+    STA byte_count              ; bytes across a character row
+    ADC glyph_ptr               ; glyph_ptr: the column right of it
+    STA glyph_ptr
+    BCC draw_window_rows
+    INC glyph_ptr+1
+.draw_window_rows
+    LDA window_height
+    STA line_count
+    PHA
+.draw_window_row
+    LDA #&0F
+    LDY byte_count
+.draw_window_fill
+    STA (screen_ptr), Y
+    DEY
+    BNE draw_window_fill
+    LDY #7
+.draw_window_right_edge
+    LDA (glyph_ptr), Y          ; its leftmost pixel in colour 3
+    AND #&77
+    ORA #&88
+    STA (glyph_ptr), Y
+    DEY
+    BPL draw_window_right_edge
+    INC glyph_ptr+1
+    INC glyph_ptr+1
+    INC screen_ptr+1
+    INC screen_ptr+1
+    DEC line_count
+    BPL draw_window_row
+    PLA
+    STA line_count
+    INY
+    LDA (glyph_ptr), Y          ; the corner
+    AND #&77
+    ORA #&88
+    STA (glyph_ptr), Y
+    LDA byte_count
+    SEC
+    SBC #7
+    TAY
+.draw_window_bottom
+    LDA #&FF                    ; the top line of the row below
+    STA (screen_ptr), Y
+    TYA
+    SEC
+    SBC #8
+    TAY
+    BCS draw_window_bottom
+    PLA                         ; back to the top left, kept in map_ptr as
+    STA screen_ptr              ; each line's start
+    STA map_ptr
+    PLA
+    STA screen_ptr+1
+    STA map_ptr+1
+    LDA window_ptr
+    CLC
+    ADC #3
+    STA window_ptr
+    BCC draw_window_line
+    INC window_ptr+1
+.draw_window_line
+    JSR next_window_byte
+    LDY #0
+    LDA (window_ptr), Y         ; the line's length
+    STA glyph_ptr
+    AND #&7F
+    TAX
+    BIT glyph_ptr
+    BMI draw_window_glyph       ; left-justified
+    STX glyph_ptr
+    LDA window_width            ; centred: half the room left over
+    LSR A
+    SEC
+    SBC glyph_ptr
+    ASL A
+    ASL A
+    ASL A
+    ADC screen_ptr
+    STA screen_ptr
+    BCC draw_window_glyph
+    INC screen_ptr+1
+.draw_window_glyph
+    JSR next_window_byte
+    LDY #0
+    LDA (window_ptr), Y
+    JSR draw_glyph
+    DEX
+    BNE draw_window_glyph
+    LDA line_count
+    CMP window_height
+    BCC draw_window_next_line
+    LDY byte_count              ; the title: colours 1 and 3 swapped with 0
+    LDX byte_count              ; and 2
+.draw_window_title
+    DEY
+    LDA (map_ptr), Y
+    EOR #&F0
+    STA (map_ptr), Y
+    DEX
+    BNE draw_window_title
+.draw_window_next_line
+    LDA map_ptr
+    CLC
+    STA screen_ptr
+    LDA map_ptr+1
+    ADC #HI(SCREEN_ROW)
+    STA screen_ptr+1
+    STA map_ptr+1
+    DEC line_count
+    BPL draw_window_line
+    RTS
+
+.next_window_byte
+    INC window_ptr
+    BNE next_window_byte_done
+    INC window_ptr+1
+.next_window_byte_done
+    RTS
+
+; Close the window last drawn by redrawing the map under it.
+; Clobbers: A, X, Y, the low code's zero page.
+.close_window
+    LDA window_y
+    STA menu_shown_item         ; borrowed: the top row
+    LDA window_x
+    STA restore_x
+    LDA window_width
+    STA run_length
+    LDA window_height
+    ASL A
+    CLC
+    ADC #2                      ; its rows, and the line below
+    STA restore_row
+    INC run_length              ; and the line on the right
+.close_window_row
+    LDA restore_row
+    CLC
+    ADC menu_shown_item
+    TAY
+    LDX restore_x
+    LDA run_length
+    JSR draw_map_run
+    DEC restore_row
+    BPL close_window_row
+    RTS
+
+; Close the message box by redrawing the map under it, its rows and the
+; lines round it.
+; Clobbers: A, X, Y, the low code's zero page.
+.close_message_box
+    LDA #(MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS) * 2
+    STA restore_row
+.close_message_box_row
+    LDA #MESSAGE_BOX_COLUMNS + 2
+    LDX #1
+    LDY restore_row
+    JSR draw_map_run
+    DEC restore_row
+    LDA restore_row
+    CMP #MESSAGE_BOX_ROW * 2 - 1
+    BCS close_message_box_row
+    RTS
+
+; Invert a cell on the screen (the map cursor).
+; In: X, Y = the cell.
+; Clobbers: A, Y, screen_ptr.
+.invert_cell
+    JSR cell_address
+    LDY #3
+.invert_cell_loop
+    LDA (screen_ptr), Y
+    EOR #&FF
+    STA (screen_ptr), Y
+    DEY
+    BPL invert_cell_loop
+    RTS
+
+; Draw a block in a cell on the screen.
+; In: A = the block; X, Y = the cell.
+; Clobbers: A, X, Y, screen_ptr.
+.plot_cell
+    PHA
+    JSR cell_address
+    PLA
+    ASL A
+    ASL A
+    TAX
+    LDY #3
+.plot_cell_loop
+    LDA tile_patterns, X
+    STA (screen_ptr), Y
+    INX
+    DEY
+    BPL plot_cell_loop
+    RTS
+
+; Put a tick, or an x, at the end of a line of the window last drawn.
+; In: A = nonzero for a tick; Y = the line (the title is 0).
+; Clobbers: A, X, Y, screen_ptr, glyph_ptr.
+.tick_line
+    PHA
+    TXA                         ; (X isn't used)
+    ASL A
+    ASL A
+    TAX
+    TYA
+    ASL A
+    ADC window_y
+    TAY
+    LDA window_width
+    ADC window_x
+    TAX
+    DEX
+    DEX
+    JSR cell_address
+    PLA
+    BEQ tick_line_glyph
+    LDA #GLYPH_TICK - GLYPH_X
+.tick_line_glyph
+    CLC
+    ADC #GLYPH_X
+; Draw a glyph: 0-63 from the font, 64-69 from font_digits.
+; In: A = the glyph (bit 7 is ignored); screen_ptr = where.
+; Out: screen_ptr moved on a glyph.
+; Clobbers: A, Y, glyph_ptr.
+.draw_glyph
+    ASL A
+    LDY #HI(font)
+    ASL A
+    BCC draw_glyph_bit5
+    LDY #HI(font_digits)
+.draw_glyph_bit5
+    ASL A
+    BCC draw_glyph_bit4
+    INY
+    INY
+.draw_glyph_bit4
+    ASL A
+    BCC draw_glyph_copy
+    INY
+.draw_glyph_copy
+    STA glyph_ptr
+    STY glyph_ptr+1
+    LDY #15
+.draw_glyph_loop
+    LDA (glyph_ptr), Y
+    STA (screen_ptr), Y
+    DEY
+    BPL draw_glyph_loop
+    LDA screen_ptr
+    CLC
+    ADC #16
+    STA screen_ptr
+    BCC draw_glyph_done
+    INC screen_ptr+1
+.draw_glyph_done
+    RTS
+
+; Run the menu of the window last drawn: cursor up and down move a bar over
+; its items (the lines after the title), Return chooses, and Space chooses
+; the last item, or for a window with bit 7 of y set the one it started on.
+; In: A = the item to start on (0 if out of range).
+; Out: C clear and A = the item; or C set if Escape was pressed.
+; Clobbers: X, Y, the low code's zero page.
+.window_menu
+    CMP window_height
+    BCC window_menu_start
+    LDA #0
+.window_menu_start
+    STA menu_item
+    STA menu_first_item
+    LDA window_width
+    ASL A
+    ASL A
+    ASL A
+    SBC #0                      ; less one: C is clear
+    STA byte_count
+    LDA window_height
+    STA line_count              ; the number of items
+    LDA menu_item
+    STA menu_shown_item
+    JSR highlight_item
+    LDA #4                      ; cursor keys give &8B-&8F
+    LDX #2
+    JSR OSBYTE
+    STX saved_cursor_key_mode
+.window_menu_key
+    LDA #&13                    ; wait for vertical sync
+    JSR OSBYTE
+    JSR OSRDCH
+    BCC window_menu_down
+    LDA #4
+    LDX saved_cursor_key_mode
+    JSR OSBYTE
+    SEC
+    LDA #&FF
+    RTS
+.window_menu_down
+    CMP #&8E                    ; cursor down
+    BNE window_menu_up
+    INC menu_item
+    LDA menu_item
+    CMP line_count
+    BCC window_menu_set
+    LDA #0
+.window_menu_set
+    STA menu_item
+    JMP window_menu_moved
+.window_menu_up
+    CMP #&8F                    ; cursor up
+    BNE window_menu_highlight
+    DEC menu_item
+    BPL window_menu_moved
+    LDA line_count
+    SEC
+    SBC #1
+    STA menu_item
+.window_menu_moved
+    LDA #0
+.window_menu_highlight
+    PHA
+    LDA menu_item
+    CMP menu_shown_item
+    BEQ window_menu_check
+    JSR highlight_item
+    LDA menu_shown_item
+    JSR highlight_item
+    LDA menu_item
+    STA menu_shown_item
+.window_menu_check
+    PLA
+    CMP #13
+    BEQ window_menu_return
+    CMP #asc(" ")
+    BEQ window_menu_space
+    LDA #&0F                    ; flush the input buffer
+    JSR OSBYTE
+    JMP window_menu_key
+.window_menu_space
+    LDA window_flags
+    BMI window_menu_cancel
+    JSR restore_cursor_key_mode
+    LDX line_count
+    DEX
+    TXA
+    CLC
+    RTS
+.window_menu_cancel             ; (leaving the cursor keys as they are)
+    LDA menu_first_item
+    CLC
+    RTS
+.window_menu_return
+    JSR restore_cursor_key_mode
+    LDA menu_item
+    JSR highlight_item
+    LDA menu_item
+    CLC
+    RTS
+
+.restore_cursor_key_mode
+    LDA #4
+    LDX saved_cursor_key_mode
+    JMP OSBYTE
+
+; (Unused: INKEY with a long time limit.)
+.unused_read_key
+    LDA #&81
+    TAY
+    JSR OSBYTE
+    TXA
+    RTS
+
+; Invert a menu item's line in the window last drawn.
+; In: A = the item.
+; Clobbers: A, X, Y, screen_ptr.
+.highlight_item
+    ASL A
+    ADC window_y
+    LDX window_x
+    TAY
+    INY                         ; below the title
+    INY
+    JSR cell_address
+    LDY byte_count
+.highlight_item_loop
+    LDA (screen_ptr), Y
+    EOR #&FF
+    STA (screen_ptr), Y
+    DEY
+    CPY #&FF
+    BNE highlight_item_loop
+    RTS
+
+.saved_cursor_key_mode
+    EQUB 0
+    SKIP 5                      ; to the end of the moved code
+ENDSECTION
+; The font, glyphs 0-63 (wdata_glyphs gives their order). entry moves it to
+; &0400. Copying the low code also puts its first four glyphs at &0CC0, past
+; the end of that code, where nothing looks at them.
+.font_load
+SECTION font, org=&0400
+.font
+    GLYPH "..####..", ".##..##.", ".##..##.", ".######.", ".##..##.", ".##..##.", ".##..##.", "........"   ; 0: A
+    GLYPH ".#####..", ".##..##.", ".##..##.", ".#####..", ".##..##.", ".##..##.", ".#####..", "........"   ; 1: B
+    GLYPH "..####..", ".##..##.", ".##.....", ".##.....", ".##.....", ".##..##.", "..####..", "........"   ; 2: C
+    GLYPH ".####...", ".##.##..", ".##..##.", ".##..##.", ".##..##.", ".##.##..", ".####...", "........"   ; 3: D
+    GLYPH ".######.", ".##.....", ".##.....", ".#####..", ".##.....", ".##.....", ".######.", "........"   ; 4: E
+    GLYPH ".######.", ".##.....", ".##.....", ".#####..", ".##.....", ".##.....", ".##.....", "........"   ; 5: F
+    GLYPH "..####..", ".##..##.", ".##.....", ".##.###.", ".##..##.", ".##..##.", "..####..", "........"   ; 6: G
+    GLYPH ".##..##.", ".##..##.", ".##..##.", ".######.", ".##..##.", ".##..##.", ".##..##.", "........"   ; 7: H
+    GLYPH ".######.", "...##...", "...##...", "...##...", "...##...", "...##...", ".######.", "........"   ; 8: I
+    GLYPH "..#####.", "....##..", "....##..", "....##..", "....##..", ".##.##..", "..###...", "........"   ; 9: J
+    GLYPH ".##..##.", ".##.##..", ".####...", ".###....", ".####...", ".##.##..", ".##..##.", "........"   ; 10: K
+    GLYPH ".##.....", ".##.....", ".##.....", ".##.....", ".##.....", ".##.....", ".######.", "........"   ; 11: L
+    GLYPH ".##...##", ".###.###", ".#######", ".##.#.##", ".##.#.##", ".##...##", ".##...##", "........"   ; 12: M
+    GLYPH ".##..##.", ".##..##.", ".###.##.", ".######.", ".##.###.", ".##..##.", ".##..##.", "........"   ; 13: N
+    GLYPH "..####..", ".##..##.", ".##..##.", ".##..##.", ".##..##.", ".##..##.", "..####..", "........"   ; 14: O
+    GLYPH ".#####..", ".##..##.", ".##..##.", ".#####..", ".##.....", ".##.....", ".##.....", "........"   ; 15: P
+    GLYPH "..####..", ".##..##.", ".##..##.", ".##..##.", ".##.#.#.", ".##.##..", "..##.##.", "........"   ; 16: Q
+    GLYPH ".#####..", ".##..##.", ".##..##.", ".#####..", ".##.##..", ".##..##.", ".##..##.", "........"   ; 17: R
+    GLYPH "..####..", ".##..##.", ".##.....", "..####..", ".....##.", ".##..##.", "..####..", "........"   ; 18: S
+    GLYPH ".######.", "...##...", "...##...", "...##...", "...##...", "...##...", "...##...", "........"   ; 19: T
+    GLYPH ".##..##.", ".##..##.", ".##..##.", ".##..##.", ".##..##.", ".##..##.", "..####..", "........"   ; 20: U
+    GLYPH ".##..##.", ".##..##.", ".##..##.", ".##..##.", ".##..##.", "..####..", "...##...", "........"   ; 21: V
+    GLYPH ".##...##", ".##...##", ".##.#.##", ".##.#.##", ".#######", ".###.###", ".##...##", "........"   ; 22: W
+    GLYPH ".##..##.", ".##..##.", "..####..", "...##...", "..####..", ".##..##.", ".##..##.", "........"   ; 23: X
+    GLYPH ".##..##.", ".##..##.", ".##..##.", "..####..", "...##...", "...##...", "...##...", "........"   ; 24: Y
+    GLYPH ".######.", ".....##.", "....##..", "...##...", "..##....", ".##.....", ".######.", "........"   ; 25: Z
+    GLYPH "........", "........", "........", "........", "........", "...##...", "...##...", "........"   ; 26: .
+    GLYPH "........", "........", "...##...", "...##...", "........", "...##...", "...##...", "........"   ; 27: :
+    GLYPH "..####..", ".##..##.", "....##..", "...##...", "...##...", "........", "...##...", "........"   ; 28: ?
+    GLYPH "....##..", "...##...", "..##....", ".##.....", "..##....", "...##...", "....##..", "........"   ; 29: <
+    GLYPH "..##....", "...##...", "....##..", ".....##.", "....##..", "...##...", "..##....", "........"   ; 30: >
+    GLYPH "........", "........", "........", "........", "........", "........", "........", "........"   ; 31: space
+    GLYPH "........", "........", "..####..", ".....##.", "..#####.", ".##..##.", "..#####.", "........"   ; 32: a
+    GLYPH ".##.....", ".##.....", ".#####..", ".##..##.", ".##..##.", ".##..##.", ".#####..", "........"   ; 33: b
+    GLYPH "........", "........", "..####..", ".##..##.", ".##.....", ".##..##.", "..####..", "........"   ; 34: c
+    GLYPH ".....##.", ".....##.", "..#####.", ".##..##.", ".##..##.", ".##..##.", "..#####.", "........"   ; 35: d
+    GLYPH "........", "........", "..####..", ".##..##.", ".######.", ".##.....", "..####..", "........"   ; 36: e
+    GLYPH "...###..", "..##....", "..##....", ".#####..", "..##....", "..##....", "..##....", "........"   ; 37: f
+    GLYPH "........", "........", "..#####.", ".##..##.", ".##..##.", "..#####.", ".....##.", "..####.."   ; 38: g
+    GLYPH ".##.....", ".##.....", ".#####..", ".##..##.", ".##..##.", ".##..##.", ".##..##.", "........"   ; 39: h
+    GLYPH "...##...", "........", "..###...", "...##...", "...##...", "...##...", "..####..", "........"   ; 40: i
+    GLYPH "...##...", "........", "..###...", "...##...", "...##...", "...##...", "...##...", ".###...."   ; 41: j
+    GLYPH ".##.....", ".##.....", ".##..##.", ".##.##..", ".####...", ".##.##..", ".##..##.", "........"   ; 42: k
+    GLYPH "..###...", "...##...", "...##...", "...##...", "...##...", "...##...", "..####..", "........"   ; 43: l
+    GLYPH "........", "........", "..##.##.", ".#######", ".##.#.##", ".##.#.##", ".##...##", "........"   ; 44: m
+    GLYPH "........", "........", ".#####..", ".##..##.", ".##..##.", ".##..##.", ".##..##.", "........"   ; 45: n
+    GLYPH "........", "........", "..####..", ".##..##.", ".##..##.", ".##..##.", "..####..", "........"   ; 46: o
+    GLYPH "........", "........", ".#####..", ".##..##.", ".##..##.", ".#####..", ".##.....", ".##....."   ; 47: p
+    GLYPH "........", "........", "..#####.", ".##..##.", ".##..##.", "..#####.", ".....##.", ".....###"   ; 48: q
+    GLYPH "........", "........", ".##.##..", ".###.##.", ".##.....", ".##.....", ".##.....", "........"   ; 49: r
+    GLYPH "........", "........", "..#####.", ".##.....", "..####..", ".....##.", ".#####..", "........"   ; 50: s
+    GLYPH "..##....", "..##....", ".#####..", "..##....", "..##....", "..##....", "...###..", "........"   ; 51: t
+    GLYPH "........", "........", ".##..##.", ".##..##.", ".##..##.", ".##..##.", "..#####.", "........"   ; 52: u
+    GLYPH "........", "........", ".##..##.", ".##..##.", ".##..##.", "..####..", "...##...", "........"   ; 53: v
+    GLYPH "........", "........", ".##...##", ".##.#.##", ".##.#.##", ".#######", "..##.##.", "........"   ; 54: w
+    GLYPH "........", "........", ".##..##.", "..####..", "...##...", "..####..", ".##..##.", "........"   ; 55: x
+    GLYPH "........", "........", ".##..##.", ".##..##.", ".##..##.", "..#####.", ".....##.", "..####.."   ; 56: y
+    GLYPH "........", "........", ".######.", "....##..", "...##...", "..##....", ".######.", "........"   ; 57: z
+    GLYPH "...##...", "..###...", "...##...", "...##...", "...##...", "...##...", ".######.", "........"   ; 58: 1
+    GLYPH "..####..", ".##..##.", ".....##.", "....##..", "...##...", "..##....", ".######.", "........"   ; 59: 2
+    GLYPH "..####..", ".##..##.", ".....##.", "...###..", ".....##.", ".##..##.", "..####..", "........"   ; 60: 3
+    GLYPH "....##..", "...###..", "..####..", ".##.##..", ".######.", "....##..", "....##..", "........"   ; 61: 4
+    GLYPH ".######.", ".##.....", ".#####..", ".....##.", ".....##.", ".##..##.", "..####..", "........"   ; 62: 5
+    GLYPH "...###..", "..##....", ".##.....", ".#####..", ".##..##.", ".##..##.", "..####..", "........"   ; 63: 6
+ENDSECTION
+
+; Where the LEVDES stub jumps. Move the low code, the font and zero page to
+; where they run, set the screen up (MODE 1 narrowed to 64 columns), load the
+; windows and the title picture, wait for Space and start the editor. All of
+; this, from &25A1 up, becomes the level once it's done.
+.entry
+    ; The low code, &0880-&0CFF; the loop runs the source from low_code_load
+    ; less &80 so that Y starts at &80, and takes the font's first &40 bytes
+    ; along with it.
+    LDY #&80
+    LDX #4                      ; half a page, then four pages
+.entry_copy_code
+    LDA low_code_load - &80, Y
+.entry_copy_code_store
+    STA low_code - &80, Y
+    INY
+    BNE entry_copy_code
+    INC entry_copy_code+2
+    INC entry_copy_code_store+2
+    DEX
+    BPL entry_copy_code
+    LDX #(64 * 16) DIV 256 - 1  ; four pages
+.entry_copy_font
+    LDA font_load, Y
+.entry_copy_font_store
+    STA font, Y
+    INY
+    BNE entry_copy_font
+    INC entry_copy_font+2
+    INC entry_copy_font_store+2
+    DEX
+    BPL entry_copy_font
+    LDX #&3F
+.entry_copy_zero_page
+    LDA zero_page_init_load, X
+    STA menu_tables, X
+    DEX
+    BPL entry_copy_zero_page
+    TXS
+    LDA #&C0
+    STA unused_66
+    INX
+    STX cursor_shown
+    STX simulate_window
+    STX simulating
+    STX brush
+    STX loading
+    STX in_main_loop
+    LDA #22                     ; MODE 1
+    JSR OSWRCH
+    INX
+    TXA
+    JSR OSWRCH
+    LDA #64                     ; 64 columns displayed (R1)
+    JSR vector_crtc_write
+    INX
+    LDA #90                     ; and the sync moved to centre them (R2)
+    JSR vector_crtc_write
+    JSR vector_cursor_off
+    LDA #&0C                    ; *FX12,4: fast auto-repeat
+    LDX #4
+    JSR OSBYTE
+    LDA #&C8                    ; *FX200,2: Break clears memory
+    LDX #2
+    JSR osbyte_y0
+    LDA #&D6                    ; *FX214,2: a short beep
+    LDX #2
+    JSR osbyte_y0
+    LDA #&E1                    ; *FX225,128: f0-f9 give &80-&89
+    LDX #&80
+    JSR osbyte_y0
+    LDY #3
+.entry_palette
+    LDA title_palette, Y
+    JSR vector_set_palette
+    DEY
+    BPL entry_palette
+    ; Put the OS's RDCHV into rdchv_filter's JSR.
+    LDA rdchv_filter_operand_address
+    STA ptr
+    LDA rdchv_filter_operand_address+1
+    STA ptr+1
+    LDA #31                     ; the cursor in the middle of the map
+    STA cursor_x
+    STA cursor_y
+    LDY #1
+    LDA RDCHV+1
+    STA (ptr), Y
+    DEY
+    LDA RDCHV
+    STA (ptr), Y
+    LDA #&8B                    ; *OPT 1,0: no filing system messages
+    LDX #1
+    JSR OSBYTE
+    LDA #&E5                    ; *FX229,1 (X is still 1): Escape is just a key
+    JSR OSBYTE
+    SEI
+    LDX #LO(load_wdata_command)
+    LDY #HI(load_wdata_command)
+    JSR OSCLI
+    LDX #LO(load_ldata_command) ; straight onto the screen
+    LDY #HI(load_ldata_command)
+    JSR OSCLI
+    CLI
+    LDA #&8B                    ; *OPT 0,0
+    LDX #0
+    LDY #0
+    JSR OSBYTE
+.entry_wait_space
+    JSR OSRDCH
+    CMP #asc(" ")
+    BNE entry_wait_space
+    LDA #&E5                    ; *FX229,0: Escape back on
+    JSR OSBYTE
+    JSR vector_text_colours
+    LDA brk_handler_address
+    STA BRKV
+    LDA brk_handler_address+1
+    STA BRKV+1
+    JMP vector_main
+
+; In: A, X = an OSBYTE call.
+.osbyte_y0
+    LDY #0
+    JMP OSBYTE
+
+; Black, blue, yellow and red for the title, as set_palette_entry wants them.
+.title_palette
+    EQUB 3 * 16 + 1, 2 * 16 + 3, 1 * 16 + 4, 0 * 16 + 0
+.load_wdata_command
+    EQUS "L.WDATA", 13
+.load_ldata_command
+    EQUS "L.LDATA", 13
+
+; The rest of the last sector: bytes from H.GRAPH, the Graphics Designer, at
+; the same place in its file (code that ran at &38CF there). The level
+; designer's file was evidently written over a buffer that held it.
+.junk
+    EQUB &A2, &97, &20, &CA, &39, &E6, &74, &A2
+    EQUB &B7, &20, &86, &21, &10, &0B, &A4, &74
+    EQUB &F0, &07, &A2, &B7, &20, &CA, &39, &C6
+    EQUB &74, &A2, &CF, &20, &86, &21, &10, &07
+    EQUB &A9, &01, &85
+    EQUS "w @+"
+    EQUB &A2, &CE, &20, &86, &21, &10, &07, &A9
+    EQUB &02, &85
+    EQUS "w @+"
+    EQUB &A2, &EE, &20, &86, &21, &10, &07, &A9
+    EQUB &03, &85
+    EQUS "w @+"
+    EQUB &A2, &ED, &20, &86, &21, &30, &07, &A2
+    EQUB &D8, &20, &86, &21, &10, &07, &A9, &00
+    EQUB &85
+    EQUS "w @+"
+    EQUB &A5, &75, &45, &73, &D0, &06
+    EQUS "EtEv"
+    EQUB &F0, &1E, &A5, &78, &38, &E9, &0A, &C9
+    EQUB &0A, &B0, &02, &A9, &0A, &85, &78, &A6
+    EQUB &73, &A4, &74, &20, &EF, &34, &A6, &75
+    EQUB &A4, &76, &20, &EF
+    EQUS "4LU9"
+    EQUB &A9, &B9, &85, &78, &A2, &A6, &20, &86
+    EQUB &21, &10, &0D, &A5, &77, &48, &E8, &86
+    EQUS "w p9h"
+    EQUB &85, &77, &60, &A2, &B6, &20, &86, &21
+    EQUB &10, &2B, &A6, &73, &A4, &74, &20, &CE
+    EQUB &34, &A0, &03, &A6, &77, &BD, &42, &23
+    EQUB &59, &FF, &34, &91, &50, &88, &10, &F5
+    EQUB &A5, &71, &A6, &73, &A4, &74, &20, &14
+    EQUB &3A, &A5, &71, &D0, &03, &20, &9C, &39
+    EQUB &A5, &71, &20, &D4, &24, &60, &A5, &52
+    EQUB &29, &F8, &85, &52, &A0, &07, &B1, &52
+    EQUB &99, &C2, &39, &88, &10, &F8, &A0, &7F
+    EQUB &A2, &07
 ENDSECTION
