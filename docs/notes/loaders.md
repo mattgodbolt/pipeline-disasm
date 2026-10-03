@@ -143,3 +143,28 @@ into the load area.
   a second section saved as `build/files/PLDEC` (not on the disc). Baron
   can't transform a section's bytes, so the two are tied by
   `tools/plcrypt.py check build/files` rather than by the build.
+
+## 2026-10-03 18:25 — TITLE
+
+- MENU option 1 (lines 910-960): `*FX230 1`, `*FX11`, MODE 1 with all four
+  colours black and the cursor off, `*RUN TITLE`, then palette 0,1,4,7
+  (black, red, blue, white), `INKEY(300)`, MODE 7, `*/GAME`. The menu is
+  driven by digits to choose and RETURN to go (`key Digit1; key Enter` in
+  beeb.mjs), which is why a bare digit didn't start anything.
+- TITLE is a packed MODE 1 picture at &6300-&78FF and &79 bytes of code at
+  &7900: "PIPELINE by IAN HOLMES and WILLIAM REEVE" (`docs/img/title.png`).
+  The code copies its own page to &2F00 (just below the screen; the copy
+  starts at the Y *RUN leaves, 5 under DFS 1.2) and unpacks there into
+  &3000 upward, over the file itself. Packing: nonzero bytes are literal; 0,
+  n is n zeros (0 = 256). The stream overruns: it writes past &8000 (paged
+  ROM space; harmless on a B, would hit sideways RAM) and catches up with
+  its own unread tail only at &78D6, below the picture, and the code clears
+  &7800-&7FFF afterwards, then `*FX15,1` and back to BASIC. Checked the
+  unpacked screen against jsbeeb's memory after `*RUN TITLE`: identical
+  apart from BASIC's prompt.
+- Source: the code is source, with the unpacker as a nested rephased
+  section (org &2F18) so its labels are where it runs; the packed picture is
+  `data/title_picture.bin`.
+- `tools/beebscreen.py` renders MODE 1/5 screen memory to PNG (with
+  `--title` to unpack TITLE's format first). The SCREEN render with palette
+  0,1,3,5 matches the jsbeeb screenshot in `docs/img/loading-screen.png`.
