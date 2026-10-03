@@ -22,6 +22,10 @@ BASIC_TOKEN_REM = &F4
 ; first, from &0400 in alphabetical order (@% first). They survive RUN and
 ; CHAIN, and CALL passes A%, X% and Y% in A, X and Y.
 BASIC_RESIDENT_INTEGERS = &0400
+FUNCTION basic_integer(letter) = BASIC_RESIDENT_INTEGERS + 4 * (CODES(letter)[0] - CODES("@")[0])
+
+; Zero page BASIC leaves to the user, and to the machine code it CALLs.
+BASIC_USER_ZP = &70     ; to &8F
 
 ; VDU codes the programs hide things from LIST with: LIST copies a string's
 ; bytes (and a REM's, once a quote has started one) straight to the screen.

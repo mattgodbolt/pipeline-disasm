@@ -1,4 +1,10 @@
-; $.MISSION: the PIPELINE mission generator, a BASIC program.
+; $.MISSION: the PIPELINE mission generator, by Ian Holmes (with one
+; procedure by William Reeve), CHAINed by MENU's option 5. A BASIC program
+; that builds a mission - the file the game plays, as IO is - from a
+; graphics file (the Graphics Designer's, as DEFAULT is) and four level
+; files (the Level Designer's, as LEVEL1 is), and edits its text and
+; features. PROCinit (line 440) sizes everything; docs/notes/basic.md has
+; the file layouts.
 ;
 ; NOT UTF-8: lines 1430 and 2780 hold raw teletext colour codes (bytes
 ; &81-&86) inside REMs, because a BASIC block takes its text byte for byte
@@ -8,8 +14,17 @@
 INCLUDE "basic.6502inc"
 INCLUDE "teletext.6502inc"
 
+editing_code = basic_integer("E")   ; FNn's code, unscrambled in place
+swap_temp    = BASIC_USER_ZP
+
 SECTION mission, filename="MISSION", org=&1900, load=&FFFF1900, exec=&FFFF8023
 .program
+; Lines 10-60 are EQUB records: REMs of teletext codes that LIST shows as
+; the title and credits in colour (the quote makes LIST copy the bytes
+; rather than expand them as keywords, and VDU_DELETE wipes it), then
+; MENU's "Hello, all my friends!" band. Line 60 also carries machine code,
+; with a newline byte in it, and ENDBASIC ends the program, so these lines
+; have to come before the BASIC block.
     EQUB basic_line(10, CHR(BASIC_TOKEN_REM) + """" + CHR(VDU_DELETE) + "   " + CHR(TT_ALPHA_CYAN) + " PIPELINE")
     EQUB basic_line(20, CHR(BASIC_TOKEN_REM) + """" + CHR({VDU_DELETE, TT_ALPHA_YELLOW}) + "MISSION GENERATOR.")
     EQUB basic_line(30, CHR(BASIC_TOKEN_REM) + """" + CHR({VDU_DELETE, TT_ALPHA_MAGENTA}) + "By" + CHR(TT_ALPHA_GREEN) + "Ian Holmes !")
@@ -18,31 +33,42 @@ SECTION mission, filename="MISSION", org=&1900, load=&FFFF1900, exec=&FFFF8023
 .line_60
     EQUB &0D, HI(60), LO(60), line_70 - line_60
     EQUB CHR(BASIC_TOKEN_REM) + """" + CHR({VDU_DELETE, TT_ALPHA_BLUE, TT_NEW_BACKGROUND, TT_ALPHA_GREEN, TT_DOUBLE_HEIGHT}) + "Hello," + CHR({TT_ALPHA_YELLOW, TT_FLASH}) + "all my friends!  " + CHR(TT_BLACK_BACKGROUND) + "          " + CHR({TT_ALPHA_BLUE, TT_NEW_BACKGROUND, TT_ALPHA_GREEN, TT_DOUBLE_HEIGHT}) + "Hello," + CHR({TT_ALPHA_YELLOW, TT_FLASH}) + "all my friends!  " + CHR(TT_BLACK_BACKGROUND)
-    EQUB VDU_DISABLE
+    EQUB VDU_DISABLE                ; LIST shows nothing from here...
+
+; Unscrambles the editing code FNn has read into E% (CALL PAGE+198, line
+; 1170): each of E%'s low three bytes has its adjacent bits swapped, then
+; is rotated right one place. PROCsavelev compares the result with the
+; level's fields 0-2.
+; Clobbers A, X and swap_temp.
 .unscramble_editing_code
     ASSERT unscramble_editing_code = program + 198
     LDX #2
 .each_byte
-    LDA BASIC_RESIDENT_INTEGERS + 4 * 5, X
+    LDA editing_code, X
     PHA
     AND #%01010101
     ASL A
-    STA &70
+    STA swap_temp
     PLA
     AND #%10101010
     LSR A
-    ORA &70
-    PHA
+    ORA swap_temp
+    PHA                             ; rotate right, bit 0 into bit 7
     LSR A
     PLA
     ROR A
-    STA BASIC_RESIDENT_INTEGERS + 4 * 5, X
+    STA editing_code, X
     DEX
     BPL each_byte
     RTS
-    EQUB VDU_ENABLE
+    EQUB VDU_ENABLE                 ; ...to here
 .line_70
 BASIC
+; Start-up. Escape is just a key until the set-up is done. Line 90's error
+; handler covers only the set-up: it reports the error and skips to line
+; 130, except for Escape (error 17), which asks whether to quit and, if
+; not, falls into line 100 and starts afresh ("Sorry about the GOTO").
+; From line 130 an error is reported and the menu carries on at line 140.
 70:
 80*FX229 1
 90ONERRORPROCerr:IFERR<>17GOTO130
@@ -51,6 +77,10 @@ BASIC
 120MODE7:PROCinit
 130ONERRORPROCerr
 140*FX229
+; The main menu: 1-9 (1-8 on tape, which has no catalogue) or the cursor
+; keys pick an option (K%), RETURN does it; OR 16 lets the shifted digits
+; count. The undocumented i and h keys go straight to "save a mission" with
+; I% set, which locks the saved mission (PROClock, line 1390).
 150REPEAT
 160CLS
 170PRINT"Key:";
@@ -80,6 +110,17 @@ BASIC
 410:
 420DATAchange name,change features,load graphics,save graphics,load a level,save a level,load a mission,save a mission,see a catalogue
 430:
+; PROCinit: the sizes behind every file MISSION reads and writes (the
+; layouts are in docs/notes/basic.md), and memory for them:
+;   F%   a mission, as saved: names (&134, a graphics file's tail), text
+;        (30), features (5), then from L% the four levels - each of the 11
+;        fields for all four levels together, then four &800 maps - and
+;        from G% the graphics (&E00), with room after for a graphics file's
+;        names
+;   B%   one level file: puzzle names (320), fields (data, &11F), map
+;   addr where a saved mission reloads, so it ends at &5800 (&242D)
+;   osc  PROCosc's command buffer
+; T% is TRUE on tape: OSARGS 0,0 gives the filing system, 1 or 2 for tape.
 440DEFPROCinit
 450Y%=0:A%=0
 460X%=USR(&FFDA)AND&FF
@@ -103,6 +144,11 @@ BASIC
 640PRINT''TAB(1-7*T%)CHR$(134)CHR$(157)CHR$(132);
 650IFT%PRINT"Please wait";ELSEPRINT"Loading Standard Graphics";
 660PRINT":  "CHR$(157)
+; A blank mission: names, text and features cleared; every level's field 3
+; 31 22 14 00, fields 4-10 &FF and an empty map (fields 0-2, the editing
+; code, are left as they were); features time 15 (shown as 9), mapping 2,
+; backpack 2 (shown as 3), throwing 6, unlocked. On disc, DEFAULT's
+; graphics too.
 670FORN%=0TOnames+miss+4STEP4
 680N%!F%=0:NEXT
 690FORN%=numlev*4TOnumlev*data-4STEP4
@@ -117,9 +163,13 @@ BASIC
 780F%!(names+miss+1)=393730
 790IFNOTT%THENPROCloadgrf("Default")
 800ENDPROC
+; PROCcursor: turns the cursor off (0) or on (1).
 810DEFPROCcursor(N%)
 820VDU23,1,N%;0;0;0;
 830ENDPROC
+; PROCtitle: the double-height title and blue bars down both sides; PROCw
+; sets the text window between them. C% marks a screen that needs the
+; title redrawing after an error.
 840DEFPROCtitle
 850PROCcursor(0)
 860VDU26,12:FORN%=1TO2
@@ -128,6 +178,8 @@ BASIC
 890PRINTTAB(0,N%)CHR$(132)CHR$(157)CHR$(131)TAB(38,N%)CHR$(156);:NEXT
 900PROCw:C%=0:ENDPROC
 910DEFPROCw:VDU28,3,23,36,5:ENDPROC
+; PROCline: A% is the key (90 and 91 here are the cursor keys, 138 and
+; 139). Highlights option K% with a green background from column 8.
 920DEFPROCline:A%=A%-48
 930IFA%>89ANDK%=0ENDPROC
 940IFA%=90A%=K%+1:IFA%>opts A%=1
@@ -137,9 +189,13 @@ BASIC
 980K%=A%:VDU31,7,K%+4,130,157,132
 990ENDPROC
 1000:
+; PROCosc: the parameter is the string indirection $osc, so calling it
+; writes the command straight into the buffer that OSCLI is handed.
 1010DEFPROCosc($osc)
 1020X%=osc MOD256:Y%=osc DIV256
 1030CALL&FFF7:ENDPROC
+; FNinput: prompt A$, then a field of N% characters accepting codes
+; between min and max (exclusive), with DELETE; returns it on RETURN.
 1040DEFFNinput(A$,N%,min,max)
 1050PRINTA$CHR$(134)CHR$(157)CHR$(132)SPC(N%+2)CHR$(157)STRING$(N%+3,CHR$(8));:PROCcursor(1)
 1060A$="":REPEAT
@@ -150,15 +206,22 @@ BASIC
 1110IFA%>min ANDA%<max A$=A$+CHR$(A%)
 1120IFA%=127 A$=LEFT$(A$,LEN(A$)-1)
 1130UNTILA%=13:PROCcursor(0):=A$
+; FNlevel is 0-3. FNn reads the editing code as six digits, taken as hex
+; (EVAL "&0..."), and unscrambles it with the code hidden in line 60.
 1140DEFFNname=FNinput("Enter filename: ",12+2*T%,32,127)
 1150DEFFNlevel=(VAL(FNinput("Which level number ? ",1,48,49+numlev))-1)AND3
 1160DEFFNn
 1170E%=EVAL("&0"+FNinput("Enter editing code: ",6,47,58)):CALLPAGE+198:=E%
+; FNattr: feature N%'s name and value as shown; time is stored 6 higher and
+; backpack size 1 lower than shown.
 1180DEFFNattr(N%)
 1190RESTORE2110:FORA%=0TON%
 1200READA$:NEXT:A%=F%?(names+miss+N%)
 1210IFN%=0A%=A%-6ELSEIFN%=2A%=A%+1
 1220=A$+": "+STR$(A%)+STRING$(8," ")
+; PROCbit: shows half A% of the mission text, past its VDU 31 x,y, the 9s
+; (cursor right) showing as gaps. PROCstore puts A$ there, padded to 12,
+; with spaces as 9 so the game's background shows through them.
 1230DEFPROCbit(A%)
 1240VDU34:FORN%=3TO14
 1250X%=F%?(names+A%+N%)
@@ -169,18 +232,25 @@ BASIC
 1300IFX%=32X%=9
 1310F%?(names+A%+N%+3)=X%
 1320NEXT:ENDPROC
+; PROCname: names puzzle N% in a level file: eight characters at
+; B%+(N%-1)*8, two more at B%+256+(N%-1)*2.
 1330DEFPROCname(A$)
 1340FORA%=1TO8
 1350B%?(N%*8+A%-9)=ASC(MID$(A$,A%,1))
 1360NEXT:FORA%=9TO10
 1370B%?(N%*2+A%+245)=ASC(MID$(A$,A%,1))
 1380NEXT:ENDPROC
+; PROClock: the secret keys. I% becomes 1 for i, -1 for h (stored as &FF),
+; and the menu jumps to option opts-1 with RETURN pressed: "save a
+; mission", though on tape, where opts is 8, it's "load a mission".
 1390DEFPROClock:I%=A%*2-209
 1400A%=opts+47:PROCline
 1410A%=13:ENDPROC
 1420:
 1430REM"ÇHello,ÉSoni
 1440:
+; PROCloadgrf: a graphics file (DEFAULT, or the Graphics Designer's) goes
+; to G%, and the names after its graphics become the mission's.
 1450DEFPROCloadgrf(A$)
 1460PROCosc("LOAD "+CHR$(34)+A$+CHR$(34)+" "+STR$~G%)
 1470X%=G%+grfs
@@ -188,6 +258,8 @@ BASIC
 1490A%!F%=A%!X%:NEXT
 1500ENDPROC
 1510:
+; PROCsavegrf: puts the names back after the graphics and saves the lot to
+; reload at &4000, where the Graphics Designer works.
 1520DEFPROCsavegrf
 1530X%=G%+grfs
 1540FORA%=0TOnames-4STEP4
@@ -195,6 +267,8 @@ BASIC
 1560PROCosc("SAVE "+CHR$(34)+FNname+CHR$(34)+" "+STR$~G%+"+"+STR$~(grfs+names)+" 0 4000")
 1570ENDPROC
 1580:
+; PROCloadlev: a level file into slot S%: the map, then each field into
+; its place among the four levels' (field sizes from line 2090).
 1590DEFPROCloadlev
 1600S%=FNlevel:PRINT
 1610PROCosc("LOAD "+CHR$(34)+FNname+CHR$(34)+" "+STR$~B%)
@@ -212,6 +286,10 @@ BASIC
 1730NEXT:pnt=pnt+ext:NEXT
 1740ENDPROC
 1750:
+; PROCsavelev: the reverse. A locked mission (L%?-1, the lock byte, set)
+; gives up a level only for the editing code that unscrambles to its
+; fields 0-2. The puzzle names aren't kept in a mission, so they are reset
+; to "Puzzle 1" and on. Saved to reload ending at &3000, exec &8380.
 1760DEFPROCsavelev
 1770S%=FNlevel
 1780IFL%?-1PRINT:IFFNn<>L%?S%*65536+L%?(S%+4)*256+L%?(S%+8)ENDPROC
@@ -232,10 +310,14 @@ BASIC
 1930NEXT:PROCosc("SAVE "+CHR$(34)+FNname+CHR$(34)+" "+STR$~B%+"+"+STR$~(size+puznms)+" 8380 "+STR$~(&3000-size-puznms))
 1940ENDPROC
 1950:
+; PROCloadmss: a whole mission over F%; a locked one loads like any other.
 1960DEFPROCloadmss
 1970PROCosc("LOAD "+CHR$(34)+FNname+CHR$(34)+" "+STR$~F%)
 1980ENDPROC
 1990:
+; PROCsavemss: places the two halves of the text (VDU 31,18,16 and VDU
+; 31,14,17), refuses a locked mission, sets the lock byte to I% and saves
+; to reload at addr, ending at &5800.
 2000DEFPROCsavemss
 2010N%=F%+names
 2020?N%=31:N%?1=18:N%?2=16
@@ -245,10 +327,15 @@ BASIC
 2060PROCosc("SAVE "+CHR$(34)+FNname+CHR$(34)+" "+STR$~F%+"+"+STR$~(names+miss+attrs+numlev*size+grfs)+" 0 "+STR$~addr)
 2070ENDPROC
 2080:
+; The 11 fields of a level, their sizes in bytes.
 2090DATA1,1,1,4,8,32,16,32,64,64,64
 2100:
+; The features: names, then for each the input length and the lowest and
+; highest key codes allowed, exclusive.
 2110DATA Time consumption,Mapping ability,Backpack size,Throwing distance
 2120DATA 2,47,58,1,47,53,1,49,53,2,47,58,1,48,52
+; PROCattrs: the features page; the cursor keys move the "]", RETURN
+; changes one (PROCchangeattr, which checks the range).
 2130DEFPROCattrs
 2140PRINT"Select feature to change:"'
 2150V%=VPOS:PRINT"]";
@@ -281,6 +368,7 @@ BASIC
 2420PRINTTAB(3,N%+V%)FNattr(N%)
 2430ENDPROC
 2440:
+; PROCmiss: shows both halves of the mission text, then asks for each.
 2450DEFPROCmiss:PRINT
 2460PROCbit(0):VDU32
 2470PROCbit(miss/2):PRINT'
@@ -288,6 +376,7 @@ BASIC
 2490A$=FNinput("Second part:",miss/2-3,31,127):IFA$<>""PROCstore(miss/2)
 2500ENDPROC
 2510:
+; PROCviewcat: *CAT of a drive in a scrolling window, paged.
 2520DEFPROCviewcat
 2530A$=FNinput("Which drive ?",1,47,52)
 2540C%=1:VDU28,0,23,39,5
@@ -299,11 +388,13 @@ BASIC
 2600PROCtitle
 2610ENDPROC
 2620:
+; PROCerr: Escape asks to quit; anything else is reported.
 2630DEFPROCerr:VDU15
 2640IFC%=1PROCtitle
 2650IFERR=17 PROCquit:ENDPROC
 2660PROCreport
 2670ENDPROC
+; PROCquit: on tape a reset; on disc, back to the menu through MRUN.
 2680DEFPROCquit
 2690PROCw:REPEAT:CLS
 2700A$=LEFT$(FNinput("Are you sure (Y/N) ? ",3,68,90),1)
@@ -316,6 +407,8 @@ BASIC
 2770:
 2780REM"ÜThis subroutine was written by             ÅWilliamÉReeveÇ(mainly)
 2790:
+; PROCreport (William Reeve's): opens a box from row 20 outwards, a row a
+; frame (rows 20, 21, 19, 22, 18, 23), then shows the error.
 2800DEFPROCreport:C%=1
 2810VDU26:FORN%=1TO6
 2820Y%=20-(N% AND1)*N% DIV2+(N% AND1EOR1)*N% DIV2:*FX19
