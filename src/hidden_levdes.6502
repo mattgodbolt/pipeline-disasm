@@ -2989,288 +2989,371 @@ FUNCTION key_block(item, tile) = item * 16 + tile
     SKIP 115
     EQUB &20
     SKIP 76
+; Entry points at fixed addresses.
 .vector_text_colours
-    JMP text_colours                ; 234D: 4C 84 24
+    JMP text_colours
 .vector_set_level_palette
-    JMP set_level_palette           ; 2350: 4C 03 24
+    JMP set_level_palette
 .vector_print_line2
-    JMP print_line2                 ; 2353: 4C 30 24
+    JMP print_line2
 .vector_print_line1
-    JMP print_line1                 ; 2356: 4C 45 24
+    JMP print_line1
 .vector_print_message
-    JMP print_message               ; 2359: 4C 5A 24
-.vector_vdu_sequence
-    JMP vdu_sequence_loop           ; 235C: 4C 88 24
+    JMP print_message
+.vector_vdu_sequence            ; (unused)
+    JMP vdu_sequence_loop
 .vector_window_address
-    JMP window_address              ; 235F: 4C 9E 24
+    JMP window_address
 .vector_read_map
-    JMP read_map                    ; 2362: 4C CF 24
+    JMP read_map
 .vector_write_map
-    JMP write_map                   ; 2365: 4C A9 24
+    JMP write_map
+
+; Start a new level: blank map, default names "Puzzle  1 " to "Puzzle 32 ",
+; the default header, four dead monsters, no objects, and puzzles that do
+; nothing; then clear the screen and set the level's palette.
+; Clobbers: A, X, Y, ptr.
 .new_level
-    LDA #&28                        ; 2368: A9 28
-    STA ptr+1                       ; 236A: 85 53
-    LDA #&00                        ; 236C: A9 00
-    STA ptr                         ; 236E: 85 52
-    TAY                             ; 2370: A8
-    LDX #&08                        ; 2371: A2 08
+    LDA #HI(level_map)
+    STA ptr+1
+    LDA #0
+    STA ptr
+    TAY
+    LDX #HI(level_end - level_map)
 .new_level_clear_map
-    STA (ptr), Y                    ; 2373: 91 52
-    INY                             ; 2375: C8
-    BNE new_level_clear_map         ; 2376: D0 FB
-    INC ptr+1                       ; 2378: E6 53
-    DEX                             ; 237A: CA
-    BNE new_level_clear_map         ; 237B: D0 F6
-    LDA #&33                        ; 237D: A9 33
-    STA level_names+239             ; 237F: 8D 90 26
-    STA level_names+247             ; 2382: 8D 98 26
-    STA level_names+255             ; 2385: 8D A0 26
-    LDX #&4F                        ; 2388: A2 4F
+    STA (ptr), Y
+    INY
+    BNE new_level_clear_map
+    INC ptr+1
+    DEX
+    BNE new_level_clear_map
+    ; The eighth character of each name is the tens digit: space for 1-9,
+    ; then 1, 2 and 3. Fill three overlapping runs and let "Puzzle " below
+    ; overwrite the rest.
+    LDA #asc("3")
+    STA level_names + 29*8 + 7
+    STA level_names + 30*8 + 7
+    STA level_names + 31*8 + 7
+    LDX #79
 .new_level_tens
-    LDA #&20                        ; 238A: A9 20
-    STA level_names, X              ; 238C: 9D A1 25
-    LDA #&31                        ; 238F: A9 31
-    STA level_names+72, X           ; 2391: 9D E9 25
-    LDA #&32                        ; 2394: A9 32
-    STA level_names+152, X          ; 2396: 9D 39 26
-    DEX                             ; 2399: CA
-    BPL new_level_tens              ; 239A: 10 EE
-    LDX #&3E                        ; 239C: A2 3E
+    LDA #asc(" ")
+    STA level_names, X
+    LDA #asc("1")
+    STA level_names + 9*8, X
+    LDA #asc("2")
+    STA level_names + 19*8, X
+    DEX
+    BPL new_level_tens
+    ; The last two are the units digit and a space.
+    LDX #(PUZZLES - 1) * 2
 .new_level_units
-    LDA #&20                        ; 239E: A9 20
-    STA level_name_ends+1, X        ; 23A0: 9D A2 26
-    TXA                             ; 23A3: 8A
-    LSR A                           ; 23A4: 4A
-    ADC #&01                        ; 23A5: 69 01
-    JSR reduce_mod_10               ; 23A7: 20 0F 24
-    JSR reduce_mod_10               ; 23AA: 20 0F 24
-    JSR reduce_mod_10               ; 23AD: 20 0F 24
-    CLC                             ; 23B0: 18
-    ADC #&30                        ; 23B1: 69 30
-    STA level_name_ends, X          ; 23B3: 9D A1 26
-    DEX                             ; 23B6: CA
-    DEX                             ; 23B7: CA
-    BPL new_level_units             ; 23B8: 10 E4
-    LDY #&00                        ; 23BA: A0 00
+    LDA #asc(" ")
+    STA level_name_ends+1, X
+    TXA
+    LSR A
+    ADC #1
+    JSR reduce_mod_10
+    JSR reduce_mod_10
+    JSR reduce_mod_10
+    CLC
+    ADC #asc("0")
+    STA level_name_ends, X
+    DEX
+    DEX
+    BPL new_level_units
+    ; "Puzzle " into the first seven, from the last name back.
+    LDY #0
 .new_level_names
-    DEY                             ; 23BC: 88
-    LDX #&06                        ; 23BD: A2 06
+    DEY
+    LDX #default_puzzle_name_end - default_puzzle_name - 1
 .new_level_name
-    LDA default_puzzle_name, X      ; 23BF: BD 16 24
-    STA level_names - 1, Y          ; 23C2: 99 A0 25
-    DEY                             ; 23C5: 88
-    DEX                             ; 23C6: CA
-    BPL new_level_name              ; 23C7: 10 F6
-    TYA                             ; 23C9: 98
-    BNE new_level_names             ; 23CA: D0 F0
-    LDY #&0F                        ; 23CC: A0 0F
-.new_level_header
-    LDA default_header, Y           ; 23CE: B9 1D 24
-    STA level_code, Y               ; 23D1: 99 E1 26
-    DEY                             ; 23D4: 88
-    BPL new_level_header            ; 23D5: 10 F7
-    LDA #&04                        ; 23D7: A9 04
-    STA ptr                         ; 23D9: 85 52
-    INY                             ; 23DB: C8
+    LDA default_puzzle_name, X
+    STA level_names - 1, Y
+    DEY
+    DEX
+    BPL new_level_name
+    TYA
+    BNE new_level_names
+    LDY #15                     ; one more than the header: harmless, as the
+.new_level_header               ; objects are set below
+    LDA default_header, Y
+    STA level_code, Y
+    DEY
+    BPL new_level_header
+    LDA #MONSTERS
+    STA ptr
+    INY
 .new_level_monsters
-    LDX #&00                        ; 23DC: A2 00
+    LDX #0
 .new_level_monster
-    LDA default_monster, X          ; 23DE: BD 2C 24
-    STA level_monsters, Y           ; 23E1: 99 10 27
-    INY                             ; 23E4: C8
-    INX                             ; 23E5: E8
-    CPX #&04                        ; 23E6: E0 04
-    BCC new_level_monster           ; 23E8: 90 F4
-    DEC ptr                         ; 23EA: C6 52
-    BNE new_level_monsters          ; 23EC: D0 EE
-    LDA #&A0                        ; 23EE: A9 A0
-    LDX #&1F                        ; 23F0: A2 1F
+    LDA default_monster, X
+    STA level_monsters, Y
+    INY
+    INX
+    CPX #4
+    BCC new_level_monster
+    DEC ptr
+    BNE new_level_monsters
+    ; Objects absent, and every puzzle byte (types, positions and effects)
+    ; &A0: needs object 1, turned off, type place block, at x 32 but with
+    ; neither coordinate checked.
+    LDA #OBJECT_ABSENT + &20
+    LDX #OBJECTS * 4 - 1
 .new_level_objects
-    STA level_objects, X            ; 23F2: 9D F0 26
-    DEX                             ; 23F5: CA
-    BPL new_level_objects           ; 23F6: 10 FA
-    LDX #&E0                        ; 23F8: A2 E0
+    STA level_objects, X
+    DEX
+    BPL new_level_objects
+    LDX #level_map - level_puzzle_types
 .new_level_puzzles
-    STA level_puzzle_types - 1, X   ; 23FA: 9D 1F 27
-    DEX                             ; 23FD: CA
-    BNE new_level_puzzles           ; 23FE: D0 FA
-    JSR clear_screen                ; 2400: 20 10 11
+    STA level_puzzle_types - 1, X
+    DEX
+    BNE new_level_puzzles
+    JSR clear_screen
+; Set the four colours from the level's palette.
+; Clobbers: A, X, Y.
 .set_level_palette
-    LDY #&03                        ; 2403: A0 03
+    LDY #3
 .set_level_palette_loop
-    LDA level_palette, Y            ; 2405: B9 E4 26
-    JSR vector_set_palette          ; 2408: 20 0D 11
-    DEY                             ; 240B: 88
-    BPL set_level_palette_loop      ; 240C: 10 F7
-    RTS                             ; 240E: 60
+    LDA level_palette, Y
+    JSR vector_set_palette
+    DEY
+    BPL set_level_palette_loop
+    RTS
+
+; In: A < 40, C clear.
+; Out: A less 10 if it was 10 or more (call three times for A mod 10).
 .reduce_mod_10
-    CMP #&0A                        ; 240F: C9 0A
-    BCC reduce_mod_10_done          ; 2411: 90 02
-    SBC #&0A                        ; 2413: E9 0A
+    CMP #10
+    BCC reduce_mod_10_done
+    SBC #10
 .reduce_mod_10_done
-    RTS                             ; 2415: 60
+    RTS
+
 .default_puzzle_name
-    EQUS "Puzzle "                  ; 2416
+    EQUS "Puzzle "
+.default_puzzle_name_end
+; A new level's code, palette, start, collectables, time, finish, monster
+; rules and sprites.
 .default_header
-    EQUB &90, &1C, &D4, &00, &14, &23, &31, &1C; 241D
-    EQUB &1C, &00, &FA, &20, &20, &AA, &00; 2425
+    EQUB &90, &1C, &D4          ; editing code 123456
+    EQUB &00, &14, &23, &31     ; black, blue, yellow, red
+    EQUB 28, 28                 ; start (32, 32)
+    EQUB 0                      ; collectables needed
+    EQUB 250                    ; time
+    EQUB 32, 32                 ; finish
+    EQUB TILE_WALL_2 * 16 + TILE_WALL_2         ; monsters die on wall 2
+    EQUB 0                      ; sprites
+; Each monster: at (32, 32), dead, back and forth.
 .default_monster
-    EQUB &80, &80, &08, &B1         ; 242C
+    EQUB 32 * 4, 32 * 4, 8, %10110001
+
+; Print a message on the message box's second line (print_line2), its first
+; (print_line1), or wherever the text cursor is (print_message). The OS
+; thinks the screen is 40 columns of 640 bytes, so TAB(34,12) and TAB(10,11)
+; are two rows down from each other in the 64-column screen, 4 columns in.
+; In: A = the message number.
+; Clobbers: A, X, Y, window_ptr.
 .print_line2
-    JSR window_address              ; 2430: 20 9E 24
-    LDA #&1F                        ; 2433: A9 1F
-    JSR OSWRCH                      ; 2435: 20 EE FF
-    LDA #&22                        ; 2438: A9 22
-    JSR OSWRCH                      ; 243A: 20 EE FF
-    LDA #&0C                        ; 243D: A9 0C
-    JSR OSWRCH                      ; 243F: 20 EE FF
-    JMP print_message_at            ; 2442: 4C 5D 24
+    JSR window_address
+    LDA #31
+    JSR OSWRCH
+    LDA #34
+    JSR OSWRCH
+    LDA #12
+    JSR OSWRCH
+    JMP print_message_at
 .print_line1
-    JSR window_address              ; 2445: 20 9E 24
-    LDA #&1F                        ; 2448: A9 1F
-    JSR OSWRCH                      ; 244A: 20 EE FF
-    LDA #&0A                        ; 244D: A9 0A
-    JSR OSWRCH                      ; 244F: 20 EE FF
-    LDA #&0B                        ; 2452: A9 0B
-    JSR OSWRCH                      ; 2454: 20 EE FF
-    JMP print_message_at            ; 2457: 4C 5D 24
+    JSR window_address
+    LDA #31
+    JSR OSWRCH
+    LDA #10
+    JSR OSWRCH
+    LDA #11
+    JSR OSWRCH
+    JMP print_message_at
 .print_message
-    JSR window_address              ; 245A: 20 9E 24
+    JSR window_address
 .print_message_at
-    STX window_ptr                  ; 245D: 86 76
-    STY window_ptr+1                ; 245F: 84 77
-    JSR text_colours                ; 2461: 20 84 24
+    STX window_ptr
+    STY window_ptr+1
+    JSR text_colours
 .print_message_loop
-    LDY #&00                        ; 2464: A0 00
-    LDA (window_ptr), Y             ; 2466: B1 76
-    CMP #&7C                        ; 2468: C9 7C
-    BEQ print_message_done          ; 246A: F0 26
-    CMP #&FF                        ; 246C: C9 FF
-    BEQ print_message_highlight     ; 246E: F0 0C
-    JSR OSWRCH                      ; 2470: 20 EE FF
+    LDY #0
+    LDA (window_ptr), Y
+    CMP #asc("|")
+    BEQ print_message_done
+    CMP #&FF
+    BEQ print_message_highlight
+    JSR OSWRCH
 .print_message_next
-    INC window_ptr                  ; 2473: E6 76
-    BNE print_message_loop          ; 2475: D0 ED
-    INC window_ptr+1                ; 2477: E6 77
-    JMP print_message_loop          ; 2479: 4C 64 24
+    INC window_ptr
+    BNE print_message_loop
+    INC window_ptr+1
+    JMP print_message_loop
 .print_message_highlight
-    LDY #&0A                        ; 247C: A0 0A
-    JSR vdu_sequence                ; 247E: 20 86 24
-    JMP print_message_next          ; 2481: 4C 73 24
+    LDY #highlight_colours + 3 - colour_sequences
+    JSR vdu_sequence
+    JMP print_message_next
+
+; Text colours for the message box: yellow on blue (text_colours), or a
+; sequence from colour_sequences ending at Y.
+; Clobbers: A, X, Y.
 .text_colours
-    LDY #&03                        ; 2484: A0 03
+    LDY #normal_colours + 3 - colour_sequences
 .vdu_sequence
-    LDX #&03                        ; 2486: A2 03
+    LDX #3
 .vdu_sequence_loop
-    LDA colour_sequences, Y         ; 2488: B9 93 24
-    JSR OSWRCH                      ; 248B: 20 EE FF
-    DEY                             ; 248E: 88
-    DEX                             ; 248F: CA
-    BPL vdu_sequence_loop           ; 2490: 10 F6
+    LDA colour_sequences, Y
+    JSR OSWRCH
+    DEY
+    DEX
+    BPL vdu_sequence_loop
 .print_message_done
-    RTS                             ; 2492: 60
+    RTS
+; Four-byte VDU sequences, sent last byte first.
 .colour_sequences
-    EQUB &02, &11, &81, &11, &0C, &80, &11, &00; 2493
-    EQUB &11, &83, &11              ; 249B
+.normal_colours
+    EQUB 2, 17, 129, 17         ; COLOUR 129 : COLOUR 2
+    EQUB 12, 128, 17            ; VDU 0, COLOUR 128 : CLS (with the next
+.highlight_colours              ; byte; unused)
+    EQUB 0, 17, 131, 17         ; COLOUR 131 : COLOUR 0
+
+; Find a window or message in WDATA.
+; In: A = its number.
+; Out: X, Y = its address, low and high.
 .window_address
-    ASL A                           ; 249E: 0A
-    TAY                             ; 249F: A8
-    LDA wdata - 2, Y                ; 24A0: B9 FE 6F
-    TAX                             ; 24A3: AA
-    LDA wdata - 1, Y                ; 24A4: B9 FF 6F
-    TAY                             ; 24A7: A8
-    RTS                             ; 24A8: 60
+    ASL A
+    TAY
+    LDA wdata - 2, Y
+    TAX
+    LDA wdata - 1, Y
+    TAY
+    RTS
+
+; Put a block in the map, and on the screen.
+; In: A = the block; X, Y = the cell.
+; Clobbers: A, X, Y, ptr, work.
 .write_map
-    PHA                             ; 24A9: 48
-    STX ptr                         ; 24AA: 86 52
-    STY ptr+1                       ; 24AC: 84 53
-    JSR vector_plot_cell            ; 24AE: 20 92 08
-    LDX ptr                         ; 24B1: A6 52
-    LDY ptr+1                       ; 24B3: A4 53
-    JSR map_address                 ; 24B5: 20 E7 24
-    PLA                             ; 24B8: 68
-    LDX #&F0                        ; 24B9: A2 F0
-    BCS write_map_nibble            ; 24BB: B0 06
-    LDX #&0F                        ; 24BD: A2 0F
-    ASL A                           ; 24BF: 0A
-    ASL A                           ; 24C0: 0A
-    ASL A                           ; 24C1: 0A
-    ASL A                           ; 24C2: 0A
+    PHA
+    STX ptr
+    STY ptr+1
+    JSR vector_plot_cell
+    LDX ptr
+    LDY ptr+1
+    JSR map_address
+    PLA
+    LDX #&F0
+    BCS write_map_nibble        ; odd y: the bottom nibble
+    LDX #&0F
+    ASL A
+    ASL A
+    ASL A
+    ASL A
 .write_map_nibble
-    STA work                        ; 24C3: 85 54
-    TXA                             ; 24C5: 8A
-    LDY #&00                        ; 24C6: A0 00
-    AND (ptr), Y                    ; 24C8: 31 52
-    ORA work                        ; 24CA: 05 54
-    STA (ptr), Y                    ; 24CC: 91 52
-    RTS                             ; 24CE: 60
+    STA work
+    TXA
+    LDY #0
+    AND (ptr), Y
+    ORA work
+    STA (ptr), Y
+    RTS
+
+; Read a block from the map.
+; In: X, Y = the cell.
+; Out: A = the block, or negative if the cell is off the map.
+; Clobbers: Y, ptr; X too if on the map.
 .read_map
-    TXA                             ; 24CF: 8A
-    ASL A                           ; 24D0: 0A
-    BMI read_map_done               ; 24D1: 30 13
-    TYA                             ; 24D3: 98
-    ASL A                           ; 24D4: 0A
-    BMI read_map_done               ; 24D5: 30 0F
-    JSR map_address                 ; 24D7: 20 E7 24
-    LDY #&00                        ; 24DA: A0 00
-    LDA (ptr), Y                    ; 24DC: B1 52
-    BCS read_map_nibble             ; 24DE: B0 04
-    LSR A                           ; 24E0: 4A
-    LSR A                           ; 24E1: 4A
-    LSR A                           ; 24E2: 4A
-    LSR A                           ; 24E3: 4A
+    TXA
+    ASL A
+    BMI read_map_done
+    TYA
+    ASL A
+    BMI read_map_done
+    JSR map_address
+    LDY #0
+    LDA (ptr), Y
+    BCS read_map_nibble
+    LSR A
+    LSR A
+    LSR A
+    LSR A
 .read_map_nibble
-    AND #&0F                        ; 24E4: 29 0F
+    AND #&0F
 .read_map_done
-    RTS                             ; 24E6: 60
+    RTS
+
+; The map is a column of 32 bytes for each x, top to bottom, two cells a
+; byte, the even y in the top nibble.
+; In: X, Y = the cell.
+; Out: ptr = its byte; C set if it's the bottom nibble.
+; Clobbers: A, X.
 .map_address
-    TXA                             ; 24E7: 8A
-    LDX #&03                        ; 24E8: A2 03
-    STX ptr                         ; 24EA: 86 52
+    TXA
+    LDX #3                      ; also ptr's start: its bits fall out of the
+    STX ptr                     ; bottom, leaving C clear
 .map_address_shift
-    LSR A                           ; 24EC: 4A
-    ROR ptr                         ; 24ED: 66 52
-    DEX                             ; 24EF: CA
-    BNE map_address_shift           ; 24F0: D0 FA
-    ADC #&28                        ; 24F2: 69 28
-    STA ptr+1                       ; 24F4: 85 53
-    TYA                             ; 24F6: 98
-    LSR A                           ; 24F7: 4A
-    CLC                             ; 24F8: 18
-    ADC ptr                         ; 24F9: 65 52
-    STA ptr                         ; 24FB: 85 52
-    TYA                             ; 24FD: 98
-    LSR A                           ; 24FE: 4A
-    RTS                             ; 24FF: 60
+    LSR A
+    ROR ptr
+    DEX
+    BNE map_address_shift
+    ADC #HI(level_map)
+    STA ptr+1
+    TYA
+    LSR A
+    CLC
+    ADC ptr
+    STA ptr
+    TYA
+    LSR A
+    RTS
+
+; Pixel art for the font and the map's blocks: each character a pixel in
+; MODE 1 colours " " 0 (black), "." 1, "#" 2, "o" 3 (blue, yellow and red
+; in the designer's palette).
+FUNCTION pixel_colours(s) = FIND(CODES(" .#o"), CODES(s))
+FUNCTION mode1_byte(s) = SUM((pixel_colours(s) >> 1) * {128, 64, 32, 16} + (pixel_colours(s) AND 1) * {8, 4, 2, 1})
+; A glyph: eight rows of eight pixels, kept as the left four pixels of each
+; row and then the right four, as they go on the screen.
+MACRO GLYPH r0, r1, r2, r3, r4, r5, r6, r7
+    EQUB mode1_byte(r0[0..3]), mode1_byte(r1[0..3]), mode1_byte(r2[0..3]), mode1_byte(r3[0..3])
+    EQUB mode1_byte(r4[0..3]), mode1_byte(r5[0..3]), mode1_byte(r6[0..3]), mode1_byte(r7[0..3])
+    EQUB mode1_byte(r0[4..7]), mode1_byte(r1[4..7]), mode1_byte(r2[4..7]), mode1_byte(r3[4..7])
+    EQUB mode1_byte(r4[4..7]), mode1_byte(r5[4..7]), mode1_byte(r6[4..7]), mode1_byte(r7[4..7])
+ENDMACRO
+; A block as the map shows it: four rows of four pixels, kept bottom row
+; first.
+MACRO TILE r0, r1, r2, r3
+    EQUB mode1_byte(r3), mode1_byte(r2), mode1_byte(r1), mode1_byte(r0)
+ENDMACRO
+
+; Glyphs 64 to 69, past the end of the font (draw_glyph takes them from
+; here).
 .font_digits
-    EQUB &78, &0F, &0F, &1E, &3C, &3C, &3C, &0F; 2500
-    EQUB &E1, &69, &C3, &87, &0F, &0F, &0F, &0F; 2508
-    EQUS "<ii<ii<"                  ; 2510
-    EQUB &0F, &C3, &69, &69, &C3, &69, &69, &C3; 2517
-    EQUB &0F                        ; 251F
-    EQUS "<ii<"                     ; 2520
-    EQUB &0F, &0F, &3C, &0F, &C3, &69, &69, &E1; 2524
-    EQUB &69, &C3, &87, &0F         ; 252C
-    EQUS "<iixxi<"                  ; 2530
-    EQUB &0F, &C3, &69, &E1, &E1, &69, &69, &C3; 2537
-    EQUB &0F, &0F, &0F, &0F, &0F, &D2, &78, &2D; 253F
-    EQUB &0F, &0F, &0F, &69, &C3, &87, &0F, &0F; 2547
-    EQUB &0F, &0F, &0F, &0F, &78, &0F, &0F, &0F; 254F
-    EQUB &0F, &0F, &0F, &0F, &E1, &0F, &0F, &0F; 2557
-    EQUB &0F                        ; 255F
+    GLYPH ".######.", ".....##.", "....##..", "...##...", "..##....", "..##....", "..##....", "........"   ; 64: 7
+    GLYPH "..####..", ".##..##.", ".##..##.", "..####..", ".##..##.", ".##..##.", "..####..", "........"   ; 65: 8
+    GLYPH "..####..", ".##..##.", ".##..##.", "..#####.", ".....##.", "....##..", "..###...", "........"   ; 66: 9
+    GLYPH "..####..", ".##..##.", ".##.###.", ".######.", ".###.##.", ".##..##.", "..####..", "........"   ; 67: 0
+    GLYPH "........", "........", ".....##.", "....##..", "##.##...", ".###....", "..#.....", "........"   ; 68: tick
+    GLYPH "........", "........", "........", ".######.", "........", "........", "........", "........"   ; 69: -
+; The map's blocks, by number, drawn a byte (four pixels) wide.
 .tile_patterns
-    EQUB &00                        ; 2560
-.D2561
-    EQUB &00, &00, &00, &F0, &70, &30, &10, &F0; 2561
-    EQUB &E0, &C0, &80, &10, &30, &70, &F0, &80; 2569
-    EQUB &C0, &E0, &F0, &F0, &F0, &F0, &F0, &06; 2571
-    EQUB &69, &69, &06, &66, &66, &66, &FF, &8F; 2579
-    EQUB &4F, &2F, &1F, &FF, &60, &60, &FF, &60; 2581
-    EQUB &90, &90, &60, &06, &0F, &0F, &06, &00; 2589
-    EQUB &0F, &0F, &00, &06, &06, &06, &06, &F0; 2591
-    EQUB &96, &96, &F0, &66, &FF, &FF, &66; 2599
-.D25A0
-    EQUB &00                        ; 25A0
+    TILE "    ", "    ", "    ", "    "   ; 0: blank
+    TILE "   #", "  ##", " ###", "####"   ; 1: SE curve
+    TILE "#   ", "##  ", "### ", "####"   ; 2: SW curve
+    TILE "####", " ###", "  ##", "   #"   ; 3: NE curve
+    TILE "####", "### ", "##  ", "#   "   ; 4: NW curve
+    TILE "####", "####", "####", "####"   ; 5: wall 1
+    TILE " .. ", ".##.", ".##.", " .. "   ; 6: fatal trap
+    TILE "oooo", " oo ", " oo ", " oo "   ; 7: collectable
+    TILE "...o", "..o.", ".o..", "o..."   ; 8: crate
+    TILE "oooo", " ## ", " ## ", "oooo"   ; 9: marker
+    TILE " ## ", "#  #", "#  #", " ## "   ; A: wall 2
+    TILE " .. ", "....", "....", " .. "   ; B: S.monster
+    TILE "    ", "....", "....", "    "   ; C: horizontal pipe
+    TILE " .. ", " .. ", " .. ", " .. "   ; D: vertical pipe
+    TILE "####", "#..#", "#..#", "####"   ; E: barricade
+    TILE " oo ", "oooo", "oooo", " oo "   ; F: junction
+    EQUB 0                      ; spare
 ; Zero page as entry leaves it: pointers to the menus' handler tables, which
 ; jump_to_handler finds by number (from 1), and spare bytes.
 .zero_page_init_load
