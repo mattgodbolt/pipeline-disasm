@@ -1,0 +1,93 @@
+; The layout of IO, the mission file: everything the game knows about a
+; mission's four levels, packed to end at &5800 where the game keeps the map
+; of the level being played. MISSION (the Mission Generator) saves it with
+;   l0addr=&5800-numlev*size-grfs-attrs-miss-names
+; and the sizes below are its numlev, size, grfs, attrs, miss and names.
+; H.GAME loads it with OSFILE and reads it at these addresses, so they're
+; shared by src/io.6502 (which lays IO out) and src/hidden_game.6502.
+
+IO_LEVELS        = 4
+IO_LEVEL_FIELDS  = &11F        ; per level, the fields below, interleaved
+IO_MAP_SIZE      = &800        ; per level, 64 x 64 cells of 4 bits
+IO_LEVEL_SIZE    = IO_LEVEL_FIELDS + IO_MAP_SIZE
+IO_GRAPHICS_SIZE = &E00        ; 28 pictures of 128 bytes
+IO_ATTRS_SIZE    = 5
+IO_MISSION_SIZE  = 30          ; the mission text, two halves of 15
+IO_NAMES_SIZE    = &134        ; an extra picture and the object names
+IO_END           = &5800
+
+io_start = IO_END - IO_LEVELS * IO_LEVEL_SIZE - IO_GRAPHICS_SIZE - IO_ATTRS_SIZE - IO_MISSION_SIZE - IO_NAMES_SIZE
+
+; The names block, which the Graphics Designer keeps with the graphics (it is
+; DEFAULT's last &134 bytes): a picture drawn for a map cell marked as
+; holding an object when no object is there, then fifteen 12-character
+; object names.
+io_no_object_picture = io_start
+IO_NAME_LENGTH       = 12
+io_object_names      = io_no_object_picture + 128
+
+; The mission text: two VDU 31 (TAB) sequences and 12 characters each, with
+; spaces stored as 9 (cursor right) so they don't paint over the background.
+io_mission_text = io_start + IO_NAMES_SIZE
+
+; The mission's attributes, set by MISSION's "change features".
+io_attrs            = io_mission_text + IO_MISSION_SIZE
+io_time_rate        = io_attrs + 0  ; added to a counter each cycle; the clock ticks when it carries
+io_map_levels       = io_attrs + 1  ; the map (M) works on levels below this
+io_backpack_last    = io_attrs + 2  ; the backpack's last slot: it holds this plus one
+io_throw_distance   = io_attrs + 3  ; how far a thrown object flies, in cells
+io_locked           = io_attrs + 4  ; negative: a finished mission shows an entry code
+
+; The levels' fields, each stored as IO_LEVELS consecutive entries (level 0's,
+; then level 1's...), in this order. The Level Designer's files hold one
+; level's fields in the same order, and MISSION interleaves them.
+io_levels             = io_attrs + IO_ATTRS_SIZE
+io_edit_code_high     = io_levels + 0     ; 1 byte each: the level's edit code,
+io_edit_code_middle   = io_levels + 4     ; which MISSION asks for before it
+io_edit_code_low      = io_levels + 8     ; saves an edited level
+io_palettes           = io_levels + 12    ; 4 bytes each: logical << 4 | physical
+io_level_setup        = io_levels + 28    ; 8 bytes each: see below
+io_level_objects      = io_levels + 60    ; 32 each: 8 objects of 4 bytes
+io_level_monsters     = io_levels + 188   ; 16 each: 4 monsters of 4 bytes
+io_level_trigger_flags = io_levels + 252  ; 32 each: a byte per trigger
+io_level_trigger_places = io_levels + 380 ; 64 each: x, y per trigger
+io_level_trigger_args_0 = io_levels + 636 ; 64 each: triggers 0-15, 4 bytes each
+io_level_trigger_args_1 = io_levels + 892 ; 64 each: triggers 16-31, 4 bytes each
+
+; A level's setup bytes.
+LEVEL_START_X     = 0
+LEVEL_START_Y     = 1
+LEVEL_TO_COLLECT  = 2   ; things to collect before the exit opens
+LEVEL_TIME        = 3   ; the clock's starting value
+LEVEL_EXIT_X      = 4
+LEVEL_EXIT_Y      = 5
+LEVEL_MONSTER_FOOD = 6  ; low nibble: a cell monsters eat; high: what they leave
+LEVEL_ANIMATE     = 7   ; which of the animated cells animate
+
+; The maps, 64 columns of 32 bytes: column x's cells y and y+1 share a byte,
+; even y in the high nibble.
+;
+; What the game makes of the cell types: 1-5, 8 and 9 are walls of different
+; shapes, and the rest are these. Off the map counts as lava.
+CELL_FLOOR        = 0
+CELL_CRATE        = 6     ; pushed, while the player has pushes left
+CELL_SULPHUR      = 7     ; to be collected, by stepping on it
+CELL_WALL         = 8     ; also what the exit counts as
+CELL_LAVA         = &A    ; deadly
+CELL_JUNCTION     = &B    ; pipes: a junction...
+CELL_PIPE_ACROSS  = &C    ; ...a pipe left and right...
+CELL_PIPE_DOWN    = &D    ; ...and up and down
+CELL_FIRE         = &E    ; deadly: monsters mark their cells with it
+CELL_OBJECT       = &F    ; an object (or the exit): see the level's objects
+io_maps = io_levels + IO_LEVELS * IO_LEVEL_FIELDS
+
+; The graphics, as the Graphics Designer saves them (DEFAULT's first &E00
+; bytes). Each 128-byte picture is 4 x 4 character cells of 8 bytes in MODE 5,
+; stored a column at a time; the object icons are 2 x 2 cells.
+io_graphics      = io_maps + IO_LEVELS * IO_MAP_SIZE
+io_tiles         = io_graphics            ; 16 pictures, one per map cell type
+io_object_icons  = io_graphics + 16 * 128 ; 16 icons of 32 bytes
+io_player        = io_graphics + 20 * 128 ; 4 pictures, facing each way
+io_alternates    = io_graphics + 24 * 128 ; second pictures for cell types 5, 7, 8, A
+
+ASSERT io_graphics + IO_GRAPHICS_SIZE = IO_END

@@ -1,0 +1,222 @@
+# &18A9-&1ADD: moving, pushing, pipes, collecting, moving cells about, and
+# reading the keys.
+
+[labels]
+0x18A9 = "move"
+0x18E4 = "move_into_pipe"
+0x18EE = "move_on"
+0x1912 = "move_done"
+0x1917 = "walks"
+0x191F = "try_push"
+0x1923 = "no_push"
+0x1924 = "try_push_done"
+0x1925 = "try_push_crate"
+0x1932 = "try_push_return"
+0x1933 = "push_cell"
+0x194D = "check_underfoot"
+0x1962 = "pipe_junction_turn"
+0x1974 = "pipe_junction_try"
+0x198F = "underfoot_on_foot"
+0x1997 = "pipe_junction_found"
+0x199E = "pipe_check_ahead"
+0x19AE = "pipe_reverse"
+0x19B9 = "check_deadly"
+0x19C1 = "kill_player"
+0x19C3 = "check_deadly_done"
+0x19C4 = "check_pipe_end"
+0x19C8 = "check_pipe_end_in_pipe"
+0x19D4 = "collect"
+0x19F6 = "collect_spin"
+0x1A19 = "trigger_move_monster"
+0x1A4F = "move_cell"
+0x1A64 = "move_cell_type"
+0x1A72 = "move_object"
+0x1A7C = "move_cell_draw"
+0x1A8E = "move_cell_done"
+0x1A8F = "read_keys"
+0x1A97 = "read_action_key"
+0x1AB1 = "read_move_keys"
+0x1AB3 = "read_move_key"
+0x1ABB = "test_move_key"
+0x1AD5 = "test_move_key_note"
+
+[comments]
+0x18A9 = '''
+Actions 7-10: a step left, right, up or down (Y is the action * 2). Turn
+that way, then step into the next cell if it's empty, the thing to collect
+(7), or a pipe running this way (C across, D down), which carries the player
+along until it ends; a crate (6) is pushed if the player has pushes left.
+Anything else stops the player: lava or fire kill. After a step, the move
+ends the cycle (the walk moved everything four times already).
+'''
+0x18E4 = '''
+Into a pipe: it carries the player on with this move.
+'''
+0x18EE = '''
+Unless a trigger has called for action 11, step: walk the view a cell
+(walks, by direction), and see what's ahead now.
+'''
+0x1917 = '''
+The walk routines, by direction.
+'''
+0x191F = '''
+Can the player push the crate (cell 6) in front of them? Only with pushes
+left, and only into an empty cell.
+Returns: carry set if it moved.
+'''
+0x1933 = '''
+Push the cell in front of the player a cell further in direction Y, if the
+cell beyond is empty. Returns: carry set if it moved.
+'''
+0x194D = '''
+What the player stands on (A), after the triggers have had their turn: the
+thing to collect is collected and anything else (fire, a monster) kills,
+unless the player's in a pipe. In a pipe: at a junction (B), follow the
+pipe round a corner or straight on; a dead end, or a cell a pipe can't go
+into, turns the player back.
+'''
+0x1962 = '''
+Try turning anticlockwise, then clockwise, then straight on, for a pipe
+going that way.
+'''
+0x19B9 = '''
+Lava (A) and fire (E) kill.
+'''
+0x19C4 = '''
+At the start of the player's turn, with A what they stand on: out of the
+end of a pipe onto the floor, the pipe lets go.
+'''
+0x19D4 = '''
+Collect the thing the player stands on (cell 7): a point, and when it's the
+last one, the player spins round with rising tones.
+Returns: carry clear.
+'''
+0x1A19 = '''
+Trigger action 7: put monster A AND 3 in map cell (A DIV 4, Y DIV 4) (its
+position in characters is A and Y with their low bits clear), going
+direction Y AND 3 with turning preferences X, and move its fire cell there.
+'''
+0x1A4F = '''
+Move what's in map cell (X, Y) a cell in direction A, objects and all, and
+draw both cells. Returns: carry set if the cell was empty (nothing moved).
+'''
+0x1A8F = '''
+Read the keys into action, unless an action's waiting: P, D, M, CTRL, T and
+Return are actions 1-6 (the first pressed, from 6 down), the directions 7-10.
+The direction the player faces walks on while its key is held; a new
+direction only once its key has been let go since it was last pressed.
+'''
+0x1ABB = '''
+Is direction key Y pressed? With the carry set it counts only if it wasn't
+down last time. Sets action to Y + 7 if it counts.
+'''
+
+[remarks]
+0x18A9 = "(action - 7) * 2 with the carry clear..."
+0x18AC = "...halved: the direction"
+0x18B0 = "the pipe that runs this way"
+0x18B4 = "C across, D up and down"
+0x18BB = "the cell to step into..."
+0x18C2 = "...and what's there"
+0x18C5 = "already in a pipe?"
+0x18C9 = "empty?"
+0x18CD = "a pipe this way?"
+0x18D1 = "something to collect?"
+0x18D5 = "a crate to push?"
+0x18DC = "something in the way: lava or fire kill"
+0x18DF = "no step: drop the cell pushed"
+0x18E4 = "(just an RTS)"
+0x18E7 = "carried on by this move"
+0x18EE = "everything else moves"
+0x18F1 = "a trigger said stop?"
+0x18F9 = "the step"
+0x18FD = "and the cell in front"
+0x1905 = "the walk"
+0x1912 = "drop the cell pushed..."
+0x1913 = "...and return from player_turn's caller too"
+0x1925 = "no pushes left?"
+0x1930 = "one fewer"
+0x1936 = "the cell beyond the one in front"
+0x193D = "empty?"
+0x194F = "in a pipe?"
+0x1953 = "out of it?"
+0x195A = "a junction?"
+0x195E = "anticlockwise first"
+0x1968 = "a direction"
+0x196D = "C for left or right..."
+0x1973 = "...D for up or down"
+0x197D = "the next cell that way"
+0x1984 = "then clockwise, then straight on"
+0x198D = "no way on: turn back"
+0x198F = "the thing to collect?"
+0x1993 = "anything else kills"
+0x1997 = "carry set: + 7, the move"
+0x199E = "the cell ahead: empty..."
+0x19A2 = "...or to collect: carry on"
+0x19A6 = "1-9 or F: blocked"
+0x19AA = "lava or fire: as below; B-D: carry on"
+0x19AE = "the reverse move"
+0x19C1 = "nonzero: dead"
+0x19CD = "out of the pipe"
+0x19D4 = "pipes let go"
+0x19D8 = "it's gone"
+0x19DE = "a sound"
+0x19E3 = "a point"
+0x19E6 = "the last one?"
+0x19F2 = "16 turns"
+0x19F6 = "anticlockwise"
+0x1A04 = "the note rises"
+0x1A0E = "a pause"
+0x1A1F = "monster A AND 3"
+0x1A24 = "where it was, in cells"
+0x1A31 = "where it goes"
+0x1A42 = "its direction"
+0x1A47 = "its turning preferences"
+0x1A4B = "move its mark, a fire cell"
+0x1A53 = "the destination"
+0x1A5E = "what's here"
+0x1A61 = "nothing: carry set"
+0x1A65 = "an object?"
+0x1A72 = "it moves too"
+0x1A80 = "empty where it was"
+0x1A88 = "and fill where it goes"
+0x1A93 = "6 action keys..."
+0x1A99 = "...tested from Return down to P"
+0x1AA4 = "the way the player faces..."
+0x1AA6 = "...may be held"
+0x1AAE = "no move: forget what was held"
+0x1AB3 = "a new direction must be pressed afresh"
+0x1ABB = "the carry into the mask"
+0x1AC8 = "held since last time?"
+0x1AD0 = "action 7-10"
+0x1AD5 = "remember: 1 if it's down"
+
+[operands]
+0x1A93 = "#ACTION_USE"
+0x1A65 = "#CELL_OBJECT"
+0x19C8 = "#CELL_SULPHUR"
+0x19BD = "#CELL_FIRE"
+0x19B9 = "#CELL_LAVA"
+0x19AA = "#CELL_OBJECT"
+0x19A6 = "#CELL_LAVA"
+0x19A2 = "#CELL_SULPHUR"
+0x198F = "#CELL_SULPHUR"
+0x196D = "#CELL_PIPE_ACROSS"
+0x195A = "#CELL_JUNCTION"
+0x191F = "#CELL_CRATE"
+0x18AA = "#14 - 1"
+0x18B2 = "#CELL_PIPE_ACROSS"
+0x18D1 = "#CELL_SULPHUR"
+0x18EA = "#ACTION_LEFT"
+0x1909 = "walks"
+0x190C = "walks + 1"
+0x195E = "#12"
+0x1999 = "#ACTION_LEFT - 1"
+0x19DE = "#&B4"
+0x19F2 = "#16"
+0x1A4B = "#CELL_FIRE"
+0x1A99 = "action_keys - 1"
+0x1AD1 = "#ACTION_LEFT"
+
+[refer]
+0x2362 = "reverse_moves - 7"

@@ -1,4 +1,5534 @@
-; The game proper, hidden in sectors &122-&142.
-SECTION hidden_game, filename="H.GAME"
-    INCBIN "../data/hidden_game.bin"
+; H.GAME: PIPELINE itself (William Reeve & Ian Holmes, Superior Software 1988).
+;
+; The GAME stub reads this from the hidden sectors &122-&142 to &3000 and jumps
+; to it. It's built to be loaded at &3000 but to run lower down: the loader at
+; the start copies the rest into the stack page, page 8, &0400-&07FF and
+; &0900-&23AC, sets up the screen and the sound event, and jumps to the game,
+; which then loads the mission file IO over the loader (see io.6502inc).
+;
+; Generated from hints/hidden_game.toml and hints/hidden_game/*.toml by
+; tools/dis6502seg.py; edit those and regenerate.
+
+INCLUDE "os.6502inc"
+INCLUDE "io.6502inc"
+
+SECTION hidden_game, filename="H.GAME", org=&3000
+.game
+{
+; Zero page. The loader's block copy uses &00-&07 too (copy_return...).
+monster_x = &00                         ; 4 monsters of 4 bytes; x, y in character cells
+monster_y = &01
+monster_direction = &02                 ; 0-3 moving, 4-7 stuck, 8 up: not out
+monster_turns = &03                     ; which ways it tries when it's blocked
+thrown_x = &10                          ; a thrown object in flight, in character cells
+thrown_y = &11
+thrown_direction = &12                  ; 0: nothing in flight, else direction + 1
+thrown_picture = &13
+thrown_picture_high = &14
+front_x = &15                           ; the cell in front of the player
+front_y = &16
+action = &17                            ; the action to do next (see action_table)
+frame_counter = &18                     ; +&20 a cycle; bit 7 picks the monsters' frame
+thrown_object = &19                     ; the object in flight, + &80
+backpack_slot = &1A                     ; the selected slot
+throw_range = &1B                       ; cells the thrown object has left to fly
+started_late = &1C                      ; nonzero: the game didn't start on level 1
+pushes_left = &1D                       ; how many more crates the player may push
+clock_fraction = &1E                    ; io_time_rate is added each cycle
+clip_position = &1F
+player_x = &20                          ; the player's cell
+player_y = &21
+score = &22                             ; BCD: the low two digits
+score_high = &23                        ; and the high two
+backpack = &24                          ; 4 slots: an object, or negative for empty
+menu_key_left = &29                     ; the direction keys as MENU set them
+menu_key_right = &2A
+menu_key_up = &2B
+menu_key_down = &2C
+empty_channel = &2D                     ; the sound channel the event says ran dry
+lives = &2E
+sound_channel = &30                     ; an OSWORD 7 block for sound effects
+sound_channel_high = &31
+sound_amplitude = &32
+sound_amplitude_high = &33
+sound_pitch = &34
+sound_pitch_high = &35
+sound_duration = &36
+sound_duration_high = &37
+tune_channel = &38                      ; an OSWORD 7 block for the tune
+tune_channel_high = &39
+tune_amplitude = &3A
+tune_amplitude_high = &3B
+tune_pitch = &3C
+tune_pitch_high = &3D
+tune_duration = &3E
+tune_duration_high = &3F
+tune_position = &40                     ; voice 1's next note
+tune_position_2 = &41                   ; voice 2's
+tune_swap = &42                         ; which voice plays alone
+tune_transpose = &43                    ; 0 or &14
+tune_together = &44                     ; both voices play, or one
+triggers_fired = &48                    ; counts triggers that matched
+level = &49                             ; 0-3
+draw_step = &4A                         ; drawing: cells to a picture's edge, a screen step, or flip the player
+draw_step_high = &4B
+monster_index = &4C
+picture_stride = &4E                    ; bytes from one character cell of a picture to the next across
+picture_size = &4F                      ; negative: 4x4 cells; 1: a 2x2 icon on the floor
+work0 = &50                             ; scratch, used for all sorts
+work1 = &51
+work2 = &52
+work3 = &53
+work4 = &54
+work5 = &55
+start_x = &56                           ; the level's setup, copied from io_level_setup
+start_y = &57
+to_collect = &58                        ; cell 7s still to collect
+time_left = &59                         ; the clock
+exit_x = &5A
+exit_y = &5B
+monster_food = &5C                      ; low nibble: a cell monsters eat; high: what they leave
+alternate_cells = &5D                   ; 2 bits a cell type: which squares use its second picture
+player_dead = &5E                       ; nonzero: lose a life
+pipe_move = &5F                         ; inside a pipe: the move action that carries the player on
+stage = &60                             ; 0 collecting; 1 exit found; 2 the last few seconds; 3 done
+furthest_level = &61                    ; the title screen's start level goes up to this
+front_cell = &62                        ; what's in the cell in front of the player
+fill_screen = &63                       ; clear_screen fills with the floor pattern, not black
+tune_off = &64
+effects_off = &65
+action_keys = &66                       ; P, D, M, CTRL, T, Return: actions 1-6
+key_map = &68
+key_left = &6C                          ; this level's direction keys: actions 7-10
+key_right = &6D
+key_up = &6E
+key_down = &6F
+cell_x = &70                            ; the map cell being looked at or drawn
+cell_y = &71
+screen_start = &72                      ; the CRTC's start address
+screen_start_high = &73
+view_sub_x = &74                        ; view_x MOD 4: which character column of the left cell shows
+view_sub_y = &75
+picture = &76                           ; the picture being drawn
+picture_high = &77
+screen = &78                            ; where it's being drawn
+screen_high = &79
+strip_cells = &7A
+cell_low_nibble = &7B                   ; the cell is in its map byte's low nibble
+map_pointer = &7C
+map_pointer_high = &7D
+strip_cells_down = &7E
+steps = &7F
+view_screen = &80                       ; the screen address of the view's top left
+view_screen_high = &81
+count_across = &82
+count_down = &83
+player_screen = &84
+player_screen_high = &85
+player_screen_base = &86
+player_screen_base_high = &87
+player_frame = &88                      ; +&20 a step
+facing = &89                            ; 0 left, 1 right, 2 up, 3 down
+view_x = &8A                            ; the view's top left, in character cells (4 to a map cell)
+view_y = &8B
+sprite_columns = &8E                    ; character cells to draw, less 1
+sprite_rows = &8F
+sprite_column = &90
+sprite_row = &91
+sprite_screen = &92
+sprite_screen_high = &93
+view_cell_x = &94                       ; view_x DIV 4
+view_cell_y = &95
+temp = &96
+sprite = &97                            ; the picture being drawn
+sprite_high = &98
+sprite_skip_x = &99                     ; character cells cut off the left
+sprite_skip_y = &9A
+player_steps = &9B
+ERROR_POINTER = &FD                     ; the OS's: the last error's BRK block, past the BRK
+ESCAPE_FLAG = &FF                       ; the OS's: bit 7 set when Escape is pressed
+
+; Elsewhere.
+trigger_flags = &0100                   ; a byte per trigger, from io_level_trigger_flags
+keys_were_down = &0120                  ; a byte per direction key, for repeat
+step_y = &0124                          ; step's scratch
+VSYNC_COUNTER = &0240                   ; the OS decrements it every vsync, 50 a second
+saved_extended_vectors = &037F          ; the OS's cassette workspace
+NMI_HANDLER = &0D00                     ; where the OS jumps on an NMI
+EXTENDED_VECTORS = &0D9F                ; the OS's extended vector table
+trigger_args = &23AD                    ; 4 bytes a trigger, from io_level_trigger_args
+map = &5800                             ; the level being played's map, copied from io_maps
+SCREEN = &6000                          ; the game's 8K screen
+
+menu_keys = &50                         ; where MENU leaves the ten keys
+copy_return = &00
+copy_from = &02
+copy_to = &04
+copy_count = &06
+objects = game_start                    ; 8 objects of 4 bytes: x, y, icon, uses and flags
+ACTION_USE = 6                          ; the last of the action keys' actions
+ACTION_LEFT = 7                         ; then right, up and down
+ACTION_STOP = 11                        ; from a trigger: the player doesn't step
+KEY_SHIFT = -1                          ; negative INKEY numbers
+KEY_T = -36
+KEY_S = -82
+KEY_SPACE = -99
+bit4_mask = show_map_centre + 1         ; the byte there is &10
+bit6_mask = fire_object_vanishes + 1    ; the byte there is &40
+
+; Entered from the GAME stub with the ten keys MENU set up in menu_keys, as
+; negative INKEY numbers. Copies the keys where the game wants them, copies
+; the game into place, sets up the screen and the sound event, and starts the
+; game. The stack is reset because the event handler lives in the stack page.
+.loader
+    LDX #&FF                            ; the event handler lives in the stack page
+    TXS
+    LDY #&09
+.copy_keys_loop
+    LDX key_order, Y
+    LDA menu_keys, X                    ; MENU's key
+    STA menu_key_left, X                ; as MENU left it
+    STA action_keys, Y                  ; in the order the game tests its actions
+    DEY
+    BPL copy_keys_loop
+
+; Each copy_block call is followed by its source, destination and length.
+    JSR copy_block
+    EQUW EXTENDED_VECTORS, saved_extended_vectors, &100 - LO(EXTENDED_VECTORS)
+    JSR copy_block
+    EQUW event_handler_load, event_handler, event_handler_end - event_handler
+    JSR copy_block
+    EQUW sound_data_load, sound_data, sound_data_end - sound_data
+    JSR copy_block
+    EQUW low_code_load, low_code, low_code_end - low_code
+    JSR copy_block
+    EQUW main_code_load, main_code, main_code_end - main_code
+
+; MODE 5, then VDU 23,0,10,32;0;0;0 (CRTC register 10: no cursor), sent from
+; the end of cursor_off_vdu backwards.
+    LDA #22
+    JSR OSWRCH
+    LDA #5
+    JSR OSWRCH
+    LDY #&09
+.cursor_off_loop
+    LDA cursor_off_vdu, Y
+    JSR OSWRCH
+    DEY
+    BPL cursor_off_loop
+
+; The sound event: the OS calls EVNTV when a sound channel's queue empties
+; (enabled when the tune starts), and the handler feeds the tune.
+    SEI
+    LDA #LO(event_handler)
+    STA EVNTV
+    LDA #HI(event_handler)
+    STA EVNTV + 1
+    CLI
+
+; Addressable latch bit 5 clear (with bit 4 set by MODE 5): the screen wraps
+; round at 8K, so the game's screen is &6000-&7FFF with hardware scrolling.
+    LDA #&05
+    STA SYSVIA_ORB
+    JMP game_start
+
+; Never printed: a note for whoever looks.
+.message_to_crackers
+    EQUS " GET YOUR GRUBBY LITTLE HANDS OFF THIS PROGRAM! "
+.cursor_off_vdu
+    EQUB 0, 0, 0, 0, 0, 0, 32, 10, 0, 23
+
+; For each of the action keys in the order the game tests them (action_keys),
+; which of MENU's ten it is.
+.key_order
+    EQUB 4, 5, 9, 8, 7, 6, 0, 1, 2, 3     ; P, D, M, CTRL, T, Return, Z, X, :, /
+
+; Copy a block of memory, then return past the six bytes that follow the JSR:
+; the source, the destination and the length.
+; Clobbers: A, X, Y, copy_return, copy_from, copy_to, copy_count.
+.copy_block
+    PLA                                 ; the JSR's return address, less 1
+    STA copy_return
+    PLA
+    STA copy_return + 1
+    LDY #&01
+.copy_block_params
+    LDA (copy_return), Y                ; the parameters into copy_from, copy_to, copy_count
+    STA copy_from - 1, Y
+    INY
+    CPY #&07
+    BNE copy_block_params
+    LDX copy_count
+    TYA                                 ; step the return address past them
+    CLC
+    ADC copy_return
+    BCC copy_block_data
+    INC copy_return + 1
+.copy_block_data
+    STA copy_return
+    LDY #&00
+.copy_block_loop
+    LDA (copy_from), Y
+    STA (copy_to), Y
+    INY
+    BNE copy_block_count
+    INC copy_from + 1
+    INC copy_to + 1
+.copy_block_count
+    TXA
+    BNE copy_block_next
+    DEC copy_count + 1
+.copy_block_next
+    DEX
+    TXA
+    ORA copy_count + 1
+    BEQ copy_block_return
+    BNE copy_block_loop
+.copy_block_return
+    JMP (copy_return)                   ; return past the parameters
+
+; Never used.
+.loader_unused
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00
+    EQUB &00
+
+; The sound event handler, run in the stack page (the stack never gets this
+; deep).
+.event_handler_load
+SECTION event_handler, org=&0131
+
+; EVNTV handler for the "output buffer empty" event (the only one enabled):
+; X is the buffer, 4-7 for sound channels 0-3. Plays the tune's next note on
+; the channel that ran out, and when the first voice reaches its end, starts
+; the tune again with the next variation. Preserves A, X and Y.
+.event_handler
+    PHA
+    TXA
+    PHA
+    TYA
+    PHA
+    DEX                                 ; X - 4: the sound channel that's run dry
+    DEX
+    DEX
+    DEX
+    STX empty_channel
+    JSR play_tune                       ; play its next note
+    LDA tune_position                   ; has the first voice finished?
+    CMP #30
+    BEQ restart_tune
+    TAX                                 ; the first voice is part way through
+    BNE event_handler_return
+    LDA tune_position_2                 ; or the second, when only it is playing
+    CMP #30
+    BNE event_handler_return
+
+; Both voices back to the start, each with a silent note to get the event
+; going again; then step the variation: every other time round, transpose
+; up a fourth (&14, 5 semitones), and every other time that, swap the voices.
+.restart_tune
+    LDY #&01
+    STY tune_channel                    ; channel 1
+    STY tune_channel_high               ; in step with the other voice (SOUND &101)
+    DEY
+    STY tune_position                   ; both voices to their first note
+    STY tune_position_2
+    STY tune_amplitude                  ; silent
+    STY tune_amplitude_high
+    STY tune_duration                   ; for no time
+    STY tune_duration_high
+    JSR sound_tune_block
+    INC tune_channel                    ; channel 2
+    JSR sound_tune_block
+    LDA tune_together
+    EOR #&01
+    STA tune_together
+    BNE event_handler_return
+    LDA tune_transpose
+    EOR #&14
+    STA tune_transpose
+    BNE event_handler_return
+    LDA tune_swap
+    EOR #&01
+    STA tune_swap
+.event_handler_return
+    PLA
+    TAY
+    PLA
+    TAX
+    PLA
+    RTS
+
+; Copied but never used.
+.event_handler_unused
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00
+    EQUB &00, &00, &00, &00
+.event_handler_end
+ENDSECTION
+
+; The title tune, in the printer buffer, and the four sound envelopes, written
+; straight into the OS's envelope store rather than with OSWORD 8.
+.sound_data_load
+SECTION sound_data, org=&0880
+.sound_data
+
+; The tune: two voices of 32 notes, each a byte with the pitch step in the
+; high nibble and the duration in the low. See play_tune_note.
+.tune
+    EQUB &59, &73, &86, &D6, &C9, &A3, &86, &76, &59, &73, &86, &56, &79, &43, &16, &06
+    EQUB &59, &73, &86, &D6, &C9, &A3, &86, &76, &59, &73, &86, &46, &5C, &5C, &70, &00
+.tune_voice_2
+    EQUB &56, &86, &56, &86, &46, &76, &46, &76, &56, &86, &56, &86, &46, &76, &16, &06
+    EQUB &56, &86, &56, &86, &46, &76, &46, &76, &56, &86, &56, &46, &5C, &5B, &30, &00
+
+; Envelopes 1-4, as the OS keeps them (ENVELOPE's parameters after its
+; number, padded to 16 bytes): T, PI1-3, PN1-3, AA, AD, AS, AR, ALA, ALD.
+; 1 and 2 are the tune's voices, 3 and 4 sound effects.
+.envelope_1
+    EQUB 4, 1, -1, 1, 1, 2, 1, 70, 10, -12, -15, 70, 100, 0, 0, 0
+    EQUB 5, 1, -1, 0, 1, 1, 0, 100, -10, 0, -12, 100, 0, 0, 0, 0
+    EQUB &84, 0, 8, -8, 3, 1, 1, 126, -5, -10, -20, 126, 0, 0, 0, 0
+    EQUB 3, 0, 0, 0, 1, 1, 1, 100, -6, 0, -8, 126, 0, 0, 0, 0
+.sound_data_end
+ENDSECTION
+
+; Not copied.
+.sound_data_padding
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00
+
+; Map view patterns and the code that scrolls the playing area.
+.low_code_load
+SECTION low_code, org=&0400
+.low_code
+
+; What the map view (the M key) draws for each cell type: 4 pixels by 4 lines,
+; a byte a line. Then the player, facing each way.
+.map_view_patterns
+    EQUB &00, &00, &00, &00
+    EQUB &10, &30, &70, &F0
+    EQUB &80, &C0, &E0, &F0
+    EQUB &F0, &70, &30, &10
+    EQUB &F0, &E0, &C0, &80
+    EQUB &F0, &F0, &F0, &F0
+    EQUB &06, &69, &69, &06
+    EQUB &FF, &FF, &66, &66
+    EQUB &1F, &2F, &4F, &8F
+    EQUB &FF, &60, &60, &FF
+    EQUB &60, &90, &90, &60
+    EQUB &06, &0F, &0F, &06
+    EQUB &00, &0F, &0F, &00
+    EQUB &06, &06, &06, &06
+    EQUB &F0, &96, &96, &F0
+    EQUB &00, &00, &00, &00
+.map_view_player
+    EQUB &C3, &69, &69, &C3
+    EQUB &3C, &69, &69, &3C
+    EQUB &96, &F0, &69, &0F
+    EQUB &0F, &69, &F0, &96
+
+; Clear the game screen, &6000-&7FFF, to black, or with fill_screen set to the
+; pattern of the floor's top left character cell; reset the hardware scroll
+; and set up the CRTC for the game's 32 x 32 character screen.
+; Clobbers: A, X, Y, work0, work1.
+.clear_screen
+    JSR blank_display                   ; turn the display off while the screen is redrawn
+    TAY                                 ; A = 0
+    STA work0
+    STA view_screen
+    STA screen_start
+    LDA #HI(SCREEN)
+    STA work1
+    STA view_screen_high
+    LDA #HI(SCREEN) DIV 8
+    STA screen_start_high
+    LDX #&07
+.clear_screen_loop
+    LDA fill_screen                     ; black...
+    BEQ clear_screen_store
+    INX
+    TXA                                 ; ...or the floor's pattern
+    AND #&07
+    TAX
+    LDA io_tiles, X
+.clear_screen_store
+    STA (work0), Y
+    INY
+    BNE clear_screen_loop
+    INC work1
+    BPL clear_screen_loop
+
+; Program CRTC registers 1-9 from crtc_values: 1 last, so the display comes
+; back on (blank_display turns it off with R1 = 0) once the rest is set.
+.setup_crtc
+    LDX #&09
+.setup_crtc_loop
+    LDA crtc_values - 1, X              ; register X
+    JSR set_crtc_register
+    DEX
+    BNE setup_crtc_loop
+    JMP set_screen_start
+
+; Find the picture for map cell (cell_x, cell_y): off the map, the second
+; lava picture; an object's icon (with picture_size 1, to be drawn on the
+; floor); or the cell's own picture.
+; Returns: picture, picture_size. Clobbers: A, X, Y, temp.
+.cell_picture
+    LDA #&80
+    STA picture_size
+    LDX cell_x
+    LDY cell_y
+    JSR cell_at_checked                 ; carry set: off the map
+    BCC cell_picture_on_map
+    LDX #LO(io_alternates + 3 * 128)    ; outside the map is lava
+    LDY #HI(io_alternates + 3 * 128)
+    BCS cell_picture_found
+.cell_picture_on_map
+    LDX cell_x
+    LDY cell_y
+    JSR cell_type_picture
+.cell_picture_found
+    STX picture
+    STY picture_high
+    RTS
+
+; Find the picture for a thing to draw at map cell (X, Y): A is a cell type
+; (0-15), &10 + an object icon, or &20 + a player picture.
+; Returns: X, Y = the picture's address. Clobbers: A, temp.
+.thing_picture
+    CMP #&20
+    BCS player_picture
+    CMP #&10
+    BCS icon_picture
+
+; A cell type: cell F holds an object, so draw its icon.
+.cell_type_picture
+    CMP #CELL_OBJECT
+    BCC tile_picture
+    JSR object_picture_at               ; the object here's icon
+    STX picture
+    STY picture_high
+    CPY #HI(io_no_object_picture)       ; none here?
+    BEQ cell_type_picture_done
+    LDA #&01                            ; draw the icon on the floor
+    STA picture_size
+.cell_type_picture_done
+    RTS
+
+; The picture for cell type A at (X, Y). Four cell types have a second
+; picture, used on the squares alternate_cells picks: alternate_offsets has
+; the difference to add for them, on even and odd squares of a checkerboard.
+.tile_picture
+    PHA
+    STY temp
+    TXA
+    CLC
+    ADC temp                            ; x + y
+    LSR A                               ; carry: an odd square
+    PLA
+    PHA
+    PHP
+    LDX #&0A
+    LDY #&04
+.tile_picture_find
+    DEX
+    DEX
+    DEY
+    BMI tile_picture_found
+    CMP alternate_cell_types, Y         ; one with a second picture?
+    BNE tile_picture_find
+.tile_picture_found
+    PLP
+    TXA
+    BEQ tile_picture_add
+    BCC tile_picture_offset
+    ADC #&07                            ; odd squares' offsets are 8 bytes on
+.tile_picture_offset
+    TAX
+.tile_picture_add
+    PLA
+    ASL A
+    TAY
+    LDA alternate_offsets, X
+    ADC tile_addresses, Y
+    STA temp
+    LDA alternate_offsets + 1, X
+    ADC tile_addresses + 1, Y
+    TAY
+    LDX temp
+    LDA #&00
+    RTS
+
+; Player picture A AND 3: io_player + 128 times that.
+.player_picture
+    AND #&03
+    LSR A
+    ROR A
+    TAX
+    LDY #HI(io_player)
+    BCC player_picture_done
+    INY
+.player_picture_done
+    RTS
+
+; Object icon A AND 15: io_object_icons + 32 times that.
+.icon_picture
+    LDY #HI(io_object_icons)
+    AND #&0F
+    LSR A
+    ROR A
+    ROR A
+    ROR A
+    BCC icon_picture_done
+    INY
+.icon_picture_done
+    TAX
+    RTS
+
+; A character cell of floor round an icon, which only covers the middle
+; of its map cell.
+.draw_row_floor_cell
+    LDA io_tiles, Y
+    STA (screen), Y
+    DEY
+    BPL draw_row_floor_cell
+    BMI draw_row_part_next
+
+; Draw one character row of the picture at picture across X character cells,
+; from screen. X negative skips the picture's first two columns and draws
+; ~X (the view's left edge cuts the first cell in half). view_sub_y is the
+; row within the picture; draw_step counts the columns to the picture's
+; right edge, for the floor round an icon.
+; Clobbers: A, X, Y, picture, screen, draw_step, picture_stride.
+.draw_row_part
+    LDA #&20
+    LDY picture_size                    ; a 4x4 picture's columns are 32 bytes apart...
+    BMI draw_row_part_stride
+    LSR A                               ; ...an icon's 16
+.draw_row_part_stride
+    STA picture_stride
+    TXA
+    BPL draw_row_part_first_row
+    EOR #&FF                            ; cut off: draw ~X cells
+    TAX
+    LDA #&40                            ; past the first two columns
+    INY
+    BMI draw_row_part_skip
+    LSR A
+.draw_row_part_skip
+    JSR skip_picture_columns
+.draw_row_part_first_row
+    LDA view_sub_y                      ; the row within the picture
+    INY
+    BMI draw_row_part_offset
+    LSR A
+.draw_row_part_offset
+    ASL A
+    ASL A
+    ASL A
+    ADC picture
+    STA picture
+    BCC draw_row_part_loop
+    INC picture_high
+.draw_row_part_loop
+    LDY #&07                            ; beyond an icon's edge?
+    LDA draw_step
+    JSR in_icon_border
+    BEQ draw_row_floor_cell
+    LDA view_sub_y                      ; or below it?
+    CLC
+    ADC #&01
+    JSR in_icon_border
+    BEQ draw_row_floor_cell
+.draw_row_part_copy
+    LDA (picture), Y                    ; a character cell of the picture
+    STA (screen), Y
+    DEY
+    BPL draw_row_part_copy
+    LDA picture                         ; on to the next column
+    CLC
+    ADC picture_stride
+    STA picture
+    BCC draw_row_part_next
+    INC picture_high
+.draw_row_part_next
+    JSR next_screen_cell
+    DEC draw_step
+    DEX
+    BNE draw_row_part_loop
+    RTS
+
+; Move screen one character cell right, wrapping round the 8K screen.
+.next_screen_cell
+    LDA screen
+    CLC
+    ADC #&08
+    STA screen
+    BCC next_screen_cell_done
+    LDA screen_high
+
+; Set screen's high byte to A plus the carry, wrapped into &60-&7F.
+.wrap_screen_high_carry
+    ADC #&00
+.wrap_screen_high
+    AND #&1F
+    ORA #HI(SCREEN)
+    STA screen_high
+.next_screen_cell_done
+    RTS
+
+; Draw a whole character row across the view: row view_sub_y of map cells
+; cell_x to cell_x + 8, at screen. The view's left and right edges cut the
+; first and last cells in half (view_sub_x is always 2 when moving up or
+; down, the only time a row is drawn).
+; Clobbers: A, X, Y, cell_x, strip_cells, picture, screen, temp.
+.draw_row
+    JSR cell_picture
+    LDY #&04
+    LDX #&04
+    LDA strip_cells
+    BNE draw_row_not_first
+    LDX #&FD
+    LDY #&02                            ; the first cell: its right half
+    BNE draw_row_cell
+.draw_row_not_first
+    CMP #&08
+    BNE draw_row_cell
+    LDX #&02                            ; the last cell: its left half
+.draw_row_cell
+    STY draw_step
+    JSR draw_row_part
+    INC strip_cells
+    INC cell_x
+    LDA strip_cells
+    CMP #&09
+    BNE draw_row
+    RTS
+
+; Point map_pointer at the byte holding map cell (cell_x, cell_y): the map is
+; stored a column at a time, 32 bytes a column, two cells a byte.
+; Returns: map_pointer, cell_low_nibble (cell_y odd). Clobbers: A, Y.
+.map_address
+    LDA cell_x
+    LDY #&00
+    STY map_pointer_high
+    LDY #&05
+.map_address_times_32
+    ASL A
+    ROL map_pointer_high
+    DEY
+    BNE map_address_times_32
+    STA map_pointer                     ; cell_x * 32
+    LDA cell_y                          ; + cell_y / 2
+    LSR A
+    CLC
+    ADC map_pointer
+    STA map_pointer
+    BCC map_address_nibble
+    INC map_pointer_high
+.map_address_nibble
+    LDA cell_y
+    AND #&01
+    STA cell_low_nibble
+    LDA map_pointer_high
+    CLC
+    ADC #HI(map)                        ; + map
+    STA map_pointer_high
+    RTS
+
+; As draw_row_floor_cell, for a column.
+.draw_column_floor_cell
+    LDA io_tiles, Y
+    STA (screen), Y
+    DEY
+    BPL draw_column_floor_cell
+    BMI draw_column_part_next
+
+; Draw one character column of the picture at picture down X character cells,
+; from screen; as draw_row_part, with view_sub_x the column within the
+; picture.
+.draw_column_part
+    LDY picture_size
+    TXA
+    BPL draw_column_part_first_column
+    EOR #&FF
+    TAX
+    LDA #&10                            ; past the first two rows
+    JSR skip_picture_columns
+.draw_column_part_first_column
+    LDA view_sub_x                      ; the column within the picture
+    INY
+    BMI draw_column_part_offset
+    LSR A
+.draw_column_part_offset
+    LSR A
+    ROR A
+    ROR A
+    ROR A
+    INY
+    BMI draw_column_part_add
+    ROR A
+.draw_column_part_add
+    CLC
+    ADC picture
+    STA picture
+    BCC draw_column_part_loop
+    INC picture_high
+.draw_column_part_loop
+    LDY #&07
+    LDA draw_step
+    JSR in_icon_border
+    BEQ draw_column_floor_cell
+    LDA view_sub_x
+    CLC
+    ADC #&01
+    JSR in_icon_border
+    BEQ draw_column_floor_cell
+.draw_column_part_copy
+    LDA (picture), Y                    ; a character cell of the picture
+    STA (screen), Y
+    DEY
+    BPL draw_column_part_copy
+    LDA picture                         ; on to the next row
+    CLC
+    ADC #&08
+    STA picture
+    BCC draw_column_part_next
+    INC picture_high
+.draw_column_part_next
+    INC screen_high                     ; down a character row
+    BPL draw_column_part_count
+    LDA #HI(SCREEN)
+    STA screen_high
+.draw_column_part_count
+    DEC draw_step
+    DEX
+    BNE draw_column_part_loop
+    RTS
+
+; Draw a whole character column down the view: column view_sub_x of map cells
+; cell_y to cell_y + 8, at screen.
+.draw_column
+    JSR cell_picture
+    LDY #&04
+    LDX #&04
+    LDA strip_cells_down
+    BNE draw_column_not_first
+    LDX #&FD
+    LDY #&02
+    BNE draw_column_cell
+.draw_column_not_first
+    CMP #&08
+    BNE draw_column_cell
+    LDX #&02
+.draw_column_cell
+    STY draw_step
+    JSR draw_column_part
+    INC strip_cells_down
+    INC cell_y
+    LDA strip_cells_down
+    CMP #&09
+    BNE draw_column
+    RTS
+
+; Scroll the view one character cell, by moving the CRTC's start address and
+; the view's top left on the screen, wrapping round the 8K screen.
+; Clobbers: A.
+.scroll_right
+    INC view_x                          ; the view moves right
+    INC screen_start                    ; the CRTC starts a character on
+    BNE scroll_right_screen
+    INC screen_start_high
+.scroll_right_screen
+    LDA view_screen                     ; and so does the view's top left
+    CLC
+    ADC #&08
+    STA view_screen
+    BCC scroll_done
+    INC view_screen_high
+    BPL scroll_done
+    LDA #HI(SCREEN)                     ; off the end: wrap round
+    STA view_screen_high
+    LDA #HI(SCREEN) DIV 8
+    STA screen_start_high
+    BNE scroll_done
+.scroll_left
+    DEC view_x
+    DEC screen_start
+    LDA screen_start
+    CMP #&FF
+    BNE scroll_left_screen
+    DEC screen_start_high
+.scroll_left_screen
+    LDA view_screen
+    SEC
+    SBC #&08
+    STA view_screen
+    BCS scroll_done
+    DEC view_screen_high
+    LDA view_screen_high
+    CMP #HI(SCREEN) - 1
+    BNE scroll_done
+    LDA #HI(SCREEN + &1FFF)
+    STA view_screen_high
+    LDA #HI(SCREEN + &1FFF) DIV 8
+    STA screen_start_high
+.scroll_done
+    JMP set_screen_start
+.scroll_up
+    DEC view_y                          ; the view moves up
+    DEC view_screen_high
+    SEC
+    LDA screen_start                    ; a character row is 32 cells
+    SBC #&20
+    STA screen_start
+    BCS scroll_up_done
+    DEC screen_start_high
+    LDA screen_start_high
+    CMP #HI(SCREEN) DIV 8 - 1
+    BNE scroll_up_done
+    LDA #HI(SCREEN + &1FFF)
+    STA view_screen_high
+    LDA #HI(SCREEN + &1FFF) DIV 8
+    STA screen_start_high
+.scroll_up_done
+    JMP set_screen_start
+.scroll_down
+    INC view_y
+    INC view_screen_high
+    CLC
+    LDA screen_start
+    ADC #&20
+    STA screen_start
+    BCC scroll_up_done
+    INC screen_start_high
+    LDA screen_start_high
+    CMP #HI(SCREEN + &2000) DIV 8
+    BNE scroll_up_done
+    LDA #HI(SCREEN)
+    STA view_screen_high
+    LDA #HI(SCREEN) DIV 8
+    STA screen_start_high
+    BNE scroll_up_done
+
+; Walk the player a cell down: scroll the view down a character row at a
+; time, drawing each new bottom row and moving everything else on screen.
+; Clobbers: A, X, Y and most of the drawing variables.
+.walk_down
+    JSR next_player_frame               ; the player's walking picture
+    LDA #&02                            ; the view's top is half way through a cell
+    STA view_sub_y
+    LDX #&03
+    STX steps
+.walk_down_step
+    JSR scroll_down
+    JSR rub_out_above_player            ; rub out the trail behind the player
+    LDA view_screen_high
+    SEC
+    SBC #&01
+    JSR wrap_screen_high
+    LDA view_screen                     ; the new row is just above the top, in memory
+    STA screen
+    LDA #&00
+    STA strip_cells
+    LDA view_cell_x
+    STA cell_x                          ; the cells 8 below the top
+    LDA view_cell_y
+    CLC
+    ADC #&08
+    STA cell_y
+    JSR draw_row
+    JSR move_things                     ; monsters and thrown objects
+    INC view_sub_y                      ; the next row down...
+    LDA view_sub_y
+    AND #&03
+    STA view_sub_y
+    BNE walk_down_next
+    INC view_cell_y                     ; ...in the next cell
+.walk_down_next
+    DEC steps
+    BPL walk_down_step
+    RTS
+
+; Walk a cell up.
+.walk_up
+    JSR next_player_frame
+    LDA #&01
+    STA view_sub_y
+    LDX #&03
+    STX steps
+.walk_up_step
+    LDA #&00
+    STA strip_cells
+    LDA view_cell_x
+    STA cell_x
+    LDA view_cell_y
+    STA cell_y
+    LDA view_screen
+    STA screen
+    JSR scroll_up
+    JSR rub_out_below_player
+    LDA view_screen_high
+    STA screen_high
+    JSR draw_row
+    JSR move_things
+    LDA screen_high
+    CLC
+    ADC #&1F
+    BPL walk_up_wrapped
+    SBC #&1F
+.walk_up_wrapped
+    STA screen_high
+    DEC view_sub_y
+    LDA view_sub_y
+    AND #&03
+    STA view_sub_y
+    CMP #&03
+    BNE walk_up_next
+    DEC view_cell_y
+.walk_up_next
+    DEC steps
+    BPL walk_up_step
+    RTS
+
+; Walk a cell right.
+.walk_right
+    JSR next_player_frame
+    LDA #&02
+    STA view_sub_x
+    LDX #&03
+    STX steps
+.walk_right_step
+    LDA view_cell_x
+    CLC
+    ADC #&08
+    STA cell_x
+    LDA view_cell_y
+    STA cell_y
+    LDA #&00
+    STA strip_cells_down
+    JSR scroll_right
+    JSR rub_out_left_of_player
+    LDA view_screen
+    CLC
+    ADC #&F8
+    STA screen
+    LDA view_screen_high
+    JSR wrap_screen_high_carry
+    JSR draw_column
+    JSR move_things
+    INC view_sub_x
+    LDA view_sub_x
+    AND #&03
+    STA view_sub_x
+    BNE walk_right_next
+    INC view_cell_x
+.walk_right_next
+    DEC steps
+    BPL walk_right_step
+    RTS
+
+; Walk a cell left.
+.walk_left
+    JSR next_player_frame
+    LDA #&01
+    STA view_sub_x
+    LDX #&03
+    STX steps
+.walk_left_step
+    LDA #&00
+    STA strip_cells_down
+    LDA view_cell_x
+    STA cell_x
+    LDA view_cell_y
+    STA cell_y
+    JSR scroll_left
+    JSR rub_out_right_of_player
+    LDA view_screen
+    STA screen
+    LDA view_screen_high
+    STA screen_high
+    JSR draw_column
+    JSR move_things
+    DEC view_sub_x
+    LDA view_sub_x
+    AND #&03
+    STA view_sub_x
+    CMP #&03
+    BNE walk_left_next
+    DEC view_cell_x
+.walk_left_next
+    DEC steps
+    BPL walk_left_step
+    RTS
+
+; The cell types with a second picture: lava, the thing to collect, and
+; two more. alternate_pictures has their second pictures, in the same order.
+.alternate_cell_types
+    EQUB &0A, &07, &08, &05
+
+; Copied but never used.
+.low_code_unused
+    EQUB &00, &00, &00, &00, &00, &00
+.low_code_end
+ENDSECTION
+
+; The game.
+.main_code_load
+SECTION main_code, org=&0900
+.main_code
+
+; Called by the event handler when a sound channel's queue runs dry: play the
+; next note of whichever tune voice belongs to that channel. tune_swap and
+; tune_together pick which voices play: voice 1 on channel 1 unless voice 2 is
+; playing alone, voice 2 on channel 2 unless voice 1 is.
+; Clobbers: A, X, Y, the tune block.
+.play_tune
+    LDA tune_swap                       ; voice 1 on channel 1...
+    EOR #&01
+    ORA tune_together
+    JSR play_voice                      ; ...unless voice 2 plays alone
+    LDA tune_swap                       ; voice 2 on channel 2...
+    ORA tune_together
+    ASL A                               ; ...unless voice 1 plays alone
+
+; A is the channel a voice plays on (1 or 2), or 0 if it isn't playing.
+; A note's high nibble is a step of a semitone; the voice on channel 1 is an
+; octave above the other, and each voice's last note is pitched higher still.
+; The voice's channel is also its envelope.
+.play_voice
+    BEQ play_voice_done
+    CMP empty_channel                   ; the channel that ran dry?
+    BNE play_voice_done
+    TAX
+    LDA tune_position - 1, X            ; the voice's next note
+    INC tune_position - 1, X
+    STA tune_channel                    ; (tune_channel as scratch)
+    DEX
+    TXA
+    ASL A                               ; voice 2's notes are 32 on
+    ASL A
+    ASL A
+    ASL A
+    ASL A
+    ADC tune_channel
+    INX
+    STX tune_channel                    ; the channel...
+    STX tune_amplitude                  ; ...and the same envelope
+    TAX
+    LDY #&00
+    STY tune_channel_high
+    STY tune_amplitude_high
+    STY tune_pitch_high
+    STY tune_duration_high
+    LDA tune, X                         ; a note: pitch step, duration
+    PHA
+    AND #&F0
+    LSR A                               ; 4 to a semitone
+    LSR A
+    ADC tune_transpose
+    ADC #&21                            ; the tune's lowest note
+    LDY tune_channel
+    DEY
+    BNE play_voice_last_note
+    ADC #&30                            ; voice 1 an octave up
+.play_voice_last_note
+    LDX tune_position, Y                ; the voice's last note...
+    CPX #&1E
+    BNE play_voice_note
+    ADC #&2F                            ; ...a little under an octave up
+.play_voice_note
+    STA tune_pitch
+    PLA
+    AND #&0F                            ; in 20ths of a second
+    STA tune_duration
+
+; SOUND with the block at tune_channel.
+.sound_tune_block
+    LDX #LO(tune_channel)
+    LDY #HI(tune_channel)
+    LDA #7
+    JMP OSWORD
+
+; Add A to picture: halved for an icon (Y is picture_size and is incremented
+; twice here and in the caller, so it stays negative for a 4x4 picture).
+.skip_picture_columns
+    INY                                 ; an icon's columns are half as big
+    BMI advance_picture
+    LSR A
+.advance_picture
+    CLC
+    ADC picture
+    STA picture
+    BCC play_voice_done
+    INC picture_high
+.play_voice_done
+    RTS
+
+; The player's picture alternates as they walk.
+.next_player_frame
+    LDA player_frame
+    CLC
+    ADC #&20
+    STA player_frame
+    RTS
+
+; The second pictures of alternate_cell_types, as picture numbers counted from
+; io_tiles. The CRTC values overlap the last: setup_crtc reads from
+; crtc_values - 1 with X from 9 down to 1.
+.alternate_pictures
+    EQUB &1B, &19, &1A, &18                 ; A, 7, 8, 5: pictures 27, 25, 26, 24
+
+; CRTC registers 1-9: 32 characters across and 32 rows of 8 lines, the screen
+; centred.
+.crtc_values
+    EQUB 32, 45, 36, 38, 0, 32, 34, 1, 7
+
+; The address of each cell type's picture.
+.tile_addresses
+FOR n = 0..15
+    EQUW io_tiles + n * 128
+NEXT
+
+; What to add to a cell type's picture address on squares that show its
+; second picture, set up by setup_alternate_pictures: a zero word for cell
+; types that have none, then a word for each alternate_cell_types on even
+; squares, then on odd.
+.alternate_offsets
+    EQUW 0
+.alternate_offsets_even
+    EQUW 0, 0, 0, 0
+.alternate_offsets_odd
+    EQUW 0, 0, 0, 0
+
+; Monster A: rub it out with the floor picture, or draw it, with a picture
+; whose low byte the caller has put in sprite (the monsters' two frames are
+; cell types E and F's pictures).
+.erase_monster
+    JSR monster_position
+    LDA #HI(io_tiles)
+    STA sprite_high
+    LDA #LO(io_tiles)
+    STA sprite
+    SEC
+    JMP draw_sprite
+.draw_monster
+    JSR monster_position
+    LDA #HI(io_tiles + &E * 128)
+    STA sprite_high
+    SEC
+    JMP draw_sprite
+
+; Draw the player in the middle of the view: their picture for the way they
+; face (up and down alternate between two), drawn upside down every other
+; step.
+; Clobbers: A, X, Y, picture, player_screen, draw_step.
+.draw_player
+    LDA player_frame
+    AND #&80                            ; every other step: flipped
+    STA picture
+    STA draw_step
+    LDA facing                          ; left 0, right 1: &5400, &5480
+    LSR A
+    ROR A
+    BCC draw_player_picture             ; up and down: &5500 or &5580...
+    EOR picture                         ; ...alternating
+.draw_player_picture
+    STA picture
+    LDA #HI(io_player)
+    ADC #&00
+    STA picture_high
+    LDA #LO(14 * 8)                     ; the view's 14th character across...
+    ADC view_screen
+    STA player_screen
+    STA player_screen_base
+    LDA #HI(14 * &100 + 14 * 8)         ; ...and down: the middle
+    ADC view_screen_high
+    BPL draw_player_screen
+    SBC #&1F
+.draw_player_screen
+    STA player_screen_high
+    STA player_screen_base_high
+    BNE draw_player_at
+
+; Rub out the edge of the player's picture that scrolling left behind, as the
+; view moves a character towards one side, then draw the player again in the
+; middle. Inside a pipe the player isn't drawn, and only the first few steps'
+; trails are rubbed out.
+.rub_out_below_player
+    LDA player_screen_base
+    STA player_screen
+    LDA player_screen_base_high         ; the player's bottom row...
+    CLC
+    ADC #&03
+    BPL rub_out_row
+    SBC #&1F
+.rub_out_row
+    STA player_screen_high
+    LDY #&00                            ; ...across
+    STY draw_step_high
+    LDA #&08
+    STA draw_step
+    BNE rub_out_trail
+.rub_out_right_of_player
+    LDA player_screen_base              ; the player's right column...
+    CLC
+    ADC #&18
+    STA player_screen
+    LDA player_screen_base_high
+    ADC #&00
+    BPL rub_out_right_wrapped
+    SBC #&1F
+.rub_out_right_wrapped
+    BNE rub_out_column
+.rub_out_left_of_player
+    LDA player_screen_base
+    STA player_screen
+    LDA player_screen_base_high
+.rub_out_column
+    STA player_screen_high
+    LDY #&00                            ; ...down
+    STY draw_step
+    INY
+    STY draw_step_high
+.rub_out_trail
+    LDX player_steps                    ; inside a pipe...
+    LDA pipe_move
+    BEQ rub_out_trail_draw
+    INX
+    CPX #&05                            ; ...rub out only the first few
+    BCC rub_out_trail_draw
+    RTS
+.rub_out_trail_draw
+    STX player_steps
+    LDX #&04
+.rub_out_trail_cell
+    LDY #&07
+.rub_out_trail_copy
+    LDA io_tiles, Y                     ; floor
+    STA (player_screen), Y
+    DEY
+    BPL rub_out_trail_copy
+    LDA draw_step
+    CLC
+    ADC player_screen
+    STA player_screen
+    LDA draw_step_high
+    ADC player_screen_high
+    BPL rub_out_trail_next
+    SBC #&1F
+.rub_out_trail_next
+    STA player_screen_high
+    DEX
+    BNE rub_out_trail_cell
+    JMP draw_player
+.rub_out_above_player
+    LDA player_screen_base
+    STA player_screen
+    LDA player_screen_base_high
+    BNE rub_out_row
+
+; Draw the player's picture at player_screen: 4 x 4 character cells, a column
+; at a time. draw_step nonzero draws it flipped top to bottom by copying each
+; column's bytes backwards with a self-modified LDA abs,X.
+.draw_player_at
+    LDX #&1F                            ; the last byte of a column, for flipping
+    LDA picture
+    STA draw_player_flipped_copy + 1    ; self-modified: flipped pictures copy from here
+    LDA picture_high
+    STA draw_player_flipped_copy + 2
+    LDA pipe_move                       ; inside a pipe: not drawn
+    BEQ draw_player_cells
+    RTS
+.draw_player_cells
+    STA player_steps
+    LDA #&03
+    STA count_across
+    STA count_down
+.draw_player_cell
+    LDA draw_step                       ; flipped?
+    BNE draw_player_flipped
+    LDY #&07
+.draw_player_copy
+    LDA (picture), Y
+    STA (player_screen), Y
+    DEY
+    BPL draw_player_copy
+    LDA picture
+    CLC
+    ADC #&08
+    STA picture
+    BCC draw_player_down
+    INC picture_high
+.draw_player_down
+    INC player_screen_high              ; down a character row
+    BPL draw_player_next
+    LDA #HI(SCREEN)
+    STA player_screen_high
+.draw_player_next
+    DEC count_across
+    BPL draw_player_cell
+    TXA                                 ; flipped: the next column's last byte
+    CLC
+    ADC #&40
+    TAX
+    LDA player_screen                   ; the next column across...
+    CLC
+    ADC #&08
+    STA player_screen
+    BCC draw_player_wrap
+    INC player_screen_high
+.draw_player_wrap
+    LDA player_screen_high              ; ...back up to the top
+    SEC
+    SBC #&04
+    CMP #HI(SCREEN)
+    BCS draw_player_column
+    ADC #&20
+.draw_player_column
+    STA player_screen_high
+    LDA #&03
+    STA count_across
+    DEC count_down
+    BPL draw_player_cell
+.return_0AD0
+    RTS
+.draw_player_flipped
+    LDY #&00
+.draw_player_flipped_copy
+    LDA &FFFF, X                        ; self-modified: the picture
+    DEX
+    STA (player_screen), Y
+    INY
+    CPY #&08
+    BNE draw_player_flipped_copy
+    BEQ draw_player_down
+
+; Redraw the whole view from the map: fill the screen with stripes, then draw
+; it in from both sides a column and a row at a time, waiting for a vsync each
+; step, as a level starts.
+; Clobbers: A, X, Y and the drawing variables.
+.redraw_view
+    LDA #&00                            ; steps in from the edges
+    STA steps
+    STA count_across
+    STA screen
+    TAY
+    STA player_steps
+    LDA #HI(SCREEN)
+    STA screen_high
+    LDA #&FF                            ; &7F, &3F, &1F...: stripes
+    CLC
+.redraw_view_stripes
+    ROR A
+    STA (screen), Y
+    DEY
+    BNE redraw_view_stripes
+    INC screen_high
+    BPL redraw_view_stripes
+.redraw_view_step
+    LDA steps                           ; from the left, then the right
+    LSR A
+    EOR count_across                    ; the column, 0-31
+    TAY
+    ASL A
+    ASL A
+    ASL A
+    STA screen
+    LDA #HI(SCREEN)
+    STA screen_high
+    LDA #&00
+    STA strip_cells_down
+    TYA
+    ADC #&02                            ; the view's left edge is half a cell in
+    PHA
+    AND #&03
+    STA view_sub_x
+    PLA
+    LSR A
+    LSR A
+    CLC
+    ADC view_cell_x
+    STA cell_x
+    LDA view_cell_y
+    STA cell_y
+    JSR draw_column                     ; a column
+    LDA #&00
+    STA screen
+    STA strip_cells
+    LDA steps                           ; and a row, from the top, then the bottom
+    LSR A
+    EOR count_across
+    PHA
+    CLC
+    ADC #HI(SCREEN)
+    STA screen_high
+    PLA
+    ADC #&02
+    PHA
+    AND #&03
+    STA view_sub_y
+    PLA
+    LSR A
+    LSR A
+    CLC
+    ADC view_cell_y
+    STA cell_y
+    LDA view_cell_x
+    STA cell_x
+    JSR draw_row                        ; a row
+    JSR wait_vsync                      ; one step a frame
+    LDA count_across                    ; the other side
+    EOR #&1F
+    STA count_across
+    INC steps
+    LDA steps
+    CMP #&1C                            ; 28 steps meet in the middle
+    BCC redraw_view_step
+    JMP draw_player
+
+; Monster A's position: X, Y = its x and y in character cells.
+.monster_position
+    ASL A
+    ASL A
+    TAY
+    LDX monster_x, Y
+    LDA monster_y, Y
+    TAY
+.move_things_done
+    RTS
+
+; Move everything that moves by itself one character cell: a thrown object,
+; then each monster that's out, in the direction it's going (8 and up: not
+; out; 4-7: stuck, drawn without moving).
+; Clobbers: A, X, Y, monster_index and the drawing variables.
+.move_things
+    LDA player_dead                     ; nothing moves while the player dies
+    BNE move_things_done
+    LDA thrown_direction                ; something thrown?
+    BEQ move_monsters
+    CMP #&01
+    BEQ thrown_left
+    CMP #&02
+    BEQ thrown_right
+    CMP #&03
+    BEQ thrown_up
+    INC thrown_y                        ; 4: down
+    JMP draw_thrown
+.thrown_left
+    DEC thrown_x                        ; 1: left
+    JMP draw_thrown
+.thrown_right
+    INC thrown_x                        ; 2: right
+    JMP draw_thrown
+.thrown_up
+    DEC thrown_y                        ; 3: up
+.draw_thrown
+    LDA thrown_picture
+    STA sprite
+    LDA thrown_picture_high
+    STA sprite_high
+    LDX thrown_x
+    LDY thrown_y
+    JSR draw_icon_on_floor              ; drawn on the floor
+.move_monsters
+    LDA #&03
+    STA monster_index
+.move_monster
+    LDA monster_index
+    ASL A
+    ASL A
+    TAX
+    LDA monster_direction, X            ; its direction
+    PHA
+    CMP #&04                            ; 4 and up: it doesn't move
+    BCS move_monster_direction
+    TXA
+    PHA
+    LDA monster_index
+    JSR erase_monster                   ; rub it out
+    PLA
+    TAX
+.move_monster_direction
+    PLA
+    BEQ monster_left
+    CMP #&01
+    BEQ monster_right
+    CMP #&02
+    BEQ monster_up
+    CMP #&08                            ; 8 and up: not out
+    BCS next_monster
+    CMP #&03
+    BNE monster_stuck
+    INC monster_y, X                    ; 3: down
+    JMP monster_moved
+.monster_left
+    DEC monster_x, X                    ; 0: left
+    JMP monster_moved
+.monster_right
+    INC monster_x, X                    ; 1: right
+    JMP monster_moved
+.monster_up
+    DEC monster_y, X                    ; 2: up
+.monster_moved
+    LDA frame_counter                   ; the monsters' frame
+    AND #&80
+    STA sprite
+    LDA monster_index
+    JSR draw_monster                    ; draw it
+.next_monster
+    DEC monster_index
+    BPL move_monster
+    RTS
+.monster_stuck
+    LDA frame_counter                   ; stuck: draw it where it is
+    AND #&80
+    STA sprite
+    LDA monster_index
+    JSR draw_monster
+    JMP next_monster
+
+; Copy the part of the 4x4 picture at sprite that clip_sprite_x and _y found
+; to be in the view to sprite_screen, a column of character cells at a time.
+; Clobbers: A, Y, sprite, sprite_screen, sprite_column, sprite_row.
+.draw_sprite_clipped
+    LDA sprite_columns
+    STA sprite_column
+    LDA sprite_skip_x                   ; past the columns cut off...
+    LSR A
+    ROR A
+    ROR A
+    ROR A
+    ADC sprite
+    STA sprite
+    LDA sprite_skip_y                   ; ...and the rows
+    ASL A
+    ASL A
+    ASL A
+    ADC sprite
+    STA sprite
+.draw_sprite_column
+    LDA sprite_rows
+    STA sprite_row
+.draw_sprite_cell
+    LDY #&07
+.draw_sprite_copy
+    LDA (sprite), Y
+    STA (sprite_screen), Y
+    DEY
+    BPL draw_sprite_copy
+    INC sprite_screen_high              ; down a character row
+    BPL draw_sprite_next_row
+    LDA #HI(SCREEN)
+    STA sprite_screen_high
+.draw_sprite_next_row
+    LDA sprite
+    CLC
+    ADC #&08
+    STA sprite
+    BCC draw_sprite_count_rows
+    INC sprite_high
+.draw_sprite_count_rows
+    DEC sprite_row
+    BPL draw_sprite_cell
+    LDA sprite_rows                     ; past the rows cut off at the bottom
+    EOR #&03
+    ASL A
+    ASL A
+    ASL A
+    ADC sprite
+    STA sprite
+    BCC draw_sprite_next_column
+    INC sprite_high
+.draw_sprite_next_column
+    LDA sprite_screen
+    CLC
+    ADC #&08
+    STA sprite_screen
+    BCC draw_sprite_back_to_top
+    INC sprite_screen_high
+.draw_sprite_back_to_top
+    LDA sprite_screen_high              ; back to the top
+    CLC
+    SBC sprite_rows
+    AND #&1F
+    ORA #HI(SCREEN)
+    STA sprite_screen_high
+    DEC sprite_column
+    BPL draw_sprite_column
+    RTS
+
+; Never called.
+.sprite_in_icon_border
+    LDA sprite_column
+    JSR in_icon_border
+    BEQ in_icon_border_done
+    LDA sprite_row
+
+; Is position A (1-4, counting in from the far edge) of a map cell outside an
+; icon? An icon, picture_size 1, covers only the middle two of four.
+; Returns: Z set if it's outside.
+.in_icon_border
+    CMP picture_size
+    BEQ in_icon_border_done
+    SEC
+    SBC #&03
+    CMP picture_size
+.in_icon_border_done
+    RTS
+
+; Draw the icon at sprite in the middle of a floor picture at character
+; position (X, Y): copy it into the middle of the floor's own picture, draw
+; that, then (by an RTS to a pushed address) put the floor's middle back.
+.draw_icon_on_floor
+    TXA
+    PHA
+    TYA
+    PHA
+    LDX #&0F
+    LDY #&1F
+.draw_icon_right_half
+    LDA (sprite), Y                     ; the icon's right column...
+    STA io_tiles + 2 * 32 + 8, X
+    DEY
+    DEX
+    BPL draw_icon_right_half
+    LDX #&0F
+.draw_icon_left_half
+    LDA (sprite), Y                     ; ...and left, into the floor's middle
+    STA io_tiles + 1 * 32 + 8, X
+    DEY
+    DEX
+    BPL draw_icon_left_half
+    LDA #LO(io_tiles)                   ; draw the floor picture
+    STA sprite
+    LDA #HI(io_tiles)
+    STA sprite_high
+    PLA
+    TAY
+    PLA
+    TAX
+    SEC                                 ; returning to restore_floor_picture
+    LDA #HI(restore_floor_picture - 1)
+    PHA
+    LDA #LO(restore_floor_picture - 1)
+    PHA
+
+; Draw a 4x4 picture at character position (X, Y) on the map (4 to a map
+; cell), whatever of it is in the view: sprite is the picture, and with the
+; carry clear it's an icon on a floor picture instead (draw_icon_on_floor).
+; Clobbers: A, X, Y and the sprite variables.
+.draw_sprite
+    BCC draw_icon_on_floor
+    LDA #&03                            ; 4 x 4 cells, none cut off
+    STA sprite_columns
+    STA sprite_rows
+    LDA #&00
+    STA sprite_screen_high
+    STA sprite_skip_x
+    STA sprite_skip_y
+    JSR clip_sprite_x
+    JSR clip_sprite_y
+    JMP draw_sprite_clipped
+
+; Put back the middle two columns of the floor picture, which are all the
+; same as its last column's last character cell.
+.restore_floor_picture
+    LDY #&3F
+    LDX #&07
+.restore_floor_loop
+    LDA io_tiles + 3 * 32 + 3 * 8, X    ; the floor's last character cell
+    STA io_tiles + 1 * 32, Y
+    DEX
+    TXA
+    AND #&07
+    TAX
+    DEY
+    BPL restore_floor_loop
+    RTS
+
+; Which of a picture's 4 columns at character x = X are in the view (32
+; columns from view_x, which wraps round to &E2-&FF as the view goes past the
+; map's left edge)? Sets sprite_skip_x, sprite_columns and sprite_screen, or
+; if none are, returns from the caller (draw_sprite) instead.
+.clip_sprite_x
+    STX clip_position
+    LDA view_x
+    CMP #&E2                            ; the view hangs off the map's left edge?
+    BCS clip_sprite_x_wrapped
+    CMP clip_position                   ; starts left of the view?
+    BCS clip_sprite_left
+    ADC #&1C                            ; the view's last column but 3
+    CMP clip_position                   ; ends right of the view?
+    BCC clip_sprite_right
+.clip_sprite_x_screen
+    TXA                                 ; wholly in view
+    SEC
+    SBC view_x
+    ASL A
+    ASL A
+    ASL A
+    ADC view_screen
+    STA sprite_screen
+    BCC clip_sprite_x_done
+    INC sprite_screen_high
+.clip_sprite_x_done
+    RTS
+
+; Out of view: drop the return address and return from draw_sprite.
+.clip_sprite_out_of_view
+    PLA
+    PLA
+    RTS
+
+; The same for rows, from character y = Y and view_y: sets sprite_skip_y,
+; sprite_rows and the high byte of sprite_screen.
+.clip_sprite_y
+    STY clip_position
+    LDA view_y
+    CMP #&E2
+    BCC clip_sprite_y_on_map
+    JMP clip_sprite_y_wrapped
+.clip_sprite_left
+    SBC clip_position
+.clip_sprite_left_cells
+    CMP #&04                            ; wholly out of view
+    BCS clip_sprite_out_of_view
+    STA sprite_skip_x                   ; the columns cut off
+    EOR #&03
+    STA sprite_columns
+    LDA view_screen
+    STA sprite_screen
+    RTS
+.clip_sprite_right
+    ADC #&03
+    CMP clip_position
+    BCC clip_sprite_out_of_view
+    SBC clip_position
+    STA sprite_columns
+    BCS clip_sprite_x_screen
+.clip_sprite_x_wrapped
+    CMP #&F1
+    BCS clip_sprite_x_far_left
+    CMP clip_position
+    BCS clip_sprite_left
+    BCC clip_sprite_x_screen
+.clip_sprite_x_far_left
+    ADC #&1B
+    CMP clip_position
+    BCC clip_sprite_right
+    BCS clip_sprite_x_screen
+.clip_sprite_y_on_map
+    LDA view_y
+    CMP clip_position
+    BCS clip_sprite_top
+    ADC #&1C
+    CMP clip_position
+    BCC clip_sprite_bottom
+.clip_sprite_y_screen
+    TYA
+    SEC
+    SBC view_y
+    CLC
+    ADC view_screen_high
+    ADC sprite_screen_high
+.clip_sprite_y_wrap
+    AND #&1F
+    ORA #HI(SCREEN)
+    STA sprite_screen_high
+    RTS
+.clip_sprite_top
+    SBC clip_position
+    CMP #&04
+    BCS clip_sprite_out_of_view
+    STA sprite_skip_y
+    EOR #&03
+    STA sprite_rows
+    LDA view_screen_high
+    ADC sprite_screen_high
+    STA sprite_screen_high
+    BNE clip_sprite_y_wrap
+.clip_sprite_bottom
+    ADC #&03
+    CMP clip_position
+    BCS clip_sprite_bottom_cells
+    JMP clip_sprite_out_of_view
+.clip_sprite_bottom_cells
+    SBC clip_position
+    STA sprite_rows
+    BCS clip_sprite_y_screen
+.clip_sprite_y_wrapped
+    CMP #&F1
+    BCS clip_sprite_y_far_up
+    CMP clip_position
+    BCS clip_sprite_top
+    BCC clip_sprite_y_screen
+.clip_sprite_y_far_up
+    ADC #&1B
+    CMP clip_position
+    BCC clip_sprite_bottom
+    BCS clip_sprite_y_screen
+
+; CRTC register 1, characters displayed per row, to 0: the display goes blank.
+.blank_display
+    LDX #&01
+    LDA #&00
+
+; CRTC register X = A.
+.set_crtc_register
+    STX CRTC_ADDR                       ; register
+    STA CRTC_DATA                       ; value
+    RTS
+
+; The map view (the M key): the whole 64 x 64 map at a byte (4 pixels) by 4
+; lines a cell, so 32 of its 64 columns at a time, scrolled by moving the
+; screen start a character (and a map column) at a time; screen_start is the
+; leftmost column shown. Draw all 32 columns.
+.draw_map_view
+    LDX #&1F
+.draw_map_view_loop
+    TXA
+    PHA
+    JSR draw_map_view_column
+    PLA
+    TAX
+    DEX
+    BPL draw_map_view_loop
+.map_view_return
+    RTS
+
+; Scroll the map view one column, drawing the column that comes into view.
+.map_view_scroll_left
+    LDA screen_start                    ; already at the left?
+    BEQ map_view_return
+    DEC screen_start
+    LDA #&00
+.map_view_draw_left
+    BEQ draw_map_view_column
+.map_view_scroll_right
+    LDA screen_start
+    CMP #&20                            ; already at the right?
+    BEQ map_view_return
+    INC screen_start
+    LDA #&1F                            ; the rightmost column
+
+; Draw map view column A (0-31 across the screen; map column A plus
+; screen_start), top to bottom: two map cells to a character cell.
+; Clobbers: A, X, Y, work0-work3, sprite.
+.draw_map_view_column
+    CLC
+    ADC screen_start
+    STA work0
+    STA sprite
+    PHA                                 ; show from here
+    JSR set_screen_start
+    PLA
+    LDY #HI(SCREEN) DIV 8               ; work0 = SCREEN + 8 * column
+    STY work1
+    LDY #&00
+    STY work2
+    LDX #&03
+.draw_map_view_address
+    ASL work0
+    ROL work1
+    LSR A                               ; work2 = map + 32 * map column
+    ROR work2
+    DEX
+    BNE draw_map_view_address
+    ADC #HI(map)
+    STA work3
+    LDA #&1F                            ; 32 character rows
+    STA sprite_high
+.draw_map_view_byte
+    LDA (work2), Y
+    PHA
+    ASL A                               ; the even row's cell...
+    ASL A
+    LDY #&07
+    JSR draw_map_view_cell
+    PLA                                 ; ...and the odd's
+    LSR A
+    LSR A
+    JSR draw_map_view_cell
+    INY
+    INC work2
+    INC work1                           ; the next character row, wrapping
+    BPL draw_map_view_next
+    LDA #HI(SCREEN)
+    STA work1
+.draw_map_view_next
+    DEC sprite_high
+    BPL draw_map_view_byte
+    RTS
+
+; Wait for the vsync, then point the CRTC at screen_start.
+; Clobbers: A, X.
+.set_screen_start
+    JSR wait_vsync
+    LDX #&0C
+    LDA screen_start_high
+    JSR set_crtc_register
+    INX
+    LDA screen_start
+    JMP set_crtc_register
+
+; Wait for the vertical sync (OSBYTE &13). Preserves A.
+.wait_vsync
+    PHA
+    LDA #&13
+    JSR OSBYTE
+    PLA
+    RTS
+
+; Draw one map cell in the map view: A's bits 2-5 are its type, 4 times;
+; Y the last of its 4 lines. The player's cell shows the player instead.
+.draw_map_view_cell
+    AND #&3C
+    TAX
+    LDA sprite                          ; the player's cell?
+    CMP player_x
+    BNE draw_map_view_pattern
+    TYA
+    LSR A
+    LSR A
+    LSR A
+    LDA sprite_high
+    EOR #&1F
+    ROL A
+    CMP player_y
+    BNE draw_map_view_pattern
+    LDA facing                          ; the player, facing their way
+    ASL A
+    ASL A
+    ADC #map_view_player - map_view_patterns
+    TAX
+.draw_map_view_pattern
+    STX draw_map_view_copy + 1          ; self-modified: the pattern
+    LDX #&03
+.draw_map_view_copy
+    LDA map_view_patterns, X
+    STA (work0), Y
+    DEY
+    DEX
+    BPL draw_map_view_copy
+    RTS
+
+; What's in map cell (X, Y), as the player meets it: off the map is lava (A),
+; and the exit, while it shows its icon (F), is a wall (8).
+; Returns: A = the cell type, Z set if it's empty floor (0).
+; Clobbers: X, Y, cell_x, cell_y, map_pointer.
+.cell_at
+    CPX exit_x
+    BNE cell_at_checked
+    CPY exit_y
+    BNE cell_at_checked
+    JSR read_map_cell
+    CMP #CELL_OBJECT                    ; the exit's icon
+    BNE cell_at_exit                    ; a wall
+    LDA #CELL_WALL
+.cell_at_exit
+    CMP #&00
+    RTS
+
+; As cell_at but without the exit. Returns with the carry set off the map.
+.cell_at_checked
+    CPX #&40                            ; off the map?
+    BCS cell_off_map
+    CPY #&40
+    BCC read_map_cell
+.cell_off_map
+    LDA #CELL_LAVA                      ; lava
+    RTS
+
+; Read map cell (X, Y), on the map.
+.read_map_cell
+    STX cell_x
+    STY cell_y
+    JSR map_address
+    LDA (map_pointer), Y
+    LDX cell_low_nibble
+    BNE read_map_cell_nibble
+    LSR A                               ; even rows in the high nibble
+    LSR A
+    LSR A
+    LSR A
+.read_map_cell_nibble
+    AND #&0F
+    CLC
+.set_cell_return
+    RTS
+
+; Put the player in the view at its top left cell (X, Y) + (4, 4), the view
+; showing half a cell beyond: the start of a level, or a teleport.
+.place_player
+    STX start_x
+    STY start_y
+    TXA
+    STA view_cell_x
+    PHA
+    ASL A
+    ASL A
+    CLC
+    ADC #&02
+    STA view_x                          ; half a cell in
+    PLA
+    ADC #&04                            ; the player is 4 cells in
+    STA player_x
+    TAX
+    TYA
+    STA view_cell_y
+    PHA
+    ASL A
+    ASL A
+    CLC
+    ADC #&02
+    STA view_y
+    PLA
+    ADC #&04
+    STA player_y
+    JSR find_front
+
+; Empty the player's cell.
+.clear_player_cell
+    LDX player_x
+    LDY player_y
+    LDA #&00
+
+; Set map cell (X, Y) to type A, if it's on the map. The exit can't be
+; emptied.
+; Clobbers: A, X, Y, work0, cell_x, cell_y, map_pointer.
+.set_cell
+    CPX #&40
+    BCS set_cell_return
+    CPY #&40
+    BCS set_cell_return
+    CPX exit_x
+    BNE set_cell_write
+    CPY exit_y
+    BNE set_cell_write
+    CMP #&00                            ; don't empty the exit
+    BEQ set_cell_done
+.set_cell_write
+    STA work0
+    STX cell_x
+    STY cell_y
+    JSR map_address
+    LDA (map_pointer), Y
+    LDX cell_low_nibble
+    BEQ set_cell_high_nibble
+    AND #&F0
+    JMP set_cell_store
+.set_cell_high_nibble
+    ASL work0
+    ASL work0
+    ASL work0
+    ASL work0
+    AND #&0F
+.set_cell_store
+    ORA work0
+    STA (map_pointer), Y
+.set_cell_done
+    RTS
+
+; Start the tune: everything back to the beginning, the sound event on, and a
+; silent note on channels 1 and 2 together, whose ending starts the event
+; handler off.
+.start_tune
+    LDX #&00
+    LDY #&04
+.start_tune_reset
+    STX tune_position, Y
+    STX sound_amplitude, Y
+    DEY
+    BPL start_tune_reset
+    LDA #&0E                            ; enable event 0, output buffer empty
+    JSR OSBYTE
+    LDY #&01                            ; channel 1, in step with one other
+    STY sound_channel
+    STY sound_channel_high
+    DEY
+    STY sound_duration_high
+    LDX #&30
+    LSR A                               ; OSWORD 7, SOUND
+    JSR OSWORD
+    INC sound_channel                   ; channel 2
+    LDX #&30
+    LDY #&00
+    JMP OSWORD
+
+; Flush all the buffers, which stops the tune (and loses any keys pressed).
+.flush_buffers
+    LDX #&00
+    LDA #&0F
+    JMP OSBYTE
+
+; How a step in each direction moves: left, right, up, down, then up-left,
+; up-right, down-left, down-right, and 8, nowhere.
+.direction_dx
+    EQUB -1, 1, 0, 0, -1, 1, -1, 1, 0
+.direction_dy
+    EQUB 0, 0, -1, 1, -1, -1, 1, 1, 0
+
+; Directions turned: indexed by the direction plus 0 for its opposite, 4 for
+; itself, 8 turned clockwise and 12 anticlockwise.
+.turns
+    EQUB 1, 0, 3, 2         ; opposite
+    EQUB 0, 1, 2, 3         ; the same
+    EQUB 2, 3, 1, 0         ; clockwise
+    EQUB 3, 2, 0, 1         ; anticlockwise
+
+; Look at the cell in front of the player.
+; Returns: front_x, front_y, front_cell (and A, Z as cell_at).
+.find_front
+    LDY facing
+    LDA player_x
+    CLC
+    ADC direction_dx, Y
+    STA front_x
+    LDA player_y
+    CLC
+    ADC direction_dy, Y
+    STA front_y
+.look_at_front
+    LDX front_x
+    LDY front_y
+.look_at
+    STX front_x
+    STY front_y
+    JSR cell_at
+    STA front_cell
+    RTS
+
+; The title screen's pictures: six flames (a monster's picture) and the
+; player.
+.draw_title_pictures
+    LDA #&00
+    STA sprite
+    LDY #&0A
+.draw_title_flame
+    TYA
+    PHA
+    LDA #HI(io_tiles + &E * 128)        ; a flame
+    STA sprite_high
+    LDA title_flames, Y
+    TAX
+    LDA title_flames + 1, Y
+    TAY
+    SEC
+    JSR draw_sprite
+    PLA
+    TAY
+    DEY
+    DEY
+    BPL draw_title_flame
+    LDA #HI(io_player + 2 * 128)        ; the player
+    STA sprite_high
+    LDX #&10
+    LDY #&1B
+    SEC
+    JMP draw_sprite
+
+; x, y in character cells.
+.title_flames
+    EQUB 6, 24, 16, 8, 16, 19, 10, 21, 26, 24, 21, 22
+
+; Work out alternate_offsets for this level from alternate_cells: for each of
+; the 4 cell types with a second picture, two bits say whether it's used on
+; odd and on even squares.
+.setup_alternate_pictures
+    LDX #&03
+    LDA #&00
+    STA work0
+    LDY #&11
+.setup_alternate_clear
+    STA alternate_offsets, Y            ; no second pictures
+    DEY
+    BPL setup_alternate_clear
+    LDA #&C0                            ; two bits a cell type, from the top
+.setup_alternate_cell
+    PHA
+    ASL work0
+    LDA alternate_pictures, X
+    SEC                                 ; the difference in pictures...
+    SBC alternate_cell_types, X
+    PHA
+    ASL A
+    PLA
+    ROR A
+    STA work1                           ; ...times 128
+    ROR work0
+    PLA
+    STA work2
+    PHA
+    AND alternate_cells                 ; this cell type's two bits
+.setup_alternate_bits
+    LSR work2
+    BCS setup_alternate_store
+    LSR A
+    BCC setup_alternate_bits
+.setup_alternate_store
+    STA work3
+    TXA
+    ASL A
+    TAY
+    LSR work3                           ; bit 0: odd squares
+    BCC setup_alternate_even
+    LDA work0
+    STA alternate_offsets_odd, Y
+    LDA work1
+    STA alternate_offsets_odd + 1, Y
+.setup_alternate_even
+    LSR work3                           ; bit 1: even squares
+    BCC setup_alternate_next
+    LDA work0
+    STA alternate_offsets_even, Y
+    LDA work1
+    STA alternate_offsets_even + 1, Y
+.setup_alternate_next
+    DEX
+    PLA
+    LSR A
+    LSR A
+    BCC setup_alternate_cell
+    RTS
+
+; Print object A's name.
+.print_object_name
+    ASL A                               ; 12 characters a name
+    ASL A
+    STA work0
+    ASL A
+    ADC work0
+    TAY
+    LDX #&0B
+
+; Print X + 1 characters from io_object_names + Y.
+.print_names_text
+    LDA io_object_names, Y
+    JSR OSWRCH
+    INY
+    DEX
+    BPL print_names_text
+    RTS
+
+; The title and backpack screens' frame: a row of cell 5's picture across the
+; top and bottom of the view and a column down each side (the view is offset
+; two characters, so only half of each shows).
+.draw_title_border
+    LDA #&08                            ; 9 pictures a side
+    STA work2
+.draw_title_border_loop
+    LDY #&00
+    JSR draw_border_across
+    LDY #&20
+    JSR draw_border_across
+    LDX #&00
+    JSR draw_border_down
+    LDX #&20
+    JSR draw_border_down
+    DEC work2
+    BPL draw_title_border_loop
+    RTS
+.draw_border_across
+    LDA work2
+    ASL A
+    ASL A
+    TAX
+    BPL draw_border_picture
+.draw_border_down
+    LDA work2
+    ASL A
+    ASL A
+    TAY
+.draw_border_picture
+    LDA #LO(io_tiles + 5 * 128)
+    STA sprite
+    LDA #HI(io_tiles + 5 * 128)
+    STA sprite_high
+    SEC
+    JMP draw_sprite
+
+; The entry and edit codes are printed in a base-32 alphabet, "1"-"9" then
+; "A"-"W". Print A's low 5 bits, then its top 5 (bits 3-7).
+.print_code_byte
+    PHA
+    JSR print_code_digit
+    PLA
+    LSR A
+    LSR A
+    LSR A
+.print_code_digit
+    AND #&1F
+    CLC
+    ADC #&31                            ; '1' for 0
+    CMP #&3A
+    BCC print_code_char
+    ADC #&06                            ; 'A' for 9
+.print_code_char
+    JMP OSWRCH
+
+; Scramble a byte for a code: rotate it left a bit, then swap each pair of
+; bits. Returns: A. Clobbers: work0.
+.scramble
+    PHA
+    ASL A                               ; the top bit...
+    PLA
+    ROL A                               ; ...round to the bottom
+    PHA
+    AND #&55                            ; the even bits up...
+    ASL A
+    STA work0
+    PLA
+    AND #&AA                            ; ...and the odd ones down
+    LSR A
+    ORA work0
+    RTS
+
+; Print the characters after the JSR, up to a NOP (&EA), and carry on at the
+; NOP. Clobbers: A, Y, work0, work1.
+.print_inline
+    PLA                                 ; the return address is the byte before the text
+    CLC
+    ADC #&01
+    STA work0
+    PLA
+    ADC #&00
+    STA work1
+    LDY #&00
+.print_inline_loop
+    LDA (work0), Y
+    CMP #&EA                            ; NOP ends it
+    BEQ print_inline_return
+    JSR OSWRCH
+    INC work0
+    BNE print_inline_loop
+    INC work1
+    BNE print_inline_loop
+.print_inline_return
+    JMP (work0)                         ; and runs
+
+; The backpack screen's text: the time left (in red when it's under 10), the
+; level, the tune and sound effects settings, and the score.
+.print_status
+    JSR print_inline
+    EQUB &1F, &09, &13, &11, &03
+    EQUS "Time:"
+    NOP
+    LDA time_left
+    CMP #10                             ; under 10...
+    BCC print_status_time
+    PHA
+    JSR print_inline                    ; ...stays red
+    EQUB &11, &02
+    NOP
+    PLA
+
+; A decimal number up to 255.
+.print_status_time
+    LDX #&FF
+.print_hundreds
+    INX
+    SEC
+    SBC #100                            ; hundreds
+    BCS print_hundreds
+    ADC #100
+    PHA
+    TXA
+    BEQ print_tens
+    JSR print_digit
+.print_tens
+    TAY
+    PLA
+    LDX #&00
+.print_tens_loop
+    INX
+    SEC
+    SBC #10                             ; tens
+    BCS print_tens_loop
+    ADC #10
+    PHA
+    DEX
+    BNE print_tens_digit                ; no tens...
+    TYA
+    BEQ print_units                     ; ...and no hundreds: just the units
+.print_tens_digit
+    TXA
+    LDX #&03
+    CMP #&00
+    JSR print_digit
+.print_units
+    PLA
+    JSR print_digit
+    JSR print_inline
+    EQUB &1F, &00, &15, &11, &03
+    EQUS "Level:"
+    EQUB &11, &02
+    NOP
+    JSR print_level
+
+; Also printed when T or S changes them.
+.print_sound_settings
+    JSR print_inline
+    EQUB &1F, &09, &17, &11, &03
+    EQUS "Tune"
+    NOP
+    LDA tune_off
+    JSR print_yes_no
+    JSR print_inline
+    EQUB &1F, &02, &18, &11, &03
+    EQUS "SoundFX"
+    NOP
+    LDA effects_off
+    JSR print_yes_no
+    JSR print_inline
+    EQUB &1F, &10, &15
+    NOP
+
+; "Score:" and the score, 4 BCD digits.
+.print_score
+    JSR print_inline
+    EQUB &11, &03
+    EQUS "Score:"
+    EQUB &11, &02
+    NOP
+    LDX #&00
+    LDA score_high
+    JSR print_bcd
+    LDA score
+.print_bcd
+    PHA
+    LSR A
+    LSR A
+    LSR A
+    LSR A
+    JSR print_digit
+    PLA
+    AND #&0F
+
+; Print digit A, counting digits in X: leading zeros print nothing (VDU 0)
+; until the third, and 0 prints as the letter O.
+.print_digit
+    BEQ print_digit_zero
+    LDX #&03
+    ORA #&30                            ; a digit; zeros from now on print
+    BNE print_digit_char
+.print_digit_zero
+    CPX #&03                            ; a leading zero?
+    BCC print_digit_char
+    LDA #&4F                            ; zero is the letter O
+.print_digit_char
+    INX                                 ; VDU 0 prints nothing
+    JMP OSWRCH
+
+; Print ": yes" for A zero (the tune_off and effects_off flags), else ": no".
+.print_yes_no
+    PHA
+    JSR print_inline
+    EQUB &3A, &11, &02
+    NOP
+    PLA
+    BEQ print_yes
+    JSR print_inline
+    EQUB &6E, &6F
+    NOP
+    RTS
+.print_yes
+    JSR print_inline
+    EQUB &79, &65, &73
+    NOP
+    RTS
+
+; Never called.
+.print_level_at
+    JSR print_inline
+    EQUB &1F, &08, &11, &11, &02
+    NOP
+.print_level
+    LDA level
+    CLC
+    ADC #&31                            ; '1' for level 0
+    JMP OSWRCH
+
+; "WELL DONE!" in blocks: 11 rows of 32 bits, a bit a character cell.
+.well_done_bitmap
+    EQUB %10001011, %10100001, %00000000, %00000000
+    EQUB %10001010, %00100001, %00000000, %00000000
+    EQUB %10001011, %00100001, %00000000, %00000000
+    EQUB %10101010, %00100001, %00000000, %00000000
+    EQUB %01010011, %10111101, %11100000, %00000000
+    EQUB %00000000, %00000000, %00000000, %00000000
+    EQUB %11100011, %00100101, %11010000, %00000000
+    EQUB %10010100, %10110101, %00010000, %00000000
+    EQUB %10010100, %10111101, %10010000, %00000000
+    EQUB %10010100, %10101101, %00000000, %00000000
+    EQUB %11100011, %00100101, %11010000, %00000000
+
+; The bottom half of a block's character cells: a shadow.
+.well_done_block
+    EQUB &F5, &FE, &FB, &FE, &F7, &FD, &FB, &FF
+
+; After a level: clear 13 character rows across the middle of the view and
+; show WELL DONE! in big letters, then wait 4 seconds.
+.show_well_done
+    LDA view_screen
+    STA screen
+    LDA view_screen_high
+    CLC                                 ; nine character rows down
+    ADC #9
+    JSR wrap_screen_high
+    LDA #13                             ; 13 rows
+    STA cell_low_nibble
+.show_well_done_clear
+    LDX #&20
+.show_well_done_cell
+    LDY #&07
+    LDA #&00
+.show_well_done_blank
+    STA (screen), Y
+    DEY
+    BPL show_well_done_blank
+    JSR next_screen_cell
+    DEX
+    BNE show_well_done_cell
+    DEC cell_low_nibble
+    BNE show_well_done_clear
+    LDA view_screen                     ; 6 characters in...
+    CLC
+    ADC #6 * 8
+    STA screen
+    LDA view_screen_high                ; ...ten rows down
+    ADC #10
+    AND #&3F
+    ORA #HI(SCREEN)
+    STA screen_high
+    LDA #&80                            ; the bitmap's top bit first
+    STA cell_low_nibble
+.show_well_done_bit
+    LDA well_done_bitmap, X
+    AND cell_low_nibble
+    BEQ show_well_done_next
+    LDY #&0F                            ; the block's two character cells...
+    LDA #&0C
+.show_well_done_block
+    STA (screen), Y
+    DEY
+    BPL show_well_done_block
+    LDY #&07                            ; ...the lower with its shadow
+.show_well_done_shade
+    LDA well_done_block, Y
+    STA (screen), Y
+    DEY
+    BPL show_well_done_shade
+.show_well_done_next
+    JSR next_screen_cell
+    LSR cell_low_nibble
+    BCC show_well_done_bit
+    ROR cell_low_nibble                 ; the carry: back to the top bit
+    INX
+    CPX #well_done_block - well_done_bitmap; 11 rows of 4 bytes
+    BCC show_well_done_bit
+    LDA #200                            ; 4 seconds
+    BITABS                                  ; skip the next LDA
+
+; Wait A fiftieths of a second, by the OS's vsync countdown.
+.wait_a_second
+    LDA #50
+.wait_ticks
+    STA VSYNC_COUNTER
+.wait_ticks_loop
+    LDA VSYNC_COUNTER
+    BNE wait_ticks_loop
+    RTS
+
+; A random number from 0 to Y - 1, from the free-running VIA timers.
+; Clobbers: work0.
+.random
+    EOR SYSVIA_T1CL                     ; the timers' low bytes are as good as random
+    EOR USRVIA_T2CH
+    STY work0
+.random_mod
+    CMP work0
+    BCC random_done
+    SBC work0
+    BCS random_mod
+.random_done
+    RTS
+
+; The game is over: the player bursts into flames that spread out across the
+; view, crackling.
+.burn_up
+    JSR wait_a_second
+    LDA view_x                          ; the middle of the view
+    CLC
+    ADC #&0E
+    STA view_sub_x
+    LDA view_y
+    CLC
+    ADC #&0D
+    STA view_sub_y
+    LDA #&02                            ; flames spread from 2 cells to 31
+    STA steps
+.burn_up_ring
+    LDA #&64                            ; 100 flames a ring
+    STA count_across
+.burn_up_flame
+    LDA USRVIA_T2CL                     ; either flame picture
+    AND #&80
+    STA sprite
+    LDY steps
+    JSR random
+    ADC view_sub_x
+    TAX
+    JSR random                          ; within steps of the middle
+    ADC view_sub_y
+    TAY
+    LDA #HI(io_tiles + &E * 128)
+    STA sprite_high
+    SEC
+    JSR draw_sprite                     ; a flame
+    DEC count_across
+    BNE burn_up_flame
+    BIT USRVIA_T2CL                     ; now and then...
+    BVC burn_up_next_ring
+    LDY #&04
+    JSR random
+    TAX
+    INX
+    LDY #&03
+    JSR random
+    ORA #&04
+    JSR sound_effect                    ; ...a crackle
+.burn_up_next_ring
+    DEC view_sub_x                      ; the ring grows
+    DEC view_sub_y
+    INC steps
+    INC steps
+    LDA steps
+    CMP #&20
+    BCC burn_up_ring
+    RTS
+
+; Never used.
+.unused_1260
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00
+
+; The picture for an object cell (F) at (X, Y): the exit's icon, the icon of
+; the object there, or if none, the picture kept for that.
+; Returns: X, Y = the picture's address.
+.object_picture_at
+    CPX exit_x
+    BNE object_picture_find
+    CPY exit_y
+    BNE object_picture_find
+.exit_picture
+    LDX #LO(io_object_icons + 15 * 32)
+    LDY #HI(io_object_icons + 15 * 32)
+    RTS
+.object_picture_find
+    JSR find_object
+    BCC no_object_picture
+
+; Object Y / 4's icon.
+.object_icon
+    LDA objects + 2, Y
+    ORA #&10                            ; &10 + the icon
+    JMP thing_picture
+.no_object_picture
+    LDX #LO(io_no_object_picture)
+    LDY #HI(io_no_object_picture)
+    RTS
+
+; The game proper starts here, run once. It's also where each level's eight
+; objects are kept, 4 bytes each (see objects), over this code once it has
+; run.
+.game_start
+    EOR #&48                            ; (the first object's x and y, harmless)
+    LDA #LO(error_handler)              ; errors go to error_handler
+    STA BRKV
+    LDA #HI(error_handler)
+    STA BRKV + 1
+    LDA #&00
+    STA score
+    STA score_high
+    STA effects_off
+    STA tune_off
+    STA fill_screen
+    STA level
+    JSR flush_buffers                   ; no keys waiting
+    JSR load_mission                    ; load the mission
+
+; The title screen, then a game: three lives.
+.new_game
+    JSR title_screen
+    LDX #&03                            ; three lives
+    STX lives
+    LDA #&00
+    STA score
+    STA score_high
+
+; A level from the start, and after losing a life.
+.start_level
+    JSR setup_level
+.restart_level
+    JSR reset_level
+    JSR clear_screen
+    JSR set_level_palette               ; the level's palette
+    JSR redraw_view
+    LDA tune_off
+    BNE game_loop
+    JSR start_tune
+
+; The game's main loop, a cycle at a time: the clock ticks at the mission's
+; rate (not while in a pipe), with warning beeps in the last 20; once the
+; exit is lit (stage 1) the time left is scored and the player has 4 ticks to
+; get clear.
+.game_loop
+    LDA time_left
+    BEQ time_up                         ; out of time?
+    JSR play_cycle                      ; move the player and everything else
+    LDA pipe_move
+    BNE check_dead                      ; the clock stops in pipes
+    LDA clock_fraction
+    CLC
+    ADC io_time_rate                    ; the mission's clock rate
+    STA clock_fraction
+    BCC check_dead
+    DEC time_left
+    LDA time_left
+    CMP #20                             ; the last 20 ticks...
+    BCS check_dead
+    LDA stage
+    BNE warn_time_running_out
+    LDA #&00                            ; ...beep
+    JSR sound_beep
+    JMP check_dead
+.warn_time_running_out
+    LDX #&02                            ; ...a different beep once the exit is lit
+    LDA #&04
+    JSR sound_effect
+.check_dead
+    LDA player_dead
+    BNE lose_life
+    LDA stage
+    CMP #&01                            ; the exit has just been lit:
+    BNE game_loop
+    INC stage                           ; stage 2: run
+    LDX time_left                       ; a point for each tick left
+    JSR add_points
+    LDA #&04                            ; and 4 ticks to get clear
+    STA time_left
+    BNE game_loop
+
+; Out of time: with the exit lit, the player is safe 5 or more cells from it,
+; across or down; otherwise they're caught in the blaze (the screen flashes).
+.time_up
+    LDX stage
+    CPX #&02                            ; the exit lit?
+    BNE lose_life
+    JSR far_from_exit                   ; far enough across...
+    BCS level_complete
+    INX
+    SEC
+    JSR far_from_exit                   ; ...or down: safe
+    BCS level_complete
+    INC fill_screen                     ; caught in it: flash
+    JSR clear_screen
+    DEC fill_screen
+
+; Lose a life. With none left, burn up and back to the title; if the exit
+; had been lit the level counts as done.
+.lose_life
+    JSR flush_buffers
+    JSR sound_trigger                   ; a sound
+    JSR draw_player
+    DEC lives
+    BNE lose_life_again
+    JSR burn_up                         ; the last life
+    JSR close_view
+    JMP new_game
+.lose_life_again
+    LDX #&09
+    JSR vdu_palette                     ; colour 0 flashes
+    JSR close_view
+    LDA stage                           ; died after lighting the exit?
+    BNE next_level
+    JMP restart_level
+
+; The level's done: flash the palette, WELL DONE, 100 points.
+.level_complete
+    JSR flush_buffers
+    LDA #&05
+    JSR sound_effect_4
+    JSR flash_palette                   ; flash
+    JSR show_well_done
+    INC stage                           ; stage 3: done
+    LDX #100                            ; 100 points
+    JSR add_points
+
+; On to the next level, or after the fourth, the end of the mission. Doing a
+; level without losing a life lets the next game start from the next one.
+.next_level
+    INC level
+    LDA level
+    CMP #IO_LEVELS                      ; four levels
+    BCS mission_complete
+    LDX lives
+    CPX #&03                            ; no lives lost...
+    BCC next_level_screen
+    CMP furthest_level                  ; ...so the title can start on the next level
+    BCC next_level_screen
+    STA furthest_level
+.next_level_screen
+    JSR set_level_palette
+    LDA lives
+    CLC
+    JSR show_edit_code                  ; the backpack screen, with the next level's edit code
+    JSR wait_for_space                  ; wait for Space
+    JMP start_level
+.mission_complete
+    JSR mission_done
+    JMP new_game
+
+; Flash colour 0 through physical colours 7 down to 0, 8 times, a frame each,
+; then back to the level's palette.
+.flash_palette
+    LDA #&08
+    LDX #&01
+
+; The same A times, X frames a colour.
+.flash_palette_times
+    STA work0                           ; flashes
+    STX work2                           ; frames a colour
+.flash_palette_cycle
+    LDX #&07
+.flash_palette_colour
+    JSR vdu_palette                     ; logical 0 = physical X
+    LDA work2
+    STA work4
+    TXA
+.flash_palette_wait
+    JSR wait_vsync                      ; wait
+    DEC work4
+    BNE flash_palette_wait
+    TAX
+    DEX
+    BPL flash_palette_colour
+    DEC work0
+    BNE flash_palette_cycle
+
+; Set the palette for the level (or level A from set_palette) from
+; io_palettes.
+; Clobbers: A, X, Y, work0.
+.set_level_palette
+    LDA level
+.set_palette
+    ASL A
+    ASL A
+    ADC #&03                            ; the level's last colour first
+    TAY
+    LDA #&03
+    STA work0
+.set_palette_loop
+    JSR set_palette_entry
+    DEY
+    DEC work0
+    BNE set_palette_loop
+.set_palette_entry
+    LDX io_palettes, Y                  ; logical << 4 | physical
+
+; VDU 19, X >> 4, X, 0, 0, 0: logical colour X's high nibble is physical
+; colour X's low.
+.vdu_palette
+    LDA #&13                            ; VDU 19
+    JSR OSWRCH
+    TXA
+    LSR A
+    LSR A
+    LSR A
+    LSR A
+    JSR OSWRCH
+    TXA
+    JSR OSWRCH
+    LDA #&00
+    JSR OSWRCH
+    JSR OSWRCH
+    JMP OSWRCH
+
+; Is the player 5 or more cells from the exit, across (X = 2) or down (3)?
+; Returns: carry set if so. Called with the carry set.
+.far_from_exit
+    LDA player_x - 2, X                 ; player_x or player_y...
+    SBC exit_x - 2, X                   ; ...less exit_x or exit_y
+    BCS far_from_exit_distance
+    EOR #&FF                            ; how far
+    ADC #&01
+.far_from_exit_distance
+    CMP #5
+    RTS
+
+; Space on the title screen: start, returning from title_screen.
+.title_start
+    JSR resync_timer
+
+; Just after a vsync, with interrupts off, restart the system VIA's timer 1
+; (the OS's 100 Hz tick) from its latch, keeping its interrupts clear of the
+; vsync's.
+.resync_timer
+    JSR wait_vsync
+    SEI
+    LDY #&09                            ; a little more
+    JSR delay
+    LDA SYSVIA_T1LL                     ; timer 1 from its latch
+    STA SYSVIA_T1LL
+    LDA SYSVIA_T1LH
+    STA SYSVIA_T1CH
+    CLI
+    RTS
+
+; The title screen: Space starts at the chosen level, S steps the level (up to
+; furthest_level), L loads another mission.
+; Returns: with level and started_late set.
+.title_screen
+    LDA #&00                            ; level 1 unless S is pressed
+    STA started_late
+    STA level
+    JSR set_level_palette
+    JSR draw_title_screen               ; the title screen's pictures
+    JSR print_inline
+    EQUB &1F, &13, &10, &11, &03
+    EQUS "Start:"
+    EQUB &1F, &07, &0F
+    NOP
+    JSR print_score
+    LDX #&01
+    LDA #&0F
+    JSR OSBYTE                          ; flush the keyboard buffer
+.title_screen_key
+    JSR print_inline
+    EQUB &1F, &05, &11, &11, &02
+    NOP
+    JSR print_level                     ; the level to start on
+    JSR OSRDCH
+    BCC title_screen_got_key            ; Escape?
+    JSR acknowledge_escape
+.title_screen_got_key
+    AND #&DF                            ; upper case, and Space is 0
+    BEQ title_start                     ; Space: start
+    CMP #&53                            ; S...
+    BEQ title_screen_next_level
+    CMP #&4C                            ; L: load a mission
+    BNE title_screen_key
+    JMP ask_for_mission
+.title_screen_next_level
+    LDX level                           ; S: the next level that can be started on
+    CPX furthest_level
+    BCC title_screen_set_level
+    LDX #&FF
+.title_screen_set_level
+    INX
+    STX level
+    STX started_late
+    BPL title_screen_key                ; always
+
+; Clear the screen for the title or backpack screens: the frame, the heading,
+; the flames and the player.
+.draw_title_screen
+    JSR print_inline
+    EQUB &06, &04, &1A, &11, &80
+    NOP
+    JSR draw_screen_frame
+    JMP draw_title_pictures
+
+; Return from the caller's caller.
+.return_from_caller
+    PLA
+    PLA
+    RTS
+
+; Empty the cell under monster X / 4.
+.empty_monster_cell
+    JSR monster_cell
+    LDA #&00
+
+; Set map cell (X, Y) to A and draw it. Off the map, nothing happens.
+; Clobbers: A, X, Y and the drawing variables.
+.set_cell_and_draw
+    STA work1                           ; the type
+    TXA
+    PHA
+    TYA
+    PHA
+    LDA work1
+    JSR set_cell                        ; off the map?
+    BCS return_from_caller
+    PLA
+    ASL A                               ; cell y * 4
+    ASL A
+    TAY
+    PLA
+    ASL A
+    ASL A                               ; cell x * 4
+    TAX
+    LDA work1
+
+; Draw thing A (as thing_picture) at character position (X, Y): a cell's own
+; picture whole, an icon on the floor.
+.draw_thing_at
+    PHA
+    STX sprite
+    STY sprite_high
+    JSR to_cell
+    PLA
+    JSR thing_picture                   ; its picture
+    SEC                                 ; a cell's picture: whole
+    BEQ draw_picture_at
+.draw_icon_at
+    CLC                                 ; an icon: on the floor
+.draw_picture_at
+    TXA                                 ; sprite and X, Y swapped
+    LDX sprite
+    STA sprite
+    TYA
+    LDY sprite_high
+    STA sprite_high
+    JMP draw_sprite
+
+; The exit's icon, top left of the backpack screen once the exit is lit.
+.draw_exit_icon
+    LDA #&04                            ; character position 4, 4
+    STA sprite
+    STA sprite_high
+    JSR exit_picture
+    JMP draw_icon_at
+
+; Start (or restart) the level: facing up, the direction keys as they were,
+; the clock reset, the exit back in place, the player at the start.
+.reset_level
+    LDX #&02                            ; facing up
+    STX facing
+    INX
+.reset_level_keys
+    LDA menu_key_left, X                ; the direction keys back as MENU set them
+    STA key_left, X
+    DEX
+    BPL reset_level_keys
+    INX
+    STX stage                           ; all zero
+    STX pipe_move
+    STX player_dead
+    STX frame_counter
+    STX player_frame
+    STX action
+    STX clock_fraction
+    LDX exit_x
+    LDY exit_y
+    LDA #CELL_OBJECT                    ; the exit's icon on its cell
+    JSR set_cell
+    LDA level
+    ASL A
+    ASL A
+    ASL A
+    TAY
+    LDA io_level_setup + LEVEL_TIME, Y
+    STA time_left                       ; the clock
+    LDX start_x
+    LDY start_y
+    JSR place_player
+
+; Forget which direction keys were down (and the action is 0 too).
+.clear_keys_down
+    LDX #&03
+    LDA #&00
+.clear_keys_down_loop
+    STA keys_were_down, X               ; nothing held
+    DEX
+    BPL clear_keys_down_loop
+    RTS
+
+; Copy the level's data out of IO into the variables the game plays with: its
+; setup, its map (to map, where it can change), monsters, objects and
+; triggers; the backpack starts empty.
+.setup_level
+    LDA level
+    ASL A
+    ASL A
+    ASL A
+    ADC #&07
+    TAY
+    LDX #&07
+.setup_level_setup
+    LDA io_level_setup, Y               ; the 8 setup bytes, from start_x
+    STA start_x, X
+    DEY
+    DEX
+    BPL setup_level_setup
+    INY
+    TYA
+    PHA
+    ADC #HI(io_maps)                    ; the level's map
+    STA work1
+    LDY #&00
+    STY work0
+    STY backpack_slot
+    STY thrown_direction
+    STY pushes_left
+    STY clock_fraction
+    STY work2
+    LDA #HI(map)                        ; goes to map
+    STA work3
+    LDX #&08                            ; 8 pages
+.setup_level_map
+    LDA (work0), Y
+    STA (work2), Y
+    INY
+    BNE setup_level_map
+    INC work1
+    INC work3
+    DEX
+    BNE setup_level_map
+    PLA
+    ASL A                               ; level * 16
+    ADC #&0F
+    TAY
+    LDX #&0F
+.setup_level_monsters
+    LDA io_level_monsters, Y            ; monsters
+    STA monster_x, X
+    DEY
+    DEX
+    BPL setup_level_monsters
+    INY
+    TYA                                 ; level * 32
+    ASL A
+    ADC #&1F
+    TAY
+    LDX #&1F
+.setup_level_objects
+    LDA io_level_objects, Y             ; objects...
+    STA objects, X
+    LDA io_level_trigger_flags, Y       ; ...and trigger flags
+    STA trigger_flags, X
+    DEY
+    DEX
+    BPL setup_level_objects
+    INY
+    TYA                                 ; level * 64
+    ASL A
+    ADC #&3F
+    TAY
+    LDX #&3F
+.setup_level_triggers
+    LDA io_level_trigger_places, Y      ; triggers' places...
+    STA trigger_places, X
+    LDA io_level_trigger_args_0, Y      ; ...and arguments
+    STA trigger_args, X
+    LDA io_level_trigger_args_1, Y
+    STA trigger_args + 64, X
+    DEY
+    DEX
+    BPL setup_level_triggers
+    LDY #&03
+.setup_level_backpack
+    STX backpack, Y                     ; X = &FF: every slot empty
+    DEY
+    BPL setup_level_backpack
+    JMP setup_alternate_pictures
+
+; One cycle of play: the player's turn, then four frames of the keys being
+; read and things moving, then the monsters are marked on the map as deadly
+; cells (E) until they next move.
+.play_cycle
+    JSR player_turn
+    LDA player_dead                     ; dead?
+    BNE play_cycle_done
+    JSR think                           ; think...
+    LDA #&04
+    STA work2
+.play_cycle_step
+    JSR wait_vsync                      ; ...then four frames
+    JSR read_keys
+    JSR move_things
+    DEC work2
+    BNE play_cycle_step
+.mark_monsters
+    LDA #CELL_FIRE                      ; monsters are deadly cells
+    BNE set_monster_cells
+
+; Move a thrown object on a cell, advance the frame counter, decide where each
+; monster goes next, and take the monsters off the map.
+.think
+    JSR fly_thrown                      ; a thrown object
+    LDA frame_counter
+    CLC
+    ADC #&20
+    STA frame_counter
+    LDA #&03
+    STA work4
+.think_monster
+    LDA work4                           ; each monster's 4 bytes...
+    ASL A
+    ASL A
+    ADC #&03
+    TAX
+    LDY #&03
+.think_monster_copy
+    LDA monster_x, X                    ; ...to work0-work3
+    STA work0, Y
+    DEX
+    DEY
+    BPL think_monster_copy
+    INX
+    JSR monster_think                   ; where it goes
+    DEC work4
+    BPL think_monster
+    LDA #&00                            ; and take them off the map
+.set_monster_cells
+    STA work5
+    LDA #&03
+    STA work4
+.set_monster_cell
+    LDA work4
+    ASL A
+    ASL A
+    TAX
+    LDA monster_direction, X            ; not out?
+    CMP #&08
+    BCS set_monster_cell_next
+    JSR monster_cell
+    LDA work5
+    JSR set_cell
+.set_monster_cell_next
+    DEC work4
+    BPL set_monster_cell
+.play_cycle_done
+    RTS
+
+; Is the key with negative INKEY number X pressed? (OSBYTE &81.)
+; Returns: Z set if it is.
+.key_pressed
+    LDA #&81                            ; INKEY
+    LDY #&FF
+    JSR OSBYTE
+    INX                                 ; &FF + 1 = 0 when pressed
+.do_nothing
+    RTS
+
+; The player's turn: Escape gives up a life (with SHIFT, the game). Then look
+; at what's in front of the player and underneath, try every trigger, and do
+; an action: the one pressed, or the pipe's move while in a pipe.
+.player_turn
+    BIT ESCAPE_FLAG                     ; Escape?
+    BPL player_turn_no_escape
+.give_up
+    LDX #&FF                            ; SHIFT too?
+    JSR key_pressed
+    BNE give_up_life
+    INX                                 ; one life left, about to be lost
+    STX lives
+.give_up_life
+    INC player_dead
+    LDA #&7E                            ; (no more moves)
+    STA pipe_move
+    JMP OSBYTE                          ; acknowledge Escape
+.player_turn_no_escape
+    JSR find_front
+    LDX player_x
+    LDY player_y
+    JSR cell_at                         ; what the player stands on...
+    JSR check_pipe_end                  ; ...as it affects pipes
+    LDA #&00
+.player_turn_triggers
+    PHA
+    LDY #&00                            ; walking onto triggers
+    JSR use_trigger
+    PLA
+    CLC
+    ADC #&01
+    CMP #&20                            ; 32 of them
+    BNE player_turn_triggers
+    LDX player_x
+    LDY player_y
+    JSR cell_at
+    JSR check_underfoot                 ; lava, fire, the exit...
+    LDA player_dead
+    BNE do_nothing
+    LDA action                          ; an action already decided?
+    CMP #ACTION_STOP
+    BEQ do_action
+    LDA pipe_move                       ; in a pipe, carried on...
+    BNE do_action
+    JSR read_keys                       ; ...or a key
+    LDA action
+.do_action
+    ASL A                               ; action_table
+    TAY
+    LDA #&00
+    STA action
+    LDX action_table, Y
+    LDA action_table+1, Y
+
+; Jump to X + 256 * A.
+.jump_to
+    STX work0
+    STA work1
+    JMP (work0)
+
+; CTRL: the backpack screen. The mission, the lives left, the backpack's
+; contents and the selected object's name, the time, level, score and sound
+; settings; see backpack_keys. Space goes back to the game.
+.backpack_screen
+    JSR save_view                       ; remember where the view was
+    LDA lives
+    JSR draw_backpack_screen            ; the screen, the lives
+    LDA #&80
+    JSR print_selected_name             ; no name yet
+    JSR selection_position              ; the selection cursor, the player's picture...
+    LDA #HI(io_player + 2 * 128)
+    JSR draw_page_picture               ; ...drawn
+    JSR print_status
+.backpack_screen_loop
+    BIT ESCAPE_FLAG                     ; Escape: lose a life
+    BMI give_up
+    JSR backpack_keys                   ; the backpack screen's keys
+    LDX #LO(KEY_SPACE)                  ; Space
+    JSR key_pressed
+    BNE backpack_screen_loop
+.backpack_screen_done
+    LDA work4                           ; the view as it was
+    STA view_x
+    LDA work5
+    STA view_y
+    JMP redraw_view
+
+; The backpack screen's keys: Z and X (as MENU set them, whatever a trigger
+; has done to this level's) move the selection, M shows the map, S and T turn
+; the sound effects and the tune on and off. Called round a loop until Space.
+.backpack_keys
+    LDX backpack_slot                   ; the selected object's name
+    LDA backpack, X
+    JSR print_selected_name
+    LDX menu_key_left                   ; left...
+    JSR key_pressed
+    BEQ backpack_select
+    LDX menu_key_right                  ; ...or right
+    JSR key_pressed
+    BEQ backpack_select_right
+    LDA level                           ; the map?
+    CMP io_map_levels
+    BCS backpack_keys_sound
+    LDX key_map
+    JSR key_pressed
+    BNE backpack_keys_sound
+    PLA                                 ; out of the backpack screen
+    PLA
+    JMP show_map
+.backpack_keys_sound
+    LDX #LO(KEY_S)                      ; S: sound effects
+    JSR key_pressed
+    BEQ backpack_toggle_effects
+    LDX #LO(KEY_T)                      ; T: the tune
+    JSR key_pressed
+    BNE backpack_keys_done
+    LDA tune_off
+    EOR #&01
+    STA tune_off
+    BNE backpack_tune_off
+    JSR start_tune                      ; on
+    BNE backpack_show_settings
+
+; Show the new setting, then wait a moment so the key doesn't repeat.
+.backpack_tune_off
+    JSR flush_buffers                   ; off
+.backpack_show_settings
+    LDX #&18                            ; blank the old setting
+    LDY #&17
+    LDA #&00
+    JSR draw_thing_at
+    JSR print_sound_settings            ; and print the new
+    JMP short_pause                     ; a pause
+.backpack_toggle_effects
+    LDA effects_off
+    EOR #&01
+    STA effects_off
+    BPL backpack_show_settings
+.backpack_select_right
+    LDY #&01                            ; right (key_pressed leaves Y = &FF for left)
+
+; Move the selection Y (-1 or 1) slots, sliding the cursor (the player's
+; picture) along below the backpack; off either end it slides all the way
+; back to the other.
+.backpack_select
+    STY work2
+    JSR selection_position              ; where the cursor is
+    STX work0
+    STY work1
+    LDA backpack_slot
+    CLC
+    ADC work2
+    BMI backpack_select_wrap_left       ; off the left?
+    CMP io_backpack_last                ; off the right?
+    BEQ backpack_select_slide
+    BCS backpack_select_wrap_right
+.backpack_select_slide
+    STA backpack_slot
+    LDA #&06                            ; six character steps a slot
+    STA work3
+.backpack_slide_cursor
+    JSR wait_vsync
+    JSR wait_vsync
+    LDX work0                           ; rub out...
+    LDY work1
+    LDA #HI(io_tiles)                   ; ...with the floor
+    JSR draw_page_picture
+    LDA work0
+    CLC
+    ADC work2
+    STA work0
+    TAX
+    LDY work1
+    LDA #HI(io_player + 2 * 128)        ; draw it a character on
+    JSR draw_page_picture
+    DEC work3
+    BNE backpack_slide_cursor
+.backpack_keys_done
+    RTS
+.backpack_select_wrap_left
+    LDA io_backpack_last
+    BNE backpack_select_wrap
+.backpack_select_wrap_right
+    LDA #&00
+.backpack_select_wrap
+    PHA
+    LDA work2                           ; slide back the other way
+    EOR #&FE
+    STA work2
+    JSR selection_position
+    LDA #HI(io_tiles)
+    JSR draw_page_picture
+    LDY #&0B                            ; from below the screen's middle row
+    STY work1
+    LDX work0
+    LDA #HI(io_player + 2 * 128)
+    JSR draw_page_picture
+    LDA io_backpack_last                ; six steps for each slot
+    ASL A
+    STA work3
+    ASL A
+    ADC work3
+    STA work3
+    JSR backpack_slide_cursor
+    PLA
+    STA backpack_slot
+    JSR selection_position
+    INY
+    LDA #HI(io_tiles)
+    JSR draw_page_picture
+    JSR selection_position
+    LDA #HI(io_player + 2 * 128)
+
+; Draw the picture at A * 256 at character position (X, Y).
+.draw_page_picture
+    STA sprite_high
+    LDA #&00
+    STA sprite
+    SEC
+    JMP draw_sprite
+
+; The selection cursor's character position: X = slot * 6 + 7, Y = 10.
+.selection_position
+    LDA backpack_slot
+    ASL A                               ; * 6
+    ASL A
+    ADC backpack_slot
+    ADC backpack_slot
+    ADC #&07                            ; + 7
+    TAX
+    LDY #&0A
+    RTS
+
+; A clear screen with the floor pattern, the frame and the PIPELINE heading,
+; for the title and backpack screens.
+.draw_screen_frame
+    LDA #&02
+    STA view_x
+    STA view_y
+    DEC fill_screen                     ; fill with the floor pattern
+    JSR clear_screen
+    INC fill_screen
+    JSR draw_title_border
+    JSR print_inline
+    EQUB &1F, &00, &09, &11, &02, &11, &80
+    EQUS "PIPELINE"
+    NOP
+    RTS
+
+; The backpack screen (A is the number of lives; the carry set leaves out the
+; mission text): the mission, a picture of the player for each life, the
+; exit's icon once it's lit, and what's in the backpack.
+.draw_backpack_screen
+    PHP
+    STA work3
+    JSR draw_screen_frame
+    PLP
+    BCS draw_lives
+    LDY #LO(io_mission_text - io_object_names); the mission text
+    LDX #IO_MISSION_SIZE - 1
+    JSR print_names_text
+.draw_lives
+    LDA facing                          ; the player's picture for the way they face
+    LSR A
+    ROR A
+    STA sprite
+    LDA #&00
+    ADC #HI(io_player)
+    STA sprite_high
+    LDA work3
+    ASL A
+    ASL A
+    ASL A
+    TAX
+    LDY #&1B                            ; along the bottom
+    SEC
+    JSR draw_sprite
+    DEC work3
+    BNE draw_lives
+    LDA stage                           ; the exit lit?
+    BEQ draw_backpack
+    JSR draw_exit_icon
+.draw_backpack
+    LDA #&03
+    STA work0
+.draw_backpack_slot
+    LDX work0
+    LDA backpack, X
+    BMI draw_backpack_next              ; empty?
+    ASL A
+    ASL A
+    TAY
+    JSR object_icon                     ; its icon
+    STX sprite
+    STY sprite_high
+    LDA work0                           ; at slot * 6 + 7, 7
+    ASL A
+    ASL A
+    ADC work0
+    ADC work0
+    ADC #&07
+    TAX
+    LDY #&07
+    CLC                                 ; on the floor
+    JSR draw_sprite
+.draw_backpack_next
+    DEC work0
+    BPL draw_backpack_slot
+.map_key_done
+    RTS
+
+; M: the map, on levels below io_map_levels. Also from the backpack screen.
+.map_key
+    LDA level
+    CMP io_map_levels                   ; no map this level?
+    BCS map_key_done
+    JSR save_view                       ; remember the view
+    JSR clear_screen
+
+; The map view, scrolled to put the player in the middle where it can: Z and
+; X scroll it, Space goes back. The SBC's operand, &10, is also used as a
+; mask by BIT (see bit4_mask).
+.show_map
+    LDA player_x                        ; player_x - 16...
+    SEC
+.show_map_centre
+    SBC #16
+    BCS show_map_clamp
+    LDA #&00
+.show_map_clamp
+    CMP #33                             ; ...between 0 and 32
+    BCC show_map_draw
+    LDA #32
+.show_map_draw
+    STA screen_start
+    JSR blank_display                   ; draw it with the display off
+    JSR draw_map_view
+    JSR setup_crtc
+.show_map_loop
+    BIT ESCAPE_FLAG
+    BMI show_map_escape
+    LDX menu_key_left                   ; Z
+    JSR key_pressed
+    BNE show_map_right
+    JSR map_view_scroll_left
+    JMP show_map_space
+.show_map_right
+    LDX menu_key_right                  ; X
+    JSR key_pressed
+    BNE show_map_space
+    JSR map_view_scroll_right
+.show_map_space
+    LDX #LO(KEY_SPACE)                  ; Space
+    JSR key_pressed
+    BNE show_map_loop
+    JSR clear_screen                    ; back to the game
+    JMP backpack_screen_done
+.show_map_escape
+    JMP give_up
+
+; The selected object's name, A, under the backpack: or blank if A is
+; negative.
+.print_selected_name
+    PHA
+    JSR print_inline                    ; TAB(6, 31) COLOUR 129 COLOUR 3
+    EQUB &1F, &06, &1F, &11, &81, &11, &03
+    NOP
+    PLA
+    BPL print_selected_object
+    LDA #&08                            ; nothing selected: back a character...
+    JSR OSWRCH
+    LDY #&0E
+    LDA #&20                            ; ...and 14 spaces
+.print_selected_blank
+    JSR OSWRCH
+    DEY
+    BNE print_selected_blank
+    BEQ print_selected_done
+.print_selected_object
+    ASL A
+    ASL A
+    TAY
+    LDA objects + 2, Y
+    JSR print_object_name
+.print_selected_done
+    JSR print_inline                    ; COLOUR 128
+    EQUB &11, &80
+    NOP
+    RTS
+
+; Remember where the view is, in work4 and work5, for backpack_screen_done.
+.save_view
+    LDA view_x
+    STA work4
+    LDA view_y
+    STA work5
+    RTS
+
+; Actions 7-10: a step left, right, up or down (Y is the action * 2). Turn
+; that way, then step into the next cell if it's empty, the thing to collect
+; (7), or a pipe running this way (C across, D down), which carries the player
+; along until it ends; a crate (6) is pushed if the player has pushes left.
+; Anything else stops the player: lava or fire kill. After a step, the move
+; ends the cycle (the walk moved everything four times already).
+.move
+    TYA                                 ; (action - 7) * 2 with the carry clear...
+    SBC #14 - 1
+    LSR A                               ; ...halved: the direction
+    STA facing
+    TAY
+    LSR A                               ; the pipe that runs this way
+    CLC
+    ADC #CELL_PIPE_ACROSS
+    STA work4                           ; C across, D up and down
+    TYA
+    LDX player_x
+    LDY player_y
+    JSR step                            ; the cell to step into...
+    TXA
+    PHA
+    TYA
+    PHA
+    JSR look_at                         ; ...and what's there
+    LDA pipe_move                       ; already in a pipe?
+    BNE move_on
+    LDA front_cell                      ; empty?
+    BEQ move_on
+    CMP work4                           ; a pipe this way?
+    BEQ move_into_pipe
+    CMP #CELL_SULPHUR                   ; something to collect?
+    BEQ move_on
+    JSR try_push                        ; a crate to push?
+    BCS move_on
+    LDA front_cell
+    JSR check_deadly                    ; something in the way: lava or fire kill
+    PLA                                 ; no step: drop the cell pushed
+    PLA
+    JMP draw_player
+
+; Into a pipe: it carries the player on with this move.
+.move_into_pipe
+    JSR return_0AD0                     ; (just an RTS)
+    LDA facing                          ; carried on by this move
+    CLC
+    ADC #ACTION_LEFT
+    STA pipe_move
+
+; Unless a trigger has called for action 11, step: walk the view a cell
+; (walks, by direction), and see what's ahead now.
+.move_on
+    JSR think                           ; everything else moves
+    LDA action                          ; a trigger said stop?
+    BNE move_done
+    PLA
+    TAY
+    PLA
+    TAX
+    STX player_x                        ; the step
+    STY player_y
+    LDA facing                          ; and the cell in front
+    JSR step
+    JSR look_at
+    LDA facing                          ; the walk
+    ASL A
+    TAY
+    LDX walks, Y
+    LDA walks + 1, Y
+    JSR jump_to
+.move_done
+    PLA                                 ; drop the cell pushed...
+    PLA                                 ; ...and return from player_turn's caller too
+    JMP mark_monsters
+
+; The walk routines, by direction.
+.walks
+    EQUW walk_left
+    EQUW walk_right
+    EQUW walk_up
+    EQUW walk_down
+
+; Can the player push the crate (cell 6) in front of them? Only with pushes
+; left, and only into an empty cell.
+; Returns: carry set if it moved.
+.try_push
+    CMP #CELL_CRATE
+    BEQ try_push_crate
+.no_push
+    CLC
+.try_push_done
+    RTS
+.try_push_crate
+    LDA pushes_left                     ; no pushes left?
+    BEQ no_push
+    LDY facing
+    JSR push_cell
+    BCC try_push_return
+    DEC pushes_left                     ; one fewer
+.try_push_return
+    RTS
+
+; Push the cell in front of the player a cell further in direction Y, if the
+; cell beyond is empty. Returns: carry set if it moved.
+.push_cell
+    STY work2
+    TYA
+    LDX front_x                         ; the cell beyond the one in front
+    LDY front_y
+    JSR step
+    JSR cell_at                         ; empty?
+    BNE no_push
+    LDX front_x
+    LDY front_y
+    LDA work2
+    JSR move_cell
+    SEC
+    RTS
+
+; What the player stands on (A), after the triggers have had their turn: the
+; thing to collect is collected and anything else (fire, a monster) kills,
+; unless the player's in a pipe. In a pipe: at a junction (B), follow the
+; pipe round a corner or straight on; a dead end, or a cell a pipe can't go
+; into, turns the player back.
+.check_underfoot
+    STA work0
+    LDX pipe_move                       ; in a pipe?
+    BEQ underfoot_on_foot
+    JSR check_pipe_end_in_pipe          ; out of it?
+    LDX pipe_move
+    BEQ try_push_done
+    CMP #CELL_JUNCTION                  ; a junction?
+    BNE pipe_check_ahead
+    LDA #12                             ; anticlockwise first
+    STA work2
+
+; Try turning anticlockwise, then clockwise, then straight on, for a pipe
+; going that way.
+.pipe_junction_turn
+    LDA work2
+    CLC
+    ADC facing
+    TAY
+    LDA turns, Y                        ; a direction
+    STA work0
+    LDX #CELL_PIPE_ACROSS               ; C for left or right...
+    CMP #&02
+    BCC pipe_junction_try
+    INX                                 ; ...D for up or down
+.pipe_junction_try
+    STX work1
+    LDX player_x
+    LDY player_y
+    JSR step
+    JSR look_at                         ; the next cell that way
+    CMP work1
+    BEQ pipe_junction_found
+    LDA work2                           ; then clockwise, then straight on
+    SEC
+    SBC #&04
+    STA work2
+    BNE pipe_junction_turn
+    BEQ pipe_reverse                    ; no way on: turn back
+.underfoot_on_foot
+    CMP #CELL_SULPHUR                   ; the thing to collect?
+    BEQ collect
+    TAX                                 ; anything else kills
+    BNE kill_player
+    RTS
+.pipe_junction_found
+    LDA work0                           ; carry set: + 7, the move
+    ADC #ACTION_LEFT - 1
+    STA pipe_move
+    RTS
+.pipe_check_ahead
+    LDA front_cell                      ; the cell ahead: empty...
+    BEQ check_deadly
+    CMP #CELL_SULPHUR                   ; ...or to collect: carry on
+    BEQ check_deadly
+    CMP #CELL_LAVA                      ; 1-9 or F: blocked
+    BCC pipe_reverse
+    CMP #CELL_OBJECT                    ; lava or fire: as below; B-D: carry on
+    BCC check_deadly
+.pipe_reverse
+    LDY pipe_move                       ; the reverse move
+    LDA reverse_moves - 7, Y
+    STA pipe_move
+    LDA #&00
+    STA work1
+
+; Lava (A) and fire (E) kill.
+.check_deadly
+    CMP #CELL_LAVA
+    BEQ kill_player
+    CMP #CELL_FIRE
+    BNE check_deadly_done
+.kill_player
+    STA player_dead                     ; nonzero: dead
+.check_deadly_done
+    RTS
+
+; At the start of the player's turn, with A what they stand on: out of the
+; end of a pipe onto the floor, the pipe lets go.
+.check_pipe_end
+    LDX pipe_move
+    BEQ underfoot_on_foot
+.check_pipe_end_in_pipe
+    CMP #CELL_SULPHUR
+    BEQ collect
+    TAX
+    BNE check_deadly_done               ; out of the pipe
+    STA pipe_move
+    JMP draw_player
+
+; Collect the thing the player stands on (cell 7): a point, and when it's the
+; last one, the player spins round with rising tones.
+; Returns: carry clear.
+.collect
+    LDA #&00                            ; pipes let go
+    STA pipe_move
+    JSR clear_player_cell               ; it's gone
+    JSR draw_player
+    LDA #&B4                            ; a sound
+    JSR sound_beep
+    JSR add_point                       ; a point
+    LDA to_collect                      ; the last one?
+    BEQ check_deadly_done
+    DEC to_collect
+    BNE check_deadly_done
+    STA clock_fraction
+    STA work1
+    LDA #16                             ; 16 turns
+    STA work0
+.collect_spin
+    LDA facing                          ; anticlockwise
+    CLC
+    ADC #&0C
+    TAY
+    LDA turns, Y
+    STA facing
+    JSR draw_player
+    LDA work1                           ; the note rises
+    SEC
+    SBC #&3F
+    STA work1
+    JSR sound_tone
+    LDY #&80                            ; a pause
+    JSR delay
+    DEC work0
+    BNE collect_spin
+    CLC
+    RTS
+
+; Trigger action 7: put monster A AND 3 in map cell (A DIV 4, Y DIV 4) (its
+; position in characters is A and Y with their low bits clear), going
+; direction Y AND 3 with turning preferences X, and move its fire cell there.
+.trigger_move_monster
+    JSR trigger_arguments
+    STX work0
+    PHA
+    AND #&03                            ; monster A AND 3
+    ASL A
+    ASL A
+    TAX
+    LDA monster_x, X                    ; where it was, in cells
+    LSR A
+    LSR A
+    STA work2
+    LDA monster_y, X
+    LSR A
+    LSR A
+    STA work3
+    PLA
+    AND #&FC                            ; where it goes
+    STA monster_x, X
+    LSR A
+    LSR A
+    STA work4
+    TYA
+    AND #&FC
+    STA monster_y, X
+    LSR A
+    LSR A
+    STA work5
+    TYA                                 ; its direction
+    AND #&03
+    STA monster_direction, X
+    LDA work0                           ; its turning preferences
+    STA monster_turns, X
+    LDA #CELL_FIRE                      ; move its mark, a fire cell
+    BNE move_cell_type
+
+; Move what's in map cell (X, Y) a cell in direction A, objects and all, and
+; draw both cells. Returns: carry set if the cell was empty (nothing moved).
+.move_cell
+    STX work2
+    STY work3
+    JSR step                            ; the destination
+    STX work4
+    STY work5
+    LDX work2
+    LDY work3
+    JSR cell_at                         ; what's here
+    SEC                                 ; nothing: carry set
+    BEQ move_cell_done
+.move_cell_type
+    PHA
+    CMP #CELL_OBJECT                    ; an object?
+    BNE move_cell_draw
+    LDX work2
+    LDY work3
+    JSR find_object
+    BCC move_cell_draw
+.move_object
+    LDA work4                           ; it moves too
+    STA objects, Y
+    LDA work5
+    STA objects + 1, Y
+.move_cell_draw
+    LDX work2
+    LDY work3
+    LDA #&00                            ; empty where it was
+    JSR set_cell_and_draw
+    PLA
+    LDX work4
+    LDY work5                           ; and fill where it goes
+    JSR set_cell_and_draw
+    CLC
+.move_cell_done
+    RTS
+
+; Read the keys into action, unless an action's waiting: P, D, M, CTRL, T and
+; Return are actions 1-6 (the first pressed, from 6 down), the directions 7-10.
+; The direction the player faces walks on while its key is held; a new
+; direction only once its key has been let go since it was last pressed.
+.read_keys
+    LDA action
+    BNE move_cell_done
+    LDA #ACTION_USE                     ; 6 action keys...
+    STA action
+.read_action_key
+    LDY action
+    LDX action_keys - 1, Y              ; ...tested from Return down to P
+    JSR key_pressed
+    BEQ move_cell_done
+    DEC action
+    BNE read_action_key
+    LDY facing                          ; the way the player faces...
+    CLC                                 ; ...may be held
+    JSR test_move_key
+    LDA action
+    BNE read_move_keys
+    JSR clear_keys_down                 ; no move: forget what was held
+.read_move_keys
+    LDY #&03
+.read_move_key
+    SEC                                 ; a new direction must be pressed afresh
+    JSR test_move_key
+    DEY
+    BPL read_move_key
+    RTS
+
+; Is direction key Y pressed? With the carry set it counts only if it wasn't
+; down last time. Sets action to Y + 7 if it counts.
+.test_move_key
+    ROL work1                           ; the carry into the mask
+    STY work0
+    LDX key_left, Y
+    JSR key_pressed
+    BNE test_move_key_note
+    LDY work0
+    LDA keys_were_down, Y               ; held since last time?
+    AND work1
+    BNE move_cell_done
+    TYA
+    CLC                                 ; action 7-10
+    ADC #ACTION_LEFT
+    STA action
+.test_move_key_note
+    LDY work0                           ; remember: 1 if it's down
+    TXA
+    EOR #&01
+    STA keys_were_down, Y
+    RTS
+
+; Shrink the display to nothing by narrowing the CRTC's displayed area and
+; moving its syncs to keep it centred, a frame at a time; then black and a
+; clear screen.
+.close_view
+    JSR pause
+    LDY #40                             ; 40 frames
+.close_view_step
+    TYA
+    LDX #&01
+    JSR set_crtc_register               ; R1: characters displayed
+    LSR A
+    CLC
+    ADC #&1D                            ; R2: horizontal sync, kept centred
+    INX
+    JSR set_crtc_register
+    TYA
+    LDX #&06
+    JSR set_crtc_register               ; R6: rows displayed
+    LSR A
+    CLC
+    ADC #&12                            ; R7: vertical sync
+    INX
+    JSR set_crtc_register
+    TYA
+    JSR wait_vsync
+    TAY
+    DEY
+    BPL close_view_step
+    LDX #&00                            ; logical colour 0 black
+    JSR vdu_palette
+    JSR clear_screen                    ; and the CRTC back
+
+; Wait a moment: four or two delay loops of 65536 turns.
+.pause
+    JSR short_pause
+.short_pause
+    LDY #&00
+    JSR delay
+    JMP delay
+
+; All four levels done. If the last one was finished properly the palette goes
+; wild for a while. Then the last level's edit code, "Praise and
+; felicitations!", and for the locked (competition) mission played from the
+; start, an entry code; wait for Space.
+.mission_done
+    LDA #&00
+    JSR set_palette                     ; level 1's palette
+    LDA stage
+    CMP #&03                            ; the last level done properly?
+    BCC mission_done_screen
+    STA work0
+.mission_done_flash
+    STA ULA_PALETTE                     ; any old colours...
+    JSR wait_vsync
+    CLC
+    ADC #&05                            ; ...through every combination
+    BNE mission_done_flash
+    DEC work0
+    BNE mission_done_flash
+    JSR set_palette                     ; back to level 1's
+    JSR pause
+    JSR pause
+.mission_done_screen
+    LDA #&04
+    STA level                           ; the last level's edit code
+    LDA #&03                            ; 3 lives' pictures; no mission text
+    SEC
+    JSR show_edit_code
+    JSR print_inline
+    EQUB &1F, &07, &0F, &11, &03
+    EQUS "Praise"
+    EQUB &09, &61, &6E, &64, &1F, &01, &10
+    EQUS "felicitations!"
+    NOP
+    LDA io_locked                       ; the original, locked mission...
+    BPL mission_done_wait
+    LDA started_late                    ; ...played from level 1?
+    BEQ show_entry_code
+.mission_done_wait
+    JMP wait_for_space
+
+; The entry code: from the score, scrambled, and a checksum of the whole of
+; the mission's level data (io_attrs to the end of the maps) so the code shows
+; which mission was played, printed in the 1-9, A-W alphabet.
+.show_entry_code
+    JSR print_inline
+    EQUB &1F, &0E, &15
+    EQUS "Entry"
+    EQUB &09
+    EQUS "code:-"
+    EQUB &11, &82, &11, &01, &1F, &02, &18
+    NOP
+    LDA score_high                      ; the score, scrambled
+    JSR scramble
+    PHA
+    LDA score
+    JSR scramble
+    PHA
+    LDA #HI(io_attrs)                   ; the checksum runs from io_attrs...
+    STA work5
+    LDX #&04
+    LDA #&00
+.entry_code_clear
+    STA work0, X
+    DEX
+    BPL entry_code_clear
+    LDX #HI(io_graphics - 1) - HI(io_attrs); ...to the end of the maps
+    LDY #LO(io_attrs)
+    CLC
+.entry_code_sum
+    ROL A                               ; shift and mix
+    ROR work0
+    ROL work1
+    ROR work2
+    ROL work3
+    BCC entry_code_add
+    EOR work1
+.entry_code_add
+    ADC (work4), Y                      ; add a byte
+    BCC entry_code_next
+    INC work2
+.entry_code_next
+    INY
+    BNE entry_code_sum
+    INC work5
+    DEX
+    BPL entry_code_sum
+    PHA
+    LDA #&20                            ; a space
+    JSR OSWRCH
+    PLA
+    JSR print_code_digit
+    PLA
+    EOR #&AA                            ; the score's high byte...
+    JSR print_code_byte
+    LDX #&03                            ; the checksum
+.entry_code_print
+    LDA work0, X
+    JSR print_code_digit
+    DEX
+    BPL entry_code_print
+    LDA score                           ; the score mixed
+    ASL A
+    ROL A
+    EOR score_high
+    JSR scramble
+    JSR print_code_digit
+    PLA
+    EOR #&55                            ; the score's low byte
+    JSR print_code_byte
+    JSR print_inline
+    EQUB &20, &1F, &06, &17
+    NOP
+    JSR print_12_spaces
+    JSR print_inline
+    EQUB &1F, &12, &18
+    NOP
+    JSR print_12_spaces
+    JSR print_inline
+    EQUB &11, &80
+    NOP
+
+; Wait for Space to be pressed and let go.
+.wait_for_space
+    LDX #LO(KEY_SPACE)                  ; Space down...
+    JSR key_pressed
+    BNE wait_for_space
+.wait_for_space_up
+    LDX #LO(KEY_SPACE)                  ; ...and up
+    JSR key_pressed
+    BEQ wait_for_space_up
+
+; OSBYTE &7E: clear an Escape.
+.acknowledge_escape
+    LDA #&7E
+    JMP OSBYTE
+.print_12_spaces
+    LDA #&20
+    LDX #&0C
+.print_spaces_loop
+    JSR OSWRCH
+    DEX
+    BNE print_spaces_loop
+    RTS
+
+; After a level: the backpack screen (A lives, the carry set for no mission
+; text) with the edit code of the level just finished (level is already the
+; next level, and the codes are read from one before io_edit_code_*).
+.show_edit_code
+    JSR draw_backpack_screen
+    JSR print_inline
+    EQUB &1F, &07, &13, &11, &81, &11, &02
+    EQUS "Edit code:"
+    EQUB &1F, &05, &14, &11, &80, &11, &03
+    NOP
+    LDY level                           ; the level just finished's
+    LDA io_edit_code_high - 1, Y
+    JSR print_code_pair
+    LDA io_edit_code_middle - 1, Y
+    JSR print_code_pair
+    LDA io_edit_code_low - 1, Y
+
+; A byte of a code, scrambled, as two digits.
+.print_code_pair
+    JSR scramble
+    LDX #&03
+    JMP print_bcd
+
+; Is there an object at map cell (X, Y)?
+; Returns: carry set and Y = its offset in objects (X its number) if so.
+.find_object
+    STX work0
+    STY work1
+    LDY #7 * 4
+    LDX #&07
+.find_object_loop
+    LDA objects, Y
+    CMP work0
+    BNE find_object_next
+    LDA objects + 1, Y
+    CMP work1
+    BEQ find_object_done
+.find_object_next
+    DEY
+    DEY
+    DEY
+    DEY
+    DEX
+    BPL find_object_loop
+    CLC
+.find_object_done
+    RTS
+
+; Never reached: a JMP to light_exit.
+.unused_jump
+    JMP light_exit
+
+; Action 1, P: pick up the object in front into the selected slot, or the
+; last free one; with nothing to collect left, in front of the exit, light
+; it instead (light_exit).
+.pick_up
+    JSR light_exit
+    LDA front_cell
+    CMP #CELL_OBJECT
+    BNE action_done
+    LDX backpack_slot
+    LDA backpack, X
+    BMI pick_up_into_slot
+    LDX io_backpack_last                ; the selected slot's taken: the last free one
+.pick_up_free_slot
+    LDA backpack, X
+    BMI pick_up_into_slot
+    DEX
+    BPL pick_up_free_slot
+.action_done
+    RTS                                 ; no room
+.pick_up_into_slot
+    STX backpack_slot
+    LDX front_x
+    LDY front_y
+    JSR find_object                     ; the object in front
+    BCC action_done
+    LDA #&80                            ; off the map
+    STA objects, Y
+    LDY backpack_slot
+    STX backpack, Y                     ; into the backpack
+    LDX front_x
+    LDY front_y
+    LDA #&00
+    JMP set_cell_and_draw               ; and its cell's empty
+
+; Action 2, D: drop the selected object (or any) into the empty cell in front.
+.drop
+    LDY front_cell
+    BNE action_done                     ; the cell in front must be empty
+    JSR selected_object
+    DEY                                 ; &FF: an empty slot
+    STY backpack, X
+    STX backpack_slot
+    LDX front_x
+    LDY front_y
+
+; Put object A at map cell (X, Y) and draw it.
+.put_object
+    STX work2
+    STX work4
+    STY work3
+    STY work5
+    ASL A
+    ASL A
+    TAY
+    LDA #CELL_OBJECT                    ; its cell's an object cell
+    PHA
+    JMP move_object
+
+; The selected object, or if that slot's empty, the one in the highest slot;
+; with none at all, return from the caller.
+; Returns: A = the object, X = its slot.
+.selected_object
+    LDX backpack_slot
+    LDA backpack, X
+    BPL selected_object_done
+    LDX #&03
+.selected_object_any
+    LDA backpack, X                     ; any object
+    BPL selected_object_done
+    DEX
+    BPL selected_object_any
+    PLA                                 ; none: return from the action
+    PLA
+.selected_object_done
+    RTS
+
+; Action 5, T: throw the selected object from the empty cell in front, the
+; way the player faces, up to io_throw_distance cells (with 0, nothing can be
+; thrown).
+.throw
+    JSR selected_object
+    STX backpack_slot
+    STX work0
+    TAX
+    LDY io_throw_distance               ; nothing can be thrown
+    BEQ throw_done
+    LDA front_cell
+    BNE throw_done                      ; the cell in front must be empty
+
+; Throw object X Y cells from the cell in front: out of the backpack and off
+; the map, flying as a sprite (move_things moves it a character at a time).
+; Returns: carry set if something was already in flight.
+.launch_object
+    SEC                                 ; already something in flight?
+    LDA thrown_direction
+    BNE throw_done
+    STX thrown_object
+    STY throw_range
+    ROR A                               ; &80: the slot's empty
+    LDY work0
+    STA backpack, Y
+    LDA front_x                         ; from the cell in front, in characters
+    ASL A
+    ASL A
+    STA thrown_x
+    LDA front_y
+    ASL A
+    ASL A
+    STA thrown_y
+    TXA
+    ASL A
+    ASL A
+    TAY
+    LDA #&80                            ; off the map
+    STA objects, Y
+    JSR object_icon                     ; it flies as its icon
+    STX thrown_picture
+    STY thrown_picture_high
+    LDX facing                          ; the way the player faces, + 1
+    INX
+    STX thrown_direction
+    CLC
+.throw_done
+    RTS
+
+; Once a cycle: move a thrown object a cell. It lands when it runs out of
+; range, comes to something that isn't empty or would hit the player; the
+; cell it lands against (in thrown_picture now) and its direction then count
+; for its triggers (try_object_trigger goes to throw_trigger). Unless used up,
+; it lands in the empty cell it reached.
+.fly_thrown
+    LDX thrown_x                        ; its cell
+    LDY thrown_y
+    JSR to_cell
+    LDA thrown_direction                ; in flight?
+    BEQ throw_done
+    SEC
+    SBC #&01
+    PHA
+    JSR step                            ; the next cell
+    PLA
+    CPX player_x                        ; the player?
+    BNE fly_thrown_ahead
+    LDA #&00
+    CPY player_y
+    BEQ thrown_lands
+.fly_thrown_ahead
+    JSR cell_at                         ; empty?
+    BNE thrown_lands
+    DEC throw_range                     ; out of range?
+    BNE throw_done
+.thrown_lands
+    STA thrown_picture                  ; what it hit, for its triggers
+    LSR thrown_x                        ; its cell
+    LSR thrown_x
+    LSR thrown_y
+    LSR thrown_y
+    LDX thrown_x
+    LDY thrown_y
+    LDA #&00                            ; rub out its sprite
+    JSR set_cell_and_draw
+    LDA #LO(throw_trigger)              ; its triggers are throw triggers
+    STA try_object_trigger_jump + 1
+    LDA #HI(throw_trigger)
+    STA try_object_trigger_jump + 2
+    DEC thrown_direction                ; its direction
+    LDX thrown_object
+    TXA
+    PHA
+    ORA #&80
+    STA thrown_object
+    ASL A
+    ASL A
+    TAY
+    LDA objects + 3, Y                  ; its flags
+    SEC
+    BMI thrown_landed                   ; bit 7: it does nothing thrown
+    JSR fire_object_triggers
+.thrown_landed
+    LDX #&00
+    STX thrown_direction
+    DEX
+    STX thrown_object
+    PLA
+    BCC throw_done                      ; gone?
+    LDX thrown_x                        ; it lands
+    LDY thrown_y
+    JMP put_object
+
+; Try object X's triggers (X, X + 8, X + 16 and X + 24), A being its uses and
+; flags: through use_trigger or throw_trigger, as patched into
+; try_object_trigger. If one fires, a use is used: 32 and over never run out,
+; and at none, with bit 6, the object is gone.
+; Returns: A negative (with the carry set) if nothing fired; else the carry
+; clear if the object's gone.
+.fire_object_triggers
+    AND #&3F                            ; no uses left: nothing
+    SEC
+    BEQ throw_done
+    LDA #&00
+    STA triggers_fired
+    TXA
+    PHA
+    JSR try_object_trigger
+    PLA
+    PHA
+    ORA #&08                            ; its four triggers
+    JSR try_object_trigger
+    PLA
+    PHA
+    ORA #&10
+    JSR try_object_trigger
+    PLA
+    PHA
+    ORA #&18
+    JSR try_object_trigger
+    PLA
+    TAX
+    ASL A
+    ASL A
+    TAY
+    LDA triggers_fired                  ; did any fire?
+    BEQ fire_object_nothing
+    LDA objects + 3, Y
+    PHA
+    AND #&C0
+    STA work0
+    PLA
+    AND #&3F
+    BEQ fire_object_uses
+    CMP #&20                            ; 32 and up: never used up
+    BCS fire_object_done
+    SBC #&00                            ; a use less
+.fire_object_uses
+    SEC
+    PHA
+    ORA work0
+    STA objects + 3, Y
+    PLA
+    BNE fire_object_done
+    LDA work0
+.fire_object_vanishes
+    AND #&40                            ; used up: bit 6 says it goes
+    BEQ fire_object_done
+    CLC
+.fire_object_done
+    RTS
+.fire_object_nothing
+    SEC
+    LDA #&80
+    RTS
+.try_object_trigger
+    LDY #&80                            ; triggers that need an object
+.try_object_trigger_jump
+    JMP do_nothing                      ; self-modified: use_trigger or throw_trigger
+
+; Action 6, Return: use the selected object where the player stands, facing
+; the way they do.
+.use
+    JSR selected_object
+    STX backpack_slot
+    LDX #LO(use_trigger)                ; its triggers are use triggers
+    STX try_object_trigger_jump + 1
+    LDX #HI(use_trigger)
+    STX try_object_trigger_jump + 2
+    TAX
+    ASL A
+    ASL A
+    TAY
+    LDA objects + 3, Y
+    JSR fire_object_triggers            ; fire them
+    BMI delay_done                      ; none fired
+    BCS use_pause                       ; kept
+    ASL A                               ; gone: &80, an empty slot
+    LDX backpack_slot
+    STA backpack, X
+.use_pause
+    LDY #&C0
+
+; Wait Y * 256 turns of a DEX loop. Clobbers: X, Y.
+.delay
+    LDX #&00
+.delay_loop
+    DEX
+    BNE delay_loop
+    DEY
+    BNE delay_loop
+.delay_done
+    RTS
+
+; Trigger A for a thrown object that has landed: a trigger that needs an
+; object (flags bit 7), not yet fired (bit 5), at the cell it landed in (or
+; anywhere, a negative x or y), and meeting the condition (args 3): bit 7, it
+; flew direction bits 4-5; bit 6, it landed against cell type bits 0-3.
+; Y is the trigger's offset into trigger_args: trigger * 4.
+.throw_trigger
+    TAX
+    LDA trigger_flags, X                ; a trigger that needs an object...
+    EOR #&80                            ; ...not yet fired
+    AND #&A0
+    BNE delay_done
+    INC triggers_fired                  ; tried
+    TXA
+    ASL A
+    TAY
+    LDA trigger_places, Y               ; where it is
+    BMI throw_trigger_y                 ; anywhere across?
+    CMP thrown_x                        ; where it landed?
+    BNE trigger_no_match
+.throw_trigger_y
+    LDA trigger_places + 1, Y
+    BMI throw_trigger_condition
+    CMP thrown_y
+    BNE trigger_no_match
+.throw_trigger_condition
+    TYA
+    ASL A
+    TAY
+    LDA trigger_args + 3, Y             ; the condition
+    STA work0
+    BPL throw_trigger_cell              ; no direction needed
+    AND #&30
+    LSR A
+    LSR A
+    LSR A
+    LSR A
+    CMP thrown_direction                ; the way it flew?
+    BNE trigger_no_match
+    LDA work0
+.throw_trigger_cell
+    BIT bit6_mask                       ; a cell type needed?
+    BEQ throw_trigger_fires
+    AND #&0F
+    CMP thrown_picture                  ; what it landed against?
+    BNE trigger_no_match
+
+; It fires: its action works on the cell beyond where it landed, in the
+; direction it flew.
+.throw_trigger_fires
+    STY work0
+    LDA thrown_picture
+    STA work5
+    STX work4
+    LDX thrown_x
+    LDY thrown_y
+    LDA thrown_direction
+    JSR step                            ; the cell beyond
+    STX front_x
+    STY front_y
+    LDX work4
+    LDY work0
+    LDA thrown_direction
+    BPL trigger_fires
+
+; Trigger A, for the player: Y is 0 for one that fires when walked on (flags
+; bit 7 clear), &80 for one that needs an object used. Not yet fired, where
+; the player is, and the condition: bit 7, facing direction bits 4-5; bit 6,
+; facing cell type bits 0-3.
+.use_trigger
+    INC triggers_fired                  ; tried
+    TAX
+    TYA                                 ; walked on or used, matching...
+    EOR trigger_flags, X
+    AND #&A0                            ; ...and not yet fired
+    BNE trigger_no_match
+    TXA
+    ASL A
+    TAY
+    LDA trigger_places, Y               ; where it is
+    BMI use_trigger_y                   ; anywhere across?
+    CMP player_x                        ; where the player is?
+    BNE trigger_no_match
+.use_trigger_y
+    LDA trigger_places + 1, Y
+    BMI use_trigger_condition
+    CMP player_y
+    BNE trigger_no_match
+.use_trigger_condition
+    TYA
+    ASL A
+    TAY
+    LDA trigger_args + 3, Y             ; the condition
+    STA work0
+    BPL use_trigger_cell                ; no direction needed
+    AND #&30
+    LSR A
+    LSR A
+    LSR A
+    LSR A
+    CMP facing                          ; the way the player faces?
+
+; (throw_trigger's misses come here too.)
+.trigger_no_match
+    BNE trigger_fails
+    LDA work0
+.use_trigger_cell
+    BIT bit6_mask                       ; a cell type needed?
+    BEQ use_trigger_fires
+    AND #&0F
+    CMP front_cell                      ; the cell in front?
+    BNE trigger_fails
+.use_trigger_fires
+    LDA front_cell
+    STA work5
+    LDA facing
+
+; The trigger fires: flags bit 6 needs everything collected first. Bit 4 lets
+; it fire again; without it, bit 5 marks it fired. Its action is the flags'
+; low nibble, with the trigger's arguments, the cell it's facing in work5 and
+; the direction in work4.
+.trigger_fires
+    STA work4
+    LDA trigger_flags, X
+    STA work2
+    BIT bit6_mask                       ; only once everything's collected?
+    BEQ trigger_once
+    LDA to_collect
+    BNE trigger_fails
+    LDA work2
+.trigger_once
+    BIT bit4_mask                       ; may fire again?
+    BNE trigger_action
+    ORA #&20                            ; fired
+    STA trigger_flags, X
+.trigger_action
+    AND #&0F                            ; the action
+    ASL A
+    TAX
+    LDA trigger_actions, X
+    STA trigger_action_call + 1         ; self-modify the JSR
+    LDA trigger_actions + 1, X
+    STA trigger_action_call + 2
+.trigger_action_call
+    JSR do_nothing                      ; self-modified: the action
+    JMP find_front                      ; and look again
+
+; Action 1: move the cell at (X, Y) a cell in direction A.
+.action_move_cell
+    JSR trigger_arguments
+    JSR move_cell                       ; carry set: nothing moved
+    BCS trigger_fails
+    BCC sound_trigger
+
+; An action that doesn't happen: the trigger didn't fire after all.
+.trigger_fails_pop2
+    PLA
+.trigger_fails_pop
+    PLA
+.trigger_fails
+    DEC triggers_fired                  ; it didn't fire after all
+.light_exit_done
+    RTS
+
+; Action 14: push the cell in front, direction A turned (as turns) from the
+; way the player faces.
+.action_push
+    JSR front_blocked
+    BCS trigger_fails_pop2
+    JSR trigger_arguments
+    ADC work4                           ; turned from the way the player faces
+    TAX
+    LDY turns, X
+    JSR push_cell
+    BCC trigger_fails
+    BCS sound_trigger
+
+; In front of the exit, with nothing left to collect: light it. The exit
+; becomes fire (E), and the player has a few ticks to get away.
+.light_exit
+    LDA front_x
+    CMP exit_x
+    BNE light_exit_done
+    LDA front_y
+    SBC exit_y                          ; carry set by the CMP
+    ORA to_collect                      ; everything collected...
+    ORA stage                           ; ...and not lit yet
+    BNE light_exit_done
+    STA clock_fraction                  ; the clock starts afresh
+    INC stage                           ; stage 1: lit
+    LDX #&01
+    LDA #&04
+    JSR sound_effect
+    LDA #CELL_FIRE                      ; the exit is fire
+    BNE set_front_cell
+
+; Action 2: the cell in front becomes type A.
+.action_set_front
+    JSR front_blocked
+    BCS trigger_fails_pop2
+    JSR sound_trigger
+    JSR trigger_arguments
+.set_front_cell
+    LDX front_x
+    LDY front_y
+    JMP set_cell_and_draw
+
+; Action 5: object A explodes, wherever it is: on the map, in flight, or in
+; the backpack, which kills the player.
+.action_explode
+    JSR trigger_arguments
+    JSR find_carried                    ; carried or in flight?
+    BEQ explode_carried
+    LDA objects, Y                      ; where it is
+    PHA
+    TAX
+    LDA objects + 1, Y
+    PHA
+    TAY
+    JSR cell_at                         ; still there?
+    CMP #CELL_OBJECT
+    BNE trigger_fails_pop2
+    PLA
+    TAY
+    PLA
+    TAX
+.explode_at
+    JSR blast
+
+; Sound effects, on channel 0 (noise) with envelope X: duration and pitch A.
+; Off with effects_off. Preserves Y.
+.sound_trigger
+    LDA #&06
+.sound_effect_4
+    LDX #&04
+.sound_effect
+    STA sound_duration
+.sound_effect_pitch
+    STA sound_pitch
+    STX sound_amplitude                 ; envelope
+    LDA #&10                            ; channel 0, flushed
+    STA sound_channel
+.make_sound
+    LDA effects_off                     ; sound effects off?
+    BNE make_sound_done
+    TYA
+    PHA
+    LDY #&00
+    STY sound_channel_high
+    LDX #LO(sound_channel)
+    LDA #7
+    JSR OSWORD
+    PLA
+    TAY
+.make_sound_done
+    RTS
+.explode_in_flight
+    LDX thrown_x                        ; where it's flying
+    LDY thrown_y
+    BPL explode_at
+.explode_carried
+    BCC explode_in_flight
+    LDA #&FF                            ; it's gone from the backpack...
+    STA backpack, X
+    LDX player_x                        ; ...where the player is
+    LDY player_y
+
+; Empty the 9 cells round map cell (X, Y), and if the player's in one of
+; them, they die.
+.blast
+    LDA #&08                            ; 8 neighbours and the cell itself
+    STA work4
+    STX work2
+    STY work3
+.blast_cell
+    LDX work2
+    LDY work3
+    LDA work4
+    JSR step
+    CPX player_x
+    BNE blast_empty
+    CPY player_y
+    BNE blast_empty
+    INC player_dead                     ; caught in it
+.blast_empty
+    LDA #&00
+    JSR set_cell_and_draw
+    DEC work4
+    BPL blast_cell
+    RTS
+
+; Action 3: before the exit's lit, set the clock to X (unless A bit 7 is
+; set) and the number to collect to Y (unless A bit 0 is set).
+.action_set_clock
+    JSR trigger_arguments
+    PHA
+    LDA stage
+    BNE action_fails                    ; only before the exit's lit
+    PLA
+    BMI set_clock_collect               ; bit 7: keep the clock
+    STX time_left
+.set_clock_collect
+    LSR A
+    BCS set_clock_sound                 ; bit 0: keep the number
+    STY to_collect
+.set_clock_sound
+    LDA #&96
+
+; Sound effects on channel 3: pitch A, with envelope 3 for 8 twentieths of a
+; second, or (sound_beep) envelope 4 for 10.
+.sound_tone
+    STA sound_pitch
+    LDA #&03                            ; envelope 3...
+    LDX #&08                            ; ...for 8
+.sound_channel_3
+    STA sound_amplitude
+    STX sound_duration
+    LDA #&13                            ; channel 3, flushed
+    STA sound_channel
+    BNE make_sound
+.sound_beep
+    STA sound_pitch
+    LDA #&04                            ; envelope 4...
+    LDX #&0A                            ; ...for 10
+    BNE sound_channel_3
+.action_fails
+    JMP trigger_fails_pop
+
+; Action 0: map cell (X, Y) becomes type A.
+.action_set_cell
+    JSR trigger_arguments
+    JSR set_cell_and_draw
+    JMP sound_trigger
+
+; Action 13: the player may push A crates.
+.action_set_pushes
+    JSR trigger_arguments
+    STA pushes_left
+    LDA #&50
+    BNE sound_tone
+
+; Action 15: swap the left and right keys, and up and down, for the rest of
+; the level.
+.action_swap_keys
+    LDX key_down
+    LDA key_up
+    STA key_down
+    STX key_up
+    LDX key_right
+    LDA key_left
+    STA key_right
+    STX key_left
+    LDA #&00
+    STA action
+    LDA #&35
+    BNE sound_tone
+
+; Action 12: give object A (not while in flight) Y uses and re-enable trigger
+; A, flashing the screen.
+.action_recharge
+    JSR trigger_arguments               ; carried?
+    JSR find_carried
+    PHA
+    BMI action_fails
+    ASL A
+    ASL A
+    TAX
+    STY work0
+    LDA objects + 3, X                  ; Y uses, its flags kept
+    AND #&E0
+    ORA work0
+    STA objects + 3, X
+    LDA #&01                            ; a flash
+    TAX
+    JSR flash_palette_times
+    PLA
+    TAY
+    BPL enable_trigger
+
+; Action 10: re-enable triggers A, X and Y.
+.action_enable
+    JSR trigger_arguments
+    PHA
+    JSR enable_trigger
+    TXA
+    TAY
+    JSR enable_trigger
+    PLA
+    TAY
+.enable_trigger
+    LDA trigger_flags, Y                ; clear bit 5
+    AND #&DF
+    STA trigger_flags, Y
+    RTS
+
+; Is object A in flight (Z set, carry clear) or in the backpack (Z set, X its
+; slot)? Returns: A = the object (+ &80 if in flight).
+.find_carried
+    ORA #&80                            ; in flight?
+    CMP thrown_object
+    CLC
+    BEQ find_carried_done
+    SBC #&7F                            ; (the carry's clear: - &80)
+    LDX #&03
+.find_carried_loop
+    CMP backpack, X                     ; in the backpack?
+    BEQ find_carried_done
+    DEX
+    BPL find_carried_loop
+    SEC
+.find_carried_done
+    RTS
+
+; Action 11: disable triggers A, X and Y.
+.action_disable
+    JSR trigger_arguments
+    PHA
+    JSR disable_trigger
+    TXA
+    TAY
+    JSR disable_trigger
+    PLA
+    TAY
+.disable_trigger
+    LDA trigger_flags, Y                ; set bit 5
+    ORA #&20
+    STA trigger_flags, Y
+    RTS
+
+; Action 6: monster X / 4 (or all four, X = &10) goes direction A: 8 or more
+; takes it off the map, for 25 points.
+.action_set_monster
+    JSR sound_trigger
+    JSR trigger_arguments
+    CPX #4 * 4                          ; all of them?
+    BEQ set_all_monsters
+.set_monster_direction
+    LDY monster_direction, X            ; its old direction
+    STA monster_direction, X
+    TYA
+    EOR #&08                            ; was out and now isn't?
+    AND monster_direction, X
+    CMP #&08
+    BCC set_monster_done
+    STX work4
+    JSR empty_monster_cell              ; off the map...
+    JSR score_25                        ; ...for 25 points
+    LDX work4
+.set_monster_done
+    RTS
+.set_all_monsters
+    DEX                                 ; monsters 3 to 0
+    DEX
+    DEX
+    DEX
+    JSR set_monster_direction
+    TXA
+    BNE set_all_monsters
+    RTS
+
+; Action 9: the cell in front changes from type A to X, or X to A.
+.action_toggle
+    INY
+    LDA work5                           ; the cell in front
+    CMP trigger_args - 1, Y             ; A?
+    BEQ action_toggle_set
+    DEY
+    CMP trigger_args + 1, Y             ; X?
+    BEQ action_toggle_set
+.action_toggle_fails
+    JMP trigger_fails
+.action_toggle_set
+    JSR sound_trigger
+    LDA trigger_args, Y                 ; the other
+    PHA
+    LDX front_x
+    LDY front_y
+    PLA
+    JMP set_cell_and_draw
+
+; Action 4: throw object A (carried) Y cells, from the empty cell in front,
+; and stop the player's step.
+.action_launch
+    LDA work5                           ; the cell in front must be empty
+    BNE action_toggle_fails
+    JSR trigger_arguments
+    JSR find_carried                    ; carried?
+    BNE action_toggle_fails
+    STX work0                           ; its slot
+    TAX
+    JSR launch_object                   ; throw it
+    BCS action_toggle_fails
+    LDA #ACTION_STOP                    ; action 11: no step
+    STA action
+    LSR A
+    LDX #&03
+    JMP sound_effect
+
+; Action 8: teleport the view's top left to cell (X, Y), so the player to
+; (X + 4, Y + 4), with a flash, and stop the player's step.
+.action_teleport
+    LDA #ACTION_STOP
+    STA action
+    JSR trigger_arguments
+    JSR place_player                    ; move the view and the player
+    LDX #&04
+    LDA #&02
+    JSR sound_effect                    ; a sound...
+    LDA #&02
+    LDX #&04
+    JSR flash_palette_times             ; ...a flash...
+    JSR clear_screen                    ; ...and the view redrawn
+    LDA #&00
+    LDX #&04
+    JSR sound_effect_pitch
+    JMP redraw_view
+
+; Look at the cell in front, preserving Y.
+; Returns: carry set if it's the exit or off the map.
+.front_blocked
+    TYA
+    PHA
+    JSR look_at_front
+    PLA
+    TAY
+    RTS
+
+; Trigger Y / 4's arguments: A, X and Y.
+.trigger_arguments
+    LDA trigger_args, Y
+    PHA
+    LDA trigger_args + 1, Y
+    TAX
+    LDA trigger_args + 2, Y
+    TAY
+    PLA
+    RTS
+
+; Monster X / 4's cell: X, Y.
+.monster_cell
+    LDY monster_y, X
+    LDA monster_x, X
+    TAX
+
+; Character position (X, Y) to map cell (X, Y).
+.to_cell
+    TXA
+    LSR A
+    LSR A
+    TAX
+    TYA
+    LSR A
+    LSR A
+    TAY
+.monster_think_done
+    RTS
+
+; Decide where a monster goes next. work0-work3 are its x, y, direction and
+; turns, work4 its number. If its fire cell has gone (put out), it's gone, for
+; 25 points. Otherwise it tries up to four ways, each a 2-bit field of its
+; turns (from the bottom) picking from turns: back, on, clockwise or
+; anticlockwise. It goes into an empty cell or an object; if the cell is what
+; it eats (monster_food) it turns that into what it leaves, and is gone. If
+; it can't go anywhere it's stuck (direction + 4).
+.monster_think
+    LDA work2
+    CMP #&08
+    BCS monster_think_done              ; not out?
+    AND #&03
+    STA work2
+    LDA #&08                            ; its own cell
+    JSR cell_beside_monster
+    CMP #CELL_FIRE                      ; still fire?
+    BNE monster_gone
+    LDA #&03                            ; the first field
+    STA work5
+.monster_try_turn
+    LDA work5
+    LDY #&00
+.monster_turn_field
+    INY                                 ; find the field...
+    LSR A
+    BCC monster_turn_field
+    LDA work5                           ; ...and take it
+    AND work3
+.monster_turn_shift
+    LSR A
+    DEY
+    BNE monster_turn_shift
+    ROL A                               ; back, on, clockwise, anticlockwise
+    ASL A
+    ASL A
+    ADC work2
+    TAY
+    LDA turns, Y                        ; the way to try
+    PHA
+    JSR cell_beside_monster             ; what's there
+    BEQ monster_set_direction           ; empty: go
+    CMP #CELL_OBJECT
+    BEQ monster_set_direction           ; an object: go
+    EOR monster_food                    ; food?
+    AND #&0F
+    BEQ monster_eats
+    ASL work5                           ; the next field
+    ASL work5
+    PLA
+    BCC monster_try_turn                ; none left?
+    LDA work2                           ; stuck
+    ORA #&04
+    PHA
+.monster_set_direction
+    LDA work4
+    ASL A
+    ASL A
+    TAX
+    PLA
+    STA monster_direction, X
+    RTS
+.monster_eats
+    LDA #&66                            ; a sound
+    JSR sound_tone
+    PLA
+    TAY
+    JSR step_from_monster               ; the cell it eats...
+    LDA monster_food                    ; ...becomes what it leaves
+    LSR A
+    LSR A
+    LSR A
+    LSR A
+    JSR set_cell_and_draw
+    LDA work4
+    ASL A
+    ASL A
+    TAX
+    JSR empty_monster_cell              ; and the monster's cell empty
+.monster_gone
+    LDA #&08                            ; gone
+    PHA
+    JSR score_25                        ; 25 points
+    JMP monster_set_direction
+
+; What's in the cell beside the monster in direction A (8: its own).
+.cell_beside_monster
+    JSR step_from_monster
+    JMP cell_at
+.step_from_monster
+    PHA
+    LDX work0
+    LDY work1
+    JSR to_cell
+    PLA
+
+; One step in direction A from map cell (X, Y). Returns: X, Y.
+.step
+    STY step_y                          ; (a spare byte in the stack page)
+    TAY
+    TXA
+    CLC
+    ADC direction_dx, Y
+    TAX
+    LDA step_y
+    CLC
+    ADC direction_dy, Y
+    TAY
+    RTS
+
+; Add 25, X or 1 to the score (in BCD).
+.score_25
+    LDX #25
+.add_points
+    JSR add_point
+    DEX
+    BNE add_points
+.add_point
+    SED                                 ; BCD
+    LDA score
+    CLC
+    ADC #&01
+    STA score
+    LDA score_high
+    ADC #&00
+    STA score_high
+    CLD
+    RTS
+
+; L on the title screen: ask for a mission file name (12 characters) and
+; load it.
+.ask_for_mission
+    JSR draw_title_screen
+    JSR print_inline
+    EQUB &1F, &07, &0F, &11
+    EQUB &81, &11, &02                  ; the boxes
+    EQUS "Filename ?"
+    EQUB &1F, &03, &13, &3C, &08, &08, &7F, &7F
+    EQUB &7F, &7F, &7F, &7F, &7F, &7F, &7F, &7F
+    EQUB &7F, &7F, &08, &08, &3E, &09
+    NOP
+    LDA #&00                            ; OSWORD 0: read a line
+    LDX #LO(read_line_block)
+    LDY #HI(read_line_block)
+    JSR OSWORD
+    JSR load_mission                    ; load it
+    JMP title_screen
+
+; Load the mission file named at mission_filename (":0.$.IO" unless the
+; player has asked for another) to io_start. The game has taken the DFS's
+; workspace at &0E00-&10FF (and the NMI area and extended vectors), so first
+; swap &0D00-&1CFF out of the way into the screen, put an RTI where the NMI
+; handler goes, put back the extended vectors the loader saved, and ask the
+; filing systems to claim their workspace again (OSBYTE &8F, service calls 1
+; and 2), then *DISK. Output is turned off while the file loads, then the game
+; is swapped back.
+; Clobbers: A, X, Y, work0-work3.
+.load_mission
+    JSR blank_display
+    STA furthest_level                  ; A = 0: no starting late on a new mission
+    JSR swap_memory                     ; the game's code out of the way
+    LDA #&40                            ; RTI
+    STA NMI_HANDLER                     ; NMIs are ignored until the DFS sets them up
+    LDY #&100 - LO(EXTENDED_VECTORS) - 1
+.load_mission_vectors
+    LDA saved_extended_vectors, Y       ; the extended vectors back
+    STA EXTENDED_VECTORS, Y
+    DEY
+    BPL load_mission_vectors
+    LDA #&8F                            ; service call 1: claim absolute workspace
+    LDX #&01
+    LDY #&0E
+    JSR OSBYTE
+    LDX #&02                            ; service call 2: claim private workspace
+    LDY #&10
+    JSR OSBYTE
+    LDX #LO(disk_command)
+    LDY #HI(disk_command)
+    JSR OSCLI                           ; *DISK
+    LDY #osfile_block - osfile_block_template - 1
+.load_mission_block
+    LDA osfile_block_template, Y
+    STA osfile_block, Y
+    DEY
+    BPL load_mission_block
+    LDA #21                             ; VDU 21: no output...
+    JSR OSWRCH
+    LDX #LO(osfile_block)
+    LDY #HI(osfile_block)
+    LDA #&FF
+    JSR OSFILE
+    LDA #6                              ; ...VDU 6: output again
+    JSR OSWRCH
+
+; Swap &0D00-&1CFF with &6000-&6FFF.
+.swap_memory
+    LDY #&00
+    STY work0
+    STY work2
+    LDA #HI(SCREEN)
+    STA work1
+    LDA #&0D
+    STA work3
+    LDX #&10
+.swap_memory_loop
+    LDA (work0), Y
+    PHA
+    LDA (work2), Y
+    STA (work0), Y
+    PLA
+    STA (work2), Y
+    INY
+    BNE swap_memory_loop
+    INC work1
+    INC work3
+    DEX
+    BNE swap_memory_loop
+    RTS
+
+; OSFILE's parameter block: the file name's address, load address io_start
+; (&0000242D: in the I/O processor, low byte first) and the rest unused; copied
+; to osfile_block before each load since OSFILE writes into it.
+.osfile_block_template
+    EQUW mission_filename
+    EQUD io_start, 0, 0, 0
+.osfile_block
+    SKIP osfile_block - osfile_block_template
+
+; The mission file's name, and OSWORD 0's block for reading another: up to 12
+; characters, from space to &FF.
+.mission_filename
+    EQUS ":0.$.IO     ", 13
+.read_line_block
+    EQUW mission_filename
+    EQUB 12, 32, &FF
+.disk_command
+    EQUS "DISK", 13
+
+; BRKV: an error (from the filing system, loading a mission). If it happened
+; while the game's code was swapped out (a sample of it isn't where it
+; should be), swap it back; then show the error and "Press SPACE:" on the
+; title screen, and start again from the title.
+.error_handler
+    LDA flash_palette_cycle             ; LDX #7 here means the code is in place
+    CMP #&A2
+    BNE error_handler_swap_back
+    LDA flash_palette_cycle+1
+    CMP #&07
+    BEQ error_handler_message
+.error_handler_swap_back
+    JSR swap_memory
+.error_handler_message
+    JSR flush_buffers
+    JSR draw_title_screen
+    JSR print_inline
+    EQUB &1F, &0A, &12
+    EQUS "Press"
+    EQUB &09
+    EQUS "SPACE:"
+    EQUB &1F, &05
+    EQUB &0F                            ; the error message
+    NOP
+    LDY #&01
+    LDA ERROR_POINTER
+    STA work0
+    LDA ERROR_POINTER + 1
+    STA work1
+.error_handler_print
+    LDA (work0), Y
+    BEQ error_handler_done
+    CMP #&20                            ; spaces as cursor movement, control codes left out
+    BCC error_handler_next
+    BNE error_handler_char
+    LDA #&09
+.error_handler_char
+    JSR OSWRCH
+.error_handler_next
+    INY
+    BNE error_handler_print
+    INC work1
+    BNE error_handler_print
+.error_handler_done
+    JSR wait_for_space
+    LDX #&FF                            ; the stack's no use after an error
+    TXS
+    JMP new_game
+
+; The triggers' actions, by the low nibble of their flags.
+.trigger_actions
+    EQUW action_set_cell
+    EQUW action_move_cell
+    EQUW action_set_front
+    EQUW action_set_clock
+    EQUW action_launch
+    EQUW action_explode
+    EQUW action_set_monster
+    EQUW trigger_move_monster
+    EQUW action_teleport
+    EQUW action_toggle
+    EQUW action_enable
+    EQUW action_disable
+    EQUW action_recharge
+    EQUW action_set_pushes
+    EQUW action_push
+    EQUW action_swap_keys
+
+; The player's actions, by action number: 0 nothing, P, D, M, CTRL, T,
+; Return, the four directions, and 11 (nothing, when a trigger has stopped
+; the player).
+.action_table
+    EQUW clear_keys_down
+    EQUW pick_up
+    EQUW drop
+    EQUW map_key
+    EQUW backpack_screen
+    EQUW throw
+    EQUW use
+    EQUW move
+    EQUW move
+    EQUW move
+    EQUW move
+    EQUW clear_keys_down
+
+; For each move action (7-10), the opposite one: a pipe turns the player back.
+.reverse_moves
+    EQUB &08, &07, &0A, &09
+
+; Each trigger's place, x and y, copied in by setup_level over what was here.
+.trigger_places
+    EQUB &0C, &0C, &19, &F0, &C0, &80, &33, &77
+    EQUB &FF, &FF, &FF, &00, &00, &FF, &FF, &FF
+    EQUB &CC, &88, &88, &00, &00, &FF, &FF, &FF
+    EQUB &33, &11, &11, &0F, &03, &01, &CC, &EE
+    EQUB &EE, &FF, &FF, &F0, &F0, &F0, &F0
+    EQUS "pp00"
+    EQUB &F0, &F0, &F0, &E0, &C0, &C0, &91, &C0
+    EQUB &E0, &80, &11, &77, &FF, &FF, &FF, &FF
+    EQUB &00, &00, &FF, &FF, &FF
+.main_code_end
+ENDSECTION
+
+; Past the end of what the loader copies: leftovers, never used.
+.leftover
+    EQUB &88, &88, &88, &00, &00, &FF, &FF, &FF, &00, &00, &00, &00, &00, &FF, &FF, &FF
+    EQUB &00, &00, &10, &F0, &70, &30, &98, &30, &70, &F0, &F0, &F0, &F0, &F0, &F0, &F0
+    EQUB &F0, &F0, &F0, &F0, &F0, &F0, &E0, &E0, &F0, &F0, &F0, &C0, &80, &33, &77, &77
+    EQUB &33, &33, &33, &10, &10, &CC, &EE, &EE, &EE, &EE, &EE, &F0, &F0, &F0, &70, &70
+    EQUB &70, &70, &70, &00, &00, &F0, &F0, &F0, &F0, &F0, &F0, &FF, &FF, &F0, &E0, &C0
+    EQUB &C0, &91, &91
+}
 ENDSECTION

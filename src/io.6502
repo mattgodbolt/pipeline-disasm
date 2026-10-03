@@ -1,4 +1,2069 @@
-; $.IO: &33D3 bytes at sector &076.
-SECTION io, filename="IO", org=&242D, load=&242D, exec=&0
-    INCBIN "../data/io.bin"
+; IO, the mission file: the four levels PIPELINE plays, their maps, and the
+; pictures to draw them with. The Mission Generator (MISSION) puts it together
+; from what the Level Designer and the Graphics Designer save; the game loads
+; it at io_start so that it ends at &5800. src/io.6502inc has the layout and
+; what each part means, shared with the game.
+;
+; Pictures are written as pixel rows, two characters a pixel (a MODE 5 pixel
+; is twice as wide as it is tall): "." is logical colour 0 and "1" to "3" the
+; others; each level's palette says what they look like. Maps are written a
+; row at a time, one character a cell: "." for cell type 0, then 1-9 and A-F.
+
+INCLUDE "io.6502inc"
+
+; A MODE 5 byte holds four pixels: the high bit of each pixel's colour in bits
+; 7-4 and the low bit in bits 3-0, the leftmost pixel in the top bit of each.
+; This makes a byte for each row of four pixels in m.
+FUNCTION mode5_bytes(m) = SUM(((m >> 1) AND 1) * {128, 64, 32, 16}, 1) + SUM((m AND 1) * {8, 4, 2, 1}, 1)
+
+; A picture of cols x rows character cells, from its pixel rows (two
+; characters a pixel), stored a column of cells at a time, top to bottom:
+; the order the game's sprite routines read them in. (Whole columns at a time,
+; so as not to fill the symbol dump with a frame for every byte.)
+MACRO PICTURE cols, rows, art
+    v = FIND(CODES(".123"), CODES(art))
+    ASSERT LEN(v) = rows * 8 AND LEN(FLATTEN(v)) = rows * 8 * cols * 8, "a picture needs ", rows * 8, " rows of ", cols * 8, " characters"
+    FOR cx = 0..cols-1
+        EQUB mode5_bytes(v[.., cx*8..cx*8+2..cx*8+7])
+    NEXT
+ENDMACRO
+
+; A level map from its 64 rows of 64 cells. The game wants it a column at a
+; time, two cells a byte, the even row in the high nibble: pack the rows in
+; pairs, then gather the bytes a column at a time.
+MACRO MAP rows
+    cells = FIND(CODES(".123456789ABCDEF"), CODES(rows))
+    ASSERT LEN(cells) = 64 AND LEN(FLATTEN(cells)) = 64 * 64, "a map is 64 rows of 64 cells"
+    packed = FLATTEN(cells[0..2.., ..] * 16 + cells[1..3.., ..])
+    n = 0..IO_MAP_SIZE-1
+    EQUB packed[(n MOD 32) * 64 + n DIV 32]
+ENDMACRO
+
+SECTION io, filename="IO", org=io_start, load=io_start, exec=0
+.io
+{
+.no_object_picture
+    ; A red barrel: what a cell marked as holding an object shows when none is there.
+    PICTURE 4, 4, {
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "111111............11111111111111",
+        "11......11111111......1111111111",
+        "....1111333311331111........11..",
+        "..11333333113311331111......11..",
+        "..11333333333333113311......11..",
+        "..33113333333333111133......11..",
+        "..11331111111111333333......11..",
+        "..33113333333333333333......11..",
+        "..11333333333333333333..11111111",
+        "..333333........333333..11111111",
+        "..1133..33333333..3333......11..",
+        "..33..3333....3333..33......11..",
+        "..33..33....33..33..33......11..",
+        "..33..33....333333..33......11..",
+        "..33..3333....3333..33......11..",
+        "..33..333333....33..33......11..",
+        "..33..33..33....33..33..11111111",
+        "..33..3333....3333..33..11111111",
+        "..1133..33333333..3333......11..",
+        "..333333........333333......11..",
+        "..11333333333333333333......11..",
+        "..3311333333333333..33......11..",
+        "..11333333333333......2222......",
+        "..2211331133333333....22222222..",
+        "222233113311331133..222222222222",
+        "22222222113311332222222222222222",
+        "222222222222222222222222222222..",
+        "..22222222222222222222222222....",
+        "......22222222222222............"
+    }
+    ASSERT no_object_picture = io_no_object_picture
+
+; Fifteen object names, one per object icon; icon 15, the exit, has none.
+.object_names
+    EQUS "Remote C.D.1"  ; 0
+    EQUS "Remote C.D.2"  ; 1
+    EQUS "Remote C.D.3"  ; 2
+    EQUS " Blueprints "  ; 3
+    EQUS "   Mallet   "  ; 4
+    EQUS "  Spanner   "  ; 5
+    EQUS "Screwdriver "  ; 6
+    EQUS "   Magnet   "  ; 7
+    EQUS "Space Burger"  ; 8
+    EQUS "Jovian Wine "  ; 9
+    EQUS "Fire Blanket"  ; 10
+    EQUS " Laser Gun  "  ; 11
+    EQUS "Extinguisher"  ; 12
+    EQUS " Detonator  "  ; 13
+    EQUS " Explosives "  ; 14
+    ASSERT object_names = io_object_names
+
+; Printed on the backpack screen (CTRL) as the level's goal.
+.mission_text
+    EQUB 31, 18, 16, "Collect", 9, "the", 9   ; TAB(18, 16) "Collect the"
+    EQUB 31, 14, 17, 9, 9, "Sulphur!", 9, 9   ; TAB(14, 17) "Sulphur!"
+    ASSERT mission_text = io_mission_text
+
+.attrs
+    EQUB 15                                  ; the clock's rate (MISSION shows it less 6: 9)
+    EQUB 4                                   ; the map works on levels 1 to 4
+    EQUB 2                                   ; the backpack holds 3
+    EQUB 6                                   ; objects can be thrown 6 cells
+    EQUB &FF                                 ; locked: the last level shows an entry code
+    ASSERT attrs = io_attrs
+
+; The levels' fields: each field is four entries, one per level.
+.edit_code_high
+    EQUB &CD, &A5, &09, &11
+    ASSERT edit_code_high = io_edit_code_high
+.edit_code_middle
+    EQUB &DC, &A5, &A4, &C0
+    ASSERT edit_code_middle = io_edit_code_middle
+.edit_code_low
+    EQUB &9C, &80, &D0, &8C
+    ASSERT edit_code_low = io_edit_code_low
+
+; VDU 19 for each logical colour: logical << 4 | physical.
+.palettes
+    EQUB &00, &14, &23, &31                  ; level 1
+    EQUB &00, &14, &27, &31                  ; level 2
+    EQUB &00, &14, &23, &35                  ; level 3
+    EQUB &00, &14, &26, &31                  ; level 4
+    ASSERT palettes = io_palettes
+
+; Each level's setup: start (the view's top left cell; the player starts 4
+; cells further in each way), how many cell 7s to collect, the clock, the
+; exit's cell, monsters' food (low nibble: the cell type they eat; high:
+; what it becomes), and the second-picture bits for cell types A, 7, 8, 5.
+.level_setup
+    EQUB &3A, &1F, 124, 250, &1F, &1C, &7A, %00000111  ; level 1
+    EQUB &32, &13, 84, 250, &3F, &3F, &7A, %00000101  ; level 2
+    EQUB &1C, &3B, 250, 240, &20, &2B, &AA, %01110111  ; level 3
+    EQUB &23, &21, 85, 180, &0E, &0A, &7A, %11110100  ; level 4
+    ASSERT level_setup = io_level_setup
+
+; Objects: cell x, y, icon (and name), and its uses (bits 0-5; 32 and over
+; never run out) and flags (bit 6: it vanishes when used up; bit 7: it does
+; nothing when thrown). Object n has triggers n, n + 8, n + 16 and n + 24.
+.level_objects
+    ; level 1
+    EQUB 32, 30,  0, &82      ; 0: Remote C.D.1; uses: 2, no triggers thrown
+    EQUB 57, 15,  3, &A2      ; 1: Blueprints; uses: any, no triggers thrown
+    EQUB 24, 30,  8, &C1      ; 2: Space Burger; uses: 1, vanishes, no triggers thrown
+    EQUB 31, 47, 13, &81      ; 3: Detonator; uses: 1, no triggers thrown
+    EQUB 12, 48,  5, &41      ; 4: Spanner; uses: 1, vanishes
+    EQUB 38, 46,  4, &0A      ; 5: Mallet; uses: 10
+    EQUB 54, 36,  2, &83      ; 6: Remote C.D.3; uses: 3, no triggers thrown
+    EQUB 30, 38, 14, &E1      ; 7: Explosives; uses: any, vanishes, no triggers thrown
+    ; level 2
+    EQUB 35, 37, 14, &41      ; 0: Explosives; uses: 1, vanishes
+    EQUB 22, 61,  0, &81      ; 1: Remote C.D.1; uses: 1, no triggers thrown
+    EQUB 17, 59,  3, &C1      ; 2: Blueprints; uses: 1, vanishes, no triggers thrown
+    EQUB 22, 22,  1, &C1      ; 3: Remote C.D.2; uses: 1, vanishes, no triggers thrown
+    EQUB 42, 38,  2, &81      ; 4: Remote C.D.3; uses: 1, no triggers thrown
+    EQUB 44, 20, 14, &41      ; 5: Explosives; uses: 1, vanishes
+    EQUB 15, 48, 10, &81      ; 6: Fire Blanket; uses: 1, no triggers thrown
+    EQUB 10,  0, 12, &88      ; 7: Extinguisher; uses: 8, no triggers thrown
+    ; level 3
+    EQUB 32, 47,  0, &A0      ; 0: Remote C.D.1; uses: any, no triggers thrown
+    EQUB 43, 22,  3, &83      ; 1: Blueprints; uses: 3, no triggers thrown
+    EQUB 13, 18,  1, &A0      ; 2: Remote C.D.2; uses: any, no triggers thrown
+    EQUB 43, 37,  5, &A0      ; 3: Spanner; uses: any, no triggers thrown
+    EQUB 19, 30,  7, &41      ; 4: Magnet; uses: 1, vanishes
+    EQUB 41,  8,  9, &A0      ; 5: Jovian Wine; uses: any, no triggers thrown
+    EQUB 27, 60,  2, &A0      ; 6: Remote C.D.3; uses: any, no triggers thrown
+    EQUB  0, 63,  4, &04      ; 7: Mallet; uses: 4
+    ; level 4
+    EQUB 37, 39,  2, &A1      ; 0: Remote C.D.3; uses: any, no triggers thrown
+    EQUB 27, 32,  1, &A0      ; 1: Remote C.D.2; uses: any, no triggers thrown
+    EQUB 33, 55,  0, &A0      ; 2: Remote C.D.1; uses: any, no triggers thrown
+    EQUB 55, 56,  6, &87      ; 3: Screwdriver; uses: 7, no triggers thrown
+    EQUB  2, 44,  9, &49      ; 4: Jovian Wine; uses: 9, vanishes
+    EQUB 45, 13,  4, &03      ; 5: Mallet; uses: 3
+    EQUB 10, 37, 14, &41      ; 6: Explosives; uses: 1, vanishes
+    EQUB 11, 63, 11, &A6      ; 7: Laser Gun; uses: any, no triggers thrown
+    ASSERT level_objects = io_level_objects
+
+; Monsters: x, y in character cells (4 to a map cell), direction (0-3 left,
+; right, up, down; 4-7 stuck; 8 and up not out), and four 2-bit choices of
+; which way to try next, from the bottom: back, on, clockwise, anticlockwise.
+.level_monsters
+    ; level 1
+    EQUB &B4, &80, 2, %00111001   ; cell 45, 32, up; tries on, cw, acw, back
+    EQUB &20, &7C, 1, %00100111   ; cell 8, 31, right; tries acw, on, cw, back
+    EQUB &04, &14, 2, %00111001   ; cell 1, 5, up; tries on, cw, acw, back
+    EQUB &3C, &0C, 3, %00111001   ; cell 15, 3, down; tries on, cw, acw, back
+    ; level 2
+    EQUB &54, &78, 0, %00100111   ; cell 21, 30, left; tries acw, on, cw, back
+    EQUB &4C, &A4, 1, %10110001   ; cell 19, 41, right; tries on, back, acw, cw
+    EQUB &38, &F4, 3, %00100111   ; cell 14, 61, down; tries acw, on, cw, back
+    EQUB &70, &50, 3, %00111001   ; cell 28, 20, down; tries on, cw, acw, back
+    ; level 3
+    EQUB &64, &1C, 1, %01010101   ; cell 25, 7, right; tries on, on, on, on
+    EQUB &1C, &3C, 2, %00100111   ; cell 7, 15, up; tries acw, on, cw, back
+    EQUB &44, &28, 2, %00110110   ; cell 17, 10, up; tries cw, on, acw, back
+    EQUB &04, &E0, 1, %00111001   ; cell 1, 56, right; tries on, cw, acw, back
+    ; level 4
+    EQUB &94, &D8, 2, %00110110   ; cell 37, 54, up; tries cw, on, acw, back
+    EQUB &8C, &44, 3, %00101101   ; cell 35, 17, down; tries on, acw, cw, back
+    EQUB &28, &4C, 2, %00111101   ; cell 10, 19, up; tries on, acw, acw, back
+    EQUB &30, &98, 2, %00110110   ; cell 12, 38, up; tries cw, on, acw, back
+    ASSERT level_monsters = io_level_monsters
+
+; Triggers' flags: bits 0-3 the action; bit 4: it can fire again; bit 5:
+; disabled (as it is once fired, without bit 4); bit 6: only once
+; everything's collected; bit 7: it needs an object used or thrown, rather
+; than the player walking on.
+.level_trigger_flags
+    ; level 1
+    EQUB &91    ; 0: move a cell, with an object, again
+    EQUB &98    ; 1: teleport, with an object, again
+    EQUB &9D    ; 2: give pushes, with an object, again
+    EQUB &85    ; 3: blow up an object, with an object
+    EQUB &80    ; 4: set a cell, with an object
+    EQUB &92    ; 5: set the cell in front, with an object, again
+    EQUB &AF    ; 6: swap the keys, with an object, disabled
+    EQUB &1A    ; 7: enable triggers, walked on, again
+    EQUB &18    ; 8: teleport, walked on, again
+    EQUB &13    ; 9: set the clock, walked on, again
+    EQUB &80    ; 10: set a cell, with an object
+    EQUB &00    ; 11: set a cell, walked on
+    EQUB &80    ; 12: set a cell, with an object
+    EQUB &18    ; 13: teleport, walked on, again
+    EQUB &1A    ; 14: enable triggers, walked on, again
+    EQUB &3E    ; 15: push the cell in front, walked on, disabled, again
+    EQUB &1B    ; 16: disable triggers, walked on, again
+    EQUB &00    ; 17: set a cell, walked on
+    EQUB &04    ; 18: throw an object, walked on
+    EQUB &18    ; 19: teleport, walked on, again
+    EQUB &01    ; 20: move a cell, walked on
+    EQUB &38    ; 21: teleport, walked on, disabled, again
+    EQUB &80    ; 22: set a cell, with an object
+    EQUB &00    ; 23: set a cell, walked on
+    EQUB &81    ; 24: move a cell, with an object
+    EQUB &07    ; 25: move a monster, walked on
+    EQUB &00    ; 26: set a cell, walked on
+    EQUB &00    ; 27: set a cell, walked on
+    EQUB &00    ; 28: set a cell, walked on
+    EQUB &00    ; 29: set a cell, walked on
+    EQUB &80    ; 30: set a cell, with an object
+    EQUB &00    ; 31: set a cell, walked on
+    ; level 2
+    EQUB &85    ; 0: blow up an object, with an object
+    EQUB &80    ; 1: set a cell, with an object
+    EQUB &82    ; 2: set the cell in front, with an object
+    EQUB &80    ; 3: set a cell, with an object
+    EQUB &80    ; 4: set a cell, with an object
+    EQUB &85    ; 5: blow up an object, with an object
+    EQUB &96    ; 6: set a monster's way, with an object, again
+    EQUB &9C    ; 7: recharge an object, with an object, again
+    EQUB &01    ; 8: move a cell, walked on
+    EQUB &00    ; 9: set a cell, walked on
+    EQUB &00    ; 10: set a cell, walked on
+    EQUB &1B    ; 11: disable triggers, walked on, again
+    EQUB &03    ; 12: set the clock, walked on
+    EQUB &01    ; 13: move a cell, walked on
+    EQUB &17    ; 14: move a monster, walked on, again
+    EQUB &17    ; 15: move a monster, walked on, again
+    EQUB &1A    ; 16: enable triggers, walked on, again
+    EQUB &3E    ; 17: push the cell in front, walked on, disabled, again
+    EQUB &1B    ; 18: disable triggers, walked on, again
+    EQUB &01    ; 19: move a cell, walked on
+    EQUB &01    ; 20: move a cell, walked on
+    EQUB &1A    ; 21: enable triggers, walked on, again
+    EQUB &3E    ; 22: push the cell in front, walked on, disabled, again
+    EQUB &1B    ; 23: disable triggers, walked on, again
+    EQUB &32    ; 24: set the cell in front, walked on, disabled, again
+    EQUB &1A    ; 25: enable triggers, walked on, again
+    EQUB &1B    ; 26: disable triggers, walked on, again
+    EQUB &1B    ; 27: disable triggers, walked on, again
+    EQUB &17    ; 28: move a monster, walked on, again
+    EQUB &1A    ; 29: enable triggers, walked on, again
+    EQUB &1B    ; 30: disable triggers, walked on, again
+    EQUB &1B    ; 31: disable triggers, walked on, again
+    ; level 3
+    EQUB &80    ; 0: set a cell, with an object
+    EQUB &98    ; 1: teleport, with an object, again
+    EQUB &80    ; 2: set a cell, with an object
+    EQUB &81    ; 3: move a cell, with an object
+    EQUB &AE    ; 4: push the cell in front, with an object, disabled
+    EQUB &83    ; 5: set the clock, with an object
+    EQUB &C2    ; 6: set the cell in front, with an object, all collected
+    EQUB &92    ; 7: set the cell in front, with an object, again
+    EQUB &1B    ; 8: disable triggers, walked on, again
+    EQUB &07    ; 9: move a monster, walked on
+    EQUB &00    ; 10: set a cell, walked on
+    EQUB &1B    ; 11: disable triggers, walked on, again
+    EQUB &1A    ; 12: enable triggers, walked on, again
+    EQUB &8D    ; 13: give pushes, with an object
+    EQUB &00    ; 14: set a cell, walked on
+    EQUB &1F    ; 15: swap the keys, walked on, again
+    EQUB &1A    ; 16: enable triggers, walked on, again
+    EQUB &02    ; 17: set the cell in front, walked on
+    EQUB &1B    ; 18: disable triggers, walked on, again
+    EQUB &34    ; 19: throw an object, walked on, disabled, again
+    EQUB &1A    ; 20: enable triggers, walked on, again
+    EQUB &1B    ; 21: disable triggers, walked on, again
+    EQUB &32    ; 22: set the cell in front, walked on, disabled, again
+    EQUB &00    ; 23: set a cell, walked on
+    EQUB &07    ; 24: move a monster, walked on
+    EQUB &00    ; 25: set a cell, walked on
+    EQUB &07    ; 26: move a monster, walked on
+    EQUB &07    ; 27: move a monster, walked on
+    EQUB &19    ; 28: toggle the cell in front, walked on, again
+    EQUB &02    ; 29: set the cell in front, walked on
+    EQUB &1B    ; 30: disable triggers, walked on, again
+    EQUB &32    ; 31: set the cell in front, walked on, disabled, again
+    ; level 4
+    EQUB &82    ; 0: set the cell in front, with an object
+    EQUB &82    ; 1: set the cell in front, with an object
+    EQUB &82    ; 2: set the cell in front, with an object
+    EQUB &99    ; 3: toggle the cell in front, with an object, again
+    EQUB &93    ; 4: set the clock, with an object, again
+    EQUB &92    ; 5: set the cell in front, with an object, again
+    EQUB &85    ; 6: blow up an object, with an object
+    EQUB &97    ; 7: move a monster, with an object, again
+    EQUB &82    ; 8: set the cell in front, with an object
+    EQUB &4A    ; 9: enable triggers, walked on, all collected
+    EQUB &23    ; 10: set the clock, walked on, disabled
+    EQUB &6A    ; 11: enable triggers, walked on, all collected, disabled
+    EQUB &20    ; 12: set a cell, walked on, disabled
+    EQUB &23    ; 13: set the clock, walked on, disabled
+    EQUB &00    ; 14: set a cell, walked on
+    EQUB &00    ; 15: set a cell, walked on
+    EQUB &32    ; 16: set the cell in front, walked on, disabled, again
+    EQUB &0A    ; 17: enable triggers, walked on
+    EQUB &0B    ; 18: disable triggers, walked on
+    EQUB &03    ; 19: set the clock, walked on
+    EQUB &00    ; 20: set a cell, walked on
+    EQUB &47    ; 21: move a monster, walked on, all collected
+    EQUB &00    ; 22: set a cell, walked on
+    EQUB &0D    ; 23: give pushes, walked on
+    EQUB &82    ; 24: set the cell in front, with an object
+    EQUB &82    ; 25: set the cell in front, with an object
+    EQUB &82    ; 26: set the cell in front, with an object
+    EQUB &2D    ; 27: give pushes, walked on, disabled
+    EQUB &92    ; 28: set the cell in front, with an object, again
+    EQUB &0A    ; 29: enable triggers, walked on
+    EQUB &20    ; 30: set a cell, walked on, disabled
+    EQUB &01    ; 31: move a cell, walked on
+    ASSERT level_trigger_flags = io_level_trigger_flags
+
+; Where each trigger is: cell x, y (negative: anywhere on that axis).
+.level_trigger_places
+    ; level 1
+    EQUB &1F, &20    ; 0: 31, 32
+    EQUB &80, &80    ; 1: any, any
+    EQUB &80, &80    ; 2: any, any
+    EQUB &1F, &AF    ; 3: 31, any
+    EQUB &06, &2E    ; 4: 6, 46
+    EQUB &80, &80    ; 5: any, any
+    EQUB &80, &80    ; 6: any, any
+    EQUB &26, &09    ; 7: 38, 9
+    EQUB &16, &3D    ; 8: 22, 61
+    EQUB &1E, &21    ; 9: 30, 33
+    EQUB &06, &2E    ; 10: 6, 46
+    EQUB &1F, &30    ; 11: 31, 48
+    EQUB &06, &2E    ; 12: 6, 46
+    EQUB &98, &3D    ; 13: any, 61
+    EQUB &01, &3B    ; 14: 1, 59
+    EQUB &80, &80    ; 15: any, any
+    EQUB &1F, &1E    ; 16: 31, 30
+    EQUB &1F, &30    ; 17: 31, 48
+    EQUB &0B, &2E    ; 18: 11, 46
+    EQUB &13, &3D    ; 19: 19, 61
+    EQUB &33, &02    ; 20: 51, 2
+    EQUB &80, &80    ; 21: any, any
+    EQUB &03, &10    ; 22: 3, 16
+    EQUB &13, &35    ; 23: 19, 53
+    EQUB &18, &34    ; 24: 24, 52
+    EQUB &31, &19    ; 25: 49, 25
+    EQUB &29, &04    ; 26: 41, 4
+    EQUB &2B, &05    ; 27: 43, 5
+    EQUB &2D, &05    ; 28: 45, 5
+    EQUB &2F, &04    ; 29: 47, 4
+    EQUB &28, &09    ; 30: 40, 9
+    EQUB &3B, &00    ; 31: 59, 0
+    ; level 2
+    EQUB &13, &3F    ; 0: 19, 63
+    EQUB &1A, &2B    ; 1: 26, 43
+    EQUB &14, &27    ; 2: 20, 39
+    EQUB &3D, &27    ; 3: 61, 39
+    EQUB &16, &20    ; 4: 22, 32
+    EQUB &32, &1F    ; 5: 50, 31
+    EQUB &BD, &BF    ; 6: any, any
+    EQUB &BF, &BD    ; 7: any, any
+    EQUB &15, &2B    ; 8: 21, 43
+    EQUB &24, &2A    ; 9: 36, 42
+    EQUB &1E, &2E    ; 10: 30, 46
+    EQUB &36, &17    ; 11: 54, 23
+    EQUB &29, &1D    ; 12: 41, 29
+    EQUB &32, &1D    ; 13: 50, 29
+    EQUB &0D, &07    ; 14: 13, 7
+    EQUB &1D, &1D    ; 15: 29, 29
+    EQUB &1D, &1D    ; 16: 29, 29
+    EQUB &A0, &A0    ; 17: any, any
+    EQUB &1D, &1D    ; 18: 29, 29
+    EQUB &3A, &0F    ; 19: 58, 15
+    EQUB &38, &07    ; 20: 56, 7
+    EQUB &25, &1F    ; 21: 37, 31
+    EQUB &A0, &A0    ; 22: any, any
+    EQUB &25, &1F    ; 23: 37, 31
+    EQUB &A0, &A0    ; 24: any, any
+    EQUB &04, &39    ; 25: 4, 57
+    EQUB &07, &13    ; 26: 7, 19
+    EQUB &2A, &13    ; 27: 42, 19
+    EQUB &28, &28    ; 28: 40, 40
+    EQUB &28, &28    ; 29: 40, 40
+    EQUB &28, &28    ; 30: 40, 40
+    EQUB &36, &17    ; 31: 54, 23
+    ; level 3
+    EQUB &25, &33    ; 0: 37, 51
+    EQUB &80, &80    ; 1: any, any
+    EQUB &2E, &18    ; 2: 46, 24
+    EQUB &2B, &25    ; 3: 43, 37
+    EQUB &80, &80    ; 4: any, any
+    EQUB &80, &80    ; 5: any, any
+    EQUB &20, &29    ; 6: 32, 41
+    EQUB &80, &80    ; 7: any, any
+    EQUB &20, &0E    ; 8: 32, 14
+    EQUB &1D, &0E    ; 9: 29, 14
+    EQUB &1D, &0E    ; 10: 29, 14
+    EQUB &20, &12    ; 11: 32, 18
+    EQUB &20, &14    ; 12: 32, 20
+    EQUB &A0, &AC    ; 13: any, any
+    EQUB &20, &11    ; 14: 32, 17
+    EQUB &2F, &19    ; 15: 47, 25
+    EQUB &20, &09    ; 16: 32, 9
+    EQUB &85, &2F    ; 17: any, 47
+    EQUB &20, &09    ; 18: 32, 9
+    EQUB &A0, &8A    ; 19: any, any
+    EQUB &36, &36    ; 20: 54, 54
+    EQUB &36, &36    ; 21: 54, 54
+    EQUB &80, &80    ; 22: any, any
+    EQUB &0B, &0E    ; 23: 11, 14
+    EQUB &3B, &29    ; 24: 59, 41
+    EQUB &23, &0E    ; 25: 35, 14
+    EQUB &3D, &27    ; 26: 61, 39
+    EQUB &3F, &27    ; 27: 63, 39
+    EQUB &32, &14    ; 28: 50, 20
+    EQUB &30, &3D    ; 29: 48, 61
+    EQUB &20, &3F    ; 30: 32, 63
+    EQUB &A0, &AC    ; 31: any, any
+    ; level 4
+    EQUB &2F, &31    ; 0: 47, 49
+    EQUB &25, &32    ; 1: 37, 50
+    EQUB &20, &13    ; 2: 32, 19
+    EQUB &80, &80    ; 3: any, any
+    EQUB &80, &80    ; 4: any, any
+    EQUB &87, &9A    ; 5: any, any
+    EQUB &80, &80    ; 6: any, any
+    EQUB &3A, &88    ; 7: 58, any
+    EQUB &01, &03    ; 8: 1, 3
+    EQUB &9D, &8C    ; 9: any, any
+    EQUB &9D, &8C    ; 10: any, any
+    EQUB &80, &80    ; 11: any, any
+    EQUB &80, &80    ; 12: any, any
+    EQUB &80, &80    ; 13: any, any
+    EQUB &1C, &20    ; 14: 28, 32
+    EQUB &1B, &18    ; 15: 27, 24
+    EQUB &80, &80    ; 16: any, any
+    EQUB &14, &15    ; 17: 20, 21
+    EQUB &16, &0C    ; 18: 22, 12
+    EQUB &05, &16    ; 19: 5, 22
+    EQUB &0A, &12    ; 20: 10, 18
+    EQUB &0E, &09    ; 21: 14, 9
+    EQUB &3F, &1C    ; 22: 63, 28
+    EQUB &3F, &19    ; 23: 63, 25
+    EQUB &3D, &28    ; 24: 61, 40
+    EQUB &2F, &34    ; 25: 47, 52
+    EQUB &3B, &26    ; 26: 59, 38
+    EQUB &27, &A5    ; 27: 39, any
+    EQUB &80, &80    ; 28: any, any
+    EQUB &3F, &1C    ; 29: 63, 28
+    EQUB &96, &AB    ; 30: any, any
+    EQUB &32, &29    ; 31: 50, 41
+    ASSERT level_trigger_places = io_level_trigger_places
+
+; Each trigger's arguments: A, X and Y for its action, and a condition: bit 7,
+; the player (or a thrown object) must face direction bits 4-5; bit 6, the
+; cell faced (or landed against) must be type bits 0-3. Triggers 0-15's are
+; one field, 16-31's the next.
+.level_trigger_args_0
+    ; level 1
+    EQUB &01, &1F, &21, &F9    ; 0; facing down and at cell 9
+    EQUB &00, &1B, &1A, &00    ; 1
+    EQUB &0F, &00, &00, &00    ; 2
+    EQUB &07, &00, &1C, &48    ; 3; at cell 8
+    EQUB &0C, &07, &30, &CD    ; 4; facing left and at cell D
+    EQUB &00, &00, &00, &46    ; 5; at cell 6
+    EQUB &15, &15, &15, &00    ; 6
+    EQUB &15, &15, &15, &A0    ; 7; facing up
+    EQUB &00, &2B, &1B, &90    ; 8; facing right
+    EQUB &01, &FA, &00, &80    ; 9; facing left
+    EQUB &0C, &07, &30, &CD    ; 10; facing left and at cell D
+    EQUB &08, &1F, &31, &A0    ; 11; facing up
+    EQUB &0C, &09, &30, &CD    ; 12; facing left and at cell D
+    EQUB &00, &1B, &1A, &EA    ; 13; facing up and at cell A
+    EQUB &0F, &0F, &0F, &00    ; 14
+    EQUB &02, &00, &00, &5E    ; 15; at cell E
+    ; level 2
+    EQUB &00, &18, &00, &2F    ; 0
+    EQUB &00, &1A, &2A, &E9    ; 1; facing up and at cell 9
+    EQUB &0A, &A0, &A0, &FF    ; 2; facing down and at cell F
+    EQUB &00, &3E, &27, &D9    ; 3; facing right and at cell 9
+    EQUB &0C, &15, &20, &C9    ; 4; facing left and at cell 9
+    EQUB &05, &A0, &14, &F8    ; 5; facing down and at cell 8
+    EQUB &03, &00, &00, &3E    ; 6
+    EQUB &06, &3F, &01, &39    ; 7
+    EQUB &03, &14, &28, &D6    ; 8; facing right and at cell 6
+    EQUB &0C, &23, &28, &80    ; 9; facing left
+    EQUB &0D, &21, &2F, &A0    ; 10; facing up
+    EQUB &06, &06, &06, &2F    ; 11
+    EQUB &01, &BB, &15, &06    ; 12
+    EQUB &07, &2F, &1F, &BF    ; 13; facing down
+    EQUB &38, &39, &15, &96    ; 14; facing right
+    EQUB &80, &36, &52, &80    ; 15; facing left
+    ; level 3
+    EQUB &00, &26, &33, &D9    ; 0; facing right and at cell 9
+    EQUB &FF, &1C, &0A, &09    ; 1
+    EQUB &00, &2E, &17, &EA    ; 2; facing up and at cell A
+    EQUB &00, &2B, &24, &E2    ; 3; facing up and at cell 2
+    EQUB &00, &2A, &0F, &45    ; 4; at cell 5
+    EQUB &01, &E6, &00, &06    ; 5
+    EQUB &00, &1C, &3B, &F9    ; 6; facing down and at cell 9
+    EQUB &00, &14, &20, &45    ; 7; at cell 5
+    EQUB &13, &16, &1F, &00    ; 8
+    EQUB &2C, &01, &4A, &80    ; 9; facing left
+    EQUB &0A, &20, &0B, &8A    ; 10; facing left
+    EQUB &1F, &1F, &1F, &A1    ; 11; facing up
+    EQUB &1F, &1F, &1F, &B9    ; 12; facing down
+    EQUB &17, &C8, &00, &29    ; 13
+    EQUB &0A, &1D, &0E, &B0    ; 14; facing down
+    EQUB &0A, &0B, &08, &1A    ; 15
+    ; level 4
+    EQUB &00, &00, &00, &C9    ; 0; facing left and at cell 9
+    EQUB &0F, &00, &00, &F9    ; 1; facing down and at cell 9
+    EQUB &0C, &00, &00, &D9    ; 2; facing right and at cell 9
+    EQUB &0C, &0D, &00, &00    ; 3
+    EQUB &01, &50, &00, &40    ; 4; at cell 0
+    EQUB &00, &00, &00, &46    ; 5; at cell 6
+    EQUB &06, &00, &18, &00    ; 6
+    EQUB &E8, &55, &07, &FA    ; 7; facing down and at cell A
+    EQUB &00, &0A, &0B, &D9    ; 8; facing right and at cell 9
+    EQUB &0A, &0B, &1E, &0F    ; 9
+    EQUB &00, &FA, &27, &0F    ; 10
+    EQUB &0C, &0D, &0C, &00    ; 11
+    EQUB &00, &16, &0C, &00    ; 12
+    EQUB &00, &FA, &A0, &00    ; 13
+    EQUB &07, &1B, &1F, &C0    ; 14; facing left and at cell 0
+    EQUB &0D, &1B, &17, &EA    ; 15; facing up and at cell A
+    ASSERT level_trigger_args_0 = io_level_trigger_args_0
+
+.level_trigger_args_1
+    ; level 1
+    EQUB &0F, &15, &0F, &00    ; 16
+    EQUB &08, &1F, &2F, &E0    ; 17; facing up and at cell 0
+    EQUB &04, &09, &39, &8D    ; 18; facing left
+    EQUB &00, &22, &06, &90    ; 19; facing right
+    EQUB &01, &31, &00, &A0    ; 20; facing up
+    EQUB &00, &25, &03, &4E    ; 21; at cell E
+    EQUB &00, &04, &10, &D9    ; 22; facing right and at cell 9
+    EQUB &0C, &13, &2F, &B0    ; 23; facing down
+    EQUB &00, &18, &35, &F9    ; 24; facing down and at cell 9
+    EQUB &A8, &B1, &25, &A0    ; 25; facing up
+    EQUB &0A, &29, &00, &90    ; 26; facing right
+    EQUB &0A, &2B, &00, &90    ; 27; facing right
+    EQUB &0A, &2D, &00, &90    ; 28; facing right
+    EQUB &0A, &2F, &00, &90    ; 29; facing right
+    EQUB &00, &28, &0A, &F9    ; 30; facing down and at cell 9
+    EQUB &09, &3D, &02, &90    ; 31; facing right
+    ; level 2
+    EQUB &11, &11, &11, &80    ; 16; facing left
+    EQUB &04, &A0, &A0, &66    ; 17; at cell 6
+    EQUB &11, &11, &11, &90    ; 18; facing right
+    EQUB &01, &37, &11, &A0    ; 19; facing up
+    EQUB &07, &39, &09, &A0    ; 20; facing up
+    EQUB &16, &16, &16, &A0    ; 21; facing up
+    EQUB &08, &A0, &A0, &6D    ; 22; at cell D
+    EQUB &16, &16, &16, &B0    ; 23; facing down
+    EQUB &0D, &A0, &A0, &60    ; 24; at cell 0
+    EQUB &18, &18, &18, &B0    ; 25; facing down
+    EQUB &18, &18, &18, &A0    ; 26; facing up
+    EQUB &16, &16, &16, &A0    ; 27; facing up
+    EQUB &A8, &39, &B1, &B0    ; 28; facing down
+    EQUB &06, &06, &06, &B0    ; 29; facing down
+    EQUB &06, &06, &06, &A0    ; 30; facing up
+    EQUB &16, &18, &11, &20    ; 31
+    ; level 3
+    EQUB &13, &04, &13, &A0    ; 16; facing up
+    EQUB &0D, &0D, &FF, &FC    ; 17; facing down and at cell C
+    EQUB &13, &04, &13, &B0    ; 18; facing down
+    EQUB &04, &1C, &3F, &70    ; 19; at cell 0
+    EQUB &16, &16, &16, &B7    ; 20; facing down
+    EQUB &16, &16, &16, &A7    ; 21; facing up
+    EQUB &0A, &FF, &FF, &47    ; 22; at cell 7
+    EQUB &0D, &0C, &0E, &CD    ; 23; facing left and at cell D
+    EQUB &EF, &B1, &FA, &9A    ; 24; facing right
+    EQUB &0A, &20, &11, &D0    ; 25; facing right and at cell 0
+    EQUB &F7, &B1, &FA, &D0    ; 26; facing right and at cell 0
+    EQUB &FF, &B1, &FA, &9A    ; 27; facing right
+    EQUB &0E, &00, &0E, &98    ; 28; facing right
+    EQUB &0B, &16, &1F, &5C    ; 29; at cell C
+    EQUB &1F, &16, &1F, &3F    ; 30
+    EQUB &06, &2E, &27, &60    ; 31; at cell 0
+    ; level 4
+    EQUB &00, &00, &00, &48    ; 16; at cell 8
+    EQUB &10, &10, &10, &BD    ; 17; facing down
+    EQUB &10, &10, &10, &80    ; 18; facing left
+    EQUB &01, &0F, &00, &A0    ; 19; facing up
+    EQUB &0D, &09, &12, &90    ; 20; facing right
+    EQUB &1C, &27, &1D, &FE    ; 21; facing down and at cell E
+    EQUB &0C, &3F, &1D, &ED    ; 22; facing up and at cell D
+    EQUB &36, &00, &00, &A0    ; 23; facing up
+    EQUB &00, &00, &00, &E9    ; 24; facing up and at cell 9
+    EQUB &00, &00, &00, &C9    ; 25; facing left and at cell 9
+    EQUB &00, &00, &00, &D9    ; 26; facing right and at cell 9
+    EQUB &00, &00, &00, &00    ; 27
+    EQUB &00, &00, &00, &4E    ; 28; at cell E
+    EQUB &1B, &1B, &1B, &ED    ; 29; facing up and at cell D
+    EQUB &00, &1C, &0C, &38    ; 30
+    EQUB &00, &31, &2A, &DD    ; 31; facing right and at cell D
+    ASSERT level_trigger_args_1 = io_level_trigger_args_1
+
+.maps
+    ; level 1
+    MAP {
+        "A8.AAAAAAA88888AAAAAAA8AAAA8AAA.CCB..57..........9..CCCCCCCCCCCB",
+        "A........8.............887.....87.D215DCCCCCCCCCCD..333EE...E71D",
+        "...AAAAA.8.7.8888.2121.8..8.88.887D435D....6...7.D1D......7E..1D",
+        "A.A1552A.8..7..E8.3434.8..8.88....D..5D..E.7.A.6.D1D.....E..E.1D",
+        "A.A5555A.8....8.8......8..8.88..8.D215D..7.6.E...D1DEE..E...E.1D",
+        "AEA5555A.888888.8888...8..8.88..8.D434DC.E...7.6..1D.....E....1D",
+        "A.A35548...........888.7..8...888.D..ACDCCCCCCCCCC1D.....E..E.1D",
+        "A.AA8AA88.88888.88.....8..8.....8.D212................E...E...CB",
+        "8....8.......88.88.7.7.8..8788..7.D4357..D888D888D88E..EE....EA8",
+        "A878....888............8..8788....D..4.8.D......F7FA8EAAA8AE888.",
+        "A888.8878888..8.88.7.788..88888.8.D21..89D888888888BCCCCCCCCCD.D",
+        "8..........88.8.88.8.888...8877.8.D43CC87BCB.......D.........D.C",
+        "8.12..AAAA.88......8.8.....8878.7.D..D.CCCCCCCCCCCCBBCCCCCCCCB..",
+        "8.34.AAA.A...7...888.8.888.8888.8.D21..BCCCCB.......D...1..2.D.D",
+        "8....8AAD8.............778........D..D.D..BCCCCCCCCCB..14..32BCB",
+        "A8..87AADA.AAAA..88878888888777.88BCCB6D66DDD..1.2....141F.232..",
+        "A77.97AADA.7..8.................88...D....DDD.14D32..1414..3232.",
+        "A...AAAADAAAAAA878AAAA8.87CCCCCB88.BCB.7..CCB1.CBC7554141..23232",
+        "AAAAAABCBDCCCCCCCCCCCCCDCCCCCCCCCCBDBC....DD1555D5555.414..323.5",
+        "ABCCCCDCCCCCCCCCCBAAABCDCCCCCCCCCCDBD6....DD54..D3555..........5",
+        "ADAAAAD.....DAAAADAAAD.....DC..C.CDCB6D6C6DD52....558.888888.88A",
+        "A.CCCCB.CCCDCCCCCDCCCB.BCCCCCCCCC.BCCCDCCBDD55555.558.8......8.A",
+        "A88888A8888.DCCCCCCCCB.D.......D..BCCCB.DDDD5.765.558.8.7777.8.A",
+        "8..7..8.8..8....8D4.3D.BCCCCCCCDCCDCCCCBDDDD5.6...558.8.7..7.8.A",
+        "8.888.8....8..8.8D...D.DEEEE.......8888DDDDD5...5.558.8.7777.8.A",
+        "8.8...88..8.....8D...D.DEE...........88DDDBC.5555.558........8.A",
+        "8.8.888.....77..8D...D.DE.............8DDDDD57.7..558.88888888.A",
+        "8.8...8.778....88D...D.DE..9.......A..8DDDDD5FFFFA558.CCCCCCB8.A",
+        "8.888.8.......8.8D2.1D.D......1F2......DDDDD.77.795588888888D8.A",
+        "8.8.F.8...7.8...8BCB8DDD.....14.32......DDDDD.....558......8D8.A",
+        "8.8.88888.......552D5DDDF....5..F5.....CDDDBD..7..558.8.77.8D8.A",
+        "8.8.7.8.E......DC.DDCDDC6....5...5.....CDDDBD.7.7.558.8....8D8.A",
+        "8.888.8....7....554D8DDD...3552.1554...CDDDCBE....558.8888.8D8.A",
+        "8.8...8...7F7...8BCB3DDD....3579.54.....DDBCCCCCCCCB8..........8",
+        "878.888..7F6F7..8DBCCBDD...E.34.34.6...DD.CCCCCCCCBD8888888888.8",
+        "..8.7....7F7F7..8DD182DD8.............EDDC........DD..........F8",
+        "AAA88888.66666668DD5.5DD8.............EDDBCCCCCB..DD.7F7.8888888",
+        "AAAAAAA8.99999998DD8.8DD88...........EEDDDF.F.FD..DD..7..8AAAAAA",
+        "AAAAAAA8........8DD8.8DD8888..F....EEEEDDD.F.F.BC.DBCCCCCCCCCCBA",
+        "AAABCCB8.9.9.9..8DD5.5DBCCCCCCC.CCCCCCCBDDBCCCCCD.D...AAAAAAAADA",
+        "AAADAAD8888888888DD384D12F.F.F1.2F.F.FBCBDD.CD.CCCB...AAAAAAAADA",
+        "777DAABC.DCCCCCCCBBCCBD432F.F14D32F.F1DBCBD.DCCCCCCCCCCCCCCCCCBA",
+        ".A.BCB..CCCCCCCCCCCCCDCCCCCBBCCCCCCCCCBDBCBBCBCBCCCCCCCCCCCCCCCB",
+        "...A.D.A5552..CD.CCCCBBCCCCDDCCCCCCC.CCBD12D555555BCCBAABCCCCBAD",
+        ".A.A...A55552.DCCCCCCCCCCCCCDCCCCCCC....D55BCB5B5BDCCDCCCBCBADAD",
+        "..EAADAA5555555555555555555..55BCB555555D55D5D5D5DD41D2ADDADADAD",
+        "E....D......C..............55.888D5...F5D55D5BCDCBD14.32DDADADAD",
+        ".7.E7D55D555A.555.1D52..12.55.8F8C5.A..5D55BCCCBCCCC.7.CCBCDCBCB",
+        ".7...DADBDA5F.575.5...2.34.55.8.8.7....5D55D5BCCB5D32.14DDABCBAD",
+        "..E..D55D555A577..5.2.5.12.55.......7..5D55D5D55D5D23D4ADBCCCCCB",
+        "E....D4...3575555.5.5.5.34.555.........5D34D5BCBDCDCCDCCCCCCCCBD",
+        ".E...D..A..57.....5.5.5....5555555555555BCCDCCCDD5BCBDAADA12ADDD",
+        ".7.E.D2...15.555775.5.52.1A5557775555..69.1D235DD5DBCDCBD1432DDD",
+        "..E..D32.145.57.55A.A.5.9966666.55555..6914.323DBCBD5BCCCC..CCBD",
+        "E.E.ED27.715.55...5.4.54.3A5555.55555..614...32BCBCB5DADD3214DAD",
+        "E...ED32.145..5.7.5...4...35555.55555..14..7..323D5BCDCBDA34ADAD",
+        ".EE..D.3.4.55.5.5.5754.172.5555.55555.14.......32D5D5BCBDABCCB1D",
+        ".EEE.D27.715..7.5.7555555555555.66666......7....CB5BCBADDBDAA14.",
+        "..7..B55555575..55........66666.55555555555555554BCCCDCDDDBA14..",
+        "ACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA........BCBCBBCBCBCC7...",
+        "ADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA........DDDBDCCCDCCC.DDD",
+        "ADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD.......DDBDDAAABCCCCBDD",
+        "ADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABCDCCDCCBBCBBCCCCCCCCCBD",
+        "ABCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCB"
+    }
+    ; level 2
+    MAP {
+        "BCCCCCCCC.FCCCCCCCCCCCCCCCCCC7DCBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCB",
+        "D888888888D.DCCCCC.BCCCCCCCB5555D.15555555555555555555555555555D",
+        "D8........C.DCCCCCCDCCCDC..D5555D1555BCCCBCCCCB7...............D",
+        "D8.88.88.8D.5.....5BDCC.D.CBCB55D5555D555D5555D5...88888888888.D",
+        "D8.88.88.8D.5.557.5555BD.5.D6D55D5BCCDCCCCBCB5D555.8.........8.D",
+        "D8..8.88.8D.5...5.5555DBC.CBCB55D5D15BCCCDDCDCDCB5.8.5555555.8.D",
+        "D88.8.8..8D.555.5.CD.CBCBDAD5555D5D5BCB12DDBCCCBD5.8.5.......8.D",
+        "D.878.8.88D.CD..5.55552.DBCCCCB5D5D4D5D34DDDD5DDD5.8955A7A.5.8.D",
+        "D.888...88D.555.5.....5.DA2D1AD5D5BCBCCCCCCBD5DDD5.......5.5.8.D",
+        "D.....8.78D.5...55557.52D35D54D5D555D5D152BCCCDAD5.88888.9.5.8.D",
+        "D8.88.8888D.5.5557755.55BCD7CCB5D5BCDCCCB552D5DCD5.....8.5.5.8.D",
+        "D8.8.....5D.5.75....5..5D15D52.5D5D5D5D5D354D5DDD55555.8.5.5.8.D",
+        "D..8.888.5DC5....55....5DA4D3A.5D5BCDC7CDCCC7CBDBCCCB5.8.575.8.D",
+        "D.88.88885CD55555555558DBCCB5555D352BCCC7DCCCCC.1552D5.8.555.8.D",
+        "D.88.8...5..5...5.7F.......5.5..BCB555555555552D5..5D5.8.....8.D",
+        "D.78...8.5.14.8.5..555855..5.55..5D5BCCCCCCCCB5D3554D5.88A7A88.D",
+        "D8888888.5.5..5.5.5......5.5.5..55D5D55555555D5BCCBCB5.9.......D",
+        "D.....CB.5.57.5.5.5.5585.5.5.55..5BCB5A55BCCCB5C55D55559.A55888D",
+        ".7.8888D.5.52.5.5.5....5.5.5.5..555555D55DBCCCD.CCBCCCCC....878D",
+        "888BC.BCD5.54.5.5.5555.5.5.5.5...5CCCCBCCBD5555555555555555.5.AD",
+        "AB.DCBD..5.57.5.5.5.7F.C.5.5E5...5.........5F..355555555555....D",
+        "ADAD...D.5D5..5.5.5..585.5.5.57.75.........52...355555555555.AAD",
+        ".7.D.D.D55D5..8...8.8AF..8.8.8...5..D..B...432...3555555555...AD",
+        ".BCD.BD.CD.52..5555.5..75..5.57775..........756.......F5555.AA.D",
+        ".......C52..52.7..5..585..15F5...5.B...C...214...1555555555....D",
+        "........552..5555F.5.....15..5...5...C....154...1555555555555..D",
+        "........585...52.D..558555..5...15.......145...155555555555...AD",
+        "....BCB.55..1..52.C7..7..F.5...1C32..D..14.5.5.....55555555.AA.D",
+        "7777D55.5..154.352.555D5555...157.32...14665.55BCC.55BCCCCD....D",
+        "7777D55D5.154...352...7C...F.CBCC7.32.146.65.55D5A.A5D55555..1.D",
+        "....BCCB5754.....352...C.7.F15D5D...5.5....5.75BC8.85D54535.14.D",
+        "....4535554..1D2..355555555555D5D5554D352.15555A5B.B5D55.5554..D",
+        "....5.5......C.C...CC9...........................8885D525154..AD",
+        "....251.352..3D4..1555555555555555.55552D155555555555C55555.A..D",
+        ".CBCB55..352.....15217....55555555.....5D5.A.9F....7..........AD",
+        "D...755.2.352...154732..5....55....555.5D5.D292D.6.D9D36F9F9A..D",
+        "BCB.755.52.352.154...32..555....555555.5D5.D5AFDF7AD1D2...C2..AD",
+        ".AA.D53.552.35.54.....32....555554.F35.5D59D4D7D3D9D.D1D2D5D.A.D",
+        ".BC.B51...5555.5...1...3555.54.357...5.5D5FFD7D..DAD3D4D3.CC..BD",
+        "...555555.5....5..15.5......5.D.52..15.5D5....7...7.A...A.75..9.",
+        "...54735..5.5555.15BFB5555554.D.35CD55.5D355555555555555555555B5",
+        "...5...5.55...55.55E.....5...C.C.....5.5BCCCCCC.CCCCC.CCCCCCCCCB",
+        "A.75.....55.5.55.3555555.B9B2.D.1555...5......5.5..............D",
+        "7A.5...5.55.5C55.....765.5..52.1555555.5.155555.555555555555552D",
+        "...52.15.55.5D5555555555.55.54.35...54.5.8....................8D",
+        "...55D55.55.5...3554743..55.52.15D5....5.35555555.5555555555554D",
+        "DDD55D...55C52.......21..54.55D55D555555..CCCCC.8.8A8.8........D",
+        "CCCCCB.5555D88888..1....55..5........755.15555555F555.555555552D",
+        "DDD.......5....F8.362.4355.15.1435432.55.8....................8D",
+        "...55.555.8..8888..4..2155.55.3215215.55.35555555555.5555555554D",
+        "..755.555.88...88.......55.55......75.55..CCCCCCCC78.8AA8.8....D",
+        "..755.555.8888.88.43.43.55.3555552.14.35.15555555555F5555.55552D",
+        ".AD5..5...88A8.88.21.21.55.......5.5...5.5....................8D",
+        "BCB5.55.5A8A88.88......755555552.5.5D5DA.355555555555555555.554D",
+        "D555.5..5.88A8.843.4355555555555...5D5D5..CCCCCCCCCA8.8AAA8.8..D",
+        "BCB5.5.5..8A88.821.215....5547355555D5DA.155555555555.55555F552D",
+        "...5.5.5.888A8..8...75.55.54...35555D5D5.8....................8D",
+        ".7.5D5...88A8.8.871555.5.............5D5.355555555.555555555554D",
+        ".7.5BCCCB8A88.8.885....5.55555555555D5D5..CCCCCC78.8AA688.8.CCCB",
+        "B..CCCB.D88A8.8..F5.5..5..5...5...75D5D5.155555555F555555.55552.",
+        "DB.CCB..78A88.88AF..5555A.5.5...A.A5D5D5.8....................8.",
+        ".....DB.D88A8.E.888.88FA7.5.55555555D5D5.3555555555555555555F55A",
+        ".....DD.DCCCCD....8.887..A5...CCCCC..CB5.CF....................A",
+        "BCCCCBBCB888888888B.B8555555555555555555.CD.................8.AF"
+    }
+    ; level 3
+    MAP {
+        "777.CCCBCCCC.88888888BCC.CCCCCCCBCCDCCCDCCCCC...........555557.7",
+        "EAEAE..D....D8.....D.D6CCCCCBCCCCDCCCDCCCC..55555555555.....55.5",
+        ".CCCCCCCCCCC.8712..D..152152152152152152152.....757...55555.....",
+        ".A.CBC.C.CCC.8D4..6D6.5.7.....34........775555.555555.....575.5.",
+        ".CB7D6DD.88888D27.666.3......2.......1...74.........55555.55575.",
+        "D.D.CCDB.88AD.732.6.6.1....6....152..3...72.5555555.5.......555.",
+        "D.D...DD..8.D.354.....5....7....354......75..5...5..5.55555.5...",
+        "D.D12CDCB.8.D.....5D2.3..E7........5....664A.5.5.5755.5.....5.57",
+        "BCC.32..D78.D..5..C7C.17.......D...55CCC.F2..5.575557.5.55555.55",
+        "6BC..CCCBC.7DDD5..5C4.5....152..........665.55.555.55.575.....57",
+        "BDC.14AAD86.D..5.E57F.3543543543.4354354354...........555.55555.",
+        "DDD34.77D8D.D1CC52C15CCCC5238841723884....88888888.88...........",
+        "DDD.....D8D.DD...3C47.....323414.3234.66......6....7834343434341",
+        "DD...77.D8D.6C6........7...3214...32666.888.6162..674BCCCCCCCCB3",
+        "DD7..12.D8D..C...............7.....7.6.7..6.14732..A2D12121212D1",
+        "DD7..77ED8D.6C6....7.....7.1432...146AA6...14...32..4D57.7.7.4D3",
+        "DD...34.D8D.DD...1C2..7...141232.14127..A.14.....3272D34343472D1",
+        "D7A..77.D8D.D3CC54C35CCCC5418823741882..714..172..324BCCCCCC.4D3",
+        "DC7.....D8D..FD7....7.....738841D23884.7147.14.32.751212123212D1",
+        "DD7A.888D83CCC4AAEAA.AAEAA.E3414D323415555554...35543453451434D3",
+        "DDA777A7......7A7.........7E.14.7.327......7.....7..CCCCCCCCCCB1",
+        "DD88888888888D.A.AAA.AAAAA1554.....35555555A2.7.14AAAAAAAAAAAAAA",
+        "DD7......8...D.A.AEA.AEEA14..77....7C732AAAF32.14A7...7AAAA7AA.7",
+        "DBC.8888.8.D.D.A.AEA.AEA14...7.7.7.....32AA.A5A5AAAAA.AA.......A",
+        "D7.........D.D.A.AEA.AA14........DDDD...32A.A5.5......A7.AAAAA.A",
+        "D12BCCDBCCCB.D.A.AAA.A14......6..DDDD....32....C..7.AAAA.A......",
+        "D34D152D265D7D......714.777.....CBCCCCC7.73555.5.......A7A.AAAA7",
+        "BCC7CCC7CDC7CCAAAAAAA3555555555555555555555475.5A.AAAA.AAA.AA7AA",
+        "7.7D565D563D.........DCC..CB.7.CCBCA66....67.5.5A....A..........",
+        ".A.BCCCBCCCB.88888888888D..DDDDBCCA6...66......4AAAA.AAA7AA7AAA7",
+        "7.7..........88...5FAAA7BCDCBDDCCD6..667.66152D1A2127E5A65555555",
+        ".529CCCCCC.5.87.8.5.CCDDADDBCCCCC.6.6.76...526D5A5752.5..A....7.",
+        ".D32ACCCCC.5.8888.5DCDCD8D.DACBCC.676.6..6.352D5A5.53257D7.6...6",
+        ".C7327CCCC.5...8..5DCCDD8DDBCCCDCCCC7...6.7635D5A575.35.D2...6..",
+        ".D2D32ACCC.588.8.85DDDDD8DD7.BCB666766.....354D3A4.5E.39D4A6D.D6",
+        ".D4DA327CC.578.8.85.....8DD.DC.CB66...6.6.7...D.............7...",
+        ".C.D7.327C.5.8...85AAADA8DBCCC.DD6666...6.121.D.CCCCCCCCB.155555",
+        ".D2DA.A32A.5...8.7DCDDDCDCC..DDDBC6666667.5F5.D........7DD575757",
+        ".D4D7..A32.55C555C5DCDCD8DCDCCB.D6666666663.4..CCCCCCCCCBD5F5F5F",
+        ".C7DAA..14.5.CCC.D5DDCDD8DDBDDDCCCCC.CCCC75.55527CCCCCCCCB5.....",
+        ".D2D...CC.D57D7C..5DDDDD8D7..BCDDDDDDDDDC75...7656555555555.A.A.",
+        ".D4D7A14ADDDC.CDCB5.....8D.A.CDC7CCBCCCCC75.5554..........C.A.A.",
+        ".C7DA147DDDDCDC.DD5ADAAA8D.7.CB192BDCCBCC75.5D.735555555266.A.A.",
+        ".D2D14..DDDD7D7D7D5DDDDD8DDDD.15F52BCBD1555.5D.6...6...6.CD.A.A.",
+        ".D4147DBCDDD.C.DC.5DDDDD8DDCB1555552ADD57...5D7..6...6...DC.A.A.",
+        ".CCB7DDDDDD5D7C.CD5DDDDD8DCB154...352DD3555.5D6715555555466.A.A.",
+        ".54DDDDDDDD5BCCCDB5DDDDD8CB154.....352....5.5552.....D...71.A.A.",
+        "........................8D154...F...352...5...7571D27D.7..3.A.A.",
+        ".7A71CCCCCCCCCCA.AD.7.3.8D54.........35...5.555414D323..7.1.A.A.",
+        ".C714B.2A1A2A1.A.AD..7..8D5...........5..75.97.CD.7.DA7...3.A.A.",
+        ".7147D.514.DA4.A.AD.2.7.8D5....152....55555.588832D142121D1.A7A7",
+        "D.5ADC.54A.DC7.A.AD.....8D5.7..5A5..7.9.....578A73D473434C37A.A.",
+        "D.57CCDCC7.DA2.A.AD6D6.68D5....354....5555554D8CD...DDDDDD1.A.A.",
+        "DDA.DAD432.4A3.A.AD7D...8D5...........5...........A......73.A.A.",
+        "DDA..9D........A7AD..6678D52.........15.33333.21D21.15D5261.A.A.",
+        "7DA66A66A6A6A6AAAAAAAAA68D552...7...155.A.79A.67..6D77..C73.A.A.",
+        "6E.....7FFFFFFFFFFFFFC.78D5552.....1555.A.D.A.655.6D....C.1.A.A.",
+        "666.CCC.CCCCCCCCCCCD76A.8D55552...15555.A.D.A767..6D.77.C73.A.A.",
+        "7.BCFFFF.FFF.FF.F.F.7F7D8D555552.155555.C.D.ACCCCCCCC7D7C.1.A.A.",
+        ".DDA7DCCCDCDCDDCDCDCCCC.8D55AAAA.AAAA55.A.D.C.C7D7C.5.7.C73.A.A.",
+        "D.7F7FFF.F.F.F..F.F.FFCB8D5FAAAA.AAAA55.A.D.A.DCDCD.5DDD5.1.A.A.",
+        "BCCCCCCDCDCDCDCDDCDCD7AD8..5AAAA.AAAA55.A.D.A.CCDCC.57..7.3.A.A.",
+        "A7F.FFF7.FFF.F.FF.F.F7FD8CD5AAAA.AAAA55.A97.A.DCDCD.57..C.1.A.A.",
+        "F.DCCCCCCCCCCCCCCCCCCCC.CDB5AAAAFAAAA55A11111.C7D7C.57.7573AAAAA"
+    }
+    ; level 4
+    MAP {
+        "BCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCB999BCCCCCCCC7777",
+        "D.1A7.A7A7...2712.CCCCCCCCCCCCCCCCBC77BCCCC7CC7D612DD126D5.57777",
+        "D.5.A....A.A75.55.675BCCCCDCDCCCDCDC7DDCBDDDDCDD143DD432D5.57777",
+        "D.9....A.A..A575576.5DCCBC7CCCBCCCDCCC7CC7CDCBDD32.DD.14D5.57777",
+        "D.5.A...A.A.75.55.6.57CCDCDCBCDCCC7CCDDDDDCDCD7CBDC..CCCC..57777",
+        "D.5...A...7.A5.55..75DBCDDDCD7CCDCCBCCDC7CCBCCDDCCC..CCCC..57777",
+        "D.571555555554.3552.57CCBCBBCDCCCBCDCBDDDDCDDDDD14.DD.32D5.57777",
+        "D.354............79.5CCCDCCDDDC7CDCCCCDCCBCDC7DD321DD214D5.57777",
+        "D.....15555552.155554.CCCCCDDDDCCCCCCCBCCDCDC7DD634DD346D..577A7",
+        "DEEE.E57.F7..5.57.7....7152777152D1D43DDBDDDCDDD999DD999D5A57777",
+        "DEEEEE5.66.155F555555D554.32714.323D21DBCDC7CBDD78....88D5A57777",
+        "DEEEEE5.66.5555466666D14...354...32BCC7CCBCCCCBD.8.88.88D5A57777",
+        "DEEEEE5.66.55AAACDCDC.F.....F....CCCCCCCCCCCCCBD.8.88...D5A57777",
+        "D.....3.CD.557CDCBCBC.32...152...14A777777777FDD...8788.D5A57777",
+        "D32..12.66.55AAACDCDC.B32.14.32.1466666D666666DD88...87.D5A57777",
+        "D732..3.66.55555555557BB3D4..7354.....7777..C7DD1555555555755552",
+        "D..32..F66.5...57..7ADCBCB6FFFFFFF7..........DDD5588888888.85555",
+        "DD.7355555.5.5.558555.CDCCBF7AAA7F7E..........DD5587.......85555",
+        "DD.CCCCCC..5C5.8...5BCCDCBDFFFFFFFC......5....DD888.888888.88855",
+        "DD.CCECC.5E5C5.555D5D66..DBCCCCC.9C.....556AA.DD87..6..C..6.7888",
+        "DDE.5.5..5.5.5.885BCBCD..CD7C.5555A.....F5.AE.DD8.6.6.C7.6..887.",
+        "DD..5.5.75757D.88857DBCCCDCCC.DC..D7.....5DA..DD888.8888888887..",
+        "DD.72.1E155555288858DD.CDB6BC.CD7.CA.7...5D..7DD.7.67.....6.C..6",
+        "DD774.375BCCCB5888588D7.6D5A5555555.7....7DA..DD..76.88868868.6.",
+        "DD7E5.575D...D58875BCDCCBDCDC7AAAE.......57A..DD7.8888.6....86..",
+        "DD555.555D...DCCCCBDBCCBDD5D5.AAAA..D.F.55FAA.DD86.CD..6..878...",
+        "D....6..DD...D5554DDCDDDDD575.AAAE..D7..5.7.A.DD.6.DC...61558D8D",
+        "DD55.5555BCCCB57.CDDCCBCDD5D5CAAAA......57D.A.DD8688888885....5D",
+        "DD......3555554155BDCBCCDD5D5.AAAA7.........A.DD6.6...C767C...5D",
+        "DDDDCDDBCCCCCCB.CBDDDCDCDD5D5.AAAAAA...AA.....DD6.6.8888.5...65D",
+        "DDBCCCCDCCCCCCD.CDDBDDBCDD5D5......9..........DD6.6.....73555.5B",
+        "BDCBCCCDCCCDCCB.CDDDBDCCDD5555555555527.......DD6.6.D888885...7D",
+        "DD.CBCCDCCCBCCDBCDDD.DDCDD5F.6.C.5...3.....7..DD8888D8...75.5.5D",
+        "DD.CCBCBDCCCCCCDCBDD...CDB5......C..7A.....F7FDD6.68.8D8CD5.57.D",
+        "DD1555555555555554DBCCCBDD56.....C..66666667A7DD76.8.8D8DC5.577D",
+        "DDA.C888888CCCCCCCCCCCCBCD5555.555556.....6F76DD.668.8.87.5.5.7D",
+        "DD..58878815.55555D5555DBCCCCCCCCCCCC.....CCDCCB...6.6....5.5.7D",
+        "DD.A588889F7.87...BCCCCCDDCBCCCCCCCC...F...CCBCCCCCCB555575.5.5D",
+        "DD..58888835ECCBE.E...BDDBCCCCCCCCCCC.....CCCCDCCCCBD7..CDC.96.D",
+        "DDE.58BCCCCACCBDE...9..DDACCC7D.....6F....67DDD5.C7DD.66575.595D",
+        "DD..58DBCCCDCBDBCCCCBC.DD7CD8.D555556666666...D5.66DD67.DCC....D",
+        "DD.A57DD.CCBCDDCB77.C..DBDCC8.C.8E...........CDC.C7DD.DCCCCCCC6D",
+        "DD714BDDDBCDCDCBDA77D..DD7DCC.D55555.555555555C5.66DDDCC.C5555.D",
+        "DD15.DBDDDADADDDD666BCCBD68DD.D5...5.5FFF777FFD5.C7DD.6.6CDDDD7D",
+        "D.F5.DCBBCCDCCBDD888888CC8C8D.D5.A.5.5FA15752FF5.66DD76...55555D",
+        "BCCD.DBBCCBDADBCBFFFFFFFD68DD.D5.A.5.55557F75FF5.C7DD76.6....57D",
+        "5555.DDDDBDBCBDD6666666.D8C8D.CCDCDC.557F5755FF5.66DBCCCB66D.5.D",
+        "AF85.DDBDDBCCCBD8F86.7C.DD86D.D5.5A5555DFFFF5F15555D5552D6.D.CDB",
+        "23F32BBCBBCCCCCBF6F6..C.D8C8D.D5.5757DCB15F5555..7.....5D..DDC.D",
+        "5286CCCCCCCCCCC686866668D68DD.D5.5.5F5554.....9..6.777.5D76D.7.D",
+        "55F8F8F8F8F8F8F8F6F8F8F8D8C8D7D5.5........15555.76.777.5D.CBCC.D",
+        "355555555555555555555555DD8667D5C5555955555...5D.6.777.CCCCCCCCD",
+        ".7A...7...5AA.757..AAA7AD88CD.D777145.54.357..9..6.777.5DE88887D",
+        ".AA.AAAAA.5A..A5AA.AAA..D687DDD771475.DC......5.......A5D78E8EED",
+        "....AA....5A7AA555D5555DDCCCCCC714.75E52.15..75555555585DEEE88ED",
+        "555555D5555A.AA5AA.AAAA.D6.76CD14F..55555555.557..A8...AD888E88D",
+        "7..A5A.AAA5...7C...AA...CCDCCCDC....CCCCCCC...7.A.78AA.FD8E88E8D",
+        "AA..5A.A..C.AAA5AA....AAD6888CBCCCCCCCCCCCCCCCCCCCCCCCCCB88E888D",
+        "AAA.C7...A5AAAA5AAAA.AAAD6868D888EEE8888EEEE888EEE888E888E88EEED",
+        "555D5D55555555555555D555D8868D8E88E78EE88EE88E8EE88E8E8E88E8888D",
+        ".7..A.AEAAAAAAA57AA7.AAAD8667D8EE88E888E88E8E88E88E88E88E88EEE8D",
+        ".AAAA.AEA......5.A....AAD8866D8EEE88EE8EE8E8E8E88EE8EEE8EE88E88D",
+        "..A7A..E..A.AAA5...AA...D688888888E8888EE888E888EEE88888EEE888ED",
+        "A...AA79.AAFAAA5A.AAAAA7BCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCB"
+    }
+    ASSERT maps = io_maps
+
+; The pictures for the 16 kinds of map cell.
+.tiles
+    ; cell 0
+    PICTURE 4, 4, {
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "11111111111111111111111111111111",
+        "11111111111111111111111111111111",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "11111111111111111111111111111111",
+        "11111111111111111111111111111111",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "11111111111111111111111111111111",
+        "11111111111111111111111111111111",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "11111111111111111111111111111111",
+        "11111111111111111111111111111111",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11.."
+    }
+    ; cell 1
+    PICTURE 4, 4, {
+        "....11......11......11........22",
+        "....11......11......11........11",
+        "....11......11......11........22",
+        "1111111111111111111111111111..11",
+        "1111111111111111111111111111..22",
+        "....11......11......11........11",
+        "....11......11......11........22",
+        "....11......11......11........11",
+        "....11......11......11........22",
+        "....11......11......11......2211",
+        "....11......11......11......1122",
+        "11111111111111111111111111..2211",
+        "111111111111111111111111....1122",
+        "....11......11......11....112211",
+        "....11......11......11....221122",
+        "....11......11......11....112211",
+        "....11......11......11....221122",
+        "....11......11......11..22112211",
+        "....11......11......11..11221122",
+        "11111111111111111111....22112211",
+        "11111111111111111111..2211221122",
+        "....11......11........1122112211",
+        "....11......11......112211221122",
+        "....11......11......221122112211",
+        "....11......11....22112233223322",
+        "....11......11....11221122112211",
+        "....11..........11221122..221122",
+        "1111111111....112211221122112211",
+        "1111111111..112211221122..221122",
+        "............22112211221122112211",
+        "....11221122112211221122..221122",
+        "22112233221122112211221122112211"
+    }
+    ; cell 2
+    PICTURE 4, 4, {
+        "11..11......11......11......11..",
+        "22..11......11......11......11..",
+        "11..11......11......11......11..",
+        "22..1111111111111111111111111111",
+        "11..1111111111111111111111111111",
+        "22..11......11......11......11..",
+        "11..11......11......11......11..",
+        "22..........11......11......11..",
+        "..22........11......11......11..",
+        "2211........11......11......11..",
+        "1122........11......11......11..",
+        "2211..11111111111111111111111111",
+        "1122....111111111111111111111111",
+        "221122......11......11......11..",
+        "112211......11......11......11..",
+        "221122......11......11......11..",
+        "112211......11......11......11..",
+        "22112211....11......11......11..",
+        "11221122....11......11......11..",
+        "22112211....11111111111111111111",
+        "1122112211..11111111111111111111",
+        "2211221122..........11......11..",
+        "112211221122........11......11..",
+        "221122112211........11......11..",
+        "33223322112211......11......11..",
+        "22112233221122......11......11..",
+        "1122112211221122....11......11..",
+        "221122332211221122....1111111111",
+        "11221122112211221122......111111",
+        "221122332211221122112211........",
+        "112211221122112211221122..22....",
+        "22112233221122112211221122112211"
+    }
+    ; cell 3
+    PICTURE 4, 4, {
+        "112211221122112211221122..221122",
+        "....2233221122112211221122112211",
+        "........1122112211221122..221122",
+        "111111......22112211221122112211",
+        "1111111111....2211221122..221122",
+        "....11..........2211221122112211",
+        "....11......11....221122..221122",
+        "....11......11....11221122112211",
+        "....11......11......1122..22..22",
+        "....11......11......221122112211",
+        "....11......11........2211221122",
+        "11111111111111111111..1122112211",
+        "11111111111111111111....11221122",
+        "....11......11......11..22112211",
+        "....11......11......11..11221122",
+        "....11......11......11....112211",
+        "....11......11......11....221122",
+        "....11......11......11....112211",
+        "....11......11......11....221122",
+        "111111111111111111111111....2211",
+        "11111111111111111111111111..1122",
+        "....11......11......11......2211",
+        "....11......11......11......1122",
+        "....11......11......11......2211",
+        "....11......11......11........22",
+        "....11......11......11........11",
+        "....11......11......11........22",
+        "1111111111111111111111111111..11",
+        "1111111111111111111111111111..22",
+        "....11......11......11........11",
+        "....11......11......11........22",
+        "....11......11......11........11"
+    }
+    ; cell 4
+    PICTURE 4, 4, {
+        "112211221122112211221122..221122",
+        "2211223322112211221122112211....",
+        "11221122112211221122............",
+        "22112233221122112211..1111111111",
+        "112211221122112211....1111111111",
+        "2211223322112211....11......11..",
+        "11221122112211......11......11..",
+        "22112233221122......11......11..",
+        "..22..221122........11......11..",
+        "221122112211........11......11..",
+        "1122112211..........11......11..",
+        "2211221122..11111111111111111111",
+        "11221122....11111111111111111111",
+        "22112211....11......11......11..",
+        "11221122....11......11......11..",
+        "221122......11......11......11..",
+        "112211......11......11......11..",
+        "221122......11......11......11..",
+        "112211......11......11......11..",
+        "2211....111111111111111111111111",
+        "1122..11111111111111111111111111",
+        "2211........11......11......11..",
+        "1122........11......11......11..",
+        "22..........11......11......11..",
+        "33..11......11......11......11..",
+        "22..11......11......11......11..",
+        "11..11......11......11......11..",
+        "22..1111111111111111111111111111",
+        "11..1111111111111111111111111111",
+        "22..11......11......11......11..",
+        "11..11......11......11......11..",
+        "22..11......11......11......11.."
+    }
+    ; cell 5
+    PICTURE 4, 4, {
+        "112211221122112211221122..221122",
+        "22112233221122112222221122112211",
+        "112211221122112211221122..221122",
+        "22112233221122112211221122112211",
+        "112211221122112211221122..221122",
+        "22112233221122112211221122112211",
+        "112211221122112211221122..221122",
+        "22112233221122112211221122112211",
+        "..22..221122112211221122..22..22",
+        "22112211221122112211221122112211",
+        "11221122112233223322332211221122",
+        "2211221122..22112211221122112211",
+        "22221122112211222222332211221122",
+        "2211221122..22112211221122112211",
+        "11221122112211221122332211221122",
+        "2211221122..22112211221122112211",
+        "11221122112211221122332211221122",
+        "2211221122..22112211221122222211",
+        "11221122112211221122332211221122",
+        "2211221122..22222211221122112211",
+        "11221122112211221122332211221122",
+        "2211221122..22112211221122112211",
+        "112211221122..22..22332211221122",
+        "22112211221122112211221122112211",
+        "33223322112211221122112233223322",
+        "22112233221122112211221122112211",
+        "112211221122112211221122..221122",
+        "22112233221122112222221122112211",
+        "112211221122112211221122..221122",
+        "22112233221122112211221122112211",
+        "112211221122112211221122..221122",
+        "22112233221122112211221122112211"
+    }
+    ; cell 6
+    PICTURE 4, 4, {
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "......3333333333333333333333....",
+        "11..3333333333333333333333..33..",
+        "1133......................3333..",
+        "..3333..33333333333333..33..33..",
+        "..332233333333333333333322..33..",
+        "..3333....33......33....33..33..",
+        "..3333..22..3333333333..33..33..",
+        "..3333..33..3333333333..33..33..",
+        "..3333333333..33..33....33..33..",
+        "113333....33..33333333..33..3311",
+        "113333....3333..333333..33..3311",
+        "..33333333..33..333333..33..33..",
+        "..3333......3333..33....33..33..",
+        "..3333..3333..22..3333..33..33..",
+        "..3333333333..3333..33..33..33..",
+        "..3333..333333..33..33..33..33..",
+        "..3333..333333..3333....33..33..",
+        "11333333..33..33..33....33..3311",
+        "113333..33333333..3333..33..3311",
+        "..3333..3333333333..22..33..33..",
+        "..333333..33..33....33..33..33..",
+        "..3333..333333333333....33..33..",
+        "..3333..333333333333....33..33..",
+        "..3333..................333333..",
+        "..332233333333333333333322..33..",
+        "113333..33333333333333..3333..11",
+        "113333..33333333333333..33..1111",
+        "............................11..",
+        "....11......11......11......11..",
+        "....11......11......11......11.."
+    }
+    ; cell 7
+    PICTURE 4, 4, {
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "11111111111111111111111111111111",
+        "111111..................11111111",
+        "..........111111111111......11..",
+        "......111111..11..11..1111......",
+        "....11111111111111..11..1111....",
+        "....11111111111111111111..11....",
+        "......1111111111111111..1122....",
+        "....11..11111111111111112211....",
+        "11....1111..11..112211221122..11",
+        "11..11..11111111111111111111..11",
+        "......1111111111111111111122....",
+        "....111111112222222211111111....",
+        "......1111331111111133111122....",
+        "....111122111122221111221111....",
+        "......1122112222112211221122....",
+        "....111122112222111111221111....",
+        "11....1122111122221111221122..11",
+        "11..111122111111222211221111..11",
+        "......1122112211222211221122....",
+        "....111122111122221111221111....",
+        "......1111331111111133111122....",
+        "....11..11112222222211111111....",
+        "......11..111111111111111122....",
+        "....11..11111111111111111111....",
+        "11....11..111111111111111122..11",
+        "11..11..11..1111111111112211..11",
+        "......11..11..111111112211......",
+        "........11..11..11..1111....11..",
+        "............1111..11........11.."
+    }
+    ; cell 8
+    PICTURE 4, 4, {
+        "112211221122112211221122..221122",
+        "22112233221122112222221122112211",
+        "112211221122112211221122..221122",
+        "22112233223322332233223322332211",
+        "1122..22112211221122112211221122",
+        "22112211221122112211221122332211",
+        "1122..22..22..22..22..2211221122",
+        "22112211..33..33..33....22332211",
+        "..22..22....33..33..33221122..22",
+        "22112211..33..33..33....22332211",
+        "1122..22....33..33..332211221122",
+        "22112211..33..33..33....22332211",
+        "2222..22....33..33..332211221122",
+        "22112211..33..33..33....22332211",
+        "1122..22....33..33..332211221122",
+        "22112211..33..33..33....22332211",
+        "1122..22....33..33..332211221122",
+        "22112211..33..33..33....22332211",
+        "1122..22....33..33..332211221122",
+        "22112211..33..33..33....22332211",
+        "1122..22....33..33..332211221122",
+        "22112211..33..33..33....22332211",
+        "1122..22....33..33..332211221122",
+        "22112211..33..33..33....22332211",
+        "3322..22....33..33..332211223322",
+        "22112211................22332211",
+        "1122..22112211221122112211221122",
+        "22112211221122112211221122332211",
+        "1122..22..22..22..22..22..221122",
+        "22112233221122112211221122112211",
+        "112211221122112211221122..221122",
+        "22112233221122112211221122112211"
+    }
+    ; cell 9
+    PICTURE 4, 4, {
+        "....11......................11..",
+        "....11....222222222222......11..",
+        "........2222221122222222....11..",
+        "11....22221122222222222222....11",
+        "11..222222222222222222222222..11",
+        "....222211222222222222222222....",
+        "..2222112222222222222222222222..",
+        "..2211222222222222222222222222..",
+        "..2222112222222233222222222222..",
+        "22221122222222223322222222222222",
+        "22112222222222223322222222222222",
+        "..221122222222223322222222222222",
+        "..222222222222222233222222222222",
+        "33331122222222222233223333333322",
+        "33222222222222222233223311223322",
+        "..221122222222222233223333113322",
+        "..112222222222222233223311333322",
+        "33221122222222222233223322113322",
+        "33332222222222222233223311223322",
+        "..221122222222222233223333333322",
+        "..112222222222223322222222222222",
+        "22221122222222223322222222222222",
+        "22112211222222223322222222222222",
+        "..2211222222222233222222222222..",
+        "..2222112222222222222222222222..",
+        "..2211221122222222222222222222..",
+        "....221122222222222222222222....",
+        "11..222211222222222222222222..11",
+        "11....22221122222222222222....11",
+        "........2222112211222222....11..",
+        "....11....222222222222......11..",
+        "....11......................11.."
+    }
+    ; cell A
+    PICTURE 4, 4, {
+        "....11......11..............11..",
+        "....11......11........22....11..",
+        "....11......11......33..22......",
+        "111111111111111111..3333..22....",
+        "111111111111111111..333333..22..",
+        "....11......11........333333....",
+        "....11......11......113333......",
+        "........22..........11......11..",
+        "......22..33........33......11..",
+        "....22..3333......11........11..",
+        "..22..333333......11........11..",
+        "....33333333......33........1111",
+        "11..333333........11....22....11",
+        "......33..11....11....33..22....",
+        "............1133......3333..22..",
+        "..............11......333333..22",
+        "........22....11........333333..",
+        "......22......11........1133....",
+        "....22..33....33......33........",
+        "..22..3333....11......11....1111",
+        "11..333333....1133..11....111111",
+        "......3311......11..33......11..",
+        "........11......1111........11..",
+        "....11....11......33........11..",
+        "....11......1133..11........11..",
+        "....11........111111........11..",
+        "....11........1133..11......11..",
+        "1111......11....11111133....1111",
+        "11....1133..331111......11....11",
+        "......11....1111113311....33....",
+        "....33....331111....1111....11..",
+        "..11....1111..........1111......"
+    }
+    ; cell B
+    PICTURE 4, 4, {
+        "....22..22..222222222222222211..",
+        "......22..2222222222222222..11..",
+        "....11......................11..",
+        "1111111122..22222222222211111111",
+        "11111111..22..222222222211111111",
+        "....11......2222222222......11..",
+        "....11....22..22222222......11..",
+        "....11..22..222222222222....11..",
+        "22..11....22222222222222......22",
+        "2222....2222222222222222....2222",
+        "2222..22222222333322222222..2222",
+        "2222..22222233333333222222..2222",
+        "2222..22222233333333222222..2222",
+        "2222..22222211333333222222..2222",
+        "2222..22221133333333332222..2222",
+        "2222..22223311333333332222....22",
+        "2222..22221133333333332222..2222",
+        "2222..22223311333333332222....22",
+        "2222....222233113333222222..22..",
+        "22....22222211331133222222....22",
+        "2222....222233113311222222..22..",
+        "22....22..2222331122222222....22",
+        "..22....2222222222222222....22..",
+        "22..11....22222222222222......22",
+        "....11..22..222222222222....11..",
+        "....11....22..22222222......11..",
+        "....11..22..2222222222......11..",
+        "11111111..22..222222222211111111",
+        "1111111122..22..2222222211111111",
+        "....11......................11..",
+        "......22..2222222222222222..11..",
+        "....22..22..2222222222222222...."
+    }
+    ; cell C
+    PICTURE 4, 4, {
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "11111111111111111111111111111111",
+        "11111111111111111111111111111111",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11..........",
+        "2222........11......11......2222",
+        "2222..........2222..........2222",
+        "2222..222222..2222..222222..2222",
+        "2222..222222..2222..222222..2222",
+        "2222..222222..2222..222222..2222",
+        "2222..222222..2222..222222..2222",
+        "2222....2222..2222....2222..2222",
+        "2222..222222..2222..222222..2222",
+        "2222....2222..2222....2222..2222",
+        "2222..222222..2222..222222..2222",
+        "2222....2222..2222....2222..2222",
+        "2222..22..22..2222..22..22..2222",
+        "22......22....22......22....22..",
+        "..22..22..22....22..22..22....22",
+        "22............22............22..",
+        "..22........11......11........22",
+        "....11......11......11..........",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "11111111111111111111111111111111",
+        "11111111111111111111111111111111",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11.."
+    }
+    ; cell D
+    PICTURE 4, 4, {
+        "....22..22..222222222222222211..",
+        "......22..2222222222222222..11..",
+        "....11......................11..",
+        "111111....22..22..22..22..111111",
+        "111111..22..22..22..2222..111111",
+        "....11....22..2222222222....11..",
+        "....11..22..222222222222....11..",
+        "....11....22222222222222....11..",
+        "....11..22..222222222222....11..",
+        "....11....22222222222222....11..",
+        "....11..22..222222222222....11..",
+        "111111....22222222222222..111111",
+        "111111..22..222222222222..111111",
+        "....11......................11..",
+        "........2222222222222222....11..",
+        "........22..22222222222222..11..",
+        "......22..2222222222222222..11..",
+        "........22..222222222222....11..",
+        "....11......................11..",
+        "111111....22..22..22..22..111111",
+        "111111..22..22..22..2222..111111",
+        "....11....22..2222222222....11..",
+        "....11..22..222222222222....11..",
+        "....11....22222222222222....11..",
+        "....11..22..222222222222....11..",
+        "....11....22222222222222....11..",
+        "....11..22..222222222222....11..",
+        "111111....22222222222222..111111",
+        "111111..22..222222222222..111111",
+        "....11......................11..",
+        "......22..2222222222222222..11..",
+        "....22..22..222222222222222211.."
+    }
+    ; cell E
+    PICTURE 4, 4, {
+        "....11......11..............11..",
+        "....11......11....3333......11..",
+        "....11......11......3333....11..",
+        "111111111111111111....3333..1111",
+        "11111111111111111111..3333..1111",
+        "....11......11........3333..11..",
+        "....11......11........3333..11..",
+        "....11......11........3333..11..",
+        "....11......11......333333..11..",
+        "....11......11......3333....11..",
+        "....11......11....333333....11..",
+        "11111111111111..33333333..111111",
+        "11111111111111..33333333..111111",
+        "....11..........33333333....11..",
+        "....11........3333333333....11..",
+        "....11........3333223333....11..",
+        "....11........3333333333....11..",
+        "....11......333333333333....11..",
+        "....11......333333223333....11..",
+        "1111111111..33332233333333..1111",
+        "11111111....33333322333333....11",
+        "....11....333333223322333333....",
+        "....11....33..33332233..3333....",
+        "....11....33....22....333333....",
+        "....11..3333....33....223333....",
+        "....11..33333333223322333333....",
+        "....11..33332233332233333333....",
+        "111111..333333332233223333....11",
+        "111111..333333223322333333..1111",
+        "....11....33223322332233....11..",
+        "....11......332233223333....11..",
+        "....11........33333333......11.."
+    }
+    ; cell F
+    PICTURE 4, 4, {
+        "....11......11......11......11..",
+        "....11......11......11..........",
+        "....11......11..........3333....",
+        "111111111111111111....3333....11",
+        "1111111111111111....333333..1111",
+        "....11......11....333333....11..",
+        "....11......11....3333......11..",
+        "....11..........3333........11..",
+        "....11........333333........11..",
+        "....11........333333........11..",
+        "....11........333333........11..",
+        "1111111111..33333333..1111111111",
+        "11111111....333322....1111111111",
+        "....11....33333333..11......11..",
+        "....11....33333333..11......11..",
+        "....11..3322333333..11......11..",
+        "....11..3333333333..........11..",
+        "....11..333333333333........11..",
+        "........333322333333........11..",
+        "1111..33333333223333..1111111111",
+        "11....33333322333333....11111111",
+        "....333333223322333333......11..",
+        "....33333333223333..33......11..",
+        "....3333......22....33......11..",
+        "....333322....33....3333....11..",
+        "....33333322332233333333....11..",
+        "....33333333223322333333....11..",
+        "11....333322332233333333..111111",
+        "1111..333333223322333333..111111",
+        "........33223322332233......11..",
+        "....11..333322332233........11..",
+        "....11....3333333333........11.."
+    }
+    ASSERT tiles = io_tiles
+
+; The objects' icons, in the order of their names; the last is the exit.
+.object_icons
+    ; Remote C.D.1
+    PICTURE 2, 2, {
+        "....11......11..",
+        "......333333....",
+        "....3333333333..",
+        "11..3333333333..",
+        "11..3322332233..",
+        "....3333333333..",
+        "....3311332233..",
+        "....3333333333..",
+        "....3322331133..",
+        "....3333333333..",
+        "....3311331133..",
+        "11..3333333333..",
+        "11..3322332233..",
+        "....3333333333..",
+        "....3333333333..",
+        "................"
+    }
+    ; Remote C.D.2
+    PICTURE 2, 2, {
+        "....11......11..",
+        "......222222....",
+        "....2222222222..",
+        "11..2222222222..",
+        "11..2233223322..",
+        "....2222222222..",
+        "....2211221122..",
+        "....2222222222..",
+        "....2233221122..",
+        "....2222222222..",
+        "....2211223322..",
+        "11..2222222222..",
+        "11..2233223322..",
+        "....2222222222..",
+        "....2222222222..",
+        "................"
+    }
+    ; Remote C.D.3
+    PICTURE 2, 2, {
+        "....11......11..",
+        "......111111....",
+        "....1111111111..",
+        "11..1111111111..",
+        "11..1122112211..",
+        "....1111111111..",
+        "....1133112211..",
+        "....1111111111..",
+        "....1122113311..",
+        "....1111111111..",
+        "....1133113311..",
+        "11..1111111111..",
+        "11..1122112211..",
+        "....1111111111..",
+        "....1111111111..",
+        "................"
+    }
+    ; Blueprints
+    PICTURE 2, 2, {
+        "111111111111....",
+        "111111111111....",
+        "11333333333333..",
+        "1133333333333311",
+        "1133111111113311",
+        "22222222221133..",
+        "22111122221133..",
+        "22222211221133..",
+        "22112222221133..",
+        "22221111221133..",
+        "22222222221133..",
+        "2211111122113311",
+        "2222222222113311",
+        "22222222221133..",
+        "22111111221133..",
+        "22222222223333.."
+    }
+    ; Mallet
+    PICTURE 2, 2, {
+        "....22222222....",
+        "..111111111111..",
+        "1111111122221111",
+        "1111111111222211",
+        "..11111111112211",
+        "1111111111111111",
+        "..11111111111111",
+        "11..111111111111",
+        "..11..11..1111..",
+        "......2222......",
+        "......2222..11..",
+        "1111..2222..1111",
+        "1111..2222..1111",
+        "......2222..11..",
+        "......2222..11..",
+        "......2222..11.."
+    }
+    ; Spanner
+    PICTURE 2, 2, {
+        "....11..........",
+        "....11....3333..",
+        "....11..33......",
+        "111111..33......",
+        "111111..33....33",
+        "........33....22",
+        "......1133333333",
+        "......33223322..",
+        "....333333......",
+        "....332233..11..",
+        "..113333....11..",
+        "..332233..111111",
+        "333333....111111",
+        "332233......11..",
+        "..33........11..",
+        "............11.."
+    }
+    ; Screwdriver
+    PICTURE 2, 2, {
+        "....11..33..11..",
+        "......333333....",
+        "......333333....",
+        "1111..333333..11",
+        "1111..333333..11",
+        "......333333....",
+        "......333333....",
+        "......333333....",
+        "....11..33..11..",
+        "....11..22..11..",
+        "....11..22..11..",
+        "111111..22..1111",
+        "111111..22..1111",
+        "....11..22..11..",
+        "....11..22..11..",
+        "....11..22..11.."
+    }
+    ; Magnet
+    PICTURE 2, 2, {
+        "....11..........",
+        "....11..333333..",
+        "......33..333322",
+        "111133..33333322",
+        "11..333333333322",
+        "..3333333333....",
+        "..33333333..11..",
+        "..33333333..11..",
+        "..33333333..11..",
+        "..33333333..11..",
+        "..33333333..11..",
+        "..3333333333....",
+        "11..333333333322",
+        "....333333333322",
+        "......3333333322",
+        "....11..333333.."
+    }
+    ; Space Burger
+    PICTURE 2, 2, {
+        "....11......11..",
+        "............11..",
+        "....33333333....",
+        "..333333113333..",
+        "..331133333333..",
+        "3333333333113333",
+        "3333331133333333",
+        "3311333333331133",
+        "3333333311333333",
+        "3333333333333333",
+        "3333113333331133",
+        "3333333311333333",
+        "..333333333333..",
+        "..333311331133..",
+        "....33333333....",
+        "................"
+    }
+    ; Jovian Wine
+    PICTURE 2, 2, {
+        "......1111......",
+        "......1111......",
+        "......1111......",
+        "1111..3333..1111",
+        "1111..3333..1111",
+        "......3333......",
+        "....33333333....",
+        "....33332222....",
+        "..333333332222..",
+        "....3333333322..",
+        "..33..33333322..",
+        "....3333333333..",
+        "..33..33333333..",
+        "....33..333333..",
+        "......33..33....",
+        "....33..33......"
+    }
+    ; Fire Blanket
+    PICTURE 2, 2, {
+        "....11......11..",
+        "................",
+        "22222222222222..",
+        "2222222222222222",
+        "..............22",
+        "..22222222222222",
+        "22222222222222..",
+        "22..............",
+        "22222222222222..",
+        "..22222222222222",
+        "..............22",
+        "..22222222222222",
+        "22222222222222..",
+        "22..............",
+        "2222222222222222",
+        "..22222222222222"
+    }
+    ; Laser Gun
+    PICTURE 2, 2, {
+        "....11......11..",
+        "....11......11..",
+        "....11......11..",
+        "....11111111....",
+        "22............22",
+        "2222222222222222",
+        "3333333333333333",
+        "2222222222222222",
+        "..2222..22......",
+        "..2222..22..11..",
+        "..222222....11..",
+        "..2222....111111",
+        "112222..11111111",
+        "............11..",
+        "....11......11..",
+        "....11......11.."
+    }
+    ; Extinguisher
+    PICTURE 2, 2, {
+        "....11......11..",
+        "............11..",
+        "......2222......",
+        "11..22223333....",
+        "....22..333311..",
+        "..22223311333311",
+        "..22..3333333311",
+        "..22..3333333311",
+        "......1133333311",
+        "......3333333311",
+        "......33333333..",
+        "1111..33333333..",
+        "1111..33333322..",
+        "......33333333..",
+        "......33332233..",
+        "........3333...."
+    }
+    ; Detonator
+    PICTURE 2, 2, {
+        "....2222222222..",
+        "....2211111122..",
+        "........22......",
+        "111111..22..1111",
+        "1111....22......",
+        "....333322333333",
+        "..33111122111133",
+        "3311111111113333",
+        "3333333333333311",
+        "3311111111331133",
+        "3311111111333311",
+        "3311111111331133",
+        "3311111111333311",
+        "3311111111331133",
+        "3311111111333311",
+        "33333333333311.."
+    }
+    ; Explosives
+    PICTURE 2, 2, {
+        "....11..332233..",
+        "......3333113333",
+        "......3311111133",
+        "1111..2211221122",
+        "..22223311112233",
+        "22..113333113333",
+        "22..11..332233..",
+        "..2211..........",
+        "....2211331133..",
+        "..333311331133..",
+        "....2211331133..",
+        "11....11..11..11",
+        "..22113333331133",
+        "3333113333331133",
+        "..22113333331133",
+        "................"
+    }
+    ; the exit
+    PICTURE 2, 2, {
+        "....11..22..11..",
+        "....1122222211..",
+        "......332233....",
+        "1111..222222..11",
+        "1111..223322..11",
+        "....11..22..11..",
+        "....3333333333..",
+        "....3333333333..",
+        "..33333333333333",
+        "..33..333333..33",
+        "..22..333333..22",
+        "11..1133333311..",
+        "1111113333331111",
+        "....1133..3311..",
+        "......33..33....",
+        "....3333..3333.."
+    }
+    ASSERT object_icons = io_object_icons
+
+; The player, facing left and right, then two pictures for walking up or
+; down (drawn upside down every other step too).
+.player
+    ; left
+    PICTURE 4, 4, {
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "11................11111111111111",
+        "11..333322222222....111111111111",
+        "..3333222222222222..........11..",
+        "..333322222222221122..2222......",
+        "..333322222222221122..222222....",
+        "............22112222..22222222..",
+        "....11......11222222..22222222..",
+        "........333322222222..22222222..",
+        "11....33333333222222..22222222..",
+        "11..3333333333332222..11222222..",
+        "....22333333333322222211222222..",
+        "....22333333333322222211222222..",
+        "....2233333333332222221133222222",
+        "....2233333333333333333322222222",
+        "....2233333333332222221122222222",
+        "....22333333333322222211..222222",
+        "11..33333333333322222222..222222",
+        "11....333333332222222222..222222",
+        "..........33222222222222..222222",
+        "....11......112222222222..222222",
+        "....11......221122222222..222222",
+        "....11......222211222222..2222..",
+        "........33222222221122..........",
+        "......33332222222222........11..",
+        "1111..333322222222....1111111111",
+        "1111....33332222....111111111111",
+        "....11..............11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11.."
+    }
+    ; right
+    PICTURE 4, 4, {
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11..............11..",
+        "111111111111....22223333..111111",
+        "1111111111....222222223333..1111",
+        "....11......22222222223333..11..",
+        "..........22112222222233....11..",
+        "..2222..222222112222........11..",
+        "222222..222222221122........11..",
+        "222222..222222222211........11..",
+        "222222..22222222222233......11..",
+        "222222..222222222233333333....11",
+        "222222..22222222333333333333..11",
+        "222222..11222222333333333322....",
+        "2222222211222222333333333322....",
+        "2222222233333333333333333322....",
+        "2222223311222222333333333322....",
+        "..22222211222222333333333322....",
+        "..22222211222222333333333322....",
+        "..22222211..2222333333333333..11",
+        "..22222222..22222233333333....11",
+        "..22222222..222222223333....11..",
+        "..22222222..22222211........11..",
+        "..22222222..22221122............",
+        "....222222..221122222222223333..",
+        "......2222..221122222222223333..",
+        "..............2222222222223333..",
+        "111111111111....222222223333..11",
+        "11111111111111................11",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11.."
+    }
+    ; up or down
+    PICTURE 4, 4, {
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "11111111111111111111111111111111",
+        "......11111111111111111111111111",
+        "..33........11......11......11..",
+        "..3333..............11......11..",
+        "..3333......222222..11....33....",
+        "..3322....3322222233......3333..",
+        "..2222....3333333333......3333..",
+        "..22222233333333333333....2233..",
+        "..22222233333333333333..22222211",
+        "..22222233333333333333..22222211",
+        "..2222223333333333333322222222..",
+        "..2222223333333333333322222222..",
+        "..2222221133333333331122222222..",
+        "..2222112233333333332211222222..",
+        "..11112222223333332222221122....",
+        "....222222222233222222222211....",
+        "11..222222222233222222222222..11",
+        "1111..2222222233222222222222..11",
+        "....11....1111331122222222..11..",
+        "....1122222222332211........11..",
+        "....1122222222332222222222..11..",
+        "....1122222222223322222222..11..",
+        "....1122222222222222222222..11..",
+        "....1122222222222222222222..11..",
+        "111111..2222222222222222..111111",
+        "111111........22222222..11111111",
+        "....11......11..............11..",
+        "....11......11......11......11..",
+        "....11......11......11......11.."
+    }
+    ; up or down, the other step
+    PICTURE 4, 4, {
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11..............11......11..",
+        "11111111..22222222......11111111",
+        "111111..2222222222222222....1111",
+        "....1122222222222222222222..11..",
+        "....1122222222222222222222..11..",
+        "....1122222222332222222222..11..",
+        "....1122222222223322222222..11..",
+        "....11......11223322222222..11..",
+        "......2222222211331111......11..",
+        "11..2222222222223322222222..1111",
+        "11..222222222222332222222222..11",
+        "....112222222222332222222222....",
+        "....22112222223333332222221111..",
+        "..2222221122333333333322112222..",
+        "..2222222211333333333311222222..",
+        "..2222222233333333333333222222..",
+        "..2222222233333333333333222222..",
+        "11222222..3333333333333322222211",
+        "11222222..3333333333333322222211",
+        "..3322....33333333333333222222..",
+        "..3333......3333333333....2222..",
+        "..3333......3322222233....2233..",
+        "....33........222222......3333..",
+        "..........................3333..",
+        "....11......11......11......33..",
+        "11111111111111111111111111......",
+        "11111111111111111111111111111111",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11.."
+    }
+    ASSERT player = io_player
+
+; Second pictures for cell types 5, 7, 8 and A, shown on the squares each
+; level's setup picks.
+.alternates
+    ; cell 5
+    PICTURE 4, 4, {
+        "112211221122112211221122..221122",
+        "22112233221122112211221122112211",
+        "112211221122112211221122..221122",
+        "22112233221122112211221122112211",
+        "112211221122112211221122..222222",
+        "22112233221122112211221122112211",
+        "112211331122112211221122..221122",
+        "22112233221122112211221122112211",
+        "..22..221122112211221122..22..22",
+        "2211221122112211..11221122112211",
+        "1122112211221122..22112211221122",
+        "2211221122112211..11221122112211",
+        "1122112211221122..22112211221122",
+        "2211221122112211..11221122112211",
+        "11221122112211......112211221122",
+        "221122112211..........1122112211",
+        "1122........................1122",
+        "221122332233..........3322332211",
+        "11221122112211......112211221122",
+        "2211221122112211..11221122112211",
+        "1122112211221122..22112211221122",
+        "2211221122112211..11221122112211",
+        "1122112211221122..22112211221122",
+        "2211221122112211..11221122112211",
+        "33223322112211221122112233223322",
+        "22112233221122112211221122112211",
+        "112211221122112211221122..221122",
+        "22112233221122112211221122112222",
+        "112211221122112211221122..221122",
+        "22112233221122112211221122112211",
+        "112211221122112211221122..221122",
+        "22112233221122112211221122112211"
+    }
+    ; cell 7
+    PICTURE 4, 4, {
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "....11......11......11......11..",
+        "11111111111111111111111111111111",
+        "111111..................11111111",
+        "..........222222222222......11..",
+        "......22222222222233222222......",
+        "....222222..2222222222332222....",
+        "....2222..22..22222222223322....",
+        "....112222..2222222222222211....",
+        "....221122222222222222221122....",
+        "11..112211222222222222112233..11",
+        "11..221122112211221122222222..11",
+        "....112222222222222222222233....",
+        "....222222222222222222222222....",
+        "....112222223333333322222233....",
+        "....222222112222222211222222....",
+        "....112233222233332222332233....",
+        "....222233223333223322332222....",
+        "11..112233223333222222332233..11",
+        "11..222233222233332222332222..11",
+        "....112233222222333322332233....",
+        "....222233223322333322332222....",
+        "......2233222233332222332233....",
+        "....222222112222222211222222....",
+        "......2222223333333322222233....",
+        "....22..22222222222222222222....",
+        "11....2222222222222222222233..11",
+        "11..22..22222222222222223322..11",
+        "......22..22..222222223322......",
+        "........22..22..22..2222....11..",
+        "............2222..22........11.."
+    }
+    ; cell 8
+    PICTURE 4, 4, {
+        "112211221122112211221122..221122",
+        "22112233221122112211221122112211",
+        "11223333332233332233332233222222",
+        "22332222333333222222332233333311",
+        "11333333222233222233332222333322",
+        "22332233222233332233223333223311",
+        "11333322333322333322332222333322",
+        "22223333333322333333333333332211",
+        "..332222332233332233332222332222",
+        "22332233332233332233222233333311",
+        "11333322222222333322333333222222",
+        "22332233332233333333222233332211",
+        "11332233333333222233222233332222",
+        "22333322223333223322333322333311",
+        "11333333222233333322332233333322",
+        "22332233332233332222332233223311",
+        "11222233332233333322223333332222",
+        "22332233223333223333222222332211",
+        "11333333223333222233332233333322",
+        "22333322222233223322223333223311",
+        "11333333332233333333223322223322",
+        "22332222333322332233332233333311",
+        "11223322332233332233333322333322",
+        "22223333332233332222333322332211",
+        "33333333223322333333222233332222",
+        "22332233332222223322223333223311",
+        "11332233222233332233223322223322",
+        "22223333223333333333223333333322",
+        "11333333223333223333222233332222",
+        "22332233222233222233223333223311",
+        "112211221122112211221122..221122",
+        "22112233221122112211221122112211"
+    }
+    ; cell A
+    PICTURE 4, 4, {
+        "................................",
+        "..333333................33333333",
+        "........33..33....333333........",
+        "..............3333..............",
+        "................................",
+        "222222..22................222222",
+        "..........22222222....2222......",
+        "..................2222..........",
+        "................................",
+        "333333....................333333",
+        "......333333........333333......",
+        "............3333..33............",
+        "................................",
+        "222222......................2222",
+        "......2222..........222222......",
+        "..........22..222222............",
+        "................................",
+        "3333..3333....................33",
+        "..........333333..........3333..",
+        "................3333..3333......",
+        "................................",
+        "22222222......................22",
+        "........22..2222........22..22..",
+        "................22222222........",
+        "................................",
+        "333333........................33",
+        "......33333333..........333333..",
+        "..............333333..33........",
+        "................................",
+        "2222....................222222..",
+        "....22222222......222222........",
+        "............22..22.............."
+    }
+    ASSERT alternates = io_alternates
+    ASSERT P% = IO_END
+}
 ENDSECTION
