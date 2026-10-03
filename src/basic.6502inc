@@ -1,0 +1,34 @@
+; BBC BASIC (BASIC 2, the BBC B's) seen from the assembler: the shape of a
+; tokenised program, and the workspace BASIC shares with the machine code it
+; CALLs. Used by MENU and MISSION.
+
+; A program is a run of line records, ended by &0D &FF:
+;
+;   &0D, line number (high byte first), record length (counting these four
+;   header bytes), then the tokenised text
+;
+; Keywords are single bytes from &80 (REM is &F4); a line number after
+; GOTO, GOSUB, RESTORE or THEN is &8D and three bytes; REM and DATA, strings
+; and `*` commands are stored as typed. BASIC...ENDBASIC writes all of this
+; itself. basic_line() is for a line it can't take as source text: one
+; carrying bytes a source line can't hold (a newline) or that would make
+; the file invalid UTF-8 (top-bit-set bytes). ENDBASIC always ends the
+; program, so such lines can only come before the BASIC block.
+FUNCTION basic_line(number, text) = CONCAT({&0D, HI(number), LO(number), LEN(text) + 4}, CODES(text))
+
+BASIC_TOKEN_REM = &F4
+
+; The resident integer variables @% and A% to Z%: four bytes each, low byte
+; first, from &0400 in alphabetical order (@% first). They survive RUN and
+; CHAIN, and CALL passes A%, X% and Y% in A, X and Y.
+BASIC_RESIDENT_INTEGERS = &0400
+FUNCTION basic_integer(letter) = BASIC_RESIDENT_INTEGERS + 4 * (CODES(letter)[0] - CODES("@")[0])
+
+; Zero page BASIC leaves to the user, and to the machine code it CALLs.
+BASIC_USER_ZP = &70     ; to &8F
+
+; VDU codes the programs hide things from LIST with: LIST copies a string's
+; bytes (and a REM's, once a quote has started one) straight to the screen.
+VDU_ENABLE  = 6     ; undo VDU_DISABLE
+VDU_DISABLE = 21    ; ignore everything sent to the screen until VDU_ENABLE
+VDU_DELETE  = 127   ; back up one character and blank it
