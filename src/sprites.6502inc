@@ -35,3 +35,16 @@ MACRO OBJECT_NAME text
     ASSERT LEN(text) = 12, "an object name is 12 characters"
     EQUS text
 ENDMACRO
+
+; A picture laid out as MODE 5 screen memory: a band of eight rows at a time,
+; each band a cell (four pixels across, eight down) after another, left to
+; right. Copying it to the screen a band per character row shows it.
+MACRO SCREEN_PICTURE rows
+    FOR b = 0..LEN(rows) DIV 8 - 1
+        FOR c = 0..LEN(rows[0]) DIV 4 - 1
+            FOR r = 8*b..8*b+7
+                EQUB mode5_byte(rows[r][4*c..4*c+3])
+            NEXT
+        NEXT
+    NEXT
+ENDMACRO
