@@ -227,3 +227,20 @@ and loading IO shows its name as "Collect the" / "Sulphur!".
 - OS call numbers defined locally in `src/menu.6502` (OSBYTE &0E, OSWORD
   &0A, event 4) belong in `src/os.6502inc` when someone adds call numbers
   there.
+
+## 2026-10-03 18:20 — Status, and what baron would need
+
+- MENU and MISSION are all source; `data/menu.bin` and `data/mission.bin`
+  are gone. Nothing is INCBIN. EQUB remains only for MENU lines 10-40 and
+  the leftover listing fragment, and MISSION lines 10-60.
+- `*SHADOW 1` checked on jsbeeb's Master: HIMEM stays &7C00 (`*SHADOW` or
+  `*SHADOW 0` gives &8000), so it does keep the screen in main memory.
+- What baron would need for both files to be plain BASIC blocks and valid
+  UTF-8: a way to put a byte by value into a BASIC line, for instance a
+  baron expression in braces spliced in raw:
+  `1430REM"{VDU_DELETE}{TT_ALPHA_GREEN}Hello,{TT_ALPHA_YELLOW}Soni`, and in
+  MENU `...re-load this program.{VDU_DISABLE}":A%=151...*/PL "{VDU_ENABLE}":IFGET`
+  (`{{` for a literal brace; the record length counting the spliced
+  bytes). Less readable but more general: let records written with EQUB
+  sit inside a BASIC block (or an `ENDBASIC` that doesn't write &0D &FF),
+  so the odd line could be EQUB where it falls.
