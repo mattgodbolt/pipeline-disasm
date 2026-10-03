@@ -198,3 +198,17 @@ Details in `docs/notes/loaders.md`. The headlines:
 - Shared: `OSWORD_READ_CHAR_DEFINITION` and `EVENT_VSYNC` into
   `osconst.6502inc`; `MODE7_SCREEN`, `mode7_address()` and `SOLID_BLOCK`
   into `teletext.6502inc`.
+
+## 2026-10-03 20:05 — Baron issues, and notes on symbols
+
+- Filed baron#12 (as Claude, for Matt): a way to put a byte by value into a
+  BASIC line, or to interleave EQUB'd records with a BASIC block, so MENU
+  and MISSION can be valid UTF-8 with their control codes named.
+- baron#10 (filed earlier from another session) is about FUNCTION call frames
+  colliding when the same function is called at the same byte offset in two
+  files of one assembly. We call FUNCTIONs from several includes; `make
+  verify` would catch any wrong byte it caused. Bump the pin when it's fixed.
+- `docs/symbols-feedback.md` collects what this disc shows a symbol consumer
+  (jsbeeb) needs from baron's dump: label vs constant, which section a label
+  is in, and a way to tell which of several overlapping programs is loaded.
+  Both ends are works in progress, so it's feedback, not a plan.
