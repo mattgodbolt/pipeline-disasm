@@ -1,18 +1,52 @@
-; OS call numbers and other MOS constants used by the boot chain and the
-; small loaders (MRUN, PL, TITLE, WARNING...). Kept here rather than in
+; OS call numbers and other MOS and machine constants used by the boot chain
+; and the small loaders (MRUN, PL, TITLE...). Kept here rather than in
 ; os.6502inc only because that file changes on main; they belong there.
+
+; The 6502's own vectors, in the MOS ROM.
+CPU_NMI_VECTOR   = &FFFA
+CPU_RESET_VECTOR = &FFFC
+CPU_IRQ_VECTOR   = &FFFE
 
 ; Where the MOS keeps the address of its table of default vector contents
 ; (laid out like page 2 from USERV, ?&FFB6 bytes long).
 MOS_DEFAULT_VECTORS_PTR = &FFB7
 
+; MOS zero page: the internal key number (bit 7 set) of the key last
+; pressed, while it's held.
+MOS_KEY_PRESSED = &EC
+
 ; OSBYTE calls.
-OSBYTE_DISABLE_EVENT = &0D      ; X = event number
-OSBYTE_ENABLE_EVENT = &0E       ; X = event number
-OSBYTE_INSERT_BUFFER = &8A      ; X = buffer, Y = character
+OSBYTE_CURSOR_EDITING   = &04   ; *FX4: X=1 makes the cursor keys type codes
+OSBYTE_AUTO_REPEAT_DELAY = &0B  ; *FX11: X=0 turns auto-repeat off
+OSBYTE_DISABLE_EVENT    = &0D   ; X = event number
+OSBYTE_ENABLE_EVENT     = &0E   ; X = event number
+OSBYTE_FLUSH_BUFFERS    = &0F   ; *FX15: X=0 all buffers, 1 just input
+OSBYTE_INKEY            = &81   ; X,Y = INKEY argument; X=Y=&FF if a key tested is down
+OSBYTE_INSERT_BUFFER    = &8A   ; X = buffer, Y = character
+OSBYTE_BREAK_EFFECT     = &C8   ; *FX200: bit 0 disables Escape, bit 1 clears memory on BREAK
+OSBYTE_ESCAPE_KEY       = &E5   ; *FX229: X=0 Escape key makes an escape condition
+OSBYTE_ESCAPE_EFFECTS   = &E6   ; *FX230: X=1 an escape condition does nothing else
+
+; OSWORD calls.
+OSWORD_READ_LINE = &00          ; YX: buffer address (2), max length, lowest and highest character
 
 ; Buffer numbers for OSBYTE &8A and friends.
 BUFFER_KEYBOARD = 0
 
 ; Event numbers.
 EVENT_ESCAPE = 6
+
+; Internal key numbers (the keyboard matrix), and the byte INKEY wants to
+; test one: INKEY -(k+1).
+KEY_I = &25
+KEY_O = &36
+KEY_S = &51
+KEY_N = &55
+FUNCTION INKEY_TEST(key) = &FF - key
+
+; Characters with no name of their own in a string.
+BEL = 7
+CR = 13
+
+; A character's code, as a value: ascii("A") is &41.
+FUNCTION ascii(c) = CODES(c)[0]

@@ -97,3 +97,49 @@ into the load area.
 - Shared constants for these pieces are in `src/loaders.6502inc` (OSBYTE and
   event numbers, the default-vector-table pointer); they belong in
   `src/os.6502inc` once that can change on main.
+
+## 2026-10-03 18:11 — WARNING, and PL is "Ian's cheat!"
+
+- WARNING is *LOADed by MENU (line 295) straight into Mode 7 screen memory
+  at &7C00 and shown for up to ten seconds (`docs/img/warning.png`). Rows
+  0-15 are the same picture the menu uses (PIPELINE logo, credits, pipe
+  frame) with a flashing "WARNING" and "All Rights Reserved" inside the
+  frame; rows 18-22 the text. The file ends 16 bytes into row 22. Now source
+  as one checked `TT_ROW` of 40 per line (`src/teletext.6502inc` names the
+  control codes; `tools/mode7.py` writes that form from any Mode 7 binary,
+  which MENU's own screen may want).
+- MENU line 290 runs `*/PL` when W and T (INKEY-34, INKEY-36) are held as it
+  starts; confirmed in jsbeeb by booting with both held. The rest of the line
+  (`"<VDU 6>":IFGET`) is passed to PL as a command tail it never reads.
+- PL decrypts itself: from &043C (the offset byte of its own BMI into the
+  plain code) to &06FB, `plain = key ^ previous plain ^ stored`, keys taken
+  from its own decryptor bytes (&0404, &0403, &0402 for pages 4-6); &0500
+  and &0600 are stored plain. `tools/plcrypt.py` does it offline.
+- Decrypted, it's "Ian's cheat!": MODE 7 with nothing shown, reads a
+  filename and a six-digit code with no prompt, *LOADs the file (a Level
+  Designer level file, loaded at &25A1 like LEVEL1), checks the code against
+  three bytes at &26E1 (each BCD byte of the code, bit pairs swapped and
+  rotated right one, must match), and lists the file's 32 puzzles: name (8
+  chars at &25A1+8n, 2 at &26A1+2n), action (low nibble of &2720+n, one of
+  16: Place block, Move block, ... Disorientate), and On/Off (bit 5 set =
+  Off). LEVEL1's code is 677636; seen working in jsbeeb.
+- After a key it floods the screen with a fake BASIC "Bad program" error
+  until I, N, O and S are held together; then beeps, sets &61 to 3, does
+  `*FX229,0` and `*FX230,1`, `*L.GAME`, and pokes the game: &3FC7 (operand
+  of `LDX #3 : STX &2E` in H.GAME) := 31; &4875 (offset of a `BEQ +3` over
+  `JMP &1C13`) := 0; &4F31-&4F32 (`STA &61`) := NOP NOP; then `JMP &3000`.
+  On this disc GAME is the stub, so &3000 holds no game and the machine
+  resets (seen in jsbeeb). PL predates the hidden sectors: it expects GAME to
+  be the game at &3000, as in the STH crack. **For the hidden_game agent:**
+  those four places in H.GAME are what Ian's cheat changed; &2E starts at 3
+  and &61 is set from `JSR &0D7E` at &4F2E.
+- Anti-tamper in PL: BRKV is pointed at the reset entry (any error resets);
+  `*FX200,2` (BREAK clears memory) every listed line; a wrong code resets; a
+  counter checks all three code compares ran; a test of pushed flags that
+  can never fail (B and I always set) dressed as a check; format characters
+  stored inverted; patch addresses formed with index registers.
+- Source: `src/pl.6502` has the decryptor as code, the stored bytes as
+  `data/pl_encrypted.bin`, and the decrypted program as annotated source in
+  a second section saved as `build/files/PLDEC` (not on the disc). Baron
+  can't transform a section's bytes, so the two are tied by
+  `tools/plcrypt.py check build/files` rather than by the build.

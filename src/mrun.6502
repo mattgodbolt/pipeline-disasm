@@ -61,7 +61,7 @@ SECTION mrun, filename="MRUN", org=&0780, load=&780, exec=&780
     PLA
     INC typed_index
     LDY typed_index
-    CMP #13
+    CMP #CR
     BNE type_next
 
     ; *BASIC enters BASIC as the current language, which finds the typing.
@@ -76,10 +76,10 @@ SECTION mrun, filename="MRUN", org=&0780, load=&780, exec=&780
 .boot_command
     EQUS "*E.!BOOT"
     EQUB 22, 7                  ; VDU 22,7: MODE 7
-    EQUS "  ", 13
+    EQUS "  ", CR
 
 .start_basic
-    EQUS "*BASIC", 13
+    EQUS "*BASIC", CR
 
 ; Uninitialised to the end of the file, which was saved as half a page:
 ; zeros, then stale memory.
