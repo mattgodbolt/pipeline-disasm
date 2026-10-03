@@ -147,7 +147,7 @@ ACTION_WIDTH = 15           ; the action column, padded with spaces
 ; reading the decrypted bytes either.
 FUNCTION inverted(x) = FLATTEN(x) EOR &FF
 
-SECTION pl_decrypted, filename="PLDEC", org=&043B
+SECTION pl_decrypted, filename="PLDEC", org=pl.encrypted - 1
 .pl_cheat
 {
     BMI start                   ; X=&FF: always
