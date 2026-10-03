@@ -141,7 +141,7 @@ always ends at &5800. IO matches: load &242D, &33D3 bytes.
 | Offset | Size | What |
 |---|---|---|
 | &0000 | &134 | `names`: copied from the graphics file's tail. In IO (and DEFAULT): &00-&7F look like graphics, &80-&133 are 15 object names of 12 characters: Remote C.D.1-3, Blueprints, Mallet, Spanner, Screwdriver, Magnet, Space Burger, Jovian Wine, Fire Blanket, Laser Gun, Extinguisher, Detonator, Explosives |
-| &0134 | 30 | mission text: two 15-byte halves, each VDU 31,x,y then 12 characters, spaces stored as 9 (cursor right, so the background shows). MISSION writes 31,18,16 and 31,14,17. IO: "Collect the" / "Sulphur!" |
+| &0134 | 30 | the mission's name ("change name"; the game prints it): two 15-byte halves, each VDU 31,x,y then 12 characters, spaces stored as 9 (cursor right, so the background shows). MISSION writes 31,18,16 and 31,14,17. IO: "Collect the" / "Sulphur!" |
 | &0152 | 5 | features: time consumption (stored as shown + 6; shown 1-16), mapping ability (0-4), backpack size (stored as shown - 1; shown 1-4), throwing distance (0-63), lock (0; 1 or &FF when saved with the secret keys, below). Defaults 15, 2, 2, 6, 0. IO: 15, 4, 2, 6, &FF (locked) |
 | &0157 | &247C | four levels (L%): first the fields, then the maps |
 | &25D3 | &E00 | graphics (G%), as in a graphics file |
@@ -184,6 +184,9 @@ Saved by PROCsavegrf: `SAVE G% +&F34, exec 0, reload &4000`: &E00 of
 graphics then the &134 `names`. DEFAULT's graphics and names are
 identical to IO's.
 
+Run in jsbeeb, MISSION starts with features 9, 2, 3, 6 (DEFAULT loaded),
+and loading IO shows its name as "Collect the" / "Sulphur!".
+
 ### What MISSION loads and saves
 
 - Loads: DEFAULT at start (disc only), any graphics file (option 3), a
@@ -201,7 +204,8 @@ identical to IO's.
   read as hex (`EVAL("&0"+...)`) into E%, then CALL PAGE+198 unscrambles
   each of E%'s low three bytes (swap adjacent bits, then rotate right one).
   It must equal level s's fields 0, 1, 2 (high to low). For IO the codes
-  are level 1: 677636, 2: 878702, 3: 218652, 4: 114226.
+  are level 1: 677636, 2: 878702, 3: 218652, 4: 114226 (checked in jsbeeb:
+  `E%=&677636:CALL PAGE+198` leaves &CDDC9C).
 - Loading a locked mission (option 7) isn't checked at all.
 
 ## For the other pieces

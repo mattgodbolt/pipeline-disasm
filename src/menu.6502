@@ -333,7 +333,7 @@ shift_from = &100 - (SCROLL_RIGHT - SCROLL_LEFT)    ; Y counts up to zero
     LDA #OSWORD_READ_CHARACTER
     JSR OSWORD
 
-    LDX #0
+    LDX #0                          ; (unused: X comes from Y below)
     LDY #SCROLL_ROWS - 1
 .each_pixel_row
     LDA char_definition + 1, Y
@@ -346,14 +346,14 @@ shift_from = &100 - (SCROLL_RIGHT - SCROLL_LEFT)    ; Y counts up to zero
     ASL A
     TAX
     PLA
-    STA (scroll_cell_ptrs, X)
+    STA (scroll_cell_ptrs, X)       ; pixel row Y's pointer
     DEY
     BPL each_pixel_row
 
-    LDA scroll_phase                ; any non-zero value would do
-    EOR #&49
+    LDA scroll_phase
+    EOR #&49                        ; any non-zero value would do
     STA scroll_phase
-    BEQ done
+    BEQ done                        ; every other frame, the same column again
     LSR scroll_column_mask
     BCC done
     LDA #&80                        ; past the rightmost pixel: on to the next character
