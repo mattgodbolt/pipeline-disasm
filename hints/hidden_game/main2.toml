@@ -281,6 +281,9 @@ Print X + 1 characters from io_object_names + Y.
 0x0FCD = "12 characters a name"
 
 [operands]
+0x0E52 = "#CELL_LAVA"
+0x0E45 = "#CELL_WALL"
+0x0E41 = "#CELL_OBJECT"
 0x0C23 = "#HI(SCREEN)"
 0x0C57 = "#HI(SCREEN)"
 0x0C7D = "io_tiles + 2 * 32 + 8"

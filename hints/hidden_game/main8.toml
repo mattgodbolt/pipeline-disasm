@@ -339,6 +339,10 @@ load it.
 0x2228 = "load it"
 
 [operands]
+0x2174 = "#CELL_OBJECT"
+0x214D = "#CELL_FIRE"
+0x1F6B = "#CELL_OBJECT"
+0x1F40 = "#CELL_FIRE"
 0x1E4D = "trigger_args + 3"
 0x1EAB = "trigger_args + 3"
 0x1EEF = "trigger_actions"
@@ -352,8 +356,8 @@ load it.
 0x2090 = "#4 * 4"
 0x20BA = "trigger_args - 1"
 0x20C0 = "trigger_args + 1"
-0x20EB = "#11"
-0x20F5 = "#11"
+0x20EB = "#ACTION_STOP"
+0x20F5 = "#ACTION_STOP"
 0x2126 = "trigger_args + 1"
 0x212A = "trigger_args + 2"
 0x2193 = "#&66"

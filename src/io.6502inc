@@ -66,6 +66,19 @@ LEVEL_ANIMATE     = 7   ; which of the animated cells animate
 
 ; The maps, 64 columns of 32 bytes: column x's cells y and y+1 share a byte,
 ; even y in the high nibble.
+;
+; What the game makes of the cell types: 1-5, 8 and 9 are walls of different
+; shapes, and the rest are these. Off the map counts as lava.
+CELL_FLOOR        = 0
+CELL_CRATE        = 6     ; pushed, while the player has pushes left
+CELL_SULPHUR      = 7     ; to be collected, by stepping on it
+CELL_WALL         = 8     ; also what the exit counts as
+CELL_LAVA         = &A    ; deadly
+CELL_JUNCTION     = &B    ; pipes: a junction...
+CELL_PIPE_ACROSS  = &C    ; ...a pipe left and right...
+CELL_PIPE_DOWN    = &D    ; ...and up and down
+CELL_FIRE         = &E    ; deadly: monsters mark their cells with it
+CELL_OBJECT       = &F    ; an object (or the exit): see the level's objects
 io_maps = io_levels + IO_LEVELS * IO_LEVEL_FIELDS
 
 ; The graphics, as the Graphics Designer saves them (DEFAULT's first &E00

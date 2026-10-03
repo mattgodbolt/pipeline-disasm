@@ -247,12 +247,14 @@ settings; see backpack_keys. Space goes back to the game.
 0x169B = "the view as it was"
 
 [operands]
+0x1655 = "#ACTION_STOP"
+0x15BC = "#CELL_FIRE"
 0x13DD = "io_palettes"
 0x13FC = "player_x - 2"
 0x13FE = "exit_x - 2"
 0x1406 = "#5"
 0x1446 = "#&0F"
-0x14F3 = "#&0F"
+0x14F3 = "#CELL_OBJECT"
 0x14FE = "io_level_setup + LEVEL_TIME"
 0x151F = "io_level_setup"
 0x152B = "#HI(io_maps)"
@@ -268,6 +270,9 @@ settings; see backpack_keys. Space goes back to the game.
 0x1694 = "#LO(KEY_SPACE)"
 
 [constants]
+ACTION_USE = { value = "6", note = "the last of the action keys' actions" }
+ACTION_LEFT = { value = "7", note = "then right, up and down" }
+ACTION_STOP = { value = "11", note = "from a trigger: the player doesn't step" }
 KEY_SHIFT = { value = "-1", note = "negative INKEY numbers" }
 KEY_T = "-36"
 KEY_S = "-82"

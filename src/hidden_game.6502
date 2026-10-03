@@ -151,8 +151,8 @@ ESCAPE_FLAG = &FF                       ; the OS's: bit 7 set when Escape is pre
 ; Elsewhere.
 trigger_flags = &0100                   ; a byte per trigger, from io_level_trigger_flags
 keys_were_down = &0120                  ; a byte per direction key, for repeat
-offset_y = &0124
-OS_COUNTDOWN = &0240                    ; the OS decrements it every 1/50 second
+step_y = &0124                          ; step's scratch
+VSYNC_COUNTER = &0240                   ; the OS decrements it every vsync, 50 a second
 saved_extended_vectors = &037F          ; the OS's cassette workspace
 NMI_HANDLER = &0D00                     ; where the OS jumps on an NMI
 EXTENDED_VECTORS = &0D9F                ; the OS's extended vector table
@@ -166,6 +166,9 @@ copy_from = &02
 copy_to = &04
 copy_count = &06
 objects = game_start                    ; 8 objects of 4 bytes: x, y, icon, uses and flags
+ACTION_USE = 6                          ; the last of the action keys' actions
+ACTION_LEFT = 7                         ; then right, up and down
+ACTION_STOP = 11                        ; from a trigger: the player doesn't step
 KEY_SHIFT = -1                          ; negative INKEY numbers
 KEY_T = -36
 KEY_S = -82
@@ -173,7 +176,7 @@ KEY_SPACE = -99
 bit4_mask = show_map_centre + 1         ; the byte there is &10
 bit6_mask = fire_object_vanishes + 1    ; the byte there is &40
 
-; Entered from the GAME stub with the ten keys MENU set up in key_codes, as
+; Entered from the GAME stub with the ten keys MENU set up in menu_keys, as
 ; negative INKEY numbers. Copies the keys where the game wants them, copies
 ; the game into place, sets up the screen and the sound event, and starts the
 ; game. The stack is reset because the event handler lives in the stack page.
@@ -203,16 +206,16 @@ bit6_mask = fire_object_vanishes + 1    ; the byte there is &40
 
 ; MODE 5, then VDU 23,0,10,32;0;0;0 (CRTC register 10: no cursor), sent from
 ; the end of cursor_off_vdu backwards.
-    LDA #&16
+    LDA #22
     JSR OSWRCH
-    LDA #&05
+    LDA #5
     JSR OSWRCH
     LDY #&09
-.L304B
+.cursor_off_loop
     LDA cursor_off_vdu, Y
     JSR OSWRCH
     DEY
-    BPL L304B
+    BPL cursor_off_loop
 
 ; The sound event: the OS calls EVNTV when a sound channel's queue empties
 ; (enabled when the tune starts), and the handler feeds the tune.
@@ -220,7 +223,7 @@ bit6_mask = fire_object_vanishes + 1    ; the byte there is &40
     LDA #LO(event_handler)
     STA EVNTV
     LDA #HI(event_handler)
-    STA &0221
+    STA EVNTV + 1
     CLI
 
 ; Addressable latch bit 5 clear (with bit 4 set by MODE 5): the screen wraps
@@ -313,17 +316,17 @@ SECTION event_handler, org=&0131
     STX empty_channel
     JSR play_tune                       ; play its next note
     LDA tune_position                   ; has the first voice finished?
-    CMP #&1E
+    CMP #30
     BEQ restart_tune
     TAX                                 ; the first voice is part way through
     BNE event_handler_return
     LDA tune_position_2                 ; or the second, when only it is playing
-    CMP #&1E
+    CMP #30
     BNE event_handler_return
 
 ; Both voices back to the start, each with a silent note to get the event
 ; going again; then step the variation: every other time round, transpose
-; by 20 semitones' worth (&14), and every other time that, swap the voices.
+; up a fourth (&14, 5 semitones), and every other time that, swap the voices.
 .restart_tune
     LDY #&01
     STY tune_channel                    ; channel 1
@@ -501,7 +504,7 @@ SECTION low_code, org=&0400
 
 ; A cell type: cell F holds an object, so draw its icon.
 .cell_type_picture
-    CMP #&0F
+    CMP #CELL_OBJECT
     BCC tile_picture
     JSR object_picture_at               ; the object here's icon
     STX picture
@@ -1218,19 +1221,19 @@ NEXT
     JMP draw_sprite
 
 ; Draw the player in the middle of the view: their picture for the way they
-; face; walking up or down alternates two pictures, drawn upside down on every
-; other step.
+; face (up and down alternate between two), drawn upside down every other
+; step.
 ; Clobbers: A, X, Y, picture, player_screen, draw_step.
 .draw_player
     LDA player_frame
-    AND #&80                            ; every other step...
+    AND #&80                            ; every other step: flipped
     STA picture
     STA draw_step
     LDA facing                          ; left 0, right 1: &5400, &5480
     LSR A
     ROR A
     BCC draw_player_picture             ; up and down: &5500 or &5580...
-    EOR picture                         ; ...alternating, flipped too
+    EOR picture                         ; ...alternating
 .draw_player_picture
     STA picture
     LDA #HI(io_player)
@@ -2021,9 +2024,9 @@ NEXT
     CPY exit_y
     BNE cell_at_checked
     JSR read_map_cell
-    CMP #&0F                            ; the exit's icon
+    CMP #CELL_OBJECT                    ; the exit's icon
     BNE cell_at_exit                    ; a wall
-    LDA #&08
+    LDA #CELL_WALL
 .cell_at_exit
     CMP #&00
     RTS
@@ -2035,7 +2038,7 @@ NEXT
     CPY #&40
     BCC read_map_cell
 .cell_off_map
-    LDA #&0A                            ; lava
+    LDA #CELL_LAVA                      ; lava
     RTS
 
 ; Read map cell (X, Y), on the map.
@@ -2632,9 +2635,9 @@ NEXT
 .wait_a_second
     LDA #50
 .wait_ticks
-    STA OS_COUNTDOWN
+    STA VSYNC_COUNTER
 .wait_ticks_loop
-    LDA OS_COUNTDOWN
+    LDA VSYNC_COUNTER
     BNE wait_ticks_loop
     RTS
 
@@ -2780,8 +2783,8 @@ NEXT
 
 ; The game's main loop, a cycle at a time: the clock ticks at the mission's
 ; rate (not while in a pipe), with warning beeps in the last 20; once the
-; exit's charge is set (stage 1) the time left is scored and the player has 4
-; ticks to get clear.
+; exit is lit (stage 1) the time left is scored and the player has 4 ticks to
+; get clear.
 .game_loop
     LDA time_left
     BEQ time_up                         ; out of time?
@@ -2803,14 +2806,14 @@ NEXT
     JSR sound_beep
     JMP check_dead
 .warn_time_running_out
-    LDX #&02                            ; ...a different beep with the charge set
+    LDX #&02                            ; ...a different beep once the exit is lit
     LDA #&04
     JSR sound_effect
 .check_dead
     LDA player_dead
     BNE lose_life
     LDA stage
-    CMP #&01                            ; the charge has just been set:
+    CMP #&01                            ; the exit has just been lit:
     BNE game_loop
     INC stage                           ; stage 2: run
     LDX time_left                       ; a point for each tick left
@@ -2819,11 +2822,11 @@ NEXT
     STA time_left
     BNE game_loop
 
-; Out of time: with the charge set, the player is safe 5 or more cells from
-; the exit, across or down; otherwise they're caught (the screen flashes).
+; Out of time: with the exit lit, the player is safe 5 or more cells from it,
+; across or down; otherwise they're caught in the blaze (the screen flashes).
 .time_up
     LDX stage
-    CPX #&02                            ; the charge set?
+    CPX #&02                            ; the exit lit?
     BNE lose_life
     JSR far_from_exit                   ; far enough across...
     BCS level_complete
@@ -2835,8 +2838,8 @@ NEXT
     JSR clear_screen
     DEC fill_screen
 
-; Lose a life. With none left, burn up and back to the title; if the charge
-; had been set the level counts as done.
+; Lose a life. With none left, burn up and back to the title; if the exit
+; had been lit the level counts as done.
 .lose_life
     JSR flush_buffers
     JSR sound_trigger                   ; a sound
@@ -2850,7 +2853,7 @@ NEXT
     LDX #&09
     JSR vdu_palette                     ; colour 0 flashes
     JSR close_view
-    LDA stage                           ; died after setting the charge?
+    LDA stage                           ; died after lighting the exit?
     BNE next_level
     JMP restart_level
 
@@ -3122,7 +3125,7 @@ NEXT
     STX clock_fraction
     LDX exit_x
     LDY exit_y
-    LDA #&0F                            ; the exit's icon on its cell
+    LDA #CELL_OBJECT                    ; the exit's icon on its cell
     JSR set_cell
     LDA level
     ASL A
@@ -3251,7 +3254,7 @@ NEXT
     DEC work2
     BNE play_cycle_step
 .mark_monsters
-    LDA #&0E                            ; monsters are deadly cells
+    LDA #CELL_FIRE                      ; monsters are deadly cells
     BNE set_monster_cells
 
 ; Move a thrown object on a cell, advance the frame counter, decide where each
@@ -3353,7 +3356,7 @@ NEXT
     LDA player_dead
     BNE do_nothing
     LDA action                          ; an action already decided?
-    CMP #&0B
+    CMP #ACTION_STOP
     BEQ do_action
     LDA pipe_move                       ; in a pipe, carried on...
     BNE do_action
@@ -3725,7 +3728,7 @@ NEXT
     TAY
     LSR A                               ; the pipe that runs this way
     CLC
-    ADC #&0C
+    ADC #CELL_PIPE_ACROSS
     STA work4                           ; C across, D up and down
     TYA
     LDX player_x
@@ -3742,7 +3745,7 @@ NEXT
     BEQ move_on
     CMP work4                           ; a pipe this way?
     BEQ move_into_pipe
-    CMP #7                              ; something to collect?
+    CMP #CELL_SULPHUR                   ; something to collect?
     BEQ move_on
     JSR try_push                        ; a crate to push?
     BCS move_on
@@ -3757,7 +3760,7 @@ NEXT
     JSR return_0AD0                     ; (just an RTS)
     LDA facing                          ; carried on by this move
     CLC
-    ADC #7
+    ADC #ACTION_LEFT
     STA pipe_move
 
 ; Unless a trigger has called for action 11, step: walk the view a cell
@@ -3797,7 +3800,7 @@ NEXT
 ; left, and only into an empty cell.
 ; Returns: carry set if it moved.
 .try_push
-    CMP #&06
+    CMP #CELL_CRATE
     BEQ try_push_crate
 .no_push
     CLC
@@ -3842,7 +3845,7 @@ NEXT
     JSR check_pipe_end_in_pipe          ; out of it?
     LDX pipe_move
     BEQ try_push_done
-    CMP #&0B                            ; a junction?
+    CMP #CELL_JUNCTION                  ; a junction?
     BNE pipe_check_ahead
     LDA #12                             ; anticlockwise first
     STA work2
@@ -3856,7 +3859,7 @@ NEXT
     TAY
     LDA turns, Y                        ; a direction
     STA work0
-    LDX #&0C                            ; C for left or right...
+    LDX #CELL_PIPE_ACROSS               ; C for left or right...
     CMP #&02
     BCC pipe_junction_try
     INX                                 ; ...D for up or down
@@ -3875,24 +3878,24 @@ NEXT
     BNE pipe_junction_turn
     BEQ pipe_reverse                    ; no way on: turn back
 .underfoot_on_foot
-    CMP #&07                            ; the thing to collect?
+    CMP #CELL_SULPHUR                   ; the thing to collect?
     BEQ collect
     TAX                                 ; anything else kills
     BNE kill_player
     RTS
 .pipe_junction_found
     LDA work0                           ; carry set: + 7, the move
-    ADC #7 - 1
+    ADC #ACTION_LEFT - 1
     STA pipe_move
     RTS
 .pipe_check_ahead
     LDA front_cell                      ; the cell ahead: empty...
     BEQ check_deadly
-    CMP #&07                            ; ...or to collect: carry on
+    CMP #CELL_SULPHUR                   ; ...or to collect: carry on
     BEQ check_deadly
-    CMP #&0A                            ; 1-9 or F: blocked
+    CMP #CELL_LAVA                      ; 1-9 or F: blocked
     BCC pipe_reverse
-    CMP #&0F                            ; lava or fire: as below; B-D: carry on
+    CMP #CELL_OBJECT                    ; lava or fire: as below; B-D: carry on
     BCC check_deadly
 .pipe_reverse
     LDY pipe_move                       ; the reverse move
@@ -3903,9 +3906,9 @@ NEXT
 
 ; Lava (A) and fire (E) kill.
 .check_deadly
-    CMP #&0A
+    CMP #CELL_LAVA
     BEQ kill_player
-    CMP #&0E
+    CMP #CELL_FIRE
     BNE check_deadly_done
 .kill_player
     STA player_dead                     ; nonzero: dead
@@ -3918,7 +3921,7 @@ NEXT
     LDX pipe_move
     BEQ underfoot_on_foot
 .check_pipe_end_in_pipe
-    CMP #&07
+    CMP #CELL_SULPHUR
     BEQ collect
     TAX
     BNE check_deadly_done               ; out of the pipe
@@ -4000,7 +4003,7 @@ NEXT
     STA monster_direction, X
     LDA work0                           ; its turning preferences
     STA monster_turns, X
-    LDA #&0E                            ; move its mark, a fire cell
+    LDA #CELL_FIRE                      ; move its mark, a fire cell
     BNE move_cell_type
 
 ; Move what's in map cell (X, Y) a cell in direction A, objects and all, and
@@ -4018,7 +4021,7 @@ NEXT
     BEQ move_cell_done
 .move_cell_type
     PHA
-    CMP #&0F                            ; an object?
+    CMP #CELL_OBJECT                    ; an object?
     BNE move_cell_draw
     LDX work2
     LDY work3
@@ -4049,7 +4052,7 @@ NEXT
 .read_keys
     LDA action
     BNE move_cell_done
-    LDA #&06                            ; 6 action keys...
+    LDA #ACTION_USE                     ; 6 action keys...
     STA action
 .read_action_key
     LDY action
@@ -4087,7 +4090,7 @@ NEXT
     BNE move_cell_done
     TYA
     CLC                                 ; action 7-10
-    ADC #7
+    ADC #ACTION_LEFT
     STA action
 .test_move_key_note
     LDY work0                           ; remember: 1 if it's down
@@ -4339,7 +4342,7 @@ NEXT
 .pick_up
     JSR light_exit
     LDA front_cell
-    CMP #&0F
+    CMP #CELL_OBJECT
     BNE action_done
     LDX backpack_slot
     LDA backpack, X
@@ -4387,7 +4390,7 @@ NEXT
     ASL A
     ASL A
     TAY
-    LDA #&0F                            ; its cell's an object cell
+    LDA #CELL_OBJECT                    ; its cell's an object cell
     PHA
     JMP move_object
 
@@ -4643,7 +4646,7 @@ NEXT
     CMP thrown_x                        ; where it landed?
     BNE trigger_no_match
 .throw_trigger_y
-    LDA D236E, Y
+    LDA trigger_places + 1, Y
     BMI throw_trigger_condition
     CMP thrown_y
     BNE trigger_no_match
@@ -4706,7 +4709,7 @@ NEXT
     CMP player_x                        ; where the player is?
     BNE trigger_no_match
 .use_trigger_y
-    LDA D236E, Y
+    LDA trigger_places + 1, Y
     BMI use_trigger_condition
     CMP player_y
     BNE trigger_no_match
@@ -4815,7 +4818,7 @@ NEXT
     LDX #&01
     LDA #&04
     JSR sound_effect
-    LDA #&0E                            ; the exit is fire
+    LDA #CELL_FIRE                      ; the exit is fire
     BNE set_front_cell
 
 ; Action 2: the cell in front becomes type A.
@@ -4842,7 +4845,7 @@ NEXT
     PHA
     TAY
     JSR cell_at                         ; still there?
-    CMP #&0F
+    CMP #CELL_OBJECT
     BNE trigger_fails_pop2
     PLA
     TAY
@@ -5114,7 +5117,7 @@ NEXT
     TAX
     JSR launch_object                   ; throw it
     BCS action_toggle_fails
-    LDA #11                             ; action 11: no step
+    LDA #ACTION_STOP                    ; action 11: no step
     STA action
     LSR A
     LDX #&03
@@ -5123,7 +5126,7 @@ NEXT
 ; Action 8: teleport the view's top left to cell (X, Y), so the player to
 ; (X + 4, Y + 4), with a flash, and stop the player's step.
 .action_teleport
-    LDA #11
+    LDA #ACTION_STOP
     STA action
     JSR trigger_arguments
     JSR place_player                    ; move the view and the player
@@ -5194,7 +5197,7 @@ NEXT
     STA work2
     LDA #&08                            ; its own cell
     JSR cell_beside_monster
-    CMP #&0E                            ; still fire?
+    CMP #CELL_FIRE                      ; still fire?
     BNE monster_gone
     LDA #&03                            ; the first field
     STA work5
@@ -5220,7 +5223,7 @@ NEXT
     PHA
     JSR cell_beside_monster             ; what's there
     BEQ monster_set_direction           ; empty: go
-    CMP #&0F
+    CMP #CELL_OBJECT
     BEQ monster_set_direction           ; an object: go
     EOR monster_food                    ; food?
     AND #&0F
@@ -5276,13 +5279,13 @@ NEXT
 
 ; One step in direction A from map cell (X, Y). Returns: X, Y.
 .step
-    STY offset_y                        ; (a spare byte in the stack page)
+    STY step_y                          ; (a spare byte in the stack page)
     TAY
     TXA
     CLC
     ADC direction_dx, Y
     TAX
-    LDA offset_y
+    LDA step_y
     CLC
     ADC direction_dy, Y
     TAY
@@ -5443,7 +5446,7 @@ NEXT
     LDY #&01
     LDA ERROR_POINTER
     STA work0
-    LDA &FE
+    LDA ERROR_POINTER + 1
     STA work1
 .error_handler_print
     LDA (work0), Y
@@ -5507,19 +5510,15 @@ NEXT
 
 ; Each trigger's place, x and y, copied in by setup_level over what was here.
 .trigger_places
-    EQUB &0C
-.D236E
-    EQUB &0C, &19, &F0, &C0, &80, &33, &77, &FF
-    EQUB &FF, &FF, &00, &00, &FF, &FF, &FF, &CC
-    EQUB &88, &88, &00, &00, &FF, &FF, &FF, &33
-    EQUB &11, &11, &0F, &03, &01, &CC, &EE, &EE
-    EQUB &FF, &FF, &F0, &F0, &F0, &F0
+    EQUB &0C, &0C, &19, &F0, &C0, &80, &33, &77
+    EQUB &FF, &FF, &FF, &00, &00, &FF, &FF, &FF
+    EQUB &CC, &88, &88, &00, &00, &FF, &FF, &FF
+    EQUB &33, &11, &11, &0F, &03, &01, &CC, &EE
+    EQUB &EE, &FF, &FF, &F0, &F0, &F0, &F0
     EQUS "pp00"
     EQUB &F0, &F0, &F0, &E0, &C0, &C0, &91, &C0
     EQUB &E0, &80, &11, &77, &FF, &FF, &FF, &FF
-    EQUB &00, &00, &FF, &FF
-.D23AC
-    EQUB &FF
+    EQUB &00, &00, &FF, &FF, &FF
 .main_code_end
 ENDSECTION
 

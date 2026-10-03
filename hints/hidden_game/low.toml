@@ -239,6 +239,7 @@ Copied but never used.
 0x0725 = "...in the next cell"
 
 [operands]
+0x04B0 = "#CELL_OBJECT"
 0x04F1 = "alternate_offsets + 1"
 0x04F4 = "tile_addresses + 1"
 0x045A = "#HI(SCREEN)"

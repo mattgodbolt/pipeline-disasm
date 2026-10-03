@@ -114,8 +114,8 @@ cell types E and F's pictures).
 '''
 0x09CE = '''
 Draw the player in the middle of the view: their picture for the way they
-face; walking up or down alternates two pictures, drawn upside down on every
-other step.
+face (up and down alternate between two), drawn upside down every other
+step.
 Clobbers: A, X, Y, picture, player_screen, draw_step.
 '''
 0x09FC = '''
@@ -164,10 +164,10 @@ Clobbers: A, X, Y, monster_index and the drawing variables.
 0x094D = "...a little under an octave up"
 0x0952 = "in 20ths of a second"
 0x095F = "an icon's columns are half as big"
-0x09D0 = "every other step..."
+0x09D0 = "every other step: flipped"
 0x09D6 = "left 0, right 1: &5400, &5480"
 0x09DA = "up and down: &5500 or &5580..."
-0x09DC = "...alternating, flipped too"
+0x09DC = "...alternating"
 0x09E6 = "the view's 14th character across..."
 0x09EE = "...and down: the middle"
 0x0A00 = "the player's bottom row..."

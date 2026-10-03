@@ -135,8 +135,8 @@
 
 0x0100 = { name = "trigger_flags", note = "a byte per trigger, from io_level_trigger_flags" }
 0x0120 = { name = "keys_were_down", note = "a byte per direction key, for repeat" }
-0x0124 = "offset_y"
-0x0240 = { name = "OS_COUNTDOWN", note = "the OS decrements it every 1/50 second" }
+0x0124 = { name = "step_y", note = "step's scratch" }
+0x0240 = { name = "VSYNC_COUNTER", note = "the OS decrements it every vsync, 50 a second" }
 0x037F = { name = "saved_extended_vectors", note = "the OS's cassette workspace" }
 0x0D00 = { name = "NMI_HANDLER", note = "where the OS jumps on an NMI" }
 0x0D9F = { name = "EXTENDED_VECTORS", note = "the OS's extended vector table" }

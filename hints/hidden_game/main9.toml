@@ -82,6 +82,7 @@ Each trigger's place, x and y, copied in by setup_level over what was here.
 0x232B = "the stack's no use after an error"
 
 [operands]
+0x230E = "ERROR_POINTER + 1"
 0x2236 = "#&40"
 0x2238 = "NMI_HANDLER"
 0x223B = "#&100 - LO(EXTENDED_VECTORS) - 1"
@@ -114,3 +115,7 @@ text = '''
     EQUB 12, 32, &FF
 .disk_command
     EQUS "DISK", 13'''
+
+[refer]
+0x236E = "trigger_places + 1"
+0x23AC = "trigger_args - 1"

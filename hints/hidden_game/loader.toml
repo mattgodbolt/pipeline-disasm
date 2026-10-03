@@ -4,6 +4,7 @@
 [labels]
 0x3000 = "loader"
 0x3005 = "copy_keys_loop"
+0x304B = "cursor_off_loop"
 0x3068 = "message_to_crackers"
 0x3098 = "cursor_off_vdu"
 0x30A2 = "key_order"
@@ -32,7 +33,7 @@
 
 [comments]
 0x3000 = '''
-Entered from the GAME stub with the ten keys MENU set up in key_codes, as
+Entered from the GAME stub with the ten keys MENU set up in menu_keys, as
 negative INKEY numbers. Copies the keys where the game wants them, copies
 the game into place, sets up the screen and the sound event, and starts the
 game. The stack is reset because the event handler lives in the stack page.
@@ -76,7 +77,7 @@ the tune again with the next variation. Preserves A, X and Y.
 0x014E = '''
 Both voices back to the start, each with a silent note to get the event
 going again; then step the variation: every other time round, transpose
-by 20 semitones' worth (&14), and every other time that, swap the voices.
+up a fourth (&14, 5 semitones), and every other time that, swap the voices.
 '''
 0x0185 = '''
 Copied but never used.
@@ -119,6 +120,11 @@ Past the end of what the loader copies: leftovers, never used.
 0x0164 = "channel 2"
 
 [operands]
+0x0141 = "#30"
+0x014A = "#30"
+0x303F = "#22"
+0x3044 = "#5"
+0x305C = "EVNTV + 1"
 0x3008 = "menu_keys"
 0x3055 = "#LO(event_handler)"
 0x305A = "#HI(event_handler)"

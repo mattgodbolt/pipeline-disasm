@@ -159,16 +159,16 @@ A level from the start, and after losing a life.
 0x12E6 = '''
 The game's main loop, a cycle at a time: the clock ticks at the mission's
 rate (not while in a pipe), with warning beeps in the last 20; once the
-exit's charge is set (stage 1) the time left is scored and the player has 4
-ticks to get clear.
+exit is lit (stage 1) the time left is scored and the player has 4 ticks to
+get clear.
 '''
 0x132D = '''
-Out of time: with the charge set, the player is safe 5 or more cells from
-the exit, across or down; otherwise they're caught (the screen flashes).
+Out of time: with the exit lit, the player is safe 5 or more cells from it,
+across or down; otherwise they're caught in the blaze (the screen flashes).
 '''
 0x1346 = '''
-Lose a life. With none left, burn up and back to the title; if the charge
-had been set the level counts as done.
+Lose a life. With none left, burn up and back to the title; if the exit
+had been lit the level counts as done.
 '''
 0x136B = '''
 The level's done: flash the palette, WELL DONE, 100 points.
@@ -233,19 +233,19 @@ level without losing a life lets the next game start from the next one.
 0x12F4 = "the mission's clock rate"
 0x12FF = "the last 20 ticks..."
 0x1307 = "...beep"
-0x130F = "...a different beep with the charge set"
-0x131C = "the charge has just been set:"
+0x130F = "...a different beep once the exit is lit"
+0x131C = "the exit has just been lit:"
 0x1320 = "stage 2: run"
 0x1322 = "a point for each tick left"
 0x1327 = "and 4 ticks to get clear"
-0x132F = "the charge set?"
+0x132F = "the exit lit?"
 0x1333 = "far enough across..."
 0x133A = "...or down: safe"
 0x133F = "caught in it: flash"
 0x1349 = "a sound"
 0x1353 = "the last life"
 0x135E = "colour 0 flashes"
-0x1364 = "died after setting the charge?"
+0x1364 = "died after lighting the exit?"
 0x1373 = "flash"
 0x1379 = "stage 3: done"
 0x137B = "100 points"

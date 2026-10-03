@@ -226,6 +226,8 @@ Wait Y * 256 turns of a DEX loop. Clobbers: X, Y.
 0x1E19 = "gone: &80, an empty slot"
 
 [operands]
+0x1CDD = "#CELL_OBJECT"
+0x1C90 = "#CELL_OBJECT"
 0x1AE1 = "#40"
 0x1B9F = "#HI(io_attrs)"
 0x1BAC = "#HI(io_graphics - 1) - HI(io_attrs)"
