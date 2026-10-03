@@ -58,7 +58,7 @@ level_monsters  = &2710
 MONSTERS        = 4
 
 ; Puzzles. A type byte each:
-;   bits 0-3  type (the order of the "Puzzle types" menu; 9 is Teleport)
+;   bits 0-3  type (PUZZLE_*, the order of the "Puzzle types" menu)
 ;   bit 4     re-usable
 ;   bit 5     clear when the puzzle starts turned on
 ;   bit 6     the collectables condition applies
@@ -73,6 +73,23 @@ level_puzzle_positions = &2740
 ; check the direction.
 level_puzzle_effects = &2780
 PUZZLES         = 32
+
+PUZZLE_PLACE_BLOCK      = 0
+PUZZLE_MOVE_BLOCK       = 1
+PUZZLE_NEXT_BLOCK       = 2
+PUZZLE_SET_LEVELS       = 3
+PUZZLE_THROW_OBJECT     = 4
+PUZZLE_DETONATE_OBJECT  = 5
+PUZZLE_MOVE_MONSTER     = 6
+PUZZLE_PLACE_MONSTER    = 7
+PUZZLE_TELEPORT         = 8
+PUZZLE_SWAP_NEXT        = 9
+PUZZLE_TURN_ON          = 10
+PUZZLE_TURN_OFF         = 11
+PUZZLE_CHARGE_OBJECT    = 12
+PUZZLE_PUSH_CRATES      = 13
+PUZZLE_MOVE_NEXT_BLOCK  = 14
+PUZZLE_DISORIENTATE     = 15
 
 ; The map: 64 x 64 cells of one nibble, stored a column at a time (32 bytes
 ; per x, top to bottom), the even y in the top nibble.
