@@ -1625,170 +1625,187 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     INC work+1
 .count_collectable_done
     RTS
+; Options menu, Collects: count the collectables in the map, then ask how many
+; the player must collect.
 .option_collects
-    LDY #&00                        ; 19E0: A0 00
-    STY ptr                         ; 19E2: 84 52
-    STY work                        ; 19E4: 84 54
-    STY work+1                      ; 19E6: 84 55
-    LDA #&28                        ; 19E8: A9 28
-    STA ptr+1                       ; 19EA: 85 53
-    LDX #&08                        ; 19EC: A2 08
+    LDY #0
+    STY ptr
+    STY work
+    STY work+1
+    LDA #HI(level_map)
+    STA ptr+1
+    LDX #HI(level_end - level_map)
 .option_collects_count
-    LDA (ptr), Y                    ; 19EE: B1 52
-    PHA                             ; 19F0: 48
-    AND #&0F                        ; 19F1: 29 0F
-    CMP #&07                        ; 19F3: C9 07
-    BNE option_collects_high        ; 19F5: D0 03
-    JSR count_collectable           ; 19F7: 20 D9 19
+    LDA (ptr), Y
+    PHA
+    AND #&0F
+    CMP #TILE_COLLECTABLE
+    BNE option_collects_high
+    JSR count_collectable
 .option_collects_high
-    PLA                             ; 19FA: 68
-    LSR A                           ; 19FB: 4A
-    LSR A                           ; 19FC: 4A
-    LSR A                           ; 19FD: 4A
-    LSR A                           ; 19FE: 4A
-    CMP #&07                        ; 19FF: C9 07
-    BNE option_collects_next        ; 1A01: D0 03
-    JSR count_collectable           ; 1A03: 20 D9 19
+    PLA
+    LSR A
+    LSR A
+    LSR A
+    LSR A
+    CMP #TILE_COLLECTABLE
+    BNE option_collects_next
+    JSR count_collectable
 .option_collects_next
-    INY                             ; 1A06: C8
-    BNE option_collects_count       ; 1A07: D0 E5
-    INC ptr+1                       ; 1A09: E6 53
-    DEX                             ; 1A0B: CA
-    BNE option_collects_count       ; 1A0C: D0 E0
+    INY
+    BNE option_collects_count
+    INC ptr+1
+    DEX
+    BNE option_collects_count
 .option_collects_ask
-    JSR vector_open_message_box     ; 1A0E: 20 95 08
-    LDA work                        ; 1A11: A5 54
-    LDX work+1                      ; 1A13: A6 55
-    BEQ option_collects_show        ; 1A15: F0 07
-    LDA #&48                        ; 1A17: A9 48
-    JSR vector_print_message        ; 1A19: 20 59 23
-    LDA #&FA                        ; 1A1C: A9 FA
+    JSR vector_open_message_box
+    LDA work
+    LDX work+1
+    BEQ option_collects_show
+    LDA #M_TOO_MANY             ; 256 or more: say so, and call it 250
+    JSR vector_print_message
+    LDA #250
 .option_collects_show
-    PHA                             ; 1A1E: 48
-    LDA #&13                        ; 1A1F: A9 13
-    JSR vector_print_line1          ; 1A21: 20 56 23
-    PLA                             ; 1A24: 68
-    JSR print_decimal               ; 1A25: 20 4C 18
-    LDA #&14                        ; 1A28: A9 14
-    JSR vector_print_message        ; 1A2A: 20 59 23
-    LDA level_collects              ; 1A2D: AD EA 26
-    JSR print_decimal               ; 1A30: 20 4C 18
-    LDX #&12                        ; 1A33: A2 12
-    JSR input_number                ; 1A35: 20 C4 12
-    DEX                             ; 1A38: CA
-    BEQ option_collects_done        ; 1A39: F0 05
-    BPL option_collects_ask         ; 1A3B: 10 D1
-    STA level_collects              ; 1A3D: 8D EA 26
+    PHA
+    LDA #M_COLLECTABLES
+    JSR vector_print_line1
+    PLA
+    JSR print_decimal
+    LDA #M_REQUIRED
+    JSR vector_print_message
+    LDA level_collects
+    JSR print_decimal
+    LDX #M_ENTER_NEW_VALUE
+    JSR input_number
+    DEX
+    BEQ option_collects_done    ; nothing typed
+    BPL option_collects_ask     ; too big
+    STA level_collects
 .option_collects_done
-    JMP vector_close_message_box    ; 1A40: 4C 98 08
+    JMP vector_close_message_box
+
+; Options menu, Time: the time allowed, 1-255.
 .option_time
-    LDA #&11                        ; 1A43: A9 11
-    LDX level_time                  ; 1A45: AE EB 26
-    JSR ask_number                  ; 1A48: 20 4F 1A
-    STA level_time                  ; 1A4B: 8D EB 26
-    RTS                             ; 1A4E: 60
+    LDA #M_INITIAL_TIME
+    LDX level_time
+    JSR ask_number
+    STA level_time
+    RTS
+
+; Ask for a new value of a number, showing the old one, until it's in range.
+; Return keeps the old one; one out of range starts at 1.
+; ask_number allows 0-255.
+; In: A = the message; X = the old value; Y = the maximum; C set if 0 is
+; allowed.
+; Out: A = the value.
+; Clobbers: X, Y, ptr, arg, number, plot_enabled (borrowed for the maximum).
 .ask_number
-    SEC                             ; 1A4F: 38
-    LDY #&FF                        ; 1A50: A0 FF
+    SEC
+    LDY #255
 .ask_number_limited
-    PHP                             ; 1A52: 08
-    STA arg                         ; 1A53: 85 62
-    STY plot_enabled                ; 1A55: 84 5A
-    TXA                             ; 1A57: 8A
-    BNE ask_number_check            ; 1A58: D0 02
-    BCC ask_number_default          ; 1A5A: 90 06
+    PHP
+    STA arg
+    STY plot_enabled
+    TXA
+    BNE ask_number_check
+    BCC ask_number_default
 .ask_number_check
-    CPX plot_enabled                ; 1A5C: E4 5A
-    BEQ ask_number_start            ; 1A5E: F0 04
-    BCC ask_number_start            ; 1A60: 90 02
+    CPX plot_enabled
+    BEQ ask_number_start
+    BCC ask_number_start
 .ask_number_default
-    LDX #&01                        ; 1A62: A2 01
+    LDX #1
 .ask_number_start
-    STX number                      ; 1A64: 86 63
+    STX number
 .ask_number_loop
-    JSR vector_open_message_box     ; 1A66: 20 95 08
-    LDA arg                         ; 1A69: A5 62
-    JSR vector_print_line1          ; 1A6B: 20 56 23
-    LDA number                      ; 1A6E: A5 63
-    JSR print_decimal               ; 1A70: 20 4C 18
-    LDX #&12                        ; 1A73: A2 12
-    JSR input_number                ; 1A75: 20 C4 12
-    CMP plot_enabled                ; 1A78: C5 5A
-    BEQ ask_number_entered          ; 1A7A: F0 02
-    BCS ask_number_loop             ; 1A7C: B0 E8
+    JSR vector_open_message_box
+    LDA arg
+    JSR vector_print_line1
+    LDA number
+    JSR print_decimal
+    LDX #M_ENTER_NEW_VALUE
+    JSR input_number
+    CMP plot_enabled
+    BEQ ask_number_entered
+    BCS ask_number_loop
 .ask_number_entered
-    DEX                             ; 1A7E: CA
-    BMI ask_number_check_zero       ; 1A7F: 30 04
-    BNE ask_number_loop             ; 1A81: D0 E3
-    LDA number                      ; 1A83: A5 63
+    DEX
+    BMI ask_number_check_zero   ; a number
+    BNE ask_number_loop         ; too big
+    LDA number                  ; nothing typed: the old one
 .ask_number_check_zero
-    PLP                             ; 1A85: 28
-    PHP                             ; 1A86: 08
-    TAY                             ; 1A87: A8
-    BNE ask_number_done             ; 1A88: D0 02
-    BCC ask_number_loop             ; 1A8A: 90 DA
+    PLP
+    PHP
+    TAY
+    BNE ask_number_done
+    BCC ask_number_loop
 .ask_number_done
-    PLP                             ; 1A8C: 28
-    PHA                             ; 1A8D: 48
-    JSR vector_close_message_box    ; 1A8E: 20 98 08
-    PLA                             ; 1A91: 68
-    RTS                             ; 1A92: 60
+    PLP
+    PHA
+    JSR vector_close_message_box
+    PLA
+    RTS
+
+; Options menu, Graphics: the sprite for walls one and two, the collectable
+; and the fatal trap, and the level's four colours.
 .option_graphics
-    LDA level_sprites               ; 1A93: AD EF 26
-    JSR unpack_priorities           ; 1A96: 20 CB 19
-    LDA #&00                        ; 1A99: A9 00
+    LDA level_sprites
+    JSR unpack_priorities
+    LDA #0
 .option_graphics_loop
-    PHA                             ; 1A9B: 48
-    LDA #&15                        ; 1A9C: A9 15
-    JSR open_window                 ; 1A9E: 20 A8 14
-    PLA                             ; 1AA1: 68
-    JSR menu_select                 ; 1AA2: 20 52 11
-    CMP #&08                        ; 1AA5: C9 08
-    BNE option_graphics_choice      ; 1AA7: D0 09
-    JSR pack_priorities             ; 1AA9: 20 86 19
-    STA level_sprites               ; 1AAC: 8D EF 26
-    JMP vector_close_window         ; 1AAF: 4C 83 08
+    PHA
+    LDA #W_GRAPHICS
+    JSR open_window
+    PLA
+    JSR menu_select
+    CMP #8                      ; OK
+    BNE option_graphics_choice
+    JSR pack_priorities
+    STA level_sprites
+    JMP vector_close_window
 .option_graphics_choice
-    PHA                             ; 1AB2: 48
-    CMP #&04                        ; 1AB3: C9 04
-    BCC option_graphics_sprite      ; 1AB5: 90 27
-    SBC #&04                        ; 1AB7: E9 04
-    STA work                        ; 1AB9: 85 54
-    TAY                             ; 1ABB: A8
-    ASL A                           ; 1ABC: 0A
-    ASL A                           ; 1ABD: 0A
-    ASL A                           ; 1ABE: 0A
-    ASL A                           ; 1ABF: 0A
-    STA work+1                      ; 1AC0: 85 55
-    LDA level_palette, Y            ; 1AC2: B9 E4 26
-    AND #&0F                        ; 1AC5: 29 0F
-    TAY                             ; 1AC7: A8
-    LDA #&17                        ; 1AC8: A9 17
-    JSR choose_from_window_at       ; 1ACA: 20 28 11
-    ORA work+1                      ; 1ACD: 05 55
-    LDY work                        ; 1ACF: A4 54
-    STA level_palette, Y            ; 1AD1: 99 E4 26
-    JSR set_palette_entry           ; 1AD4: 20 B3 15
+    PHA
+    CMP #4
+    BCC option_graphics_sprite
+    SBC #4                      ; first to fourth colour
+    STA work
+    TAY
+    ASL A
+    ASL A
+    ASL A
+    ASL A
+    STA work+1
+    LDA level_palette, Y
+    AND #&0F
+    TAY
+    LDA #W_COLOURS
+    JSR choose_from_window_at
+    ORA work+1
+    LDY work
+    STA level_palette, Y
+    JSR set_palette_entry
 .option_graphics_next
-    JSR vector_close_window         ; 1AD7: 20 83 08
-    PLA                             ; 1ADA: 68
-    JMP option_graphics_loop        ; 1ADB: 4C 9B 1A
+    JSR vector_close_window
+    PLA
+    JMP option_graphics_loop
 .option_graphics_sprite
-    TAY                             ; 1ADE: A8
-    STY work                        ; 1ADF: 84 54
-    LDX choices, Y                  ; 1AE1: B6 5E
-    LDY sprite_items, X             ; 1AE3: BC F9 1A
-    LDA #&16                        ; 1AE6: A9 16
-    JSR choose_from_window_at       ; 1AE8: 20 28 11
-    TAX                             ; 1AEB: AA
-    LDA sprite_codes, X             ; 1AEC: BD F5 1A
-    LDX work                        ; 1AEF: A6 54
-    STA choices, X                  ; 1AF1: 95 5E
-    BPL option_graphics_next        ; 1AF3: 10 E2
+    TAY
+    STY work
+    LDX choices, Y
+    LDY sprite_items, X
+    LDA #W_SPRITES
+    JSR choose_from_window_at
+    TAX
+    LDA sprite_codes, X
+    LDX work
+    STA choices, X
+    BPL option_graphics_next
+; The code for each item of the sprites menu (sprite A, sprite B,
+; patterned), and the item for each code; nothing chooses code 2.
 .sprite_codes
-    EQUB &00, &03, &01, &02         ; 1AF5
+    EQUB 0, 3, 1, 2
 .sprite_items
-    EQUB &00, &02, &03, &01         ; 1AF9
+    EQUB 0, 2, 3, 1
 .option_puzzle
     LDA #&20                        ; 1AFD: A9 20
     LDX #&18                        ; 1AFF: A2 18
