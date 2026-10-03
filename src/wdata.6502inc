@@ -21,6 +21,8 @@ wdata = &7000
 ; the tick, glyph 68. Codes from 64 come from the program (font_digits)
 ; rather than the font.
 wdata_glyphs = "ABCDEFGHIJKLMNOPQRSTUVWXYZ.:?<> abcdefghijklmnopqrstuvwxyz1234567890*-"
+GLYPH_X         = 55            ; "x", for a cross
+GLYPH_TICK      = 68
 
 W_SELECT_BLOCK      = 1     ; the sixteen blocks
 W_OPTIONS           = 2

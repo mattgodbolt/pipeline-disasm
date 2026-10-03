@@ -3673,421 +3673,470 @@ SECTION low_code, org=&0880
     ORA screen_address(62, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS)
     STA screen_address(62, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS)
     RTS
+; Draw a window from WDATA (format in wdata.6502inc): x and width in screen
+; columns, y in character rows, height+1 lines of glyphs two columns wide.
+; It's filled in colour 1 with a colour 3 line down the right and along the
+; bottom, and the title line inverted. Relative windows go on the other side
+; of the screen from the cursor.
+; In: X, Y = the window's address.
+; Out: window_x, window_y (in cells, so doubled), window_width and
+; window_height describe it, for close_window and the menu.
+; Clobbers: A, X, Y, the low code's zero page.
 .draw_window
-    STX window_ptr                  ; 0A27: 86 76
-    STY window_ptr+1                ; 0A29: 84 77
-    LDX #&03                        ; 0A2B: A2 03
-    LDY #&03                        ; 0A2D: A0 03
+    STX window_ptr
+    STY window_ptr+1
+    LDX #3
+    LDY #3
 .draw_window_header
-    LDA (window_ptr), Y             ; 0A2F: B1 76
-    STA window_x, X                 ; 0A31: 95 84
-    DEX                             ; 0A33: CA
-    DEY                             ; 0A34: 88
-    BPL draw_window_header          ; 0A35: 10 F8
-    LDA window_y                    ; 0A37: A5 85
-    STA window_flags                ; 0A39: 85 88
-    AND #&7F                        ; 0A3B: 29 7F
-    STA window_y                    ; 0A3D: 85 85
-    LDA window_x                    ; 0A3F: A5 84
-    PHP                             ; 0A41: 08
-    AND #&7F                        ; 0A42: 29 7F
-    STA window_x                    ; 0A44: 85 84
-    PLP                             ; 0A46: 28
-    BMI draw_window_placed          ; 0A47: 30 1C
-    LDA cursor_x                    ; 0A49: A5 50
-    CMP #&20                        ; 0A4B: C9 20
-    BCS draw_window_place_y         ; 0A4D: B0 08
-    LDA #&41                        ; 0A4F: A9 41
-    SBC window_width                ; 0A51: E5 86
-    SBC window_x                    ; 0A53: E5 84
-    STA window_x                    ; 0A55: 85 84
+    LDA (window_ptr), Y
+    STA window_x, X
+    DEX
+    DEY
+    BPL draw_window_header
+    LDA window_y
+    STA window_flags
+    AND #&7F
+    STA window_y
+    LDA window_x
+    PHP
+    AND #&7F
+    STA window_x
+    PLP
+    BMI draw_window_placed      ; fixed
+    LDA cursor_x
+    CMP #MAP_SIZE/2
+    BCS draw_window_place_y
+    LDA #MAP_SIZE + 1           ; x = 64 - width - x (C is clear)
+    SBC window_width
+    SBC window_x
+    STA window_x
 .draw_window_place_y
-    LDA cursor_y                    ; 0A57: A5 51
-    CMP #&20                        ; 0A59: C9 20
-    BCS draw_window_placed          ; 0A5B: B0 08
-    LDA #&20                        ; 0A5D: A9 20
-    SBC window_height               ; 0A5F: E5 87
-    SBC window_y                    ; 0A61: E5 85
-    STA window_y                    ; 0A63: 85 85
+    LDA cursor_y
+    CMP #MAP_SIZE/2
+    BCS draw_window_placed
+    LDA #MAP_SIZE/2             ; y = 31 - height - y
+    SBC window_height
+    SBC window_y
+    STA window_y
 .draw_window_placed
-    ASL window_y                    ; 0A65: 06 85
-    LDY window_y                    ; 0A67: A4 85
-    LDA window_x                    ; 0A69: A5 84
-    TAX                             ; 0A6B: AA
-    JSR cell_address                ; 0A6C: 20 13 09
-    LDA screen_ptr+1                ; 0A6F: A5 73
-    PHA                             ; 0A71: 48
-    STA glyph_ptr+1                 ; 0A72: 85 75
-    LDA screen_ptr                  ; 0A74: A5 72
-    PHA                             ; 0A76: 48
-    STA glyph_ptr                   ; 0A77: 85 74
-    SEC                             ; 0A79: 38
-    SBC #&01                        ; 0A7A: E9 01
-    STA screen_ptr                  ; 0A7C: 85 72
-    BCS draw_window_frame           ; 0A7E: B0 02
-    DEC screen_ptr+1                ; 0A80: C6 73
+    ASL window_y
+    LDY window_y
+    LDA window_x
+    TAX
+    JSR cell_address
+    LDA screen_ptr+1
+    PHA
+    STA glyph_ptr+1
+    LDA screen_ptr
+    PHA
+    STA glyph_ptr
+    SEC                         ; one back, for counting down to 1
+    SBC #1
+    STA screen_ptr
+    BCS draw_window_frame
+    DEC screen_ptr+1
 .draw_window_frame
-    LDA window_width                ; 0A82: A5 86
-    ASL A                           ; 0A84: 0A
-    ASL A                           ; 0A85: 0A
-    ASL A                           ; 0A86: 0A
-    STA byte_count                  ; 0A87: 85 78
-    ADC glyph_ptr                   ; 0A89: 65 74
-    STA glyph_ptr                   ; 0A8B: 85 74
-    BCC draw_window_rows            ; 0A8D: 90 02
-    INC glyph_ptr+1                 ; 0A8F: E6 75
+    LDA window_width
+    ASL A
+    ASL A
+    ASL A
+    STA byte_count              ; bytes across a character row
+    ADC glyph_ptr               ; glyph_ptr: the column right of it
+    STA glyph_ptr
+    BCC draw_window_rows
+    INC glyph_ptr+1
 .draw_window_rows
-    LDA window_height               ; 0A91: A5 87
-    STA line_count                  ; 0A93: 85 79
-    PHA                             ; 0A95: 48
+    LDA window_height
+    STA line_count
+    PHA
 .draw_window_row
-    LDA #&0F                        ; 0A96: A9 0F
-    LDY byte_count                  ; 0A98: A4 78
+    LDA #&0F
+    LDY byte_count
 .draw_window_fill
-    STA (screen_ptr), Y             ; 0A9A: 91 72
-    DEY                             ; 0A9C: 88
-    BNE draw_window_fill            ; 0A9D: D0 FB
-    LDY #&07                        ; 0A9F: A0 07
+    STA (screen_ptr), Y
+    DEY
+    BNE draw_window_fill
+    LDY #7
 .draw_window_right_edge
-    LDA (glyph_ptr), Y              ; 0AA1: B1 74
-    AND #&77                        ; 0AA3: 29 77
-    ORA #&88                        ; 0AA5: 09 88
-    STA (glyph_ptr), Y              ; 0AA7: 91 74
-    DEY                             ; 0AA9: 88
-    BPL draw_window_right_edge      ; 0AAA: 10 F5
-    INC glyph_ptr+1                 ; 0AAC: E6 75
-    INC glyph_ptr+1                 ; 0AAE: E6 75
-    INC screen_ptr+1                ; 0AB0: E6 73
-    INC screen_ptr+1                ; 0AB2: E6 73
-    DEC line_count                  ; 0AB4: C6 79
-    BPL draw_window_row             ; 0AB6: 10 DE
-    PLA                             ; 0AB8: 68
-    STA line_count                  ; 0AB9: 85 79
-    INY                             ; 0ABB: C8
-    LDA (glyph_ptr), Y              ; 0ABC: B1 74
-    AND #&77                        ; 0ABE: 29 77
-    ORA #&88                        ; 0AC0: 09 88
-    STA (glyph_ptr), Y              ; 0AC2: 91 74
-    LDA byte_count                  ; 0AC4: A5 78
-    SEC                             ; 0AC6: 38
-    SBC #&07                        ; 0AC7: E9 07
-    TAY                             ; 0AC9: A8
+    LDA (glyph_ptr), Y          ; its leftmost pixel in colour 3
+    AND #&77
+    ORA #&88
+    STA (glyph_ptr), Y
+    DEY
+    BPL draw_window_right_edge
+    INC glyph_ptr+1
+    INC glyph_ptr+1
+    INC screen_ptr+1
+    INC screen_ptr+1
+    DEC line_count
+    BPL draw_window_row
+    PLA
+    STA line_count
+    INY
+    LDA (glyph_ptr), Y          ; the corner
+    AND #&77
+    ORA #&88
+    STA (glyph_ptr), Y
+    LDA byte_count
+    SEC
+    SBC #7
+    TAY
 .draw_window_bottom
-    LDA #&FF                        ; 0ACA: A9 FF
-    STA (screen_ptr), Y             ; 0ACC: 91 72
-    TYA                             ; 0ACE: 98
-    SEC                             ; 0ACF: 38
-    SBC #&08                        ; 0AD0: E9 08
-    TAY                             ; 0AD2: A8
-    BCS draw_window_bottom          ; 0AD3: B0 F5
-    PLA                             ; 0AD5: 68
-    STA screen_ptr                  ; 0AD6: 85 72
-    STA map_ptr                     ; 0AD8: 85 7E
-    PLA                             ; 0ADA: 68
-    STA screen_ptr+1                ; 0ADB: 85 73
-    STA map_ptr+1                   ; 0ADD: 85 7F
-    LDA window_ptr                  ; 0ADF: A5 76
-    CLC                             ; 0AE1: 18
-    ADC #&03                        ; 0AE2: 69 03
-    STA window_ptr                  ; 0AE4: 85 76
-    BCC draw_window_line            ; 0AE6: 90 02
-    INC window_ptr+1                ; 0AE8: E6 77
+    LDA #&FF                    ; the top line of the row below
+    STA (screen_ptr), Y
+    TYA
+    SEC
+    SBC #8
+    TAY
+    BCS draw_window_bottom
+    PLA                         ; back to the top left, kept in map_ptr as
+    STA screen_ptr              ; each line's start
+    STA map_ptr
+    PLA
+    STA screen_ptr+1
+    STA map_ptr+1
+    LDA window_ptr
+    CLC
+    ADC #3
+    STA window_ptr
+    BCC draw_window_line
+    INC window_ptr+1
 .draw_window_line
-    JSR next_window_byte            ; 0AEA: 20 40 0B
-    LDY #&00                        ; 0AED: A0 00
-    LDA (window_ptr), Y             ; 0AEF: B1 76
-    STA glyph_ptr                   ; 0AF1: 85 74
-    AND #&7F                        ; 0AF3: 29 7F
-    TAX                             ; 0AF5: AA
-    BIT glyph_ptr                   ; 0AF6: 24 74
-    BMI draw_window_glyph           ; 0AF8: 30 13
-    STX glyph_ptr                   ; 0AFA: 86 74
-    LDA window_width                ; 0AFC: A5 86
-    LSR A                           ; 0AFE: 4A
-    SEC                             ; 0AFF: 38
-    SBC glyph_ptr                   ; 0B00: E5 74
-    ASL A                           ; 0B02: 0A
-    ASL A                           ; 0B03: 0A
-    ASL A                           ; 0B04: 0A
-    ADC screen_ptr                  ; 0B05: 65 72
-    STA screen_ptr                  ; 0B07: 85 72
-    BCC draw_window_glyph           ; 0B09: 90 02
-    INC screen_ptr+1                ; 0B0B: E6 73
+    JSR next_window_byte
+    LDY #0
+    LDA (window_ptr), Y         ; the line's length
+    STA glyph_ptr
+    AND #&7F
+    TAX
+    BIT glyph_ptr
+    BMI draw_window_glyph       ; left-justified
+    STX glyph_ptr
+    LDA window_width            ; centred: half the room left over
+    LSR A
+    SEC
+    SBC glyph_ptr
+    ASL A
+    ASL A
+    ASL A
+    ADC screen_ptr
+    STA screen_ptr
+    BCC draw_window_glyph
+    INC screen_ptr+1
 .draw_window_glyph
-    JSR next_window_byte            ; 0B0D: 20 40 0B
-    LDY #&00                        ; 0B10: A0 00
-    LDA (window_ptr), Y             ; 0B12: B1 76
-    JSR draw_glyph                  ; 0B14: 20 C4 0B
-    DEX                             ; 0B17: CA
-    BNE draw_window_glyph           ; 0B18: D0 F3
-    LDA line_count                  ; 0B1A: A5 79
-    CMP window_height               ; 0B1C: C5 87
-    BCC draw_window_next_line       ; 0B1E: 90 0E
-    LDY byte_count                  ; 0B20: A4 78
-    LDX byte_count                  ; 0B22: A6 78
+    JSR next_window_byte
+    LDY #0
+    LDA (window_ptr), Y
+    JSR draw_glyph
+    DEX
+    BNE draw_window_glyph
+    LDA line_count
+    CMP window_height
+    BCC draw_window_next_line
+    LDY byte_count              ; the title: colours 1 and 3 swapped with 0
+    LDX byte_count              ; and 2
 .draw_window_title
-    DEY                             ; 0B24: 88
-    LDA (map_ptr), Y                ; 0B25: B1 7E
-    EOR #&F0                        ; 0B27: 49 F0
-    STA (map_ptr), Y                ; 0B29: 91 7E
-    DEX                             ; 0B2B: CA
-    BNE draw_window_title           ; 0B2C: D0 F6
+    DEY
+    LDA (map_ptr), Y
+    EOR #&F0
+    STA (map_ptr), Y
+    DEX
+    BNE draw_window_title
 .draw_window_next_line
-    LDA map_ptr                     ; 0B2E: A5 7E
-    CLC                             ; 0B30: 18
-    STA screen_ptr                  ; 0B31: 85 72
-    LDA map_ptr+1                   ; 0B33: A5 7F
-    ADC #&02                        ; 0B35: 69 02
-    STA screen_ptr+1                ; 0B37: 85 73
-    STA map_ptr+1                   ; 0B39: 85 7F
-    DEC line_count                  ; 0B3B: C6 79
-    BPL draw_window_line            ; 0B3D: 10 AB
-    RTS                             ; 0B3F: 60
+    LDA map_ptr
+    CLC
+    STA screen_ptr
+    LDA map_ptr+1
+    ADC #HI(SCREEN_ROW)
+    STA screen_ptr+1
+    STA map_ptr+1
+    DEC line_count
+    BPL draw_window_line
+    RTS
+
 .next_window_byte
-    INC window_ptr                  ; 0B40: E6 76
-    BNE next_window_byte_done       ; 0B42: D0 02
-    INC window_ptr+1                ; 0B44: E6 77
+    INC window_ptr
+    BNE next_window_byte_done
+    INC window_ptr+1
 .next_window_byte_done
-    RTS                             ; 0B46: 60
+    RTS
+
+; Close the window last drawn by redrawing the map under it.
+; Clobbers: A, X, Y, the low code's zero page.
 .close_window
-    LDA window_y                    ; 0B47: A5 85
-    STA menu_shown_item             ; 0B49: 85 83
-    LDA window_x                    ; 0B4B: A5 84
-    STA restore_x                   ; 0B4D: 85 80
-    LDA window_width                ; 0B4F: A5 86
-    STA run_length                  ; 0B51: 85 7C
-    LDA window_height               ; 0B53: A5 87
-    ASL A                           ; 0B55: 0A
-    CLC                             ; 0B56: 18
-    ADC #&02                        ; 0B57: 69 02
-    STA restore_row                 ; 0B59: 85 81
-    INC run_length                  ; 0B5B: E6 7C
+    LDA window_y
+    STA menu_shown_item         ; borrowed: the top row
+    LDA window_x
+    STA restore_x
+    LDA window_width
+    STA run_length
+    LDA window_height
+    ASL A
+    CLC
+    ADC #2                      ; its rows, and the line below
+    STA restore_row
+    INC run_length              ; and the line on the right
 .close_window_row
-    LDA restore_row                 ; 0B5D: A5 81
-    CLC                             ; 0B5F: 18
-    ADC menu_shown_item             ; 0B60: 65 83
-    TAY                             ; 0B62: A8
-    LDX restore_x                   ; 0B63: A6 80
-    LDA run_length                  ; 0B65: A5 7C
-    JSR draw_map_run                ; 0B67: 20 46 09
-    DEC restore_row                 ; 0B6A: C6 81
-    BPL close_window_row            ; 0B6C: 10 EF
-    RTS                             ; 0B6E: 60
+    LDA restore_row
+    CLC
+    ADC menu_shown_item
+    TAY
+    LDX restore_x
+    LDA run_length
+    JSR draw_map_run
+    DEC restore_row
+    BPL close_window_row
+    RTS
+
+; Close the message box by redrawing the map under it, its rows and the
+; lines round it.
+; Clobbers: A, X, Y, the low code's zero page.
 .close_message_box
-    LDA #&24                        ; 0B6F: A9 24
-    STA restore_row                 ; 0B71: 85 81
+    LDA #(MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS) * 2
+    STA restore_row
 .close_message_box_row
-    LDA #&3E                        ; 0B73: A9 3E
-    LDX #&01                        ; 0B75: A2 01
-    LDY restore_row                 ; 0B77: A4 81
-    JSR draw_map_run                ; 0B79: 20 46 09
-    DEC restore_row                 ; 0B7C: C6 81
-    LDA restore_row                 ; 0B7E: A5 81
-    CMP #&1B                        ; 0B80: C9 1B
-    BCS close_message_box_row       ; 0B82: B0 EF
-    RTS                             ; 0B84: 60
+    LDA #MESSAGE_BOX_COLUMNS + 2
+    LDX #1
+    LDY restore_row
+    JSR draw_map_run
+    DEC restore_row
+    LDA restore_row
+    CMP #MESSAGE_BOX_ROW * 2 - 1
+    BCS close_message_box_row
+    RTS
+
+; Invert a cell on the screen (the map cursor).
+; In: X, Y = the cell.
+; Clobbers: A, Y, screen_ptr.
 .invert_cell
-    JSR cell_address                ; 0B85: 20 13 09
-    LDY #&03                        ; 0B88: A0 03
+    JSR cell_address
+    LDY #3
 .invert_cell_loop
-    LDA (screen_ptr), Y             ; 0B8A: B1 72
-    EOR #&FF                        ; 0B8C: 49 FF
-    STA (screen_ptr), Y             ; 0B8E: 91 72
-    DEY                             ; 0B90: 88
-    BPL invert_cell_loop            ; 0B91: 10 F7
-    RTS                             ; 0B93: 60
+    LDA (screen_ptr), Y
+    EOR #&FF
+    STA (screen_ptr), Y
+    DEY
+    BPL invert_cell_loop
+    RTS
+
+; Draw a block in a cell on the screen.
+; In: A = the block; X, Y = the cell.
+; Clobbers: A, X, Y, screen_ptr.
 .plot_cell
-    PHA                             ; 0B94: 48
-    JSR cell_address                ; 0B95: 20 13 09
-    PLA                             ; 0B98: 68
-    ASL A                           ; 0B99: 0A
-    ASL A                           ; 0B9A: 0A
-    TAX                             ; 0B9B: AA
-    LDY #&03                        ; 0B9C: A0 03
+    PHA
+    JSR cell_address
+    PLA
+    ASL A
+    ASL A
+    TAX
+    LDY #3
 .plot_cell_loop
-    LDA tile_patterns, X            ; 0B9E: BD 60 25
-    STA (screen_ptr), Y             ; 0BA1: 91 72
-    INX                             ; 0BA3: E8
-    DEY                             ; 0BA4: 88
-    BPL plot_cell_loop              ; 0BA5: 10 F7
-    RTS                             ; 0BA7: 60
+    LDA tile_patterns, X
+    STA (screen_ptr), Y
+    INX
+    DEY
+    BPL plot_cell_loop
+    RTS
+
+; Put a tick, or an x, at the end of a line of the window last drawn.
+; In: A = nonzero for a tick; Y = the line (the title is 0).
+; Clobbers: A, X, Y, screen_ptr, glyph_ptr.
 .tick_line
-    PHA                             ; 0BA8: 48
-    TXA                             ; 0BA9: 8A
-    ASL A                           ; 0BAA: 0A
-    ASL A                           ; 0BAB: 0A
-    TAX                             ; 0BAC: AA
-    TYA                             ; 0BAD: 98
-    ASL A                           ; 0BAE: 0A
-    ADC window_y                    ; 0BAF: 65 85
-    TAY                             ; 0BB1: A8
-    LDA window_width                ; 0BB2: A5 86
-    ADC window_x                    ; 0BB4: 65 84
-    TAX                             ; 0BB6: AA
-    DEX                             ; 0BB7: CA
-    DEX                             ; 0BB8: CA
-    JSR cell_address                ; 0BB9: 20 13 09
-    PLA                             ; 0BBC: 68
-    BEQ tick_line_glyph             ; 0BBD: F0 02
-    LDA #&0D                        ; 0BBF: A9 0D
+    PHA
+    TXA                         ; (X isn't used)
+    ASL A
+    ASL A
+    TAX
+    TYA
+    ASL A
+    ADC window_y
+    TAY
+    LDA window_width
+    ADC window_x
+    TAX
+    DEX
+    DEX
+    JSR cell_address
+    PLA
+    BEQ tick_line_glyph
+    LDA #GLYPH_TICK - GLYPH_X
 .tick_line_glyph
-    CLC                             ; 0BC1: 18
-    ADC #&37                        ; 0BC2: 69 37
+    CLC
+    ADC #GLYPH_X
+; Draw a glyph: 0-63 from the font, 64-69 from font_digits.
+; In: A = the glyph (bit 7 is ignored); screen_ptr = where.
+; Out: screen_ptr moved on a glyph.
+; Clobbers: A, Y, glyph_ptr.
 .draw_glyph
-    ASL A                           ; 0BC4: 0A
-    LDY #&04                        ; 0BC5: A0 04
-    ASL A                           ; 0BC7: 0A
-    BCC draw_glyph_bit5             ; 0BC8: 90 02
-    LDY #&25                        ; 0BCA: A0 25
+    ASL A
+    LDY #HI(font)
+    ASL A
+    BCC draw_glyph_bit5
+    LDY #HI(font_digits)
 .draw_glyph_bit5
-    ASL A                           ; 0BCC: 0A
-    BCC draw_glyph_bit4             ; 0BCD: 90 02
-    INY                             ; 0BCF: C8
-    INY                             ; 0BD0: C8
+    ASL A
+    BCC draw_glyph_bit4
+    INY
+    INY
 .draw_glyph_bit4
-    ASL A                           ; 0BD1: 0A
-    BCC draw_glyph_copy             ; 0BD2: 90 01
-    INY                             ; 0BD4: C8
+    ASL A
+    BCC draw_glyph_copy
+    INY
 .draw_glyph_copy
-    STA glyph_ptr                   ; 0BD5: 85 74
-    STY glyph_ptr+1                 ; 0BD7: 84 75
-    LDY #&0F                        ; 0BD9: A0 0F
+    STA glyph_ptr
+    STY glyph_ptr+1
+    LDY #15
 .draw_glyph_loop
-    LDA (glyph_ptr), Y              ; 0BDB: B1 74
-    STA (screen_ptr), Y             ; 0BDD: 91 72
-    DEY                             ; 0BDF: 88
-    BPL draw_glyph_loop             ; 0BE0: 10 F9
-    LDA screen_ptr                  ; 0BE2: A5 72
-    CLC                             ; 0BE4: 18
-    ADC #&10                        ; 0BE5: 69 10
-    STA screen_ptr                  ; 0BE7: 85 72
-    BCC draw_glyph_done             ; 0BE9: 90 02
-    INC screen_ptr+1                ; 0BEB: E6 73
+    LDA (glyph_ptr), Y
+    STA (screen_ptr), Y
+    DEY
+    BPL draw_glyph_loop
+    LDA screen_ptr
+    CLC
+    ADC #16
+    STA screen_ptr
+    BCC draw_glyph_done
+    INC screen_ptr+1
 .draw_glyph_done
-    RTS                             ; 0BED: 60
+    RTS
+
+; Run the menu of the window last drawn: cursor up and down move a bar over
+; its items (the lines after the title), Return chooses, and Space chooses
+; the last item, or for a window with bit 7 of y set the one it started on.
+; In: A = the item to start on (0 if out of range).
+; Out: C clear and A = the item; or C set if Escape was pressed.
+; Clobbers: X, Y, the low code's zero page.
 .window_menu
-    CMP window_height               ; 0BEE: C5 87
-    BCC window_menu_start           ; 0BF0: 90 02
-    LDA #&00                        ; 0BF2: A9 00
+    CMP window_height
+    BCC window_menu_start
+    LDA #0
 .window_menu_start
-    STA menu_item                   ; 0BF4: 85 82
-    STA menu_first_item             ; 0BF6: 85 89
-    LDA window_width                ; 0BF8: A5 86
-    ASL A                           ; 0BFA: 0A
-    ASL A                           ; 0BFB: 0A
-    ASL A                           ; 0BFC: 0A
-    SBC #&00                        ; 0BFD: E9 00
-    STA byte_count                  ; 0BFF: 85 78
-    LDA window_height               ; 0C01: A5 87
-    STA line_count                  ; 0C03: 85 79
-    LDA menu_item                   ; 0C05: A5 82
-    STA menu_shown_item             ; 0C07: 85 83
-    JSR highlight_item              ; 0C09: 20 A1 0C
-    LDA #&04                        ; 0C0C: A9 04
-    LDX #&02                        ; 0C0E: A2 02
-    JSR OSBYTE                      ; 0C10: 20 F4 FF
-    STX saved_cursor_key_mode       ; 0C13: 8E BA 0C
+    STA menu_item
+    STA menu_first_item
+    LDA window_width
+    ASL A
+    ASL A
+    ASL A
+    SBC #0                      ; less one: C is clear
+    STA byte_count
+    LDA window_height
+    STA line_count              ; the number of items
+    LDA menu_item
+    STA menu_shown_item
+    JSR highlight_item
+    LDA #4                      ; cursor keys give &8B-&8F
+    LDX #2
+    JSR OSBYTE
+    STX saved_cursor_key_mode
 .window_menu_key
-    LDA #&13                        ; 0C16: A9 13
-    JSR OSBYTE                      ; 0C18: 20 F4 FF
-    JSR OSRDCH                      ; 0C1B: 20 E0 FF
-    BCC window_menu_down            ; 0C1E: 90 0C
-    LDA #&04                        ; 0C20: A9 04
-    LDX saved_cursor_key_mode       ; 0C22: AE BA 0C
-    JSR OSBYTE                      ; 0C25: 20 F4 FF
-    SEC                             ; 0C28: 38
-    LDA #&FF                        ; 0C29: A9 FF
-    RTS                             ; 0C2B: 60
+    LDA #&13                    ; wait for vertical sync
+    JSR OSBYTE
+    JSR OSRDCH
+    BCC window_menu_down
+    LDA #4
+    LDX saved_cursor_key_mode
+    JSR OSBYTE
+    SEC
+    LDA #&FF
+    RTS
 .window_menu_down
-    CMP #&8E                        ; 0C2C: C9 8E
-    BNE window_menu_up              ; 0C2E: D0 0F
-    INC menu_item                   ; 0C30: E6 82
-    LDA menu_item                   ; 0C32: A5 82
-    CMP line_count                  ; 0C34: C5 79
-    BCC window_menu_set             ; 0C36: 90 02
-    LDA #&00                        ; 0C38: A9 00
+    CMP #&8E                    ; cursor down
+    BNE window_menu_up
+    INC menu_item
+    LDA menu_item
+    CMP line_count
+    BCC window_menu_set
+    LDA #0
 .window_menu_set
-    STA menu_item                   ; 0C3A: 85 82
-    JMP window_menu_moved           ; 0C3C: 4C 4E 0C
+    STA menu_item
+    JMP window_menu_moved
 .window_menu_up
-    CMP #&8F                        ; 0C3F: C9 8F
-    BNE window_menu_highlight       ; 0C41: D0 0D
-    DEC menu_item                   ; 0C43: C6 82
-    BPL window_menu_moved           ; 0C45: 10 07
-    LDA line_count                  ; 0C47: A5 79
-    SEC                             ; 0C49: 38
-    SBC #&01                        ; 0C4A: E9 01
-    STA menu_item                   ; 0C4C: 85 82
+    CMP #&8F                    ; cursor up
+    BNE window_menu_highlight
+    DEC menu_item
+    BPL window_menu_moved
+    LDA line_count
+    SEC
+    SBC #1
+    STA menu_item
 .window_menu_moved
-    LDA #&00                        ; 0C4E: A9 00
+    LDA #0
 .window_menu_highlight
-    PHA                             ; 0C50: 48
-    LDA menu_item                   ; 0C51: A5 82
-    CMP menu_shown_item             ; 0C53: C5 83
-    BEQ window_menu_check           ; 0C55: F0 0C
-    JSR highlight_item              ; 0C57: 20 A1 0C
-    LDA menu_shown_item             ; 0C5A: A5 83
-    JSR highlight_item              ; 0C5C: 20 A1 0C
-    LDA menu_item                   ; 0C5F: A5 82
-    STA menu_shown_item             ; 0C61: 85 83
+    PHA
+    LDA menu_item
+    CMP menu_shown_item
+    BEQ window_menu_check
+    JSR highlight_item
+    LDA menu_shown_item
+    JSR highlight_item
+    LDA menu_item
+    STA menu_shown_item
 .window_menu_check
-    PLA                             ; 0C63: 68
-    CMP #&0D                        ; 0C64: C9 0D
-    BEQ window_menu_return          ; 0C66: F0 1D
-    CMP #&20                        ; 0C68: C9 20
-    BEQ window_menu_space           ; 0C6A: F0 08
-    LDA #&0F                        ; 0C6C: A9 0F
-    JSR OSBYTE                      ; 0C6E: 20 F4 FF
-    JMP window_menu_key             ; 0C71: 4C 16 0C
+    PLA
+    CMP #13
+    BEQ window_menu_return
+    CMP #asc(" ")
+    BEQ window_menu_space
+    LDA #&0F                    ; flush the input buffer
+    JSR OSBYTE
+    JMP window_menu_key
 .window_menu_space
-    LDA window_flags                ; 0C74: A5 88
-    BMI window_menu_cancel          ; 0C76: 30 09
-    JSR restore_cursor_key_mode     ; 0C78: 20 91 0C
-    LDX line_count                  ; 0C7B: A6 79
-    DEX                             ; 0C7D: CA
-    TXA                             ; 0C7E: 8A
-    CLC                             ; 0C7F: 18
-    RTS                             ; 0C80: 60
-.window_menu_cancel
-    LDA menu_first_item             ; 0C81: A5 89
-    CLC                             ; 0C83: 18
-    RTS                             ; 0C84: 60
+    LDA window_flags
+    BMI window_menu_cancel
+    JSR restore_cursor_key_mode
+    LDX line_count
+    DEX
+    TXA
+    CLC
+    RTS
+.window_menu_cancel             ; (leaving the cursor keys as they are)
+    LDA menu_first_item
+    CLC
+    RTS
 .window_menu_return
-    JSR restore_cursor_key_mode     ; 0C85: 20 91 0C
-    LDA menu_item                   ; 0C88: A5 82
-    JSR highlight_item              ; 0C8A: 20 A1 0C
-    LDA menu_item                   ; 0C8D: A5 82
-    CLC                             ; 0C8F: 18
-    RTS                             ; 0C90: 60
+    JSR restore_cursor_key_mode
+    LDA menu_item
+    JSR highlight_item
+    LDA menu_item
+    CLC
+    RTS
+
 .restore_cursor_key_mode
-    LDA #&04                        ; 0C91: A9 04
-    LDX saved_cursor_key_mode       ; 0C93: AE BA 0C
-    JMP OSBYTE                      ; 0C96: 4C F4 FF
+    LDA #4
+    LDX saved_cursor_key_mode
+    JMP OSBYTE
+
+; (Unused: INKEY with a long time limit.)
 .unused_read_key
-    LDA #&81                        ; 0C99: A9 81
-    TAY                             ; 0C9B: A8
-    JSR OSBYTE                      ; 0C9C: 20 F4 FF
-    TXA                             ; 0C9F: 8A
-    RTS                             ; 0CA0: 60
+    LDA #&81
+    TAY
+    JSR OSBYTE
+    TXA
+    RTS
+
+; Invert a menu item's line in the window last drawn.
+; In: A = the item.
+; Clobbers: A, X, Y, screen_ptr.
 .highlight_item
-    ASL A                           ; 0CA1: 0A
-    ADC window_y                    ; 0CA2: 65 85
-    LDX window_x                    ; 0CA4: A6 84
-    TAY                             ; 0CA6: A8
-    INY                             ; 0CA7: C8
-    INY                             ; 0CA8: C8
-    JSR cell_address                ; 0CA9: 20 13 09
-    LDY byte_count                  ; 0CAC: A4 78
+    ASL A
+    ADC window_y
+    LDX window_x
+    TAY
+    INY                         ; below the title
+    INY
+    JSR cell_address
+    LDY byte_count
 .highlight_item_loop
-    LDA (screen_ptr), Y             ; 0CAE: B1 72
-    EOR #&FF                        ; 0CB0: 49 FF
-    STA (screen_ptr), Y             ; 0CB2: 91 72
-    DEY                             ; 0CB4: 88
-    CPY #&FF                        ; 0CB5: C0 FF
-    BNE highlight_item_loop         ; 0CB7: D0 F5
-    RTS                             ; 0CB9: 60
+    LDA (screen_ptr), Y
+    EOR #&FF
+    STA (screen_ptr), Y
+    DEY
+    CPY #&FF
+    BNE highlight_item_loop
+    RTS
+
 .saved_cursor_key_mode
-    EQUB &00, &00, &00, &00, &00, &00; 0CBA
+    EQUB 0
+    SKIP 5                      ; to the end of the moved code
 ENDSECTION
 .font_load
 SECTION font, org=&0400
