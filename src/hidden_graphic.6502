@@ -1219,7 +1219,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 
 ; sprite_width times 32: 128 for a large sprite (its grid is 16 cells,
 ; 128 bytes, across), 64 for a small one.
-; Clobbers: A (the result)
+; Out: A = the result, carry clear
 .width_times_32
 {
     LDA sprite_width
@@ -1231,8 +1231,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 }
 
 ; Blank part of the screen: 72 bytes (nine cells) of each of A character
-; rows from screen_ptr.
-; Clobbers: A, Y, screen_ptr, count_y
+; rows from screen_ptr. It has no RTS of its own: it runs on into
+; divide_by_5, which does no harm, and returns from there.
+; Clobbers: A, X, Y, screen_ptr, count_y
 .clear_rows
 {
     STA count_y
@@ -2672,7 +2673,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA first_address
     LDA data_ptr+1
     STA first_address+1
-    LDA window_address+2*4          ; the picture goes in the picking window's title line, eight cells in
+    LDA window_address+2*4          ; the picture goes on the window's right, two rows down
     CLC
     ADC #LO(2*ROW + 8*CELL)
     STA screen_ptr
@@ -2723,7 +2724,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     PLA                             ; drop this sprite and our return address
     PLA
     PLA
-.abandon_menu
+.abandon_command
     LDA #WINDOW_PICK
     JSR close_window
     LDA #&7E                        ; acknowledge Escape
@@ -3000,24 +3001,24 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     CMP #&24                        ; slots &24-&28: no
     BCS none
     CMP #&20                        ; &20-&23
-    BCS second_of_pair
+    BCS machine
     CMP #&0E
-    BEQ first_of_pair
+    BEQ flames
     CMP #&0F
-    BEQ first_of_pair
+    BEQ flames
 .none
     RTS
-.first_of_pair
+.flames
     PHA
-    AND #&FE                        ; &0E and &0F: copy both
-    BNE pair
-.second_of_pair
+    AND #&FE                        ; &0E: copy &0E and &0F
+    BNE copy_pair
+.machine
     PHA
-.pair
-    CMP #&22                        ; &22 and &23: copy both
-    BCC even
+.copy_pair
+    CMP #&22                        ; &22 and &23 copy both; &20 and &21 copy themselves
+    BCC copy_from
     AND #&FE
-.even
+.copy_from
     JSR sprite_address
     LDY #&00
 .copy
@@ -3034,10 +3035,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     TAX
     LDA slot_of_position, X
     CMP #&10
-    BCS large
+    BCS machine_frames
     LDA #&08                        ; the flames' pair of entries
     BNE chosen
-.large
+.machine_frames
     AND #&03                        ; &20-&23: their own pair
     ASL A
 .chosen
@@ -3067,7 +3068,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR key_pressed
     BMI stop
     LDA #&13                        ; wait for the vsync
-    JSR OSBYTE                      ; wait for the vsync
+    JSR OSBYTE
     DEC frame_delay
     BNE wait
     LDA frame_index
@@ -3209,12 +3210,12 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA sprite
     CMP #&28                        ; nothing below the last large sprite
     BEQ down_done
-    CMP #&0F                        ; the sheet's own order: &0F is at the start of row 3...
+    CMP #&0F                        ; &0F, at the start of row 3, has &24 below it...
     BNE not_a
     LDA #&24
     BNE store_down
 .not_a
-    CMP #&0A                        ; ...and &0A above it
+    CMP #&0A                        ; ...and &0A has &0F
     BNE step_down
     LDA #&0F
     BNE store_down
@@ -3480,7 +3481,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR ask_save_name
     BIT io_file
     BMI io
-    LDY #&0F
+    LDY #&0F                        ; clear the block after the name
     LDA #&00
 .clear
     STA osfile_block+2, Y
@@ -3494,9 +3495,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA osfile_block+15
     LDA #LO(graphics_end)
     STA osfile_block+14
-    LDA #&00
+    LDA #&00                        ; OSFILE 0: save
     JSR osfile_graphics
-.return_
+.done
     RTS
 
     ; An IO file: write the three pieces in.
@@ -3510,11 +3511,11 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR read_block.write
     PLA
     CLC
-    ADC #&06
-    CMP #&12
+    ADC #&06                        ; six bytes an entry...
+    CMP #&12                        ; ...three entries
     BCC segment
     JSR close_files
-    JMP return_
+    JMP done
 }
 
 ; Environment Save Sprite (CTRL-f9): write the selected sprite (and an
@@ -3560,7 +3561,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .cancel
     PLA                             ; drop ask_save_name's return
     PLA
-    JMP cmd_save_file.return_
+    JMP cmd_save_file.done
 }
 
 ; Call the filing system control vector.
@@ -3870,7 +3871,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .load_io
 {
     JSR open_file
-    LDA #&00
+    LDA #&00                        ; the first entry
 .segment
     PHA
     TAX
@@ -4008,7 +4009,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR OSRDCH
     BCC got_key
 .abandon
-    JMP pick_second_sprite.abandon_menu
+    JMP pick_second_sprite.abandon_command
 .got_key
     CMP #CODE_F0
     BCS abandon
@@ -4074,11 +4075,11 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDY cursor_y
     STX old_cursor_x
     STY old_cursor_y
-    LDA sprite_width                ; the last pixel across...
+    LDA sprite_width                ; count_x = width*4 - 1, the last pixel across
     ASL A
     ASL A
     STA count_x
-    ASL A                           ; ...and down
+    ASL A                           ; count_y = width*8 - 1, the last row
     STA count_y
     DEC count_x
     DEC count_y
