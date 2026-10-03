@@ -1,4 +1,0 @@
-binary = "data/game.bin"
-org = 0x0900
-section = 'game, filename="GAME", org=&0900, load=&0900, exec=&0900'
-entries = [0x0900]

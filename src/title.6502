@@ -1,4 +1,145 @@
-; $.TITLE: &1679 bytes at sector &027.
+; $.TITLE: &1679 bytes at sector &027, loaded at &6300 and run at &7900.
+; The title page shown before the game: "PIPELINE by IAN HOLMES and WILLIAM
+; REEVE" in red, blue and white MODE 1 lettering (docs/img/title.png, made
+; with `tools/beebscreen.py 1 ... --palette 0,1,4,7 --title`).
+;
+; MENU's option 1 selects MODE 1, makes all four colours black, *RUNs this,
+; then sets the palette to black, red, blue, white (VDU 19 to 0, 1, 4, 7),
+; so the picture appears at once, whole, for up to three seconds before the
+; game loads.
+;
+; The file is a packed picture and a little code to unpack it. It loads into
+; MODE 1 screen memory itself, and the picture unpacks over it from the top
+; of the screen (&3000) down; the packed data is always further on than the
+; unpacking until the last few bytes, so it's never overwritten before it's
+; read. The code would be, so it first copies itself out of the way, to the
+; page below the screen.
+;
+; The packing is runs of zeros: a nonzero byte stands for itself; a zero is
+; followed by how many zeros it stands for (0 meaning 256). The stream runs on
+; past the picture, writing past the end of the screen (into the paged ROM's
+; space at &8000, harmless on a model B) and over its own unread end, so the
+; last 2K of the screen, below the picture, is cleared when it's done.
+
+INCLUDE "os.6502inc"
+INCLUDE "loaders.6502inc"
+
+SCREEN_MODE1 = &3000        ; MODE 1 screen memory, to the end of RAM at &8000
+SCREEN_END = &8000
+
+; Where the unpacker runs: the page below the screen, free: the menu's BASIC
+; program and its variables (LOMEM reset to TOP) end well below it.
+RELOCATED_PAGE = &2F00
+
+; Zero page: user workspace.
+relocate_to = &70           ; (2) where this page is copied to
+relocate_from = &72         ; (2) and from
+packed = &70                ; (2) the next packed byte
+screen_ptr = &72            ; (2) the screen page being unpacked into, with Y
+clear_ptr = &70             ; (2) the page being cleared
+
 SECTION title, filename="TITLE", org=&6300, load=&6300, exec=&7900
-    INCBIN "../data/title.bin"
+.title
+{
+; The picture, packed: data/title_picture.bin.
+.picture
+    INCBIN "../data/title_picture.bin"
+.picture_end
+    ASSERT LO(picture_end) = 0, "the unpacker stops at a page boundary"
+
+; Entry, from *RUN. Copies this page down to RELOCATED_PAGE and carries on
+; there. Y isn't set: the copy starts at whatever Y *RUN leaves (5, under
+; DFS 1.2), which is fine as long as it's below unpack's offset in the page.
+.start
+    LDA #0
+    STA relocate_to
+    STA relocate_from
+    LDA #HI(RELOCATED_PAGE)
+    STA relocate_to+1
+    LDA #HI(start)
+    STA relocate_from+1
+.relocate
+    LDA (relocate_from), Y
+    STA (relocate_to), Y
+    INY
+    BNE relocate
+    JMP unpack
+
+; Assembled for where it runs, carried here.
+SECTION title_relocated, org=RELOCATED_PAGE + LO(P%)
+; Unpack the picture into the screen from SCREEN_MODE1, clear the bottom
+; 2K, flush the keyboard and return to BASIC. X stays 0 for (packed,X) except
+; while it counts a run.
+.unpack
+    LDA #0
+    TAX
+    TAY
+    STA packed
+    STA screen_ptr
+    LDA #HI(picture)
+    STA packed+1
+    LDA #HI(SCREEN_MODE1)
+    STA screen_ptr+1
+.next_code
+    LDA (packed, X)
+    BNE store_literal
+    ; A zero: the next byte is how many zeros.
+    INC packed
+    BNE read_run_length
+    INC packed+1
+    LDA packed+1
+    CMP #HI(picture_end)
+    BEQ clear_bottom
+.read_run_length
+    LDA (packed, X)
+    TAX
+    LDA #0
+.store_zero
+    STA (screen_ptr), Y
+    DEX
+    BEQ step_screen
+    INY
+    BNE store_zero
+    INC screen_ptr+1
+    BNE store_zero              ; always
+.store_literal
+    STA (screen_ptr), Y
+.step_screen
+    INY
+    BNE step_packed
+    INC screen_ptr+1
+.step_packed
+    INC packed
+    BNE next_code
+    INC packed+1
+    LDA packed+1
+    CMP #HI(picture_end)
+    BNE next_code
+
+    ; Clear what's under the picture: the packed data's overrun, and where
+    ; the end of the packed data and this code were.
+.clear_bottom
+    LDA #HI(PICTURE_BOTTOM)
+    STA clear_ptr+1
+    LDY #0
+    STY clear_ptr
+.clear_page
+    TYA
+.clear_byte
+    STA (clear_ptr), Y
+    INY
+    BNE clear_byte
+    INC clear_ptr+1
+    LDA clear_ptr+1
+    CMP #HI(SCREEN_END)
+    BNE clear_page
+    LDA #OSBYTE_FLUSH_BUFFERS
+    LDX #1                      ; the input buffer: no keys typed during this
+    JMP OSBYTE
 ENDSECTION
+}
+ENDSECTION
+
+; The picture fills the screen down to here (28.8 of MODE 1's 32 character
+; rows); the rest is cleared.
+PICTURE_BOTTOM = &7800

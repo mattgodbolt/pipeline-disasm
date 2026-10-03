@@ -1,0 +1,52 @@
+; Teletext (Mode 7) control codes, as the SAA5050 sees them, for writing
+; Mode 7 screens as source. Each takes a character cell (shown as a space,
+; or as held graphics) and changes how the rest of the row is drawn.
+; tools/mode7.py names bytes from this file.
+;
+; Bytes from &A0 up are characters with bit 7 set; the SAA5050 ignores bit 7
+; for them, and in a graphics colour they're the 2x3 block "sixel" shapes
+; (bit 0 top left, 1 top right, 2 middle left, 3 middle right, 4 bottom left,
+; 6 bottom right; bit 5 is always set). Mode 7 screen code tends to store
+; those as &A0-&FF, so in a graphics run they're written in hex.
+
+; Text in a colour (and leave graphics mode).
+TT_ALPHA_RED     = &81
+TT_ALPHA_GREEN   = &82
+TT_ALPHA_YELLOW  = &83
+TT_ALPHA_BLUE    = &84
+TT_ALPHA_MAGENTA = &85
+TT_ALPHA_CYAN    = &86
+TT_ALPHA_WHITE   = &87
+
+TT_FLASH  = &88
+TT_STEADY = &89
+
+TT_NORMAL_HEIGHT = &8C
+TT_DOUBLE_HEIGHT = &8D
+
+; Graphics in a colour.
+TT_GFX_RED     = &91
+TT_GFX_GREEN   = &92
+TT_GFX_YELLOW  = &93
+TT_GFX_BLUE    = &94
+TT_GFX_MAGENTA = &95
+TT_GFX_CYAN    = &96
+TT_GFX_WHITE   = &97
+
+TT_CONCEAL           = &98
+TT_CONTIGUOUS        = &99   ; solid sixels (the default)
+TT_SEPARATED         = &9A   ; sixels with gaps between them
+TT_BLACK_BACKGROUND  = &9C
+TT_NEW_BACKGROUND    = &9D   ; background becomes the current foreground colour
+TT_HOLD_GRAPHICS     = &9E   ; control cells repeat the last sixel, not a space
+TT_RELEASE_GRAPHICS  = &9F
+
+TT_COLUMNS = 40
+TT_ROWS = 25
+
+; Start of a screen row: checks it starts where row n of a screen whose
+; first row is at `screen` should, so a row with the wrong number of bytes
+; is caught where it happens. The including file defines `screen`.
+MACRO TT_ROW n
+    ASSERT P% = screen + n * TT_COLUMNS, "Mode 7 row ", n, " starts at the wrong place"
+ENDMACRO

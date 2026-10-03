@@ -1,4 +1,19 @@
-; $.GAME: &D9 bytes at sector &111.
+; $.GAME: &D9 bytes at sector &111. The stub loader for the game itself
+; (MENU option 1, `*/GAME`): reads H.GAME from its hidden sectors and enters
+; it. All of the code is in hidden_loader.6502inc, shared with GRAPHIC and
+; LEVDES.
+
+INCLUDE "os.6502inc"
+
+; H.GAME, as src/disc.toml places it: track 29 sector 0 to track 32 sector 2.
+hidden_first_sector = &122
+hidden_length = &2100
+hidden_load = &3000
+hidden_entry = &3000
+
 SECTION game, filename="GAME", org=&0900, load=&900, exec=&900
-    INCBIN "../data/game.bin"
+.game_loader
+{
+    INCLUDE "hidden_loader.6502inc"
+}
 ENDSECTION
