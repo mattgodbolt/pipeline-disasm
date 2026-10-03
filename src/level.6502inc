@@ -114,3 +114,54 @@ TILE_HORZ_PIPE  = &C
 TILE_VERT_PIPE  = &D
 TILE_BARRICADE  = &E
 TILE_JUNCTION   = &F
+
+; Flags in an object's fourth byte.
+OBJECT_NO_CHARGES = &20
+OBJECT_VANISHES = &40
+OBJECT_NO_THROW = &80
+; Flags in a puzzle's type byte.
+PUZZLE_REUSABLE = &10
+PUZZLE_OFF      = &20
+PUZZLE_COUNTS_COLLECTS = &40
+PUZZLE_USES_OBJECT = &80
+; In a puzzle position: don't check this coordinate.
+IGNORE          = &80
+
+; The monster patterns the designer offers by name.
+PATTERN_BACK_AND_FORTH = %10110001
+PATTERN_FOLLOW_EDGES = %00111001
+PATTERN_LEFT_WALL = %00100111
+PATTERN_RIGHT_WALL = %00110110
+
+; An editing code from its six digits.
+FUNCTION code_pair(s) = (CODES(s)[0] - CODES("0")[0]) * 16 + CODES(s)[1] - CODES("0")[0]
+FUNCTION code_swap(b) = ((b AND &55) << 1) OR ((b AND &AA) >> 1)
+FUNCTION code_byte(s) = (code_swap(code_pair(s)) >> 1) OR ((code_swap(code_pair(s)) AND 1) << 7)
+MACRO EDITING_CODE digits
+    EQUB code_byte(digits[0..1]), code_byte(digits[2..3]), code_byte(digits[4..5])
+ENDMACRO
+
+MACRO OBJECT x, y, sprite, charges
+    EQUB x, y, sprite, charges
+ENDMACRO
+
+; A monster at a cell, going a direction (0 west, 1 east, 2 north, 3 south,
+; 8 dead).
+MACRO MONSTER x, y, direction, pattern
+    EQUB x * 4, y * 4, direction, pattern
+ENDMACRO
+
+; A map drawn a character a cell, a string a row: blank . curves r 7 L J
+; (SE, SW, NE, NW, the shapes of the box-drawing corners), wall 1 #, fatal
+; trap x, collectable o, crate c, marker m, wall 2 %, S.monster M, pipes - and
+; |, barricade B, junction +.
+MAP_KEY = ".r7LJ#xocm%M-|B+"
+FUNCTION map_tile(c) = FIND(CODES(MAP_KEY), CODES(c))[0]
+; Store the map a column at a time from a list of 64 row strings.
+MACRO MAP rows
+    FOR x = 0..MAP_SIZE - 1
+        FOR y = 0..2..MAP_SIZE - 1
+            EQUB map_tile(rows[y][x]) * 16 + map_tile(rows[y + 1][x])
+        NEXT
+    NEXT
+ENDMACRO
