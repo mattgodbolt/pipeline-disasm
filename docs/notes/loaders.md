@@ -1,0 +1,76 @@
+# Notes: the boot chain and small loaders
+
+GAME, GRAPHIC, LEVDES (stub loaders), !BOOT, MRUN, PL, TITLE, WARNING,
+SCREEN. Times are US Central.
+
+## 2026-10-03 17:54 — The stub loaders and the protection
+
+GAME, GRAPHIC and LEVDES are one program assembled three times
+(`src/loader.6502inc`, INCLUDEd by `src/game.6502`, `graphic.6502`,
+`levdes.6502` inside a named scope each: `game_loader`, `graphic_loader`,
+`levdes_loader`). The three differ in exactly six bytes, all from four
+numbers per stub:
+
+| Stub | Hidden run | Sectors | Track/sector | Load | Entry |
+|---|---|---|---|---|---|
+| GAME | H.GAME | &122, &21 of them | 29/0 - 32/2 | &3000 | &3000 |
+| GRAPHIC | H.GRAPH | &145, &21 | 32/5 - 35/7 | &1AB0 | &2BAE |
+| LEVDES | H.LEVDES | &16D, &1F | 36/5 - 39/5 | &1100 | &2E21 |
+
+The differing bytes: the first sector within the track (`LDA #`), first track
+(`LDX #`), sector count (`LDY #`), the low byte and page of the buffer address
+in the read block, and the `JMP` to the entry. Ends: H.GAME &3000-&50FF,
+H.GRAPH &1AB0-&3BAF, H.LEVDES &1100-&2FFF. These confirm the STH crack's
+addresses.
+
+How it loads (all OSWORD &7F, i.e. raw 8271 commands via DFS, drive 0 only):
+
+1. Seek to track 0 (the seek block's track byte starts at 0): a recalibrate.
+2. Read ID (&5B) on track 4, one ID into `id_buffer` (the last four bytes of
+   the file). This is the `CMP #&04`: if the ID's track number isn't 4, the
+   drive is an 80-track drive with this 40-track disc, it landed on the
+   disc's track 2, and `double_step` is set to &FF.
+3. Per track: read (&57, read data *and deleted data*) from the current
+   sector to the end of the track or of the run, whichever comes first
+   (`min(10 - sector, left)`, count | &20 for 256-byte sectors), step the
+   buffer page by the count, sector back to 0, track + 1.
+   With double stepping: before the read, seek to 2*track (the 8271 counting
+   physical tracks), then write special register &12 (drive 0's current
+   track) := track so the read's track matches the sector IDs; after it,
+   write &12 := 2*track again so later seeks start from the right place.
+4. `JMP` to the entry.
+
+The protection, seen on the flux captures (both E447ED5E, the target, and
+the FSD0391 reconstruction): every sector of the three hidden runs, and only
+those, is written with a **deleted data address mark**. The .ssd can't
+represent that, which is why original/README.md's "the capture decodes
+cleanly ... any protection is in the software" is only half right. So the
+scheme is two layers:
+
+- the runs are past the last catalogued file and no catalogue entry names
+  them, so `*COPY` copies only the stubs;
+- the deleted marks make the 8271 end every read of them with result &20.
+  DFS reports any nonzero result as a disc fault, so a `*BACKUP` of the disc
+  should stop at track 29. The stub uses command &57, which transfers deleted
+  sectors, and doesn't look at the result.
+
+Checked in jsbeeb against the HFE capture: after `*/GAME` the read block's
+result byte is &20; from BASIC, OSWORD &7F reads of track 29 return &20 with
+both &53 (read data) and &57, and 0 on track 28. On the .ssd every read
+returns 0.
+
+The result check is dead code. After each read, `LDA read_result` is followed
+by `NOP : JMP next_track_or_run`, which jumps over a BRK error block
+(`BRK`, &FF, "Sector read fault!", 0). Those seven bytes are exactly the room
+for `LDA result / two-byte test / BEQ next`, falling into the BRK on failure.
+Since every read of the real disc returns &20, a test for zero could never
+pass, so it looks like a check patched out after the protection was added.
+The error block is unreachable.
+
+Double stepping (step 2's other branch) isn't exercised by jsbeeb: it loads
+an .ssd as a 40- or 80-track disc to match its catalogue, and either way
+track 4's ID says 4. Untested beyond reading the code.
+
+Zero page used: &70 (`sectors_this_read`), &72 (`sectors_left`). Nothing else
+outside the stub's own &0900-&09D8 is written, apart from what the 8271 reads
+into the load area.

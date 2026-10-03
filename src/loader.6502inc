@@ -1,0 +1,246 @@
+; The stub loader the disc catalogues as GAME, GRAPHIC and LEVDES: the same
+; &D9 bytes at &0900 three times over, differing only in which hidden sector
+; run they read, where it goes and where it's entered. The including file
+; defines those four numbers, then INCLUDEs this inside its SECTION:
+;
+;   hidden_first_sector   absolute DFS sector the run starts at (src/disc.toml [[raw]])
+;   hidden_length         its length in bytes, a whole number of sectors
+;   hidden_load           where in the I/O processor it's read to
+;   hidden_entry          where it's entered once read
+;
+; The protection is two layers, both about stopping a DFS copy:
+;
+; - The programs live in sector runs past the last catalogued file, which no
+;   catalogue entry mentions, so *COPY copies only these stubs.
+; - Every sector of those runs was written with a deleted data address mark
+;   (seen on the flux capture; an .ssd can't hold the mark, so it's gone from
+;   original/pipeline.ssd). The 8271 flags a deleted sector with result &20,
+;   and DFS treats any nonzero result as a disc fault, so *BACKUP chokes on
+;   them. The stub reads with the 8271's "read data and deleted data" command
+;   through OSWORD &7F, below DFS, and ignores the result, so it doesn't care
+;   whether the marks are there - which is why the .ssd still runs.
+;
+; It also copes with an 80-track drive holding this 40-track disc, where DFS
+; 1.2 can't: it reads one sector ID off track 4, and if the ID doesn't say 4
+; the drive has stepped half as far as asked, so from then on it seeks to twice
+; each track and tells the 8271 which track it's really on (see read_next_track).
+;
+; Parameter blocks for OSWORD &7F (8271 command) all have the same shape:
+;   +0      drive (0 here: the stubs only ever load from drive 0)
+;   +1..4   buffer address, 32-bit; &FFFFxxxx is the I/O processor, and
+;           &FFFFFFFF is the conventional "no data" for commands that move none
+;   +5      number of parameters, n
+;   +6      8271 command, drive-select bit (&40, drive 0) included
+;   +7..    the n parameters
+;   +7+n    result, written back by the call (0 = all well)
+
+; OSWORD &7F: hand a raw command to the 8271 floppy disc controller via DFS.
+OSWORD_DISC_COMMAND = &7F
+
+; 8271 commands, with the drive 0 select bit (&40) already in.
+FDC_READ_DATA_AND_DELETED = &57   ; multi-sector read that accepts deleted marks
+FDC_READ_ID               = &5B   ; read sector ID fields off a track
+FDC_SEEK                  = &69
+FDC_WRITE_SPECIAL         = &7A   ; write one of the 8271's special registers
+
+; 8271 special register: the track the controller believes drive 0's head is
+; on. Seeks step the head by the difference from this; reads compare their
+; track parameter with it and with the sector IDs.
+FDC_REG_TRACK_DRIVE_0 = &12
+
+; The third parameter of a multi-sector read: sector size code in bits 5-7
+; (1 = 256 bytes), sector count in bits 0-4.
+FDC_SIZE_256 = 1 << 5
+
+; The 8271's result for a sector carrying a deleted data mark. Every read of a
+; hidden run on the original disc ends with this, never with 0.
+FDC_RESULT_DELETED_DATA = &20
+
+; I/O processor memory, as the top half of a 32-bit OSWORD &7F address.
+IO_PROCESSOR = &FFFF0000
+
+; DFS single density: ten 256-byte sectors per track.
+SECTORS_PER_TRACK = 10
+SECTOR_SIZE = 256
+
+; Any track beyond the first two would do; an 80-track drive reading a
+; 40-track disc lands on its track PROBE_TRACK/2 instead.
+PROBE_TRACK = 4
+
+; Where the run starts, in the 8271's terms, and how many sectors to read.
+first_track = hidden_first_sector DIV SECTORS_PER_TRACK
+first_sector = hidden_first_sector MOD SECTORS_PER_TRACK
+sector_count = hidden_length DIV SECTOR_SIZE
+ASSERT hidden_length MOD SECTOR_SIZE = 0, "a hidden run is whole sectors"
+ASSERT sector_count < 256, "the sector count lives in one byte"
+
+; Zero page: user workspace, free while the stub runs.
+sectors_this_read = &70     ; sectors the current read takes from this track
+sectors_left = &72          ; sectors of the run not yet asked for
+
+; Entry, at the stub's load address, from *RUN (MENU's */GAME, */GRAPHIC or
+; */LEVDES). Never returns: ends by jumping into the program it loaded.
+.start
+    ; seek_track starts at 0, so this recalibrates: the head goes back to
+    ; track 0, and the probe below is a known number of steps.
+    JSR seek
+    LDX #LO(read_id_block)
+    LDY #HI(read_id_block)
+    JSR disc_command
+    LDA id_track
+    CMP #PROBE_TRACK
+    BEQ read_whole_run
+    LDX #&FF
+    STX double_step
+
+; Read the run a track at a time: one multi-sector read from read_sector to
+; the end of the track, or as much of it as the run still needs.
+.read_whole_run
+    LDA #first_sector
+    LDX #first_track
+    LDY #sector_count
+    STA read_sector
+    STX read_track
+    STY sectors_left
+.read_next_track
+    LDA #SECTORS_PER_TRACK
+    SEC
+    SBC read_sector
+    CMP sectors_left
+    BCC take_rest_of_track
+    LDA sectors_left
+.take_rest_of_track
+    STA sectors_this_read
+    ORA #FDC_SIZE_256
+    STA read_size_count
+    LDA sectors_left
+    SEC
+    SBC sectors_this_read
+    STA sectors_left
+    BIT double_step
+    BPL read_this_track
+    ; Double stepping: move the head to physical track 2*N by seeking there
+    ; while the 8271 counts physical tracks, then tell it it's on track N so
+    ; the read's track parameter matches the IDs written on the disc.
+    LDA read_track
+    ASL A
+    STA seek_track
+    JSR seek
+    LDA read_track
+    STA track_register_value
+    JSR set_track_register
+.read_this_track
+    LDX #LO(read_block)
+    LDY #HI(read_block)
+    JSR disc_command
+    BIT double_step
+    BPL step_to_next_track
+    ; Put the 8271 back to counting physical tracks, so the next seek (and
+    ; DFS's own, once the program is running) steps from the right place.
+    ASL track_register_value
+    JSR set_track_register
+.step_to_next_track
+    LDA #0
+    STA read_sector
+    LDA sectors_this_read
+    CLC
+    ADC read_address+1
+    STA read_address+1
+    INC read_track
+    ; The result is fetched and then ignored: the NOP and JMP fill exactly the
+    ; seven bytes a test and branch round the error would (LDA, a two-byte
+    ; test, BEQ), with the BRK below the failure case. On the original disc
+    ; every read returns FDC_RESULT_DELETED_DATA, so a check for zero could
+    ; never pass; this looks like that check patched out.
+    LDA read_result
+    NOP
+    JMP next_track_or_run
+
+; Unreachable since the result check went: a BRK error block, as the MOS
+; expects one (BRK, error number, message, zero).
+.sector_read_fault
+    BRK
+    EQUB &FF
+    EQUS "Sector read fault!"
+    EQUB 0
+
+.next_track_or_run
+    LDA sectors_left
+    BNE read_next_track
+    JMP hidden_entry
+
+; Seek drive 0's head to seek_track.
+; Clobbers A, X, Y (and whatever OSWORD does).
+.seek
+    LDX #LO(seek_block)
+    LDY #HI(seek_block)
+    ; Fall through.
+
+; Issue the 8271 command whose parameter block is at YX; on return the
+; block's result byte says how it went.
+; Clobbers A, X, Y.
+.disc_command
+    LDA #OSWORD_DISC_COMMAND
+    JMP OSWORD
+
+; Write track_register_value into the 8271's idea of drive 0's track.
+; Clobbers A, X, Y.
+.set_track_register
+    LDX #LO(track_register_block)
+    LDY #HI(track_register_block)
+    BNE disc_command            ; always: the blocks aren't in page zero
+
+; OSWORD &7F parameter blocks, shaped as described at the top.
+
+; Seek: one parameter, the track.
+.seek_block
+    EQUB 0
+    EQUD &FFFFFFFF
+    EQUB 1, FDC_SEEK
+.seek_track
+    EQUB 0
+    EQUB 0                      ; result
+
+; Write special register: the register number and its new value.
+.track_register_block
+    EQUB 0
+    EQUD &FFFFFFFF
+    EQUB 2, FDC_WRITE_SPECIAL, FDC_REG_TRACK_DRIVE_0
+.track_register_value
+    EQUB 0
+    EQUB 0                      ; result
+
+; Read data and deleted data: track, first sector, size and count. The
+; buffer address's page is stepped on after each track, so the run lands
+; contiguously from hidden_load.
+.read_block
+    EQUB 0
+.read_address
+    EQUD IO_PROCESSOR + hidden_load
+    EQUB 3, FDC_READ_DATA_AND_DELETED
+.read_track
+    EQUB 0
+.read_sector
+    EQUB 0
+.read_size_count
+    EQUB FDC_SIZE_256 + SECTORS_PER_TRACK   ; overwritten before use
+.read_result
+    EQUB 0
+
+; Read ID: track, a zero the 8271 expects, and how many IDs to read (one).
+; Each ID is four bytes - track, head, sector, size code - into id_buffer.
+.read_id_block
+    EQUB 0
+    EQUD IO_PROCESSOR + id_buffer
+    EQUB 3, FDC_READ_ID
+    EQUB PROBE_TRACK, 0, 1
+    EQUB 0                      ; result
+
+; Bit 7 set when the drive turned out to need double stepping.
+.double_step
+    EQUB 0
+
+; The ID read off the probe track; only its track number is looked at.
+.id_buffer
+.id_track
+    EQUB &FF, &FF, &FF, &FF
