@@ -124,8 +124,8 @@ pictures are left, right, then two for up/down.
   the exit turns to fire (cell E), the time left is scored, and the player
   has 4 clock ticks to get 5 or more cells away across or down. Caught, they
   lose a life but the level still counts. WELL DONE! and 100 points, then
-  the next level's... no: the finished level's edit code (MISSION asks for it
-  before saving an edited level).
+  the finished level's edit code (MISSION asks for it before saving an
+  edited level).
 - Cells: 0 floor; 1-5, 8, 9 walls (8 is also what the exit counts as); 6 a
   crate, pushable while the player has pushes (a trigger gives them); 7 the
   thing to collect; A lava and E fire kill; B, C, D pipes: stepping into a
