@@ -2816,164 +2816,179 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     CPY #NAME_LENGTH + 1
     BCC pad_input_loop
     RTS
+; Help menu, Find puzzle: look a puzzle up by name, ignoring case, and edit
+; it.
 .help_find_puzzle
-    JSR vector_close_window         ; 2138: 20 83 08
-    JSR vector_open_message_box     ; 213B: 20 95 08
-    LDA #&0A                        ; 213E: A9 0A
-    LDX #&1C                        ; 2140: A2 1C
-    JSR input_text                  ; 2142: 20 38 13
-    JSR pad_input                   ; 2145: 20 2B 21
-    LDA #&1F                        ; 2148: A9 1F
-    STA record                      ; 214A: 85 5B
+    JSR vector_close_window
+    JSR vector_open_message_box
+    LDA #NAME_LENGTH
+    LDX #M_PUZZLE_NAME
+    JSR input_text
+    JSR pad_input
+    LDA #PUZZLES - 1
+    STA record                  ; the puzzle number, for now
 .find_puzzle_compare
-    LDA record                      ; 214C: A5 5B
-    ASL A                           ; 214E: 0A
-    ASL A                           ; 214F: 0A
-    ASL A                           ; 2150: 0A
-    TAY                             ; 2151: A8
-    LDX #&00                        ; 2152: A2 00
+    LDA record
+    ASL A
+    ASL A
+    ASL A
+    TAY
+    LDX #0
 .find_puzzle_compare_name
-    LDA level_names, Y              ; 2154: B9 A1 25
-    EOR input_buffer, X             ; 2157: 55 40
-    AND #&DF                        ; 2159: 29 DF
-    BNE find_puzzle_next            ; 215B: D0 C7
-    INY                             ; 215D: C8
-    INX                             ; 215E: E8
-    CPX #&08                        ; 215F: E0 08
-    BCC find_puzzle_compare_name    ; 2161: 90 F1
-    LDA record                      ; 2163: A5 5B
-    ASL A                           ; 2165: 0A
-    TAY                             ; 2166: A8
+    LDA level_names, Y
+    EOR input_buffer, X
+    AND #&DF
+    BNE find_puzzle_next
+    INY
+    INX
+    CPX #8
+    BCC find_puzzle_compare_name
+    LDA record
+    ASL A
+    TAY
 .find_puzzle_compare_end
-    LDA level_name_ends, Y          ; 2167: B9 A1 26
-    EOR input_buffer, X             ; 216A: 55 40
-    AND #&DF                        ; 216C: 29 DF
-    BNE find_puzzle_next            ; 216E: D0 B4
-    INY                             ; 2170: C8
-    INX                             ; 2171: E8
-    CPX #&0A                        ; 2172: E0 0A
-    BCC find_puzzle_compare_end     ; 2174: 90 F1
-    JSR vector_open_message_box     ; 2176: 20 95 08
-    LDA #&3C                        ; 2179: A9 3C
-    JSR vector_print_line1          ; 217B: 20 56 23
-    LDA record                      ; 217E: A5 5B
-    STA puzzle                      ; 2180: 85 5C
-    ASL A                           ; 2182: 0A
-    ASL A                           ; 2183: 0A
-    JSR print_puzzle_name_at        ; 2184: 20 5A 1B
-    LDA #&3D                        ; 2187: A9 3D
-    JSR vector_print_message        ; 2189: 20 59 23
-    LDX record                      ; 218C: A6 5B
-    INX                             ; 218E: E8
+    LDA level_name_ends, Y
+    EOR input_buffer, X
+    AND #&DF
+    BNE find_puzzle_next
+    INY
+    INX
+    CPX #NAME_LENGTH
+    BCC find_puzzle_compare_end
+    JSR vector_open_message_box
+    LDA #M_NAME_QUOTE           ; Name: "<name>" Puzzle <n>
+    JSR vector_print_line1
+    LDA record
+    STA puzzle
+    ASL A
+    ASL A
+    JSR print_puzzle_name_at
+    LDA #M_QUOTE_PUZZLE
+    JSR vector_print_message
+    LDX record
+    INX
 .find_puzzle_found
-    TXA                             ; 218F: 8A
-    JSR print_decimal               ; 2190: 20 4C 18
-    LDA #&0A                        ; 2193: A9 0A
-    JSR vector_print_line2          ; 2195: 20 53 23
-    JSR wait_for_key                ; 2198: 20 34 12
-    JSR vector_close_message_box    ; 219B: 20 98 08
-    LDA record                      ; 219E: A5 5B
-    ASL A                           ; 21A0: 0A
-    ASL A                           ; 21A1: 0A
-    STA record                      ; 21A2: 85 5B
-    JMP edit_puzzle                 ; 21A4: 4C 04 1B
+    TXA
+    JSR print_decimal
+    LDA #M_PRESS_ANY_KEY
+    JSR vector_print_line2
+    JSR wait_for_key
+    JSR vector_close_message_box
+    LDA record
+    ASL A
+    ASL A
+    STA record
+    JMP edit_puzzle
+
+; Options menu, Clear: start a new level, if the user is sure.
 .option_clear
-    JSR vector_close_window         ; 21A7: 20 83 08
-    JSR confirm                     ; 21AA: 20 23 13
-    JMP new_level                   ; 21AD: 4C 68 23
+    JSR vector_close_window
+    JSR confirm
+    JMP new_level
+
 .unused_rts
-    EQUB &60                        ; 21B0
+    RTS
+
+; OSWORD 0's control block for input_line.
 .input_block
-    EQUB &40, &00                   ; 21B1
+    EQUW input_buffer
 .input_max_length
-    EQUB &00                        ; 21B3
-.input_min_char
-    EQUB &00                        ; 21B4
+    EQUB 0
+.input_min_char                 ; also the RDCHV filter's limits
+    EQUB 0
 .input_max_char
-    EQUB &FF                        ; 21B5
+    EQUB &FF
+
+; The pipe a direction (0 left, 1 up, 2 right, 3 down) can go into.
 .pipe_across
-    EQUB &0C, &0D, &0C, &0D         ; 21B6
+    EQUB TILE_HORZ_PIPE, TILE_VERT_PIPE, TILE_HORZ_PIPE, TILE_VERT_PIPE
+; A direction's step: dy for direction n is at direction_dy+n, dx at
+; direction_dx+n, the two tables overlapping.
 .direction_dy
-    EQUB &00                        ; 21BA
+    EQUB 0
 .direction_dx
-    EQUB &FF, &00, &01, &00         ; 21BB
+    EQUB -1, 0, 1, 0
+
+; The blocks in the order of the block menu, and the order of the keys 0-9,
+; A-F that choose them directly: for each key, the block's menu item * 16 +
+; the block.
+FUNCTION key_block(item, tile) = item * 16 + tile
 .tile_menu_map
-    EQUB &00, &11                   ; 21BF
-    EQUS """3DU"                    ; 21C1
-    EQUB &A8, &77, &6A, &FE, &86, &EF, &CC, &DD; 21C5
-    EQUB &9B, &B9                   ; 21CD
+    EQUB key_block(0, TILE_BLANK)           ; 0
+    EQUB key_block(1, TILE_SE_CURVE)        ; 1
+    EQUB key_block(2, TILE_SW_CURVE)        ; 2
+    EQUB key_block(3, TILE_NE_CURVE)        ; 3
+    EQUB key_block(4, TILE_NW_CURVE)        ; 4
+    EQUB key_block(5, TILE_WALL_1)          ; 5
+    EQUB key_block(10, TILE_CRATE)          ; 6
+    EQUB key_block(7, TILE_COLLECTABLE)     ; 7
+    EQUB key_block(6, TILE_WALL_2)          ; 8
+    EQUB key_block(15, TILE_BARRICADE)      ; 9
+    EQUB key_block(8, TILE_FATAL_TRAP)      ; A
+    EQUB key_block(14, TILE_JUNCTION)       ; B
+    EQUB key_block(12, TILE_HORZ_PIPE)      ; C
+    EQUB key_block(13, TILE_VERT_PIPE)      ; D
+    EQUB key_block(9, TILE_MONSTER)         ; E
+    EQUB key_block(11, TILE_MARKER)         ; F
+
+; Each menu's handlers, one per item (zero page points at these tables).
 .options_handlers
-    EQUB &E5, &16, &E9, &16, &56, &17, &7E, &18; 21CF
-    EQUB &FD, &1A, &E0, &19, &93, &1A, &43, &1A; 21D7
-    EQUB &A7, &21, &68, &12         ; 21DF
+    EQUW option_start, option_finish, option_object, option_monster
+    EQUW option_puzzle, option_collects, option_graphics, option_time
+    EQUW option_clear, do_nothing
 .object_handlers
-    EQUB &6E, &17, &2F, &18, &02, &18, &E2, &17; 21E3
-    EQUB &1A, &18, &1E, &18, &22, &18, &19, &13; 21EB
+    EQUW object_position, object_exists_toggle, object_sprite, object_charge
+    EQUW object_charges_toggle, object_vanish_toggle, object_throw_toggle
+    EQUW menu_ok_drop_choice
 .monster_handlers
-    EQUB &96, &18, &E5, &18, &11, &19, &9B, &19; 21F3
-    EQUB &AA, &19, &19, &13         ; 21FB
+    EQUW monster_position, monster_direction, monster_pattern
+    EQUW monster_killed_by, monster_result, menu_ok_drop_choice
 .puzzle_handlers
-    EQUB &78, &1B, &2A, &1B, &C3, &1B, &21, &1C; 21FF
-    EQUB &BD, &1E, &1A, &13         ; 2207
+    EQUW puzzle_name, puzzle_type, puzzle_status, puzzle_conditions
+    EQUW puzzle_effects, menu_ok
 .status_handlers
-    EQUB &0E, &1C, &12, &1C, &16, &1C, &1A, &13; 220B
+    EQUW status_use_object, status_turned_on, status_reusable, menu_ok
 .conditions_handlers
-    EQUB &17, &1D, &A7, &1C, &AA, &1C, &CA, &1C; 2213
-    EQUB &95, &1C, &E0, &1C, &9C, &1C, &0A, &1C; 221B
-    EQUB &1A, &13                   ; 2223
+    EQUW condition_position, condition_check_x, condition_check_y
+    EQUW condition_next_block, condition_check_next, condition_direction
+    EQUW condition_check_direction, condition_collects, menu_ok
 .files_handlers
-    EQUB &54, &1D, &E5, &1D, &D2, &1D, &78, &11; 2225
+    EQUW files_load, files_save, files_edit_code, files_exit
+; By puzzle type.
 .effect_handlers
-    EQUB &9D, &1E, &97, &1E, &18, &1F, &28, &1F; 222D
-    EQUB &91, &1E, &F1, &1F, &85, &1E, &60, &1E; 2235
-    EQUB &DB, &1E, &90, &1F         ; 223D
-    EQUS "9 9 "                     ; 2241
-    EQUB &8B, &1E, &9A, &20, &CB, &20, &C9, &1E; 2245
+    EQUW effect_place_block, effect_move_block, effect_block_type
+    EQUW effect_set_levels, effect_throw_object, effect_detonate_object
+    EQUW effect_move_monster, effect_place_monster, effect_teleport
+    EQUW effect_swap_next, effect_turn_puzzle, effect_turn_puzzle
+    EQUW effect_charge_object, effect_push_crates, effect_move_next_block
+    EQUW effect_disorientate
 .place_block_handlers
-    EQUB &D7, &1E, &18, &1F, &19, &13; 224D
+    EQUW effect_block_position, effect_block_type, menu_ok_drop_choice
 .set_levels_handlers
-    EQUB &65, &1F, &56, &1F, &78, &1F, &5A, &1F; 2253
-    EQUB &19, &13                   ; 225B
+    EQUW levels_time, levels_change_time, levels_collects
+    EQUW levels_change_collects, menu_ok_drop_choice
 .move_block_handlers
-    EQUB &D7, &1E, &BD, &1F, &19, &13; 225D
+    EQUW effect_block_position, effect_block_direction, menu_ok_drop_choice
 .throw_handlers
-    EQUB &FA, &1F, &11, &20, &19, &13; 2263
+    EQUW choose_object_number, throw_distance, menu_ok_drop_choice
 .charge_handlers
-    EQUB &FA, &1F, &1A, &20, &19, &13; 2269
+    EQUW choose_object_number, charge_count, menu_ok_drop_choice
 .move_monster_handlers
-    EQUB &AA, &20, &BF, &20, &19, &13; 226F
+    EQUW move_monster_number, move_monster_direction, menu_ok_drop_choice
 .place_monster_handlers
-    EQUB &DD, &20, &EE, &20, &0E, &21, &18, &21; 2275
-    EQUB &05, &13                   ; 227D
+    EQUW place_monster_number, place_monster_position, place_monster_direction
+    EQUW place_monster_pattern, place_monster_ok
 .help_handlers
-    EQUB &38, &21, &A7, &16, &83, &08; 227F
+    EQUW help_find_puzzle, help_simulate, vector_close_window
+; get_key's steps while simulating, by direction.
 .cursor_handlers
-    EQUB &70, &14, &88, &14, &7C, &14, &94, &14; 2285
+    EQUW cursor_left, cursor_up, cursor_right, cursor_down
+
+; Spare, all zero but for one stray byte.
 .unused_space
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 228D
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 2295
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 229D
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 22A5
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 22AD
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 22B5
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 22BD
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 22C5
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 22CD
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 22D5
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 22DD
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 22E5
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 22ED
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 22F5
-    EQUB &00, &00, &00, &20, &00, &00, &00, &00; 22FD
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 2305
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 230D
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 2315
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 231D
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 2325
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 232D
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 2335
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 233D
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 2345
+    SKIP 115
+    EQUB &20
+    SKIP 76
 .vector_text_colours
     JMP text_colours                ; 234D: 4C 84 24
 .vector_set_level_palette
