@@ -1,0 +1,11 @@
+{
+  "name": "pipeline-disasm",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Runtime harness for the PIPELINE disassembly: boots discs in headless jsbeeb",
+  "dependencies": {
+    "jsbeeb": "^2.3.1",
+    "sharp": "^0.35.4"
+  }
+}

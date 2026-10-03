@@ -56,3 +56,22 @@ earlier ones rather than rewriting them. Times are US Central.
 - Baron is pinned in CI at 016a764 (0.4.2.0).
 - The jsbeeb MCP wasn't registered for this directory; `.mcp.json` adds it
   for the next session.
+
+## 2026-10-03 17:50 — Running it headless
+
+- `tools/beeb.mjs` drives the published `jsbeeb` package (MachineSession)
+  from a tiny script language: wait, frames, key, type, until, shot, dump,
+  hex, regs, and `trace FILE`, which records every executed PC with the
+  opcode found there (so code at an address shared by several programs can
+  be told apart). `reads FILE` records every address read and written.
+- jsbeeb notes the disc "loaded as 80 track: its catalogue claims 800
+  sectors" - harmless, it only reads tracks 0-39.
+- Boot sequence seen: SCREEN is the Superior/Acornsoft loading picture
+  (MODE 5 at &5800, `docs/img/loading-screen.png`); then WARNING, a Mode 7
+  page saying "Unauthorised commercial exploitation of screens or graphics
+  data produced by the PIPELINE Level Designer or the PIPELINE Graphics
+  Designer is strictly prohibited". So GRAPHIC and LEVDES are the Graphics
+  and Level Designers, not data.
+- Then the MENU (`docs/img/menu.png`): 1 Start the game, 2 Redefine keys,
+  3 Edit graphics, 4 Edit levels, 5 Edit missions, 6 Quit PIPELINE, over a
+  Mode 7 double-height scroller. "Edit missions" will be MISSION (BASIC).
