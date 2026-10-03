@@ -204,3 +204,40 @@ load IO and swaps the game back. TITLE (&6300-&7979) is long gone by then.
 - OS names H.GAME defines locally that belong in os.6502inc: EXTENDED_VECTORS
   (&0D9F), NMI_HANDLER (&0D00), VSYNC_COUNTER (&0240), ESCAPE_FLAG (&FF),
   ERROR_POINTER (&FD).
+
+## 2026-10-03 18:50 — How H.GAME's source is made, and tools
+
+- `src/hidden_game.6502` is generated: `python3 tools/dis6502seg.py
+  hints/hidden_game.toml > src/hidden_game.6502` (after `make`, since it
+  reads the binary the build makes; data/hidden_game.bin is gone). The
+  hints carry everything: the relocated segments, the inline-data calls,
+  jump tables, names (labels, zero page, IO addresses), routine comments,
+  end-of-line remarks, operand expressions and hand-written source for
+  data tables, split by area under hints/hidden_game/. Edit those and
+  regenerate; annotations at addresses that aren't the start of a line are
+  reported. This departs from "run the disassembler once, then edit by
+  hand": the alternative is to freeze the generated file and edit it from
+  now on, which also works.
+- The static trace finds all the code; gameplay traces (title, start-level
+  select, backpack and map screens, deaths, lighting the exit, using an
+  object at a trigger) found nothing more. Entry points it can't see: the
+  event handler (EVNTV), the error handler (BRKV), restore_floor_picture
+  (an RTS to a pushed address), throw_trigger (a self-modified JMP), and
+  three bits of code nothing uses (&0C60, &113B, the JMP at &1C88).
+- Quirks worth knowing: the print routine takes its text inline after the
+  JSR up to a NOP, which then runs; the loader's copy routine takes six
+  bytes inline; `BIT bit4_mask` / `BIT bit6_mask` test bits against the
+  operand bytes of other instructions (&10 and &40); the objects table is
+  laid over run-once code; trigger places and arguments overwrite the end of
+  the game's own code; the trigger action and the object-trigger checker are
+  reached through self-modified JSR/JMPs.
+- `tools/play.mjs` plays the game headless: `game` gets from boot to &3000
+  (menu option 1, Return), `bkey NAME` presses BBC keys by matrix position
+  (Z, X, COLON_STAR, SLASH, P, D, RETURN, T, CTRL, M, SPACE, S...),
+  `random SECS` wanders, `poke`/`peek`, `save`/`restore` snapshots, `shots`.
+  On the title screen wait about 6 seconds before pressing keys (the
+  keyboard buffer is flushed late), and after Space about 8 for the level
+  to draw. `tools/traceranges.py` summarises a trace's executed ranges.
+- Handy pokes: the level's setup is at io_level_setup (&25A0 for level 1):
+  poking the start position there before Space puts the player anywhere;
+  &58 is the number left to collect, &59 the clock, &24-&27 the backpack.
