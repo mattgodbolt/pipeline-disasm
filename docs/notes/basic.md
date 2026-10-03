@@ -82,18 +82,19 @@ Load &1900, exec &8023, &2000 bytes. Every byte:
   pointer), &74 (pixel mask), &75/&76, &77/&78 (from BASIC), &79-&8A (row
   pointers; &7B-&8A used), &8B-&93 (OSWORD &0A block; spills past &8F).
 - The game's keys: line 280 reads ten negative INKEY numbers into &50-&59,
-  as their low bytes (-98 is &9E, the form OSBYTE &81 takes in X): defaults -98 Z, -67 X, -73 * (:), -105 ?, -56 P, -51 D, -74
-  RETURN, -36 T, -2 CTRL, -102 M; option 2 redefines them, storing `-P%`.
-  The names shown are Guildmaster's (MOVE WEST ... VIEW MAP). H.GAME
-  presumably reads &50-&59.
+  as their low bytes (-98 is &9E, the form OSBYTE &81 takes in X).
+  Defaults: -98 Z, -67 X, -73 * (:), -105 ?, -56 P, -51 D, -74 RETURN,
+  -36 T, -2 CTRL, -102 M. Option 2 redefines them, storing `-P%`. The
+  names shown are Guildmaster's (MOVE WEST ... VIEW MAP). H.GAME presumably
+  reads &50-&59.
 - Setup before the menu: restores every vector in page 2 to the MOS
   defaults from the table at !&FFB7 (length ?&FFB6) but keeps BRKV
   (BASIC's); `*FX255 8 247` sets start-up option bit 3 so plain BREAK
   boots the disc; `*FX200 2` clears memory on BREAK; `*FX229 1` makes
   Escape a key; `*FX4 1` cursor keys give 136-139; `*FX9 1`/`*FX10 1`
-  flash colours every frame; `*TV255 1` (up a line, no interlace); MODE 5 and `*L.SCREEN` (the
-  loading picture), 10 s; then the second-processor check, `*L.WARNING`,
-  10 s, and the menu.
+  flash colours every frame; `*TV255 1` (up a line, no interlace); MODE 5
+  and `*L.SCREEN` (the loading picture), 10 s; then the second-processor
+  check, `*L.WARNING`, 10 s, and the menu.
 - Line 60-80: `ON ERROR GOTO 80` around `*SHADOW 1` (a B+/Master keeps the
   screen in main memory; a B gives "Bad command"), then
   `ON ERROR AWopBabaLuMopALopBamBoom` (Little Richard): the handler is
@@ -141,7 +142,7 @@ always ends at &5800. IO matches: load &242D, &33D3 bytes.
 | Offset | Size | What |
 |---|---|---|
 | &0000 | &134 | `names`: copied from the graphics file's tail. In IO (and DEFAULT): &00-&7F look like graphics, &80-&133 are 15 object names of 12 characters: Remote C.D.1-3, Blueprints, Mallet, Spanner, Screwdriver, Magnet, Space Burger, Jovian Wine, Fire Blanket, Laser Gun, Extinguisher, Detonator, Explosives |
-| &0134 | 30 | the mission's name ("change name"; the game prints it): two 15-byte halves, each VDU 31,x,y then 12 characters, spaces stored as 9 (cursor right, so the background shows). MISSION writes 31,18,16 and 31,14,17. IO: "Collect the" / "Sulphur!" |
+| &0134 | 30 | the mission's name ("change name"; being VDU codes, presumably printed as is by the game): two 15-byte halves, each VDU 31,x,y then 12 characters, spaces stored as 9 (cursor right, so the background shows). MISSION writes 31,18,16 and 31,14,17. IO: "Collect the" / "Sulphur!" |
 | &0152 | 5 | features: time consumption (stored as shown + 6; shown 1-16), mapping ability (0-4), backpack size (stored as shown - 1; shown 1-4), throwing distance (0-63), lock (0; 1 or &FF when saved with the secret keys, below). Defaults 15, 2, 2, 6, 0. IO: 15, 4, 2, 6, &FF (locked) |
 | &0157 | &247C | four levels (L%): first the fields, then the maps |
 | &25D3 | &E00 | graphics (G%), as in a graphics file |
@@ -212,7 +213,7 @@ and loading IO shows its name as "Collect the" / "Sulphur!".
 
 - H.GAME: IO's layout above; the keys in &50-&59. IO's load address
   (&242D-&57FF) overlaps H.GAME's &3000-&50FF, so the game must load it
-  elsewhere or before itself.
+  somewhere else, or move itself first.
 - LEVDES/GRAPHIC: the level and graphics file formats above; where the
   fields and `names` come from.
 - H.LEVDES: the source fragment at the end of MENU assembles to its
