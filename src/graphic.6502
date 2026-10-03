@@ -4,6 +4,7 @@
 ; and LEVDES.
 
 INCLUDE "os.6502inc"
+INCLUDE "osconst.6502inc"
 
 ; H.GRAPH, as src/disc.toml places it: track 32 sector 5 to track 35 sector 7.
 ; It loads part way into a page and is entered well inside itself.

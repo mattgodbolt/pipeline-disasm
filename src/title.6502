@@ -22,7 +22,7 @@
 ; last 2K of the screen, below the picture, is cleared when it's done.
 
 INCLUDE "os.6502inc"
-INCLUDE "loaders.6502inc"
+INCLUDE "osconst.6502inc"
 
 SCREEN_MODE1 = &3000        ; MODE 1 screen memory, to the end of RAM at &8000
 SCREEN_END = &8000

@@ -4,6 +4,7 @@
 ; and GRAPHIC.
 
 INCLUDE "os.6502inc"
+INCLUDE "osconst.6502inc"
 
 ; H.LEVDES, as src/disc.toml places it: track 36 sector 5 to track 39 sector 5.
 ; It's entered well inside itself.

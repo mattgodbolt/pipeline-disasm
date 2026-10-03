@@ -36,28 +36,6 @@
 ;   +7..    the n parameters
 ;   +7+n    result, written back by the call (0 = all well)
 
-; OSWORD &7F: hand a raw command to the 8271 floppy disc controller via DFS.
-OSWORD_DISC_COMMAND = &7F
-
-; 8271 commands, with the drive 0 select bit (&40) already in.
-FDC_READ_DATA_AND_DELETED = &57   ; multi-sector read that accepts deleted marks
-FDC_READ_ID               = &5B   ; read sector ID fields off a track
-FDC_SEEK                  = &69
-FDC_WRITE_SPECIAL         = &7A   ; write one of the 8271's special registers
-
-; 8271 special register: the track the controller believes drive 0's head is
-; on. Seeks step the head by the difference from this; reads compare their
-; track parameter with it and with the sector IDs.
-FDC_REG_TRACK_DRIVE_0 = &12
-
-; The third parameter of a multi-sector read: sector size code in bits 5-7
-; (1 = 256 bytes), sector count in bits 0-4.
-FDC_SIZE_256 = 1 << 5
-
-; The 8271's result for a sector carrying a deleted data mark. Every read of a
-; hidden run on the original disc ends with this, never with 0.
-FDC_RESULT_DELETED_DATA = &20
-
 ; I/O processor memory, as the top half of a 32-bit OSWORD &7F address.
 IO_PROCESSOR = &FFFF0000
 

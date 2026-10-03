@@ -11,7 +11,7 @@
 ; was saved. The disc's slack past the file is in src/disc.toml.
 
 INCLUDE "os.6502inc"
-INCLUDE "loaders.6502inc"
+INCLUDE "osconst.6502inc"
 
 ; Zero page: BASIC's, unused until BASIC starts, which is the last thing
 ; this does. &50 serves twice, in turn.

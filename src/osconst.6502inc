@@ -1,19 +1,6 @@
-; OS call numbers and other MOS and machine constants used by the boot chain
-; and the small loaders (MRUN, PL, TITLE...). Kept here rather than in
-; os.6502inc only because that file changes on main; they belong there.
-
-; The 6502's own vectors, in the MOS ROM.
-CPU_NMI_VECTOR   = &FFFA
-CPU_RESET_VECTOR = &FFFC
-CPU_IRQ_VECTOR   = &FFFE
-
-; Where the MOS keeps the address of its table of default vector contents
-; (laid out like page 2 from USERV, ?&FFB6 bytes long).
-MOS_DEFAULT_VECTORS_PTR = &FFB7
-
-; MOS zero page: the internal key number (bit 7 set) of the key last
-; pressed, while it's held.
-MOS_KEY_PRESSED = &EC
+; MOS call numbers and other constants: OSBYTE and OSWORD numbers, buffers,
+; events, internal key numbers, and the 8271 disc controller's commands as
+; OSWORD &7F passes them. Addresses are in os.6502inc.
 
 ; OSBYTE calls.
 OSBYTE_CURSOR_EDITING   = &04   ; *FX4: X=1 makes the cursor keys type codes
@@ -50,3 +37,25 @@ CR = 13
 
 ; A character's code, as a value: ascii("A") is &41.
 FUNCTION ascii(c) = CODES(c)[0]
+
+; OSWORD &7F: hand a raw command to the 8271 floppy disc controller via DFS.
+OSWORD_DISC_COMMAND = &7F
+
+; 8271 commands, with the drive 0 select bit (&40) already in.
+FDC_READ_DATA_AND_DELETED = &57   ; multi-sector read that accepts deleted marks
+FDC_READ_ID               = &5B   ; read sector ID fields off a track
+FDC_SEEK                  = &69
+FDC_WRITE_SPECIAL         = &7A   ; write one of the 8271's special registers
+
+; 8271 special register: the track the controller believes drive 0's head is
+; on. Seeks step the head by the difference from this; reads compare their
+; track parameter with it and with the sector IDs.
+FDC_REG_TRACK_DRIVE_0 = &12
+
+; The third parameter of a multi-sector read: sector size code in bits 5-7
+; (1 = 256 bytes), sector count in bits 0-4.
+FDC_SIZE_256 = 1 << 5
+
+; The 8271's result for a sector carrying a deleted data mark. Every read of a
+; hidden run on the original disc ends with this, never with 0.
+FDC_RESULT_DELETED_DATA = &20

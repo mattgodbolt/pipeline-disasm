@@ -87,11 +87,14 @@ OS_INCLUDE = Path(__file__).resolve().parent.parent / "src" / "os.6502inc"
 
 
 def os_symbols() -> dict:
-    """address -> name, from the `NAME = &HEX` lines of src/os.6502inc."""
+    """address -> name, from the `NAME = &HEX` lines of src/os.6502inc.
+
+    Zero page is left out: the MOS's bytes there are fair game for a program
+    that has taken the machine over, so naming them would mislead."""
     out = {}
     for line in OS_INCLUDE.read_text().splitlines():
         m = re.match(r"\s*(\w+)\s*=\s*&([0-9A-Fa-f]+)", line)
-        if m:
+        if m and int(m.group(2), 16) >= 0x100:
             out[int(m.group(2), 16)] = m.group(1)
     return out
 

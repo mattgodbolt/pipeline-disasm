@@ -39,8 +39,15 @@ with baron pinned by commit; bumping the pin is its own commit.
   jsbeeb (run `npm ci` once). `trace FILE` records executed PCs for the
   disassembler's `traces`; `shot`, `dump`, `hex`, `out`, `type`, `key`,
   `prompt`, `until` - see its header.
-- `src/os.6502inc`: MOS entry points, vectors and hardware registers.
-  INCLUDE it; add OS names there rather than locally (one name per address).
+- `src/os.6502inc`: MOS entry points, vectors and hardware registers -
+  addresses only. INCLUDE it; add OS names there rather than locally (one
+  name per address). The disassembler names operands from it, except zero
+  page.
+- `src/osconst.6502inc`: OSBYTE/OSWORD numbers, buffers, events, internal
+  key numbers, the 8271's commands, `ascii()`.
+- `src/teletext.6502inc`: Mode 7 control codes and `TT_ROW`.
+- `tools/mode7.py` (Mode 7 binary to `TT_ROW` source), `tools/beebscreen.py`
+  (MODE 1/5 screen memory to PNG), `tools/plcrypt.py` (PL's encryption).
 - `src/forceabs.6502inc`: macros for absolute addressing of zero page.
 
 ## The pieces
@@ -50,14 +57,14 @@ with baron pinned by commit; bumping the pin is its own commit.
 | `!BOOT` | boot.6502 | `*EXEC` text: credits, `*FX200,3`, CHAIN"MENU" |
 | MENU | menu.6502 | BASIC menu (`Originally: GUILDMASTER`) at &1900, with a Mode 7 scroller and menu screen pre-loaded into its DIM'd heap |
 | MISSION | mission.6502 | BASIC "MISSION GENERATOR": builds IO from the editors' data |
-| GAME, GRAPHIC, LEVDES | game/graphic/levdes.6502 | &D9-byte stubs at &0900 that read the hidden runs with OSWORD &7F |
+| GAME, GRAPHIC, LEVDES | game/graphic/levdes.6502 | &D9-byte stubs at &0900, one source (hidden_loader.6502inc), reading the hidden runs with OSWORD &7F |
 | H.GAME | hidden_game.6502 | the game, run at &3000; loads IO |
-| H.GRAPH | hidden_graphic.6502 | the Graphics Designer; uses DEFAULT, exits via /MRUN |
-| H.LEVDES | hidden_levdes.6502 | the Level Designer; loads WDATA and LDATA, exits via /MRUN |
-| TITLE | title.6502 | `*RUN` before the game, in MODE 1 |
-| MRUN | mrun.6502 | &80 bytes at &0780: back to the menu (`*E.!BOOT`) |
-| PL | pl.6502 | &400; run by MENU only if two keys are held at boot |
-| WARNING, SCREEN | warning/screen.6502 | Mode 7 warning page; MODE 5 loading picture |
+| H.GRAPH | hidden_graphic.6502 | the Graphics Designer, at &1AB0 entered at &2BAE; uses DEFAULT, exits via /MRUN |
+| H.LEVDES | hidden_levdes.6502 | the Level Designer, at &1100 entered at &2E21; loads WDATA and LDATA, exits via /MRUN |
+| TITLE | title.6502 | `*RUN` in MODE 1 before the game: unpacks the title picture over itself |
+| MRUN | mrun.6502 | &80 bytes at &0780: restores the editors' vectors, back to the menu via `*E.!BOOT` |
+| PL | pl.6502 | "Ian's cheat!": self-decrypting, run by MENU if W and T are held at boot; tools/plcrypt.py |
+| WARNING, SCREEN | warning/screen.6502 | Mode 7 warning page (as rows); MODE 5 loading picture |
 | IO, LDATA, LEVEL1, DEFAULT, WDATA | *.6502 | data (IO ends at &5800: the game's levels, graphics, missions) |
 
 ## Baron notes

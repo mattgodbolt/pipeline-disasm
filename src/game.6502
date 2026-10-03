@@ -4,6 +4,7 @@
 ; LEVDES.
 
 INCLUDE "os.6502inc"
+INCLUDE "osconst.6502inc"
 
 ; H.GAME, as src/disc.toml places it: track 29 sector 0 to track 32 sector 2.
 hidden_first_sector = &122

@@ -109,3 +109,47 @@ earlier ones rather than rewriting them. Times are US Central.
   piece on the disc, even data disassembled as code. Nothing on the disc
   uses absolute addressing for zero page, so no baron feature is needed for
   that.
+
+## 2026-10-03 19:05 — Merged: the boot chain and loaders (agent branch)
+
+Details in `docs/notes/loaders.md`. The headlines:
+
+- The three stubs are one program (`src/hidden_loader.6502inc`), each stub
+  setting four numbers (first hidden sector, length, load, entry). Hidden
+  runs: H.GAME &3000 (entry &3000), H.GRAPH &1AB0 (entry &2BAE), H.LEVDES
+  &1100 (entry &2E21) - the STH crack's addresses were right.
+- Correction to 17:30's "none of it is encrypted, the protection is just
+  hiding": every hidden sector, and only those, carries a deleted data
+  address mark, on every capture (checked again here with jsbeeb's decoder:
+  97 sectors, exactly the three runs). The 8271 returns &20 for them, DFS
+  calls that a fault, so `*BACKUP` stops at track 29. The stubs use OSWORD
+  &7F "read data and deleted data" and ignore the result. An .ssd can't
+  hold the marks, so ours (and jsbeeb's HFE-to-SSD conversion) silently lose
+  them; jsbeeb's `ssdOrDsdShortfalls` doesn't count deleted marks.
+- The stubs probe track 4's sector ID to spot an 80-track drive
+  double-stepping, and then seek to twice each track and fix up the 8271's
+  track register. jsbeeb never takes that path.
+- The "Sector read fault!" BRK block is unreachable: a `NOP : JMP` sits
+  where a 7-byte result check fits exactly, presumably patched out once the
+  deleted marks made every read return &20.
+- PL is "Ian's cheat!", run by MENU if W and T are held at boot. It decrypts
+  itself (`plain = key ^ previous plain ^ stored`, keys from its own
+  decryptor's bytes), silently reads a level filename and six-digit code
+  (LEVEL1's is 677636), lists the level file's 32 puzzles, fakes "Bad
+  program" until I, N, O and S are held, then `*L.GAME`s and pokes cheats
+  into the game at &3FC7, &4875 and &4F31. On this disc GAME is a stub, so it
+  resets: PL predates the hidden sectors. Kept as decrypted source plus the
+  stored bytes; `tests/test_pl.py` checks they agree.
+- MRUN restores RDCHV (hooked by the Level Designer) and EVNTV (Graphics
+  Designer), then types `*E.!BOOT` into the keyboard buffer and enters BASIC.
+- TITLE is a zero-run-packed MODE 1 picture ("PIPELINE by IAN HOLMES and
+  WILLIAM REEVE") that copies its unpacker to &2F00 and unpacks over itself.
+- Shared names reorganised on main: addresses in `src/os.6502inc` (now with
+  the CPU vectors and MOS default-vector pointer), constants in the new
+  `src/osconst.6502inc` (OSBYTE/OSWORD numbers, key numbers, 8271 commands,
+  `ascii()`). The disassembler no longer names zero-page operands from the
+  OS file, since a game that owns the machine reuses those bytes.
+- Baron wishes from this piece: a way to transform or read back a section's
+  bytes (so PL's encrypted image could be generated from its source inside
+  the build), and character literals. Neither blocks anything; noted, not
+  filed.

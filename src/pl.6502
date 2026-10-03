@@ -35,7 +35,7 @@
 ; the data from the source.
 
 INCLUDE "os.6502inc"
-INCLUDE "loaders.6502inc"
+INCLUDE "osconst.6502inc"
 INCLUDE "teletext.6502inc"
 
 OPCODE_BMI = &30
