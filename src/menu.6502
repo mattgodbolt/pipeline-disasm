@@ -1,7 +1,33 @@
 ; $.MENU: the PIPELINE menu, a BASIC program, with the machine code and
 ; screen its DIMs hold carried in the same file.
+INCLUDE "os.6502inc"
 INCLUDE "basic.6502inc"
 INCLUDE "teletext.6502inc"
+
+; OS call numbers the scroller uses.
+OSBYTE_ENABLE_EVENT   = &0E
+OSWORD_READ_CHARACTER = &0A   ; a character's 8 rows of pixels, top first
+EVENT_VSYNC           = 4
+
+; Where the scroller draws: eight rows at the bottom of the screen. Columns
+; 0 and 1 hold its colour codes; 38 and 39 stay blank.
+SCROLL_TOP   = 17
+SCROLL_ROWS  = 8
+SCROLL_LEFT  = 2
+SCROLL_RIGHT = 37
+
+; The scroller's zero page. It runs on the vsync event, under whatever BASIC
+; is doing, so it keeps to the user's area (&70-&8F) - except for &60, and
+; the character definition, which spills into &90-&93.
+scroll_phase        = &60   ; &49 or 0, flipped each frame: the column moves on when it's 0
+scroll_row_temp     = &70   ; (2) the row being set up, at start
+scroll_text_ptr     = &72   ; (2) the character being scrolled in
+scroll_column_mask  = &74   ; which pixel of the character's rows is the next column
+scroll_text_start   = &75   ; (2) set by line 300 to C%+&C9, the message
+scroll_handler_addr = &77   ; (2) set by line 300 to C%+&49, for EVNTV
+scroll_cell_ptrs    = &7B   ; (2 x 8) the right-hand cell of each row, top first
+char_definition     = &8B   ; OSWORD &0A's block: the character, then its rows
+
 
 SECTION menu, filename="MENU", org=&1900, load=&1900, exec=&8023
 .program
@@ -111,5 +137,320 @@ BASIC
 1020PAGE=PAGE+&1C00:RUN
 ENDBASIC
 .program_end
-    INCBIN "../data/menu_heap.bin"
+
+; ---------------------------------------------------------------------------
+; C%: line 50's LOMEM=PAGE+&A00 starts the heap where the program ends, so
+; DIM C% &EFF puts its &F00 bytes here. DIM doesn't clear them, and the file
+; was saved with the scroller and its message in place.
+
+    ASSERT P% = program + &A00
+
+.scroller
+{
+; Starts the scroller (CALL C% in line 300, which has already set
+; scroll_text_start and scroll_handler_addr). Marks the left of each
+; scroller row as separated cyan graphics, aims scroll_cell_ptrs at each
+; row's right-hand cell, points EVNTV at the handler and enables the vsync
+; event.
+; Clobbers A, X, Y and scroll_row_temp.
+.start
+    LDA #&80
+    STA scroll_column_mask          ; the character's leftmost pixel first
+    ASL A
+    STA scroll_text_ptr             ; (overwritten just below)
+    STA scroll_phase
+    LDA scroll_text_start
+    STA scroll_text_ptr
+    LDA scroll_text_start + 1
+    STA scroll_text_ptr + 1
+
+    ; Each row's pointer is the one below it less a row, starting from the
+    ; bottom one; the loop goes one further than it needs, leaving row 16's
+    ; in the spare slot before the table.
+    LDA #LO(mode7_address(SCROLL_RIGHT, SCROLL_TOP + SCROLL_ROWS - 1))
+    STA scroll_cell_ptrs + 2 * (SCROLL_ROWS - 1)
+    LDA #HI(mode7_address(SCROLL_RIGHT, SCROLL_TOP + SCROLL_ROWS - 1))
+    STA scroll_cell_ptrs + 2 * (SCROLL_ROWS - 1) + 1
+    LDX #2 * (SCROLL_ROWS - 1)
+    LDY #MODE7_COLUMNS - SCROLL_RIGHT   ; from the row above's right cell to this row's first
+.each_row
+    LDA scroll_cell_ptrs, X
+    SEC
+    SBC #MODE7_COLUMNS
+    STA scroll_row_temp
+    STA scroll_cell_ptrs - 2, X
+    LDA scroll_cell_ptrs + 1, X
+    SBC #0
+    STA scroll_row_temp + 1
+    STA scroll_cell_ptrs - 1, X
+    LDA #TT_SEPARATED
+    STA (scroll_row_temp), Y
+    INY
+    LDA #TT_GRAPHICS_CYAN
+    STA (scroll_row_temp), Y
+    DEY
+    DEX
+    DEX
+    BPL each_row
+
+    LDA scroll_handler_addr
+    STA EVNTV
+    LDA scroll_handler_addr + 1
+    STA EVNTV + 1
+    LDA #OSBYTE_ENABLE_EVENT
+.enable_vsync_event
+    LDX #EVENT_VSYNC
+    JMP OSBYTE
+
+; Where line 300 points EVNTV: C%+&49, which is the operand of the LDX
+; above, four bytes short of the handler. From there the bytes run as &04
+; &4C and &F4 &FF, which an NMOS 6502 executes as two do-nothing NOPs
+; (zero page and zero page,X: undocumented, but they only read), so the
+; handler runs anyway. Presumably a slip that happened to work; a 65C02
+; would take &04 as TSB &4C and set bits in BASIC's workspace.
+vsync_entry = enable_vsync_event + 1
+    ASSERT vsync_entry = scroller + &49
+
+; The vsync event handler. Every frame, moves the eight scroller rows one
+; cell left and fills each row's right-hand cell from one pixel column of
+; the character being scrolled in: a solid block where its pixel is lit.
+; A column stays for two frames, so a character is 16 cells wide and 8
+; tall, and the message wraps when it reaches its terminating zero.
+; Doesn't check which event it was called for: vsync is the only one on.
+; Clobbers A, X, Y and char_definition.
+.vsync_handler
+shift_from = &100 - (SCROLL_RIGHT - SCROLL_LEFT)    ; Y counts up to zero
+    LDY #shift_from
+.shift_left
+    LDA mode7_address(SCROLL_LEFT + 1, SCROLL_TOP + 0) - shift_from, Y
+    STA mode7_address(SCROLL_LEFT, SCROLL_TOP + 0) - shift_from, Y
+    LDA mode7_address(SCROLL_LEFT + 1, SCROLL_TOP + 1) - shift_from, Y
+    STA mode7_address(SCROLL_LEFT, SCROLL_TOP + 1) - shift_from, Y
+    LDA mode7_address(SCROLL_LEFT + 1, SCROLL_TOP + 2) - shift_from, Y
+    STA mode7_address(SCROLL_LEFT, SCROLL_TOP + 2) - shift_from, Y
+    LDA mode7_address(SCROLL_LEFT + 1, SCROLL_TOP + 3) - shift_from, Y
+    STA mode7_address(SCROLL_LEFT, SCROLL_TOP + 3) - shift_from, Y
+    LDA mode7_address(SCROLL_LEFT + 1, SCROLL_TOP + 4) - shift_from, Y
+    STA mode7_address(SCROLL_LEFT, SCROLL_TOP + 4) - shift_from, Y
+    LDA mode7_address(SCROLL_LEFT + 1, SCROLL_TOP + 5) - shift_from, Y
+    STA mode7_address(SCROLL_LEFT, SCROLL_TOP + 5) - shift_from, Y
+    LDA mode7_address(SCROLL_LEFT + 1, SCROLL_TOP + 6) - shift_from, Y
+    STA mode7_address(SCROLL_LEFT, SCROLL_TOP + 6) - shift_from, Y
+    LDA mode7_address(SCROLL_LEFT + 1, SCROLL_TOP + 7) - shift_from, Y
+    STA mode7_address(SCROLL_LEFT, SCROLL_TOP + 7) - shift_from, Y
+    INY
+    BNE shift_left
+
+    LDA (scroll_text_ptr), Y
+    BNE have_character
+    LDA scroll_text_start           ; the end of the message: start again
+    STA scroll_text_ptr
+    LDA scroll_text_start + 1
+    STA scroll_text_ptr + 1
+    LDA (scroll_text_ptr), Y
+.have_character
+    STA char_definition
+    LDX #LO(char_definition)
+    LDY #HI(char_definition)
+    LDA #OSWORD_READ_CHARACTER
+    JSR OSWORD
+
+    LDX #0
+    LDY #SCROLL_ROWS - 1
+.each_pixel_row
+    LDA char_definition + 1, Y
+    AND scroll_column_mask
+    BEQ unlit                       ; zero shows as a blank cell
+    LDA #TT_SOLID_BLOCK
+.unlit
+    PHA
+    TYA
+    ASL A
+    TAX
+    PLA
+    STA (scroll_cell_ptrs, X)
+    DEY
+    BPL each_pixel_row
+
+    LDA scroll_phase                ; any non-zero value would do
+    EOR #&49
+    STA scroll_phase
+    BEQ done
+    LSR scroll_column_mask
+    BCC done
+    LDA #&80                        ; past the rightmost pixel: on to the next character
+    STA scroll_column_mask
+    INC scroll_text_ptr
+    BNE done
+    INC scroll_text_ptr + 1
+.done
+    RTS
+}
+
+; The message, ended by a zero; line 300 gives its address (C%+&C9) to the
+; scroller in scroll_text_start.
+.scroll_text
+    ASSERT scroll_text = scroller + &C9
+    EQUS "PIPELINE was written by Ian Holmes and William Reeve. Or so they claim. "
+    EQUS "In the 25th century, the Earth's sulphur resources have dwindled. The "
+    EQUS "only supplies are from off-world sources such as the Jovian moon Io. But "
+    EQUS "the temperature control systems of the Io sulphur platforms have "
+    EQUS "malfunctioned, and the platforms have started to overheat. Your mission "
+    EQUS "is to salvage the precious sulphur drums, then locate the helpless "
+    EQUS "control robot and rescue it. However, once the robot leaves its post at "
+    EQUS "the computer terminals, they will go critical and eventually explode, so "
+    EQUS "you will need to be a safe distance away to escape the blast. Fires and "
+    EQUS "pitfalls are deadly, but you may find the abandoned pipe network useful. "
+    EQUS "Each drum you save scores one point. Rescuing the robot scores more "
+    EQUS "points, and there is a one hundred point bonus if you survive the "
+    EQUS "explosion. There are four levels of play, and you begin the game with "
+    EQUS "three lives. If you've read this far, you might as well read these "
+    EQUS "messages: Hello Duncan, Deep, Soni, Dave (the lad), Godfroy (la poseur), "
+    EQUS "Tim, Will, Jabwit, the C.R.A.S.S. team, the Rydell High class of '88, "
+    EQUS "Muriel Volestrangler, and all others for whom, sadly, there is no room. "
+    EQUS "Greetings and thanks to Suzanne and Marianne, who cheered me up on the "
+    EQUS "bus. Metapsyche rules forever! (PRIVATE JOKE) Ok... voila William. "
+    EQUS "RIGHT! This is William's message now (hang around for the funny bit of "
+    EQUS "Ian's message):  3... 2... 1...    Firstly, thanks to: Ian, for writing "
+    EQUS "this game (and arguing) with me (he was on BASIC I for 12 months of "
+    EQUS "writing this, so he deserves a bonus. While we're at it, We are both "
+    EQUS "monitor-less. Contributions c/o SS, Leeds). Thanks to: Chill and Jason "
+    EQUS "for criticising constructively, Julian for criticising and being "
+    EQUS "criticised, mr.crabtree (southpole). Hello to: Edmund, John (JRO), "
+    EQUS "Thomas (TW), Richard (all of them), NP, Felicity, Sarah, Ben (BASS) "
+    EQUS "Ellis, big and less-big Biddy. REALLY MASSIVE THANKS to:  KIM (and SJR) "
+    EQUS "for all his help (too much to list here); BID (for graphics and laughs); "
+    EQUS "CAMERON (for the atrocious ditty tune (Get in touch !)); Mum and Dad; "
+    EQUS "Dr. Stephen; Chill again (for some screens and the loan of the 'yuck'). "
+    EQUS "And of course, my cat (nameless) for being sweet. Must also say thanks "
+    EQUS "to Johnathan Griffiths, and Hi to Peter Irvine and Jeremy Smith. May I "
+    EQUS "please re-iterate any message you may have got (or are going to get) "
+    EQUS "from Ian: unauthorised duplicating of this program is ILLEGAL and also "
+    EQUS "remember that you may be depriving us of our livelihood, and many "
+    EQUS "millions of people may die and .........  Hi also (provocatively) to "
+    EQUS "Chris Jordan. Now back to Ian .... Hello darlings. This game was "
+    EQUS "finished around August 1988. IF you have any criticisms, take this gem "
+    EQUS "of advice to heart: we're about as interested in your petty complaints "
+    EQUS "as we are in the bacterial love life of Larry Grayson's underwear. IF "
+    EQUS "you bother to duplicate our attempt by illegal means, then you are below "
+    EQUS "pity. IF you've read this far you either have a headache or a memory "
+    EQUS "editor. This message is brought to you courtesy of my modesty. Credits: "
+    EQUS "I wrote the mission generator, the ""playing"" section of the game and "
+    EQUS "most of the level designer; William did everything to do with graphics, "
+    EQUS "including the graphics designer. Further releases: RED AND YELLOW "
+    EQUS "CORMORANTS FLY THROUGH DR.BLOOD'S DREAM GARDENS (by me); a mega 3D "
+    EQUS "two-player arcade strategic probably unfinished shoot-em-up with "
+    EQUS "sinister political connotations and a controversial set of control keys "
+    EQUS "(haha). If you've enjoyed this message, why not buy one of the others in "
+    EQUS "this series ? Otherwise just play the bl**dy game !!! "
+    EQUS "....................."
+    EQUB 0
+    ASSERT P% = scroller + &F00
+
+; ---------------------------------------------------------------------------
+; S%: DIM S% &700 follows C%'s block. PROCmenu copies its first 16 rows to
+; HIMEM (the Mode 7 screen) to draw the menu, over a CLS of the text window
+; (rows 6 to 16) that the redefine-keys page later prints in. PROCline
+; highlights an option by writing TT_NEW_BACKGROUND over the space at
+; column 11 of its row: the background takes the blue in force there, up
+; to the TT_BLACK_BACKGROUND after the option's text.
+
+.menu_screen
+    ASSERT menu_screen = scroller + &EFF + 1
+; rows 0-3: the PIPELINE logo, magenta and red, inside the blue pipe
+    EQUB TT_GRAPHICS_BLUE, &FF, &E6, TT_GRAPHICS_MAGENTA, &FE, &AF, &EF, &F4, &20, &FF, &20, &FE
+    EQUB &AF, &EF, &F4, &20, &E8, &FF, &AF, &20, &FF, &20, &20, &20, &FF, &20, &FE, &EF, &B4
+    EQUB &20, &FF, &20, &E8, &FF, &AF, TT_GRAPHICS_BLUE, &A0, &FF, &B9, &20
+    EQUB TT_GRAPHICS_BLUE, &FF, &B9, TT_GRAPHICS_RED, &FF, &20, &A0, &FF, &20, &FF, &20, &FF
+    EQUB &20, &20, &FF, &20, &FF, &E1, &F0, &20, &FF, &20, &20, &20, &FF, &20, &FF, &A2, &FF
+    EQUB &20, &FF, &20, &FF, &E1, &F0, TT_GRAPHICS_BLUE, &20, &FF, &E6, &20
+    EQUB TT_GRAPHICS_BLUE, &FF, &E6, TT_GRAPHICS_MAGENTA, &FF, &E8, &FE, &A7, &20, &FF, &20, &FF
+    EQUB &E8, &FE, &A7, &20, &FF, &B2, &A3, &20, &FF, &20, &20, &20, &FF, &20, &FF, &20, &EA
+    EQUB &B5, &FF, &20, &FF, &B2, &A3, TT_GRAPHICS_BLUE, &A0, &FF, &B9, &20
+    EQUB TT_GRAPHICS_BLUE, &FF, &B9, TT_GRAPHICS_MAGENTA, &FF, &20, &20, &20, &20, &FF, &20, &FF
+    EQUB &20, &20, &20, &20, &AA, &EF, &FC, &20, &EF, &FD, &FC, &20, &FF, &20, &FF, &20, &20
+    EQUB &EF, &BF, &20, &AA, &EF, &FC, TT_GRAPHICS_BLUE, &A0, &FF, &E6, &20
+; row 4
+    EQUB TT_GRAPHICS_BLUE, &FF, &E6, TT_ALPHA_CYAN, "(c) Ian Holmes & William Reeve "
+    EQUB TT_GRAPHICS_BLUE, &E8, &FF, &B9, &20
+; row 5
+    EQUB TT_GRAPHICS_BLUE, &FF, &B9, &E8, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC
+    EQUB &F4, &B0, TT_ALPHA_CYAN, "1988", TT_GRAPHICS_BLUE, &E0, &F8, &FC, &FC, &FC, &FC, &FC
+    EQUB &FC, &FC, &FC, &FC, &FC, &FE, &FF, &FF, &E6, &A0
+; rows 6-9: pipework, and pictures at each side
+    EQUB TT_GRAPHICS_BLUE, &FF, &E6, &A2, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &E6
+    EQUB &E7, &EF, &F4, &20, &20, &20, &A0, &F8, &BF, &BB, &B9, &A9, &A9, &A9, &A9, &A9, &A9
+    EQUB &A9, &A9, &A9, &A9, &A9, &A9, &A1, &A0
+    EQUB TT_GRAPHICS_BLUE, &FF, &B9, TT_GRAPHICS_RED, TT_GRAPHICS_RED, &E6, &A4, &A5
+    EQUB TT_GRAPHICS_BLUE, &20, &20, &20, &20, &20, &20, &A9, &A9, &AB, &AD, &20, &20, &AE, &A7
+    EQUB &A6, &A6, TT_GRAPHICS_YELLOW, &20, &20, &20, &20, &20, &20, &20, TT_GRAPHICS_RED, &A8
+    EQUB &F2, &A4, TT_GRAPHICS_YELLOW, TT_GRAPHICS_YELLOW, TT_GRAPHICS_YELLOW
+    EQUB TT_GRAPHICS_BLUE, &FF, &E6, TT_GRAPHICS_RED, &E0, &A9, &F6, &E0, TT_GRAPHICS_BLUE, &E0
+    EQUB &FC, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF
+    EQUB &EF, &EF, &6F, &6F, &6D, &74, TT_GRAPHICS_RED, &E6, &BD, &F7, TT_GRAPHICS_YELLOW
+    EQUB TT_GRAPHICS_YELLOW, TT_GRAPHICS_YELLOW
+    EQUB TT_GRAPHICS_BLUE, &FF, &B9, TT_GRAPHICS_YELLOW, TT_GRAPHICS_YELLOW, &AB, &A7, &A7
+    EQUB TT_GRAPHICS_BLUE, &BE, &B9, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1
+    EQUB &A1, &A1, &A1, &A1, &A1, &A1, &21, &21, &29, &3B, &75, TT_GRAPHICS_YELLOW, &F6, &BD
+    EQUB TT_GRAPHICS_YELLOW, TT_GRAPHICS_YELLOW, TT_GRAPHICS_YELLOW
+; rows 10-15: the options, yellow numbers and green text
+    EQUB TT_GRAPHICS_BLUE, &FF, &E6, &AA, &BF, &BF, &BF, &BF, &6A, &F7, &A4, &20
+    EQUB TT_ALPHA_YELLOW, "1", TT_ALPHA_GREEN, "Start the game", TT_GRAPHICS_BLUE, &20
+    EQUB TT_BLACK_BACKGROUND, &66, &7F, &AA, &BF, &BF, &BF, &BF, &BF
+    EQUB TT_GRAPHICS_BLUE, &FF, &B9, &22, &22, &A2, &A2, &A2, &6A, &BD, &B1, &20
+    EQUB TT_ALPHA_YELLOW, "2", TT_ALPHA_GREEN, "Redefine keys", TT_GRAPHICS_BLUE, &20, &20
+    EQUB TT_BLACK_BACKGROUND, &39, &7F, &22, &62, &72, &72, &32, &22
+    EQUB TT_GRAPHICS_BLUE, &FF, &E6, TT_GRAPHICS_YELLOW, &22, &2F, &21, TT_GRAPHICS_BLUE, &6A
+    EQUB &F7, &A4, &20, TT_ALPHA_YELLOW, "3", TT_ALPHA_GREEN, "Edit graphics", TT_GRAPHICS_BLUE
+    EQUB &20, &20, TT_BLACK_BACKGROUND, &66, &7F, TT_GRAPHICS_BLUE, &6F, &7F, &7F, &3F, &20
+    EQUB TT_GRAPHICS_BLUE, &FF, &B9, TT_GRAPHICS_RED, &7F, &7F, &7F, TT_GRAPHICS_BLUE, &6A, &BD
+    EQUB &B1, &20, TT_ALPHA_YELLOW, "4", TT_ALPHA_GREEN, "Edit levels", TT_GRAPHICS_BLUE, &20
+    EQUB TT_GRAPHICS_BLUE, &20, &20, TT_BLACK_BACKGROUND, &39, &7F, &20, TT_GRAPHICS_CYAN, &6A
+    EQUB &35, &20, &20
+    EQUB TT_GRAPHICS_BLUE, &EF, &FE, &FD, &F0, &F0, &F0, &F0, &FE, &F7, &A4, &20
+    EQUB TT_ALPHA_YELLOW, "5", TT_ALPHA_GREEN, "Edit missions", TT_GRAPHICS_BLUE, &20, &20
+    EQUB TT_BLACK_BACKGROUND, &66, &7F, &74, &F0, &F0, &F0, &F0, &F0
+    EQUB TT_GRAPHICS_BLUE, &A2, &AF, &BB, &BB, &BB, &BB, &BB, &BB, &B9, &A1, &20
+    EQUB TT_ALPHA_YELLOW, "6", TT_ALPHA_GREEN, "Quit PIPELINE", TT_GRAPHICS_BLUE, &20, &20
+    EQUB TT_BLACK_BACKGROUND, &29, &BB, &BB, &BB, &BB, &BB, &BB, &BB
+.menu_screen_end
+    ASSERT menu_screen_end - menu_screen = 16 * MODE7_COLUMNS   ; FOR N%=0 TO &27C STEP 4
+
+; The rest of S% is never read by MENU's own code: it's what was in memory
+; when the file was saved. First a blank row, holding the zero that ended
+; some earlier message, then a short message in the scroller's format.
+    EQUS "           "
+    EQUB 0
+    EQUS "                            What colour is acidified KMnO4 ? You may well "
+    EQUS "ask. You may not so well answer. I didn't"
+    EQUB 0
+
+; A tune for SOUND's three channels, kept as a separate BASIC program;
+; line 1020 runs it (PAGE=PAGE+&1C00:RUN), though no line leads there. Its
+; pattern P$ picks the DATA lines (A is 40, B 50 ...) that hold three voices
+; of notes as letters.
+.tune
+    ASSERT tune = program + &1C00
+BASIC
+10ENVELOPE1,5,1,-1,0,1,1,0,126,-15,0,-1,126,0:ENVELOPE3,1,0,0,0,0,0,0,92,4,-1,-1,92,118:DIME 3,D$(3):E!1=&30301:P$="DAEBAEBAA":FORN%=1TO3:SOUNDN%,0,0,1:NEXT:FORP=1TOLEN(P$):RESTOREASC(MID$(P$,P,1))*10-610
+20FORN=1TO3:READD$(N):NEXT:FORN=1TOLEN(D$(1))+(P=LEN(P$)):FORA=3TO1STEP-1:N$=MID$(D$(A),N,1):IFN$<>" "ANDN$<>""SOUNDA,E?A,(ASC(N$)-65)*4,2ELSESOUND4096+A,0,0,2
+30NEXT,,
+40DATA"O    QS QO NL  L  L    LN  N  L  N NO  O  O    J","G    JJ JG EO  L  O    CE  E  E  E EG  T  S","J    NO NJ JT  T  T    HJ  J  H  J JJ  J  J"
+50DATA"O  O  S    OL  L  Q    ON  J  S  Q  O        J  O  O  S  O  L  Q     O  N  J  S  Q  O           ","G  G  J     H  H  H     E  E  J  J  G           G  G  J  G  H  H     G  E  E  J  J  G"
+60DATA"J  J  O     Q  Q  L     J  J  O  N  J  L  J  H  J  J  O  J  Q  L  L  O  J  N  O  N  J  L  J  H"
+70DATA"O    QS QO NL  L  L    LN  N  L  N NO  O  O    J","",""
+80DATA"O  O  S    OL  L  Q    ON  J  S  Q  O        J  O  O  S  O  L  Q     O  N  J  S    QO           ","",""
+ENDBASIC
+
+; The end of a BASIC assembler listing the tune was loaded over, cut off by
+; the end of the file: the tail of one line and the start of the next six,
+; in the middle of what looks like one of the designers' key handling.
+    EQUS "2:LDA#37:JSRsel0"
+    EQUB basic_line(3900, "CMP#4:BEQcanc:STAt2")
+    EQUB basic_line(3910, "JSRsure:LDAt2")
+    EQUB basic_line(3920, "LDY#7:BNEtable")
+    EQUB basic_line(3930, ".key3:LDA#62")
+    EQUB basic_line(3940, "JSRwind:LDA#0")
+    EQUB &0D, HI(3950), LO(3950), 19, "BEQhelp:.simt"   ; two bytes short of its length
+    ASSERT P% = menu_screen + &700
 ENDSECTION

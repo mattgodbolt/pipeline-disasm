@@ -35,3 +35,6 @@ TT_SOLID_BLOCK      = &FF   ; all six sixels lit
 MODE7_COLUMNS = 40
 MODE7_ROWS    = 25
 MODE7_SCREEN  = &7C00
+
+; The screen address of a character cell.
+FUNCTION mode7_address(column, row) = MODE7_SCREEN + row * MODE7_COLUMNS + column
