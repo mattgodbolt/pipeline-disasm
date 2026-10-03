@@ -247,3 +247,32 @@ Details in `docs/notes/levdes.md`.
   equals its second element fails (`0..2..2`, `1..3..3`, `10..8..8` all give
   "Argument out of domain"); reported upstream. Character literals are now
   asked for by two pieces; `CODES("c")[0]` works.
+
+## 2026-10-03 20:55 — Merged: the Graphics Designer and DEFAULT (agent branch)
+
+Details in `docs/notes/graphic.md`.
+
+- H.GRAPH is fully source (loaded at &1AB0, entered at &2BAE), each routine
+  a named scope; its logo and font are pixel pictures. DEFAULT is the
+  graphics set drawn as pictures (`src/sprites.6502inc` turns them back into
+  bytes): 16 large sprites (16x32), 16 small (8x16), 9 more large, then 15
+  twelve-character object names; small sprite &1F, the man, has none. Stored
+  a column at a time like a MODE 5 character cell, logical colours (black,
+  blue, yellow, red), no masks. `docs/img/graphics-default.png` shows it.
+- The designer edits IO directly as well as graphics sets, telling them
+  apart by length. In IO the set is in three pieces (large slot &28 at +0,
+  the names at +&80, slots &00-&27 at +&25D3), so in the game the sprites
+  sit at &4A00-&57FF. The shipped IO holds DEFAULT's sprites and names byte
+  for byte.
+- "Finish Block", the start of DEFAULT's slack on the disc, is 12 bytes the
+  designer writes straight after the set at &4F34.
+- Errors restart the designer without losing work (it takes BRKV and EVNTV
+  once, keeping the old values in IND1V/IND2V); Undo swaps, so it's also
+  Redo; sheet position 0 is the background tile.
+- &3ADC-&3BAF isn't program, just memory at save time. Like H.LEVDES's tail,
+  the files were saved from wherever the build happened to leave things.
+- On main: `MOS_ERROR_PTR` and `MOS_ESCAPE_FLAG` into `os.6502inc`; the
+  piece's own `RESET_VECTOR` was `CPU_RESET_VECTOR`.
+- Symbol dump: the picture macros' FOR loops add about 15,000 `@` entries to
+  `build/symbols.json`, and constants like `CELL = 8` look like addresses.
+  Both already in `docs/symbols-feedback.md`'s list.

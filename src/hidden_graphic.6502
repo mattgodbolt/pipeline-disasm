@@ -28,11 +28,6 @@
 INCLUDE "os.6502inc"
 INCLUDE "sprites.6502inc"
 
-; OS workspace not in os.6502inc.
-ERROR_PTR    = &FD              ; after a BRK: its address, then error number and message
-ESCAPE_FLAG  = &FF              ; bit 7 set while an Escape is pending
-RESET_VECTOR = &FFFC
-
 ; Keys, as the negative INKEY numbers OSBYTE &81 scans for.
 KEY_SHIFT  = 256-1
 KEY_CTRL   = 256-2
@@ -1443,7 +1438,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     PHP
     CMP #&06
     BNE other_event
-    ROR ESCAPE_FLAG                 ; carry is set (A >= 6): bit 7 of the Escape flag
+    ROR MOS_ESCAPE_FLAG                 ; carry is set (A >= 6): bit 7 of the Escape flag
     TXA
     PHA
     TYA
@@ -1850,7 +1845,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 
 ; BRKV points here: show the error's message in the error window, wait for
 ; a key, close any open files and start again.
-; In:  ERROR_PTR = the error (as the OS leaves it)
+; In:  MOS_ERROR_PTR = the error (as the OS leaves it)
 .error_handler
 {
     LDY #&00
@@ -1868,7 +1863,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA error_message-1, X
     INX
 .store
-    LDA (ERROR_PTR), Y
+    LDA (MOS_ERROR_PTR), Y
     STA error_message-1, X
     BNE copy
     LDA #&0D
@@ -2116,7 +2111,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA #&13                        ; wait for the vsync, which leaves A = &13...
     JSR OSBYTE
     STA by_slot                     ; ...so by_slot bit 7 is clear again
-    LDA ESCAPE_FLAG                 ; Escape, or SHIFT-Escape latched
+    LDA MOS_ESCAPE_FLAG                 ; Escape, or SHIFT-Escape latched
     ORA escape_latch
     BPL loop
     LSR escape_latch
@@ -2163,7 +2158,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA #&C8                        ; *FX200,3: on tape, BREAK clears memory...
     LDX #&03
     JSR OSBYTE
-    JMP (RESET_VECTOR)              ; ...and here is a BREAK
+    JMP (CPU_RESET_VECTOR)              ; ...and here is a BREAK
 .run_mrun
     LDX #LO(mrun_command)           ; *RUN MRUN, which goes back to the menu
     LDY #HI(mrun_command)
@@ -2695,7 +2690,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .select
     LDA #&01
     JSR select_sprite               ; move the selection; function keys escape
-    BIT ESCAPE_FLAG
+    BIT MOS_ESCAPE_FLAG
     BMI abandon
     LDX #KEY_RETURN
     JSR key_pressed
@@ -2756,7 +2751,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDY error_text+1
     JSR open_window
     JSR OSRDCH
-    BIT ESCAPE_FLAG
+    BIT MOS_ESCAPE_FLAG
     BMI show
     JMP main_loop
 }
@@ -3071,7 +3066,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR draw_sheet_sprite
 .wait
     JSR menu_keys_escape
-    BIT ESCAPE_FLAG
+    BIT MOS_ESCAPE_FLAG
     BMI stop
     LDX #KEY_SPACE
     JSR key_pressed

@@ -58,6 +58,9 @@ with baron pinned by commit; bumping the pin is its own commit.
   itself at startup: each moved piece becomes a nested, rephased section.
 - `tools/beebscreen.py` also draws a CRTC-narrowed screen (`--columns`) from
   part-way into screen memory (`--offset`).
+- `tools/graphics.py` draws a graphics set (DEFAULT's format) as a PNG, or
+  writes it as picture source; `tools/graphic_tours.mjs` drives the Graphics
+  Designer through scripted tours for traces and screenshots.
 - `tools/basic.py` lists a tokenised BASIC program as text a baron `BASIC`
   block takes back; `src/basic.6502inc` has `basic_line()` for lines that
   must be EQUB records.
@@ -76,7 +79,7 @@ with baron pinned by commit; bumping the pin is its own commit.
 | MISSION | mission.6502 | BASIC "MISSION GENERATOR": builds IO from DEFAULT/graphics and level files; hides an unscrambler in a REM |
 | GAME, GRAPHIC, LEVDES | game/graphic/levdes.6502 | &D9-byte stubs at &0900, one source (hidden_loader.6502inc), reading the hidden runs with OSWORD &7F |
 | H.GAME | hidden_game.6502 | the game, run at &3000; loads IO |
-| H.GRAPH | hidden_graphic.6502 | the Graphics Designer, at &1AB0 entered at &2BAE; uses DEFAULT, exits via /MRUN |
+| H.GRAPH | hidden_graphic.6502 | the Graphics Designer, at &1AB0 entered at &2BAE; edits graphics sets (DEFAULT) and IO directly, exits via /MRUN |
 | H.LEVDES | hidden_levdes.6502 | the Level Designer, at &1100 entered at &2E21; moves pieces to &0880, &0400 and zero page; loads WDATA and LDATA, exits via /MRUN |
 | TITLE | title.6502 | `*RUN` in MODE 1 before the game: unpacks the title picture over itself |
 | MRUN | mrun.6502 | &80 bytes at &0780: restores the editors' vectors, back to the menu via `*E.!BOOT` |
@@ -85,7 +88,8 @@ with baron pinned by commit; bumping the pin is its own commit.
 | WDATA | wdata.6502 (+ wdata.6502inc) | the Level Designer's windows and messages |
 | LDATA | ldata.6502 | the Level Designer's title picture (raw MODE 1 screen, narrowed to 64 columns) |
 | LEVEL1 | level1.6502 (+ level.6502inc) | a level in the designer's save format, loaded by MISSION; the game's first level |
-| IO, DEFAULT | io/default.6502 | the game's data (ends at &5800: names, mission, levels, graphics); the default graphics set |
+| DEFAULT | default.6502 (+ sprites.6502inc) | the default graphics set as pixel pictures: 41 sprites and 15 object names |
+| IO | io.6502 | the game's data (ends at &5800: names, mission, levels, graphics) |
 
 ## Baron notes
 
