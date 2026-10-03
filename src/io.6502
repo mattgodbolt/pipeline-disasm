@@ -13,35 +13,30 @@ INCLUDE "io.6502inc"
 
 ; A MODE 5 byte holds four pixels: the high bit of each pixel's colour in bits
 ; 7-4 and the low bit in bits 3-0, the leftmost pixel in the top bit of each.
-FUNCTION mode5_byte(p) = SUM(((p >> 1) AND 1) * {128, 64, 32, 16}) + SUM((p AND 1) * {8, 4, 2, 1})
-FUNCTION pixel_values(rows) = FIND(CODES(".123"), CODES(rows))
+; This makes a byte for each row of four pixels in m.
+FUNCTION mode5_bytes(m) = SUM(((m >> 1) AND 1) * {128, 64, 32, 16}, 1) + SUM((m AND 1) * {8, 4, 2, 1}, 1)
 
 ; A picture of cols x rows character cells, from its pixel rows (two
 ; characters a pixel), stored a column of cells at a time, top to bottom:
-; the order the game's sprite routines read them in.
+; the order the game's sprite routines read them in. (Whole columns at a time,
+; so as not to fill the symbol dump with a frame for every byte.)
 MACRO PICTURE cols, rows, art
-    ASSERT LEN(art) = rows * 8, "a picture needs ", rows * 8, " rows"
-    FOR y = 0..rows*8-1
-        ASSERT LEN(art[y]) = cols * 8, "a picture's rows need ", cols * 8, " characters"
-    NEXT
-    v = pixel_values(art)
+    v = FIND(CODES(".123"), CODES(art))
+    ASSERT LEN(v) = rows * 8 AND LEN(FLATTEN(v)) = rows * 8 * cols * 8, "a picture needs ", rows * 8, " rows of ", cols * 8, " characters"
     FOR cx = 0..cols-1
-        FOR y = 0..rows*8-1
-            EQUB mode5_byte(v[y, cx*8..cx*8+2..cx*8+7])
-        NEXT
+        EQUB mode5_bytes(v[.., cx*8..cx*8+2..cx*8+7])
     NEXT
 ENDMACRO
 
 ; A level map from its 64 rows of 64 cells. The game wants it a column at a
-; time, two cells a byte, the even row in the high nibble.
-FUNCTION map_cells(rows) = FIND(CODES(".123456789ABCDEF"), CODES(rows))
+; time, two cells a byte, the even row in the high nibble: pack the rows in
+; pairs, then gather the bytes a column at a time.
 MACRO MAP rows
-    ASSERT LEN(rows) = 64, "a map has 64 rows"
-    cells = map_cells(rows)
-    FOR x = 0..63
-        column = cells[.., x]
-        EQUB column[0..2..] * 16 + column[1..3..]
-    NEXT
+    cells = FIND(CODES(".123456789ABCDEF"), CODES(rows))
+    ASSERT LEN(cells) = 64 AND LEN(FLATTEN(cells)) = 64 * 64, "a map is 64 rows of 64 cells"
+    packed = FLATTEN(cells[0..2.., ..] * 16 + cells[1..3.., ..])
+    n = 0..IO_MAP_SIZE-1
+    EQUB packed[(n MOD 32) * 64 + n DIV 32]
 ENDMACRO
 
 SECTION io, filename="IO", org=io_start, load=io_start, exec=0
