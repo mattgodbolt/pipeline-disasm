@@ -69,9 +69,8 @@
 0x135C = "lose_life_again"
 0x136B = "level_complete"
 0x1380 = "next_level"
-0x1394 = "show_edit_code"
+0x1394 = "next_level_screen"
 0x13A3 = "mission_complete"
-0x22DB = "error_handler"
 
 [comments]
 0x0FE2 = '''

@@ -63,7 +63,6 @@
 0x1675 = "backpack_screen"
 0x168D = "backpack_screen_loop"
 0x169B = "backpack_screen_done"
-0x236D = "trigger_places"
 
 [comments]
 0x13A9 = '''

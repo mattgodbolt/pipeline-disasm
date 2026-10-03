@@ -16,10 +16,11 @@ scope = "game"
 clean = true
 include = ["io.6502inc"]
 include_os = true
-# The event handler is reached through EVNTV; 0x0C60 and 0x1E29 are code
-# nothing calls (0x1E29 an older version of 0x1E88), and 0x0CBB is reached by
-# an RTS to a pushed address.
-entries = [0x3000, 0x0131, 0x0C60, 0x0CBB, 0x1E29, 0x113B]
+# Entry points the static trace can't find: the event handler (through
+# EVNTV); 0x0CBB (an RTS to a pushed address); 0x1E29 (a self-modified JMP);
+# the error handler 0x22DB (through BRKV); and 0x0C60, 0x113B and 0x1C88,
+# code nothing uses.
+entries = [0x3000, 0x0131, 0x0C60, 0x0CBB, 0x1E29, 0x113B, 0x1C88, 0x22DB]
 traces = ["build/trace/attract.json", "build/trace/play1.json", "build/trace/play2.json", "build/trace/play3.json"]
 # IO is loaded over the loader once it has run.
 trace_only = ["0x3000-0x30FF"]
@@ -33,6 +34,9 @@ annotations = [
     "hints/hidden_game/main4.toml",
     "hints/hidden_game/main5.toml",
     "hints/hidden_game/main6.toml",
+    "hints/hidden_game/main7.toml",
+    "hints/hidden_game/main8.toml",
+    "hints/hidden_game/main9.toml",
 ]
 
 header = '''

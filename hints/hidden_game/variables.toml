@@ -130,6 +130,7 @@
 0x99 = { name = "sprite_skip_x", note = "character cells cut off the left" }
 0x9A = "sprite_skip_y"
 0x9B = "player_steps"
+0xFD = { name = "ERROR_POINTER", note = "the OS's: the last error's BRK block, past the BRK" }
 0xFF = { name = "ESCAPE_FLAG", note = "the OS's: bit 7 set when Escape is pressed" }
 
 0x0100 = { name = "trigger_flags", note = "a byte per trigger, from io_level_trigger_flags" }

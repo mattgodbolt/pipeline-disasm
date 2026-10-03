@@ -39,7 +39,6 @@
 0x1AB3 = "read_move_key"
 0x1ABB = "test_move_key"
 0x1AD5 = "test_move_key_note"
-0x2369 = "reverse_moves"
 
 [comments]
 0x18A9 = '''

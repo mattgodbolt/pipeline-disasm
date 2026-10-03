@@ -145,6 +145,7 @@ sprite_high = &98
 sprite_skip_x = &99                     ; character cells cut off the left
 sprite_skip_y = &9A
 player_steps = &9B
+ERROR_POINTER = &FD                     ; the OS's: the last error's BRK block, past the BRK
 ESCAPE_FLAG = &FF                       ; the OS's: bit 7 set when Escape is pressed
 
 ; Elsewhere.
@@ -170,6 +171,7 @@ KEY_T = -36
 KEY_S = -82
 KEY_SPACE = -99
 bit4_mask = show_map_centre + 1         ; the byte there is &10
+bit6_mask = fire_object_vanishes + 1    ; the byte there is &40
 
 ; Entered from the GAME stub with the ten keys MENU set up in key_codes, as
 ; negative INKEY numbers. Copies the keys where the game wants them, copies
@@ -2693,7 +2695,7 @@ NEXT
     LDY #&03
     JSR random
     ORA #&04
-    JSR L1F7A                           ; ...a crackle
+    JSR sound_effect                    ; ...a crackle
 .burn_up_next_ring
     DEC view_sub_x                      ; the ring grows
     DEC view_sub_y
@@ -2723,7 +2725,7 @@ NEXT
     LDY #HI(io_object_icons + 15 * 32)
     RTS
 .object_picture_find
-    JSR L1C69
+    JSR find_object
     BCC no_object_picture
 
 ; Object Y / 4's icon.
@@ -2753,7 +2755,7 @@ NEXT
     STA fill_screen
     STA level
     JSR flush_buffers                   ; no keys waiting
-    JSR L222E                           ; load the mission
+    JSR load_mission                    ; load the mission
 
 ; The title screen, then a game: three lives.
 .new_game
@@ -2798,12 +2800,12 @@ NEXT
     LDA stage
     BNE warn_time_running_out
     LDA #&00                            ; ...beep
-    JSR L1FF1
+    JSR sound_beep
     JMP check_dead
 .warn_time_running_out
     LDX #&02                            ; ...a different beep with the charge set
     LDA #&04
-    JSR L1F7A
+    JSR sound_effect
 .check_dead
     LDA player_dead
     BNE lose_life
@@ -2812,7 +2814,7 @@ NEXT
     BNE game_loop
     INC stage                           ; stage 2: run
     LDX time_left                       ; a point for each tick left
-    JSR L21DB
+    JSR add_points
     LDA #&04                            ; and 4 ticks to get clear
     STA time_left
     BNE game_loop
@@ -2837,17 +2839,17 @@ NEXT
 ; had been set the level counts as done.
 .lose_life
     JSR flush_buffers
-    JSR L1F76                           ; a sound
+    JSR sound_trigger                   ; a sound
     JSR draw_player
     DEC lives
     BNE lose_life_again
     JSR burn_up                         ; the last life
-    JSR L1ADE
+    JSR close_view
     JMP new_game
 .lose_life_again
     LDX #&09
     JSR vdu_palette                     ; colour 0 flashes
-    JSR L1ADE
+    JSR close_view
     LDA stage                           ; died after setting the charge?
     BNE next_level
     JMP restart_level
@@ -2856,12 +2858,12 @@ NEXT
 .level_complete
     JSR flush_buffers
     LDA #&05
-    JSR L1F78
+    JSR sound_effect_4
     JSR flash_palette                   ; flash
     JSR show_well_done
     INC stage                           ; stage 3: done
     LDX #100                            ; 100 points
-    JSR L21DB
+    JSR add_points
 
 ; On to the next level, or after the fourth, the end of the mission. Doing a
 ; level without losing a life lets the next game start from the next one.
@@ -2872,19 +2874,19 @@ NEXT
     BCS mission_complete
     LDX lives
     CPX #&03                            ; no lives lost...
-    BCC show_edit_code
+    BCC next_level_screen
     CMP furthest_level                  ; ...so the title can start on the next level
-    BCC show_edit_code
+    BCC next_level_screen
     STA furthest_level
-.show_edit_code
+.next_level_screen
     JSR set_level_palette
     LDA lives
     CLC
-    JSR L1C31                           ; the backpack screen, with the next level's edit code
-    JSR L1C13                           ; wait for Space
+    JSR show_edit_code                  ; the backpack screen, with the next level's edit code
+    JSR wait_for_space                  ; wait for Space
     JMP start_level
 .mission_complete
-    JSR L1B1A
+    JSR mission_done
     JMP new_game
 
 ; Flash colour 0 through physical colours 7 down to 0, 8 times, a frame each,
@@ -2975,7 +2977,7 @@ NEXT
     JSR wait_vsync
     SEI
     LDY #&09                            ; a little more
-    JSR L1E20
+    JSR delay
     LDA SYSVIA_T1LL                     ; timer 1 from its latch
     STA SYSVIA_T1LL
     LDA SYSVIA_T1LH
@@ -3008,7 +3010,7 @@ NEXT
     JSR print_level                     ; the level to start on
     JSR OSRDCH
     BCC title_screen_got_key            ; Escape?
-    JSR L1C21
+    JSR acknowledge_escape
 .title_screen_got_key
     AND #&DF                            ; upper case, and Space is 0
     BEQ title_start                     ; Space: start
@@ -3016,7 +3018,7 @@ NEXT
     BEQ title_screen_next_level
     CMP #&4C                            ; L: load a mission
     BNE title_screen_key
-    JMP L21F1
+    JMP ask_for_mission
 .title_screen_next_level
     LDX level                           ; S: the next level that can be started on
     CPX furthest_level
@@ -3045,7 +3047,7 @@ NEXT
 
 ; Empty the cell under monster X / 4.
 .empty_monster_cell
-    JSR L2130
+    JSR monster_cell
     LDA #&00
 
 ; Set map cell (X, Y) to A and draw it. Off the map, nothing happens.
@@ -3075,7 +3077,7 @@ NEXT
     PHA
     STX sprite
     STY sprite_high
-    JSR L2135
+    JSR to_cell
     PLA
     JSR thing_picture                   ; its picture
     SEC                                 ; a cell's picture: whole
@@ -3255,7 +3257,7 @@ NEXT
 ; Move a thrown object on a cell, advance the frame counter, decide where each
 ; monster goes next, and take the monsters off the map.
 .think
-    JSR L1D38                           ; a thrown object
+    JSR fly_thrown                      ; a thrown object
     LDA frame_counter
     CLC
     ADC #&20
@@ -3276,7 +3278,7 @@ NEXT
     DEY
     BPL think_monster_copy
     INX
-    JSR L213E                           ; where it goes
+    JSR monster_think                   ; where it goes
     DEC work4
     BPL think_monster
     LDA #&00                            ; and take them off the map
@@ -3292,7 +3294,7 @@ NEXT
     LDA monster_direction, X            ; not out?
     CMP #&08
     BCS set_monster_cell_next
-    JSR L2130
+    JSR monster_cell
     LDA work5
     JSR set_cell
 .set_monster_cell_next
@@ -3338,7 +3340,7 @@ NEXT
 .player_turn_triggers
     PHA
     LDY #&00                            ; walking onto triggers
-    JSR L1E88
+    JSR use_trigger
     PLA
     CLC
     ADC #&01
@@ -3362,8 +3364,8 @@ NEXT
     TAY
     LDA #&00
     STA action
-    LDX D2351, Y
-    LDA D2351+1, Y
+    LDX action_table, Y
+    LDA action_table+1, Y
 
 ; Jump to X + 256 * A.
 .jump_to
@@ -3443,7 +3445,7 @@ NEXT
     LDA #&00
     JSR draw_thing_at
     JSR print_sound_settings            ; and print the new
-    JMP L1B12                           ; a pause
+    JMP short_pause                     ; a pause
 .backpack_toggle_effects
     LDA effects_off
     EOR #&01
@@ -3728,7 +3730,7 @@ NEXT
     TYA
     LDX player_x
     LDY player_y
-    JSR L21C6                           ; the cell to step into...
+    JSR step                            ; the cell to step into...
     TXA
     PHA
     TYA
@@ -3771,7 +3773,7 @@ NEXT
     STX player_x                        ; the step
     STY player_y
     LDA facing                          ; and the cell in front
-    JSR L21C6
+    JSR step
     JSR look_at
     LDA facing                          ; the walk
     ASL A
@@ -3818,7 +3820,7 @@ NEXT
     TYA
     LDX front_x                         ; the cell beyond the one in front
     LDY front_y
-    JSR L21C6
+    JSR step
     JSR cell_at                         ; empty?
     BNE no_push
     LDX front_x
@@ -3862,7 +3864,7 @@ NEXT
     STX work1
     LDX player_x
     LDY player_y
-    JSR L21C6
+    JSR step
     JSR look_at                         ; the next cell that way
     CMP work1
     BEQ pipe_junction_found
@@ -3932,8 +3934,8 @@ NEXT
     JSR clear_player_cell               ; it's gone
     JSR draw_player
     LDA #&B4                            ; a sound
-    JSR L1FF1
-    JSR L21E1                           ; a point
+    JSR sound_beep
+    JSR add_point                       ; a point
     LDA to_collect                      ; the last one?
     BEQ check_deadly_done
     DEC to_collect
@@ -3954,9 +3956,9 @@ NEXT
     SEC
     SBC #&3F
     STA work1
-    JSR L1FE1
+    JSR sound_tone
     LDY #&80                            ; a pause
-    JSR L1E20
+    JSR delay
     DEC work0
     BNE collect_spin
     CLC
@@ -3966,7 +3968,7 @@ NEXT
 ; Y AND 3 with turning preferences X (the trigger's arguments), moving its
 ; mark on the map with it.
 .trigger_move_monster
-    JSR L2122
+    JSR trigger_arguments
     STX work0
     PHA
     AND #&03                            ; monster A AND 3
@@ -4006,7 +4008,7 @@ NEXT
 .move_cell
     STX work2
     STY work3
-    JSR L21C6                           ; the destination
+    JSR step                            ; the destination
     STX work4
     STY work5
     LDX work2
@@ -4020,7 +4022,7 @@ NEXT
     BNE move_cell_draw
     LDX work2
     LDY work3
-    JSR L1C69
+    JSR find_object
     BCC move_cell_draw
 .move_object
     LDA work4                           ; it moves too
@@ -4093,77 +4095,92 @@ NEXT
     EOR #&01
     STA keys_were_down, Y
     RTS
-.L1ADE
-    JSR L1B0F
-    LDY #&28
-.L1AE3
+
+; Shrink the display to nothing by narrowing the CRTC's displayed area and
+; moving its syncs to keep it centred, a frame at a time; then black and a
+; clear screen.
+.close_view
+    JSR pause
+    LDY #40                             ; 40 frames
+.close_view_step
     TYA
     LDX #&01
-    JSR set_crtc_register
+    JSR set_crtc_register               ; R1: characters displayed
     LSR A
     CLC
-    ADC #&1D
+    ADC #&1D                            ; R2: horizontal sync, kept centred
     INX
     JSR set_crtc_register
     TYA
     LDX #&06
-    JSR set_crtc_register
+    JSR set_crtc_register               ; R6: rows displayed
     LSR A
     CLC
-    ADC #&12
+    ADC #&12                            ; R7: vertical sync
     INX
     JSR set_crtc_register
     TYA
     JSR wait_vsync
     TAY
     DEY
-    BPL L1AE3
-    LDX #&00
+    BPL close_view_step
+    LDX #&00                            ; logical colour 0 black
     JSR vdu_palette
-    JSR clear_screen
-.L1B0F
-    JSR L1B12
-.L1B12
+    JSR clear_screen                    ; and the CRTC back
+
+; Wait a moment: four or two delay loops of 65536 turns.
+.pause
+    JSR short_pause
+.short_pause
     LDY #&00
-    JSR L1E20
-    JMP L1E20
-.L1B1A
+    JSR delay
+    JMP delay
+
+; All four levels done. If the last one was finished properly the palette goes
+; wild for a while. Then the last level's edit code, "Praise and
+; felicitations!", and for the locked (competition) mission played from the
+; start, an entry code; wait for Space.
+.mission_done
     LDA #&00
-    JSR set_palette
+    JSR set_palette                     ; level 1's palette
     LDA stage
-    CMP #&03
-    BCC L1B3F
+    CMP #&03                            ; the last level done properly?
+    BCC mission_done_screen
     STA work0
-.L1B27
-    STA ULA_PALETTE
+.mission_done_flash
+    STA ULA_PALETTE                     ; any old colours...
     JSR wait_vsync
     CLC
-    ADC #&05
-    BNE L1B27
+    ADC #&05                            ; ...through every combination
+    BNE mission_done_flash
     DEC work0
-    BNE L1B27
-    JSR set_palette
-    JSR L1B0F
-    JSR L1B0F
-.L1B3F
+    BNE mission_done_flash
+    JSR set_palette                     ; back to level 1's
+    JSR pause
+    JSR pause
+.mission_done_screen
     LDA #&04
-    STA level
-    LDA #&03
+    STA level                           ; the last level's edit code
+    LDA #&03                            ; 3 lives' pictures; no mission text
     SEC
-    JSR L1C31
+    JSR show_edit_code
     JSR print_inline
     EQUB &1F, &07, &0F, &11, &03
     EQUS "Praise"
     EQUB &09, &61, &6E, &64, &1F, &01, &10
     EQUS "felicitations!"
     NOP
-    LDA io_locked
-    BPL L1B76
-    LDA started_late
-    BEQ L1B79
-.L1B76
-    JMP L1C13
-.L1B79
+    LDA io_locked                       ; the original, locked mission...
+    BPL mission_done_wait
+    LDA started_late                    ; ...played from level 1?
+    BEQ show_entry_code
+.mission_done_wait
+    JMP wait_for_space
+
+; The entry code: from the score, scrambled, and a checksum of the whole of
+; the mission's level data (io_attrs to the end of the maps) so the code shows
+; which mission was played, printed in the 1-9, A-W alphabet.
+.show_entry_code
     JSR print_inline
     EQUB &1F, &0E, &15
     EQUS "Entry"
@@ -4171,174 +4188,198 @@ NEXT
     EQUS "code:-"
     EQUB &11, &82, &11, &01, &1F, &02, &18
     NOP
-    LDA score_high
+    LDA score_high                      ; the score, scrambled
     JSR scramble
     PHA
     LDA score
     JSR scramble
     PHA
-    LDA #&25
+    LDA #HI(io_attrs)                   ; the checksum runs from io_attrs...
     STA work5
     LDX #&04
     LDA #&00
-.L1BA7
+.entry_code_clear
     STA work0, X
     DEX
-    BPL L1BA7
-    LDX #&24
-    LDY #&7F
+    BPL entry_code_clear
+    LDX #HI(io_graphics - 1) - HI(io_attrs); ...to the end of the maps
+    LDY #LO(io_attrs)
     CLC
-.L1BB1
-    ROL A
+.entry_code_sum
+    ROL A                               ; shift and mix
     ROR work0
     ROL work1
     ROR work2
     ROL work3
-    BCC L1BBE
+    BCC entry_code_add
     EOR work1
-.L1BBE
-    ADC (work4), Y
-    BCC L1BC4
+.entry_code_add
+    ADC (work4), Y                      ; add a byte
+    BCC entry_code_next
     INC work2
-.L1BC4
+.entry_code_next
     INY
-    BNE L1BB1
+    BNE entry_code_sum
     INC work5
     DEX
-    BPL L1BB1
+    BPL entry_code_sum
     PHA
-    LDA #&20
+    LDA #&20                            ; a space
     JSR OSWRCH
     PLA
     JSR print_code_digit
     PLA
-    EOR #&AA
+    EOR #&AA                            ; the score's high byte...
     JSR print_code_byte
-    LDX #&03
-.L1BDE
+    LDX #&03                            ; the checksum
+.entry_code_print
     LDA work0, X
     JSR print_code_digit
     DEX
-    BPL L1BDE
-    LDA score
+    BPL entry_code_print
+    LDA score                           ; the score mixed
     ASL A
     ROL A
     EOR score_high
     JSR scramble
     JSR print_code_digit
     PLA
-    EOR #&55
+    EOR #&55                            ; the score's low byte
     JSR print_code_byte
     JSR print_inline
     EQUB &20, &1F, &06, &17
     NOP
-    JSR L1C26
+    JSR print_12_spaces
     JSR print_inline
     EQUB &1F, &12, &18
     NOP
-    JSR L1C26
+    JSR print_12_spaces
     JSR print_inline
     EQUB &11, &80
     NOP
-.L1C13
-    LDX #&9D
+
+; Wait for Space to be pressed and let go.
+.wait_for_space
+    LDX #LO(KEY_SPACE)                  ; Space down...
     JSR key_pressed
-    BNE L1C13
-.L1C1A
-    LDX #&9D
+    BNE wait_for_space
+.wait_for_space_up
+    LDX #LO(KEY_SPACE)                  ; ...and up
     JSR key_pressed
-    BEQ L1C1A
-.L1C21
+    BEQ wait_for_space_up
+
+; OSBYTE &7E: clear an Escape.
+.acknowledge_escape
     LDA #&7E
     JMP OSBYTE
-.L1C26
+.print_12_spaces
     LDA #&20
     LDX #&0C
-.L1C2A
+.print_spaces_loop
     JSR OSWRCH
     DEX
-    BNE L1C2A
+    BNE print_spaces_loop
     RTS
-.L1C31
+
+; After a level: the backpack screen (A lives, the carry set for no mission
+; text) with the edit code of the level just finished (level is already the
+; next level, and the codes are read from one before io_edit_code_*).
+.show_edit_code
     JSR draw_backpack_screen
     JSR print_inline
     EQUB &1F, &07, &13, &11, &81, &11, &02
     EQUS "Edit code:"
     EQUB &1F, &05, &14, &11, &80, &11, &03
     NOP
-    LDY level
-    LDA io_locked, Y
-    JSR L1C61
-    LDA &2587, Y
-    JSR L1C61
-    LDA &258B, Y
-.L1C61
+    LDY level                           ; the level just finished's
+    LDA io_edit_code_high - 1, Y
+    JSR print_code_pair
+    LDA io_edit_code_middle - 1, Y
+    JSR print_code_pair
+    LDA io_edit_code_low - 1, Y
+
+; A byte of a code, scrambled, as two digits.
+.print_code_pair
     JSR scramble
     LDX #&03
     JMP print_bcd
-.L1C69
+
+; Is there an object at map cell (X, Y)?
+; Returns: carry set and Y = its offset in objects (X its number) if so.
+.find_object
     STX work0
     STY work1
-    LDY #&1C
+    LDY #7 * 4
     LDX #&07
-.L1C71
+.find_object_loop
     LDA objects, Y
     CMP work0
-    BNE L1C7F
+    BNE find_object_next
     LDA objects + 1, Y
     CMP work1
-    BEQ L1C87
-.L1C7F
+    BEQ find_object_done
+.find_object_next
     DEY
     DEY
     DEY
     DEY
     DEX
-    BPL L1C71
+    BPL find_object_loop
     CLC
-.L1C87
+.find_object_done
     RTS
-    EQUB &4C, &25, &1F
-.L1C8B
-    JSR L1F25
+
+; Never reached: a JMP to light_exit.
+.unused_jump
+    JMP light_exit
+
+; Action 1, P: pick up the object in front into the selected slot, or the
+; last free one; with nothing to collect left, in front of the exit, light
+; it instead (light_exit).
+.pick_up
+    JSR light_exit
     LDA front_cell
     CMP #&0F
-    BNE L1CA4
+    BNE action_done
     LDX backpack_slot
     LDA backpack, X
-    BMI L1CA5
-    LDX io_backpack_last
-.L1C9D
+    BMI pick_up_into_slot
+    LDX io_backpack_last                ; the selected slot's taken: the last free one
+.pick_up_free_slot
     LDA backpack, X
-    BMI L1CA5
+    BMI pick_up_into_slot
     DEX
-    BPL L1C9D
-.L1CA4
-    RTS
-.L1CA5
+    BPL pick_up_free_slot
+.action_done
+    RTS                                 ; no room
+.pick_up_into_slot
     STX backpack_slot
     LDX front_x
     LDY front_y
-    JSR L1C69
-    BCC L1CA4
-    LDA #&80
+    JSR find_object                     ; the object in front
+    BCC action_done
+    LDA #&80                            ; off the map
     STA objects, Y
     LDY backpack_slot
-    STX backpack, Y
+    STX backpack, Y                     ; into the backpack
     LDX front_x
     LDY front_y
     LDA #&00
-    JMP set_cell_and_draw
-.L1CC2
+    JMP set_cell_and_draw               ; and its cell's empty
+
+; Action 2, D: drop the selected object (or any) into the empty cell in front.
+.drop
     LDY front_cell
-    BNE L1CA4
-    JSR L1CE3
-    DEY
+    BNE action_done                     ; the cell in front must be empty
+    JSR selected_object
+    DEY                                 ; &FF: an empty slot
     STY backpack, X
     STX backpack_slot
     LDX front_x
     LDY front_y
-.L1CD2
+
+; Put object A at map cell (X, Y) and draw it.
+.put_object
     STX work2
     STX work4
     STY work3
@@ -4346,42 +4387,54 @@ NEXT
     ASL A
     ASL A
     TAY
-    LDA #&0F
+    LDA #&0F                            ; its cell's an object cell
     PHA
     JMP move_object
-.L1CE3
+
+; The selected object, or if that slot's empty, the one in the highest slot;
+; with none at all, return from the caller.
+; Returns: A = the object, X = its slot.
+.selected_object
     LDX backpack_slot
     LDA backpack, X
-    BPL L1CF4
+    BPL selected_object_done
     LDX #&03
-.L1CEB
-    LDA backpack, X
-    BPL L1CF4
+.selected_object_any
+    LDA backpack, X                     ; any object
+    BPL selected_object_done
     DEX
-    BPL L1CEB
+    BPL selected_object_any
+    PLA                                 ; none: return from the action
     PLA
-    PLA
-.L1CF4
+.selected_object_done
     RTS
-.L1CF5
-    JSR L1CE3
+
+; Action 5, T: throw the selected object from the empty cell in front, the
+; way the player faces, up to io_throw_distance cells (with 0, nothing can be
+; thrown).
+.throw
+    JSR selected_object
     STX backpack_slot
     STX work0
     TAX
-    LDY io_throw_distance
-    BEQ L1D37
+    LDY io_throw_distance               ; nothing can be thrown
+    BEQ throw_done
     LDA front_cell
-    BNE L1D37
-.L1D06
-    SEC
+    BNE throw_done                      ; the cell in front must be empty
+
+; Throw object X Y cells from the cell in front: out of the backpack and off
+; the map, flying as a sprite (move_things moves it a character at a time).
+; Returns: carry set if something was already in flight.
+.launch_object
+    SEC                                 ; already something in flight?
     LDA thrown_direction
-    BNE L1D37
+    BNE throw_done
     STX thrown_object
     STY throw_range
-    ROR A
+    ROR A                               ; &80: the slot's empty
     LDY work0
     STA backpack, Y
-    LDA front_x
+    LDA front_x                         ; from the cell in front, in characters
     ASL A
     ASL A
     STA thrown_x
@@ -4393,53 +4446,59 @@ NEXT
     ASL A
     ASL A
     TAY
-    LDA #&80
+    LDA #&80                            ; off the map
     STA objects, Y
-    JSR object_icon
+    JSR object_icon                     ; it flies as its icon
     STX thrown_picture
     STY thrown_picture_high
-    LDX facing
+    LDX facing                          ; the way the player faces, + 1
     INX
     STX thrown_direction
     CLC
-.L1D37
+.throw_done
     RTS
-.L1D38
-    LDX thrown_x
+
+; Once a cycle: move a thrown object a cell. It lands when it runs out of
+; range, comes to something that isn't empty or would hit the player; the
+; cell it lands against (in thrown_picture now) and its direction then count
+; for its triggers (try_object_trigger goes to throw_trigger). Unless used up,
+; it lands in the empty cell it reached.
+.fly_thrown
+    LDX thrown_x                        ; its cell
     LDY thrown_y
-    JSR L2135
-    LDA thrown_direction
-    BEQ L1D37
+    JSR to_cell
+    LDA thrown_direction                ; in flight?
+    BEQ throw_done
     SEC
     SBC #&01
     PHA
-    JSR L21C6
+    JSR step                            ; the next cell
     PLA
-    CPX player_x
-    BNE L1D55
+    CPX player_x                        ; the player?
+    BNE fly_thrown_ahead
     LDA #&00
     CPY player_y
-    BEQ L1D5E
-.L1D55
-    JSR cell_at
-    BNE L1D5E
-    DEC throw_range
-    BNE L1D37
-.L1D5E
-    STA thrown_picture
-    LSR thrown_x
+    BEQ thrown_lands
+.fly_thrown_ahead
+    JSR cell_at                         ; empty?
+    BNE thrown_lands
+    DEC throw_range                     ; out of range?
+    BNE throw_done
+.thrown_lands
+    STA thrown_picture                  ; what it hit, for its triggers
+    LSR thrown_x                        ; its cell
     LSR thrown_x
     LSR thrown_y
     LSR thrown_y
     LDX thrown_x
     LDY thrown_y
-    LDA #&00
+    LDA #&00                            ; rub out its sprite
     JSR set_cell_and_draw
-    LDA #&29
-    STA L1DF9+1
-    LDA #&1E
-    STA L1DF9+2
-    DEC thrown_direction
+    LDA #LO(throw_trigger)              ; its triggers are throw triggers
+    STA try_object_trigger_jump + 1
+    LDA #HI(throw_trigger)
+    STA try_object_trigger_jump + 2
+    DEC thrown_direction                ; its direction
     LDX thrown_object
     TXA
     PHA
@@ -4448,149 +4507,171 @@ NEXT
     ASL A
     ASL A
     TAY
-    LDA objects + 3, Y
+    LDA objects + 3, Y                  ; its flags
     SEC
-    BMI L1D91
-    JSR L1DA2
-.L1D91
+    BMI thrown_landed                   ; bit 7: it does nothing thrown
+    JSR fire_object_triggers
+.thrown_landed
     LDX #&00
     STX thrown_direction
     DEX
     STX thrown_object
     PLA
-    BCC L1D37
-    LDX thrown_x
+    BCC throw_done                      ; gone?
+    LDX thrown_x                        ; it lands
     LDY thrown_y
-    JMP L1CD2
-.L1DA2
-    AND #&3F
+    JMP put_object
+
+; Try object X's triggers (X, X + 8, X + 16 and X + 24), A being its uses and
+; flags: through use_trigger or throw_trigger, as patched into
+; try_object_trigger. If one fires, a use is used: 32 and over never run out,
+; and at none, with bit 6, the object is gone.
+; Returns: A negative (with the carry set) if nothing fired; else the carry
+; clear if the object's gone.
+.fire_object_triggers
+    AND #&3F                            ; no uses left: nothing
     SEC
-    BEQ L1D37
+    BEQ throw_done
     LDA #&00
     STA triggers_fired
     TXA
     PHA
-    JSR L1DF7
+    JSR try_object_trigger
     PLA
     PHA
-    ORA #&08
-    JSR L1DF7
+    ORA #&08                            ; its four triggers
+    JSR try_object_trigger
     PLA
     PHA
     ORA #&10
-    JSR L1DF7
+    JSR try_object_trigger
     PLA
     PHA
     ORA #&18
-    JSR L1DF7
+    JSR try_object_trigger
     PLA
     TAX
     ASL A
     ASL A
     TAY
-    LDA triggers_fired
-    BEQ L1DF3
+    LDA triggers_fired                  ; did any fire?
+    BEQ fire_object_nothing
     LDA objects + 3, Y
     PHA
     AND #&C0
     STA work0
     PLA
     AND #&3F
-    BEQ L1DE1
-    CMP #&20
-    BCS L1DF2
-    SBC #&00
-.L1DE1
+    BEQ fire_object_uses
+    CMP #&20                            ; 32 and up: never used up
+    BCS fire_object_done
+    SBC #&00                            ; a use less
+.fire_object_uses
     SEC
     PHA
     ORA work0
     STA objects + 3, Y
     PLA
-    BNE L1DF2
+    BNE fire_object_done
     LDA work0
-.L1DED
-    AND #&40
-    BEQ L1DF2
+.fire_object_vanishes
+    AND #&40                            ; used up: bit 6 says it goes
+    BEQ fire_object_done
     CLC
-.L1DF2
+.fire_object_done
     RTS
-.L1DF3
+.fire_object_nothing
     SEC
     LDA #&80
     RTS
-.L1DF7
-    LDY #&80
-.L1DF9
-    JMP do_nothing
-.L1DFC
-    JSR L1CE3
+.try_object_trigger
+    LDY #&80                            ; triggers that need an object
+.try_object_trigger_jump
+    JMP do_nothing                      ; self-modified: use_trigger or throw_trigger
+
+; Action 6, Return: use the selected object where the player stands, facing
+; the way they do.
+.use
+    JSR selected_object
     STX backpack_slot
-    LDX #&88
-    STX L1DF9+1
-    LDX #&1E
-    STX L1DF9+2
+    LDX #LO(use_trigger)                ; its triggers are use triggers
+    STX try_object_trigger_jump + 1
+    LDX #HI(use_trigger)
+    STX try_object_trigger_jump + 2
     TAX
     ASL A
     ASL A
     TAY
     LDA objects + 3, Y
-    JSR L1DA2
-    BMI L1E28
-    BCS L1E1E
-    ASL A
+    JSR fire_object_triggers            ; fire them
+    BMI delay_done                      ; none fired
+    BCS use_pause                       ; kept
+    ASL A                               ; gone: &80, an empty slot
     LDX backpack_slot
     STA backpack, X
-.L1E1E
+.use_pause
     LDY #&C0
-.L1E20
+
+; Wait Y * 256 turns of a DEX loop. Clobbers: X, Y.
+.delay
     LDX #&00
-.L1E22
+.delay_loop
     DEX
-    BNE L1E22
+    BNE delay_loop
     DEY
-    BNE L1E22
-.L1E28
+    BNE delay_loop
+.delay_done
     RTS
+
+; Trigger A for a thrown object that has landed: a trigger that needs an
+; object (flags bit 7), not yet fired (bit 5), at the cell it landed in (or
+; anywhere, a negative x or y), and meeting the condition (args 3): bit 7, it
+; flew direction bits 4-5; bit 6, it landed against cell type bits 0-3.
+; Y is the trigger's offset into trigger_args: trigger * 4.
+.throw_trigger
     TAX
-    LDA trigger_flags, X
-    EOR #&80
+    LDA trigger_flags, X                ; a trigger that needs an object...
+    EOR #&80                            ; ...not yet fired
     AND #&A0
-    BNE L1E28
-    INC triggers_fired
+    BNE delay_done
+    INC triggers_fired                  ; tried
     TXA
     ASL A
     TAY
-    LDA trigger_places, Y
-    BMI L1E41
-    CMP thrown_x
-    BNE L1EBA
-.L1E41
+    LDA trigger_places, Y               ; where it is
+    BMI throw_trigger_y                 ; anywhere across?
+    CMP thrown_x                        ; where it landed?
+    BNE trigger_no_match
+.throw_trigger_y
     LDA D236E, Y
-    BMI L1E4A
+    BMI throw_trigger_condition
     CMP thrown_y
-    BNE L1EBA
-.L1E4A
+    BNE trigger_no_match
+.throw_trigger_condition
     TYA
     ASL A
     TAY
-    LDA &23B0, Y
+    LDA trigger_args + 3, Y             ; the condition
     STA work0
-    BPL L1E60
+    BPL throw_trigger_cell              ; no direction needed
     AND #&30
     LSR A
     LSR A
     LSR A
     LSR A
-    CMP thrown_direction
-    BNE L1EBA
+    CMP thrown_direction                ; the way it flew?
+    BNE trigger_no_match
     LDA work0
-.L1E60
-    BIT L1DED+1
-    BEQ L1E6B
+.throw_trigger_cell
+    BIT bit6_mask                       ; a cell type needed?
+    BEQ throw_trigger_fires
     AND #&0F
-    CMP thrown_picture
-    BNE L1EBA
-.L1E6B
+    CMP thrown_picture                  ; what it landed against?
+    BNE trigger_no_match
+
+; It fires: its action works on the cell beyond where it landed, in the
+; direction it flew.
+.throw_trigger_fires
     STY work0
     LDA thrown_picture
     STA work5
@@ -4598,247 +4679,293 @@ NEXT
     LDX thrown_x
     LDY thrown_y
     LDA thrown_direction
-    JSR L21C6
+    JSR step                            ; the cell beyond
     STX front_x
     STY front_y
     LDX work4
     LDY work0
     LDA thrown_direction
-    BPL L1ECF
-.L1E88
-    INC triggers_fired
+    BPL trigger_fires
+
+; Trigger A, for the player: Y is 0 for one that fires when walked on (flags
+; bit 7 clear), &80 for one that needs an object used. Not yet fired, where
+; the player is, and the condition: bit 7, facing direction bits 4-5; bit 6,
+; facing cell type bits 0-3.
+.use_trigger
+    INC triggers_fired                  ; tried
     TAX
-    TYA
+    TYA                                 ; walked on or used, matching...
     EOR trigger_flags, X
-    AND #&A0
-    BNE L1EBA
+    AND #&A0                            ; ...and not yet fired
+    BNE trigger_no_match
     TXA
     ASL A
     TAY
-    LDA trigger_places, Y
-    BMI L1E9F
-    CMP player_x
-    BNE L1EBA
-.L1E9F
+    LDA trigger_places, Y               ; where it is
+    BMI use_trigger_y                   ; anywhere across?
+    CMP player_x                        ; where the player is?
+    BNE trigger_no_match
+.use_trigger_y
     LDA D236E, Y
-    BMI L1EA8
+    BMI use_trigger_condition
     CMP player_y
-    BNE L1EBA
-.L1EA8
+    BNE trigger_no_match
+.use_trigger_condition
     TYA
     ASL A
     TAY
-    LDA &23B0, Y
+    LDA trigger_args + 3, Y             ; the condition
     STA work0
-    BPL L1EBE
+    BPL use_trigger_cell                ; no direction needed
     AND #&30
     LSR A
     LSR A
     LSR A
     LSR A
-    CMP facing
-.L1EBA
-    BNE L1F0D
+    CMP facing                          ; the way the player faces?
+
+; (throw_trigger's misses come here too.)
+.trigger_no_match
+    BNE trigger_fails
     LDA work0
-.L1EBE
-    BIT L1DED+1
-    BEQ L1EC9
+.use_trigger_cell
+    BIT bit6_mask                       ; a cell type needed?
+    BEQ use_trigger_fires
     AND #&0F
-    CMP front_cell
-    BNE L1F0D
-.L1EC9
+    CMP front_cell                      ; the cell in front?
+    BNE trigger_fails
+.use_trigger_fires
     LDA front_cell
     STA work5
     LDA facing
-.L1ECF
+
+; The trigger fires: flags bit 6 needs everything collected first. Bit 4 lets
+; it fire again; without it, bit 5 marks it fired. Its action is the flags'
+; low nibble, with the trigger's arguments, the cell it's facing in work5 and
+; the direction in work4.
+.trigger_fires
     STA work4
     LDA trigger_flags, X
     STA work2
-    BIT L1DED+1
-    BEQ L1EE1
+    BIT bit6_mask                       ; only once everything's collected?
+    BEQ trigger_once
     LDA to_collect
-    BNE L1F0D
+    BNE trigger_fails
     LDA work2
-.L1EE1
-    BIT bit4_mask
-    BNE L1EEB
-    ORA #&20
+.trigger_once
+    BIT bit4_mask                       ; may fire again?
+    BNE trigger_action
+    ORA #&20                            ; fired
     STA trigger_flags, X
-.L1EEB
-    AND #&0F
+.trigger_action
+    AND #&0F                            ; the action
     ASL A
     TAX
-    LDA D2331, X
-    STA L1EFB+1
-    LDA D2331+1, X
-    STA L1EFB+2
-.L1EFB
-    JSR do_nothing
-    JMP find_front
-.L1F01
-    JSR L2122
-    JSR move_cell
-    BCS L1F0D
-    BCC L1F76
-.L1F0B
+    LDA trigger_actions, X
+    STA trigger_action_call + 1         ; self-modify the JSR
+    LDA trigger_actions + 1, X
+    STA trigger_action_call + 2
+.trigger_action_call
+    JSR do_nothing                      ; self-modified: the action
+    JMP find_front                      ; and look again
+
+; Action 1: move the cell at (X, Y) a cell in direction A.
+.action_move_cell
+    JSR trigger_arguments
+    JSR move_cell                       ; carry set: nothing moved
+    BCS trigger_fails
+    BCC sound_trigger
+
+; An action that doesn't happen: the trigger didn't fire after all.
+.trigger_fails_pop2
     PLA
-.L1F0C
+.trigger_fails_pop
     PLA
-.L1F0D
-    DEC triggers_fired
-.L1F0F
+.trigger_fails
+    DEC triggers_fired                  ; it didn't fire after all
+.light_exit_done
     RTS
-.L1F10
-    JSR L211A
-    BCS L1F0B
-    JSR L2122
-    ADC work4
+
+; Action 14: push the cell in front, direction A turned (as turns) from the
+; way the player faces.
+.action_push
+    JSR front_blocked
+    BCS trigger_fails_pop2
+    JSR trigger_arguments
+    ADC work4                           ; turned from the way the player faces
     TAX
     LDY turns, X
     JSR push_cell
-    BCC L1F0D
-    BCS L1F76
-.L1F25
+    BCC trigger_fails
+    BCS sound_trigger
+
+; In front of the exit, with nothing left to collect: light it. The exit
+; becomes fire (E), and the player has a few ticks to get away.
+.light_exit
     LDA front_x
     CMP exit_x
-    BNE L1F0F
+    BNE light_exit_done
     LDA front_y
-    SBC exit_y
-    ORA to_collect
-    ORA stage
-    BNE L1F0F
-    STA clock_fraction
-    INC stage
+    SBC exit_y                          ; carry set by the CMP
+    ORA to_collect                      ; everything collected...
+    ORA stage                           ; ...and not lit yet
+    BNE light_exit_done
+    STA clock_fraction                  ; the clock starts afresh
+    INC stage                           ; stage 1: lit
     LDX #&01
     LDA #&04
-    JSR L1F7A
-    LDA #&0E
-    BNE L1F4F
-.L1F44
-    JSR L211A
-    BCS L1F0B
-    JSR L1F76
-    JSR L2122
-.L1F4F
+    JSR sound_effect
+    LDA #&0E                            ; the exit is fire
+    BNE set_front_cell
+
+; Action 2: the cell in front becomes type A.
+.action_set_front
+    JSR front_blocked
+    BCS trigger_fails_pop2
+    JSR sound_trigger
+    JSR trigger_arguments
+.set_front_cell
     LDX front_x
     LDY front_y
     JMP set_cell_and_draw
-.L1F56
-    JSR L2122
-    JSR L205F
-    BEQ L1F9E
-    LDA objects, Y
+
+; Action 5: object A explodes, wherever it is: on the map, in flight, or in
+; the backpack, which kills the player.
+.action_explode
+    JSR trigger_arguments
+    JSR find_carried                    ; carried or in flight?
+    BEQ explode_carried
+    LDA objects, Y                      ; where it is
     PHA
     TAX
     LDA objects + 1, Y
     PHA
     TAY
-    JSR cell_at
+    JSR cell_at                         ; still there?
     CMP #&0F
-    BNE L1F0B
+    BNE trigger_fails_pop2
     PLA
     TAY
     PLA
     TAX
-.L1F73
-    JSR L1FA8
-.L1F76
+.explode_at
+    JSR blast
+
+; Sound effects, on channel 0 (noise) with envelope X: duration and pitch A.
+; Off with effects_off. Preserves Y.
+.sound_trigger
     LDA #&06
-.L1F78
+.sound_effect_4
     LDX #&04
-.L1F7A
+.sound_effect
     STA sound_duration
-.L1F7C
+.sound_effect_pitch
     STA sound_pitch
-    STX sound_amplitude
-    LDA #&10
+    STX sound_amplitude                 ; envelope
+    LDA #&10                            ; channel 0, flushed
     STA sound_channel
-.L1F84
-    LDA effects_off
-    BNE L1F97
+.make_sound
+    LDA effects_off                     ; sound effects off?
+    BNE make_sound_done
     TYA
     PHA
     LDY #&00
     STY sound_channel_high
-    LDX #&30
-    LDA #&07
+    LDX #LO(sound_channel)
+    LDA #7
     JSR OSWORD
     PLA
     TAY
-.L1F97
+.make_sound_done
     RTS
-.L1F98
-    LDX thrown_x
+.explode_in_flight
+    LDX thrown_x                        ; where it's flying
     LDY thrown_y
-    BPL L1F73
-.L1F9E
-    BCC L1F98
-    LDA #&FF
+    BPL explode_at
+.explode_carried
+    BCC explode_in_flight
+    LDA #&FF                            ; it's gone from the backpack...
     STA backpack, X
-    LDX player_x
+    LDX player_x                        ; ...where the player is
     LDY player_y
-.L1FA8
-    LDA #&08
+
+; Empty the 9 cells round map cell (X, Y), and if the player's in one of
+; them, they die.
+.blast
+    LDA #&08                            ; 8 neighbours and the cell itself
     STA work4
     STX work2
     STY work3
-.L1FB0
+.blast_cell
     LDX work2
     LDY work3
     LDA work4
-    JSR L21C6
+    JSR step
     CPX player_x
-    BNE L1FC3
+    BNE blast_empty
     CPY player_y
-    BNE L1FC3
-    INC player_dead
-.L1FC3
+    BNE blast_empty
+    INC player_dead                     ; caught in it
+.blast_empty
     LDA #&00
     JSR set_cell_and_draw
     DEC work4
-    BPL L1FB0
+    BPL blast_cell
     RTS
-.L1FCD
-    JSR L2122
+
+; Action 3: before the exit's lit, set the clock to X (unless A bit 7 is
+; set) and the number to collect to Y (unless A bit 0 is set).
+.action_set_clock
+    JSR trigger_arguments
     PHA
     LDA stage
-    BNE L1FF9
+    BNE action_fails                    ; only before the exit's lit
     PLA
-    BMI L1FDA
+    BMI set_clock_collect               ; bit 7: keep the clock
     STX time_left
-.L1FDA
+.set_clock_collect
     LSR A
-    BCS L1FDF
+    BCS set_clock_sound                 ; bit 0: keep the number
     STY to_collect
-.L1FDF
+.set_clock_sound
     LDA #&96
-.L1FE1
+
+; Sound effects on channel 3: pitch A, with envelope 3 for 8 twentieths of a
+; second, or (sound_beep) envelope 4 for 10.
+.sound_tone
     STA sound_pitch
-    LDA #&03
-    LDX #&08
-.L1FE7
+    LDA #&03                            ; envelope 3...
+    LDX #&08                            ; ...for 8
+.sound_channel_3
     STA sound_amplitude
     STX sound_duration
-    LDA #&13
+    LDA #&13                            ; channel 3, flushed
     STA sound_channel
-    BNE L1F84
-.L1FF1
+    BNE make_sound
+.sound_beep
     STA sound_pitch
-    LDA #&04
-    LDX #&0A
-    BNE L1FE7
-.L1FF9
-    JMP L1F0C
-.L1FFC
-    JSR L2122
+    LDA #&04                            ; envelope 4...
+    LDX #&0A                            ; ...for 10
+    BNE sound_channel_3
+.action_fails
+    JMP trigger_fails_pop
+
+; Action 0: map cell (X, Y) becomes type A.
+.action_set_cell
+    JSR trigger_arguments
     JSR set_cell_and_draw
-    JMP L1F76
-.L2005
-    JSR L2122
+    JMP sound_trigger
+
+; Action 13: the player may push A crates.
+.action_set_pushes
+    JSR trigger_arguments
     STA pushes_left
     LDA #&50
-    BNE L1FE1
-.L200E
+    BNE sound_tone
+
+; Action 15: swap the left and right keys, and up and down, for the rest of
+; the level.
+.action_swap_keys
     LDX key_down
     LDA key_up
     STA key_down
@@ -4850,167 +4977,197 @@ NEXT
     LDA #&00
     STA action
     LDA #&35
-    BNE L1FE1
-.L2026
-    JSR L2122
-    JSR L205F
+    BNE sound_tone
+
+; Action 12: give object A (not while in flight) Y uses and re-enable trigger
+; A, flashing the screen.
+.action_recharge
+    JSR trigger_arguments               ; carried?
+    JSR find_carried
     PHA
-    BMI L1FF9
+    BMI action_fails
     ASL A
     ASL A
     TAX
     STY work0
-    LDA objects + 3, X
+    LDA objects + 3, X                  ; Y uses, its flags kept
     AND #&E0
     ORA work0
     STA objects + 3, X
-    LDA #&01
+    LDA #&01                            ; a flash
     TAX
     JSR flash_palette_times
     PLA
     TAY
-    BPL L2056
-.L2048
-    JSR L2122
+    BPL enable_trigger
+
+; Action 10: re-enable triggers A, X and Y.
+.action_enable
+    JSR trigger_arguments
     PHA
-    JSR L2056
+    JSR enable_trigger
     TXA
     TAY
-    JSR L2056
+    JSR enable_trigger
     PLA
     TAY
-.L2056
-    LDA trigger_flags, Y
+.enable_trigger
+    LDA trigger_flags, Y                ; clear bit 5
     AND #&DF
     STA trigger_flags, Y
     RTS
-.L205F
-    ORA #&80
+
+; Is object A in flight (Z set, carry clear) or in the backpack (Z set, X its
+; slot)? Returns: A = the object (+ &80 if in flight).
+.find_carried
+    ORA #&80                            ; in flight?
     CMP thrown_object
     CLC
-    BEQ L2072
-    SBC #&7F
+    BEQ find_carried_done
+    SBC #&7F                            ; (the carry's clear: - &80)
     LDX #&03
-.L206A
-    CMP backpack, X
-    BEQ L2072
+.find_carried_loop
+    CMP backpack, X                     ; in the backpack?
+    BEQ find_carried_done
     DEX
-    BPL L206A
+    BPL find_carried_loop
     SEC
-.L2072
+.find_carried_done
     RTS
-.L2073
-    JSR L2122
+
+; Action 11: disable triggers A, X and Y.
+.action_disable
+    JSR trigger_arguments
     PHA
-    JSR L2081
+    JSR disable_trigger
     TXA
     TAY
-    JSR L2081
+    JSR disable_trigger
     PLA
     TAY
-.L2081
-    LDA trigger_flags, Y
+.disable_trigger
+    LDA trigger_flags, Y                ; set bit 5
     ORA #&20
     STA trigger_flags, Y
     RTS
-.L208A
-    JSR L1F76
-    JSR L2122
-    CPX #&10
-    BEQ L20AC
-.L2094
-    LDY monster_direction, X
+
+; Action 6: monster X / 4 (or all four, X = &10) goes direction A: 8 or more
+; takes it off the map, for 25 points.
+.action_set_monster
+    JSR sound_trigger
+    JSR trigger_arguments
+    CPX #4 * 4                          ; all of them?
+    BEQ set_all_monsters
+.set_monster_direction
+    LDY monster_direction, X            ; its old direction
     STA monster_direction, X
     TYA
-    EOR #&08
+    EOR #&08                            ; was out and now isn't?
     AND monster_direction, X
     CMP #&08
-    BCC L20AB
+    BCC set_monster_done
     STX work4
-    JSR empty_monster_cell
-    JSR L21D9
+    JSR empty_monster_cell              ; off the map...
+    JSR score_25                        ; ...for 25 points
     LDX work4
-.L20AB
+.set_monster_done
     RTS
-.L20AC
+.set_all_monsters
+    DEX                                 ; monsters 3 to 0
     DEX
     DEX
     DEX
-    DEX
-    JSR L2094
+    JSR set_monster_direction
     TXA
-    BNE L20AC
+    BNE set_all_monsters
     RTS
-.L20B7
+
+; Action 9: the cell in front changes from type A to X, or X to A.
+.action_toggle
     INY
-    LDA work5
-    CMP D23AC, Y
-    BEQ L20C8
+    LDA work5                           ; the cell in front
+    CMP trigger_args - 1, Y             ; A?
+    BEQ action_toggle_set
     DEY
-    CMP &23AE, Y
-    BEQ L20C8
-.L20C5
-    JMP L1F0D
-.L20C8
-    JSR L1F76
-    LDA trigger_args, Y
+    CMP trigger_args + 1, Y             ; X?
+    BEQ action_toggle_set
+.action_toggle_fails
+    JMP trigger_fails
+.action_toggle_set
+    JSR sound_trigger
+    LDA trigger_args, Y                 ; the other
     PHA
     LDX front_x
     LDY front_y
     PLA
     JMP set_cell_and_draw
-.L20D7
-    LDA work5
-    BNE L20C5
-    JSR L2122
-    JSR L205F
-    BNE L20C5
-    STX work0
+
+; Action 4: throw object A (carried) Y cells, from the empty cell in front,
+; and stop the player's step.
+.action_launch
+    LDA work5                           ; the cell in front must be empty
+    BNE action_toggle_fails
+    JSR trigger_arguments
+    JSR find_carried                    ; carried?
+    BNE action_toggle_fails
+    STX work0                           ; its slot
     TAX
-    JSR L1D06
-    BCS L20C5
-    LDA #&0B
+    JSR launch_object                   ; throw it
+    BCS action_toggle_fails
+    LDA #11                             ; action 11: no step
     STA action
     LSR A
     LDX #&03
-    JMP L1F7A
-.L20F5
-    LDA #&0B
+    JMP sound_effect
+
+; Action 8: teleport the view's top left to cell (X, Y), so the player to
+; (X + 4, Y + 4), with a flash, and stop the player's step.
+.action_teleport
+    LDA #11
     STA action
-    JSR L2122
-    JSR place_player
+    JSR trigger_arguments
+    JSR place_player                    ; move the view and the player
     LDX #&04
     LDA #&02
-    JSR L1F7A
+    JSR sound_effect                    ; a sound...
     LDA #&02
     LDX #&04
-    JSR flash_palette_times
-    JSR clear_screen
+    JSR flash_palette_times             ; ...a flash...
+    JSR clear_screen                    ; ...and the view redrawn
     LDA #&00
     LDX #&04
-    JSR L1F7C
+    JSR sound_effect_pitch
     JMP redraw_view
-.L211A
+
+; Look at the cell in front, preserving Y.
+; Returns: carry set if it's the exit or off the map.
+.front_blocked
     TYA
     PHA
     JSR look_at_front
     PLA
     TAY
     RTS
-.L2122
+
+; Trigger Y / 4's arguments: A, X and Y.
+.trigger_arguments
     LDA trigger_args, Y
     PHA
-    LDA &23AE, Y
+    LDA trigger_args + 1, Y
     TAX
-    LDA &23AF, Y
+    LDA trigger_args + 2, Y
     TAY
     PLA
     RTS
-.L2130
+
+; Monster X / 4's cell: X, Y.
+.monster_cell
     LDY monster_y, X
     LDA monster_x, X
     TAX
-.L2135
+
+; Character position (X, Y) to map cell (X, Y).
+.to_cell
     TXA
     LSR A
     LSR A
@@ -5019,55 +5176,63 @@ NEXT
     LSR A
     LSR A
     TAY
-.L213D
+.monster_think_done
     RTS
-.L213E
+
+; Decide where a monster goes next. work0-work3 are its x, y, direction and
+; turns, work4 its number. If its fire cell has gone (put out), it's gone, for
+; 25 points. Otherwise it tries up to four ways, each a 2-bit field of its
+; turns (from the bottom) picking from turns: back, on, clockwise or
+; anticlockwise. It goes into an empty cell or an object; if the cell is what
+; it eats (monster_food) it turns that into what it leaves, and is gone. If
+; it can't go anywhere it's stuck (direction + 4).
+.monster_think
     LDA work2
     CMP #&08
-    BCS L213D
+    BCS monster_think_done              ; not out?
     AND #&03
     STA work2
-    LDA #&08
-    JSR L21B7
-    CMP #&0E
-    BNE L21AE
-    LDA #&03
+    LDA #&08                            ; its own cell
+    JSR cell_beside_monster
+    CMP #&0E                            ; still fire?
+    BNE monster_gone
+    LDA #&03                            ; the first field
     STA work5
-.L2155
+.monster_try_turn
     LDA work5
     LDY #&00
-.L2159
-    INY
+.monster_turn_field
+    INY                                 ; find the field...
     LSR A
-    BCC L2159
-    LDA work5
+    BCC monster_turn_field
+    LDA work5                           ; ...and take it
     AND work3
-.L2161
+.monster_turn_shift
     LSR A
     DEY
-    BNE L2161
-    ROL A
+    BNE monster_turn_shift
+    ROL A                               ; back, on, clockwise, anticlockwise
     ASL A
     ASL A
     ADC work2
     TAY
-    LDA turns, Y
+    LDA turns, Y                        ; the way to try
     PHA
-    JSR L21B7
-    BEQ L218A
+    JSR cell_beside_monster             ; what's there
+    BEQ monster_set_direction           ; empty: go
     CMP #&0F
-    BEQ L218A
-    EOR monster_food
+    BEQ monster_set_direction           ; an object: go
+    EOR monster_food                    ; food?
     AND #&0F
-    BEQ L2193
-    ASL work5
+    BEQ monster_eats
+    ASL work5                           ; the next field
     ASL work5
     PLA
-    BCC L2155
-    LDA work2
+    BCC monster_try_turn                ; none left?
+    LDA work2                           ; stuck
     ORA #&04
     PHA
-.L218A
+.monster_set_direction
     LDA work4
     ASL A
     ASL A
@@ -5075,13 +5240,13 @@ NEXT
     PLA
     STA monster_direction, X
     RTS
-.L2193
-    LDA #&66
-    JSR L1FE1
+.monster_eats
+    LDA #&66                            ; a sound
+    JSR sound_tone
     PLA
     TAY
-    JSR L21BD
-    LDA monster_food
+    JSR step_from_monster               ; the cell it eats...
+    LDA monster_food                    ; ...becomes what it leaves
     LSR A
     LSR A
     LSR A
@@ -5091,23 +5256,27 @@ NEXT
     ASL A
     ASL A
     TAX
-    JSR empty_monster_cell
-.L21AE
-    LDA #&08
+    JSR empty_monster_cell              ; and the monster's cell empty
+.monster_gone
+    LDA #&08                            ; gone
     PHA
-    JSR L21D9
-    JMP L218A
-.L21B7
-    JSR L21BD
+    JSR score_25                        ; 25 points
+    JMP monster_set_direction
+
+; What's in the cell beside the monster in direction A (8: its own).
+.cell_beside_monster
+    JSR step_from_monster
     JMP cell_at
-.L21BD
+.step_from_monster
     PHA
     LDX work0
     LDY work1
-    JSR L2135
+    JSR to_cell
     PLA
-.L21C6
-    STY offset_y
+
+; One step in direction A from map cell (X, Y). Returns: X, Y.
+.step
+    STY offset_y                        ; (a spare byte in the stack page)
     TAY
     TXA
     CLC
@@ -5118,14 +5287,16 @@ NEXT
     ADC direction_dy, Y
     TAY
     RTS
-.L21D9
-    LDX #&19
-.L21DB
-    JSR L21E1
+
+; Add 25, X or 1 to the score (in BCD).
+.score_25
+    LDX #25
+.add_points
+    JSR add_point
     DEX
-    BNE L21DB
-.L21E1
-    SED
+    BNE add_points
+.add_point
+    SED                                 ; BCD
     LDA score
     CLC
     ADC #&01
@@ -5135,67 +5306,83 @@ NEXT
     STA score_high
     CLD
     RTS
-.L21F1
+
+; L on the title screen: ask for a mission file name (12 characters) and
+; load it.
+.ask_for_mission
     JSR draw_title_screen
     JSR print_inline
-    EQUB &1F, &07, &0F, &11, &81, &11, &02
+    EQUB &1F, &07, &0F, &11
+    EQUB &81, &11, &02                  ; the boxes
     EQUS "Filename ?"
     EQUB &1F, &03, &13, &3C, &08, &08, &7F, &7F
     EQUB &7F, &7F, &7F, &7F, &7F, &7F, &7F, &7F
     EQUB &7F, &7F, &08, &08, &3E, &09
     NOP
-    LDA #&00
-    LDX #&D1
-    LDY #&22
+    LDA #&00                            ; OSWORD 0: read a line
+    LDX #LO(read_line_block)
+    LDY #HI(read_line_block)
     JSR OSWORD
-    JSR L222E
+    JSR load_mission                    ; load it
     JMP title_screen
-.L222E
+
+; Load the mission file named at mission_filename (":0.$.IO" unless the
+; player has asked for another) to io_start. The game has taken the DFS's
+; workspace at &0E00-&10FF (and the NMI area and extended vectors), so first
+; swap &0D00-&1CFF out of the way into the screen, put an RTI where the NMI
+; handler goes, put back the extended vectors the loader saved, and ask the
+; filing systems to claim their workspace again (OSBYTE &8F, service calls 1
+; and 2), then *DISK. Output is turned off while the file loads, then the game
+; is swapped back.
+; Clobbers: A, X, Y, work0-work3.
+.load_mission
     JSR blank_display
-    STA furthest_level
-    JSR L227B
-    LDA #&40
-    STA clip_sprite_left_cells
-    LDY #&60
-.L223D
-    LDA saved_extended_vectors, Y
-    STA map_view_draw_left+1, Y
+    STA furthest_level                  ; A = 0: no starting late on a new mission
+    JSR swap_memory                     ; the game's code out of the way
+    LDA #&40                            ; RTI
+    STA NMI_HANDLER                     ; NMIs are ignored until the DFS sets them up
+    LDY #&100 - LO(EXTENDED_VECTORS) - 1
+.load_mission_vectors
+    LDA saved_extended_vectors, Y       ; the extended vectors back
+    STA EXTENDED_VECTORS, Y
     DEY
-    BPL L223D
-    LDA #&8F
+    BPL load_mission_vectors
+    LDA #&8F                            ; service call 1: claim absolute workspace
     LDX #&01
     LDY #&0E
     JSR OSBYTE
-    LDX #&02
+    LDX #&02                            ; service call 2: claim private workspace
     LDY #&10
     JSR OSBYTE
-    LDX #&D6
-    LDY #&22
-    JSR OSCLI
-    LDY #&11
-.L225F
-    LDA D22A0, Y
-    STA D22B2, Y
+    LDX #LO(disk_command)
+    LDY #HI(disk_command)
+    JSR OSCLI                           ; *DISK
+    LDY #osfile_block - osfile_block_template - 1
+.load_mission_block
+    LDA osfile_block_template, Y
+    STA osfile_block, Y
     DEY
-    BPL L225F
-    LDA #&15
+    BPL load_mission_block
+    LDA #21                             ; VDU 21: no output...
     JSR OSWRCH
-    LDX #&B2
-    LDY #&22
+    LDX #LO(osfile_block)
+    LDY #HI(osfile_block)
     LDA #&FF
     JSR OSFILE
-    LDA #&06
+    LDA #6                              ; ...VDU 6: output again
     JSR OSWRCH
-.L227B
+
+; Swap &0D00-&1CFF with &6000-&6FFF.
+.swap_memory
     LDY #&00
     STY work0
     STY work2
-    LDA #&60
+    LDA #HI(SCREEN)
     STA work1
     LDA #&0D
     STA work3
     LDX #&10
-.L228B
+.swap_memory_loop
     LDA (work0), Y
     PHA
     LDA (work2), Y
@@ -5203,71 +5390,122 @@ NEXT
     PLA
     STA (work2), Y
     INY
-    BNE L228B
+    BNE swap_memory_loop
     INC work1
     INC work3
     DEX
-    BNE L228B
+    BNE swap_memory_loop
     RTS
-.D22A0
-    EQUB &C4, &22, &2D, &24, &00, &00, &00, &00
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00
-    EQUB &00, &00
-.D22B2
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00
-    EQUB &00, &00
-    EQUS ":0.$.IO     "
-    EQUB &0D, &C4, &22, &0C, &20, &FF
-    EQUS "DISK"
-    EQUB &0D
+
+; OSFILE's parameter block: the file name's address, load address io_start
+; (&0000242D: in the I/O processor, low byte first) and the rest unused; copied
+; to osfile_block before each load since OSFILE writes into it.
+.osfile_block_template
+    EQUW mission_filename
+    EQUD io_start, 0, 0, 0
+.osfile_block
+    SKIP osfile_block - osfile_block_template
+
+; The mission file's name, and OSWORD 0's block for reading another: up to 12
+; characters, from space to &FF.
+.mission_filename
+    EQUS ":0.$.IO     ", 13
+.read_line_block
+    EQUW mission_filename
+    EQUB 12, 32, &FF
+.disk_command
+    EQUS "DISK", 13
+
+; BRKV: an error (from the filing system, loading a mission). If it happened
+; while the game's code was swapped out (a sample of it isn't where it
+; should be), swap it back; then show the error and "Press SPACE:" on the
+; title screen, and start again from the title.
 .error_handler
-    EQUB &AD, &B1, &13, &C9, &A2, &D0, &07, &AD
-    EQUB &B2, &13, &C9, &07, &F0, &03
-    EQUS " {"" "
-    EQUB &F7, &0E, &20, &7D, &14, &20, &3E, &10
+    LDA flash_palette_cycle             ; LDX #7 here means the code is in place
+    CMP #&A2
+    BNE error_handler_swap_back
+    LDA flash_palette_cycle+1
+    CMP #&07
+    BEQ error_handler_message
+.error_handler_swap_back
+    JSR swap_memory
+.error_handler_message
+    JSR flush_buffers
+    JSR draw_title_screen
+    JSR print_inline
     EQUB &1F, &0A, &12
     EQUS "Press"
     EQUB &09
     EQUS "SPACE:"
-    EQUB &1F, &05, &0F, &EA, &A0, &01, &A5, &FD
-    EQUB &85, &50, &A5, &FE, &85, &51, &B1, &50
-    EQUB &F0, &12, &C9, &20, &90, &07, &D0, &02
-    EQUB &A9, &09, &20, &EE, &FF, &C8, &D0, &EE
-    EQUB &E6, &51, &D0, &EA, &20, &13, &1C, &A2
-    EQUB &FF, &9A, &4C, &C3, &12
-.D2331
-    EQUW L1FFC
-    EQUW L1F01
-    EQUW L1F44
-    EQUW L1FCD
-    EQUW L20D7
-    EQUW L1F56
-    EQUW L208A
+    EQUB &1F, &05
+    EQUB &0F                            ; the error message
+    NOP
+    LDY #&01
+    LDA ERROR_POINTER
+    STA work0
+    LDA &FE
+    STA work1
+.error_handler_print
+    LDA (work0), Y
+    BEQ error_handler_done
+    CMP #&20                            ; spaces as cursor movement, control codes left out
+    BCC error_handler_next
+    BNE error_handler_char
+    LDA #&09
+.error_handler_char
+    JSR OSWRCH
+.error_handler_next
+    INY
+    BNE error_handler_print
+    INC work1
+    BNE error_handler_print
+.error_handler_done
+    JSR wait_for_space
+    LDX #&FF                            ; the stack's no use after an error
+    TXS
+    JMP new_game
+
+; The triggers' actions, by the low nibble of their flags.
+.trigger_actions
+    EQUW action_set_cell
+    EQUW action_move_cell
+    EQUW action_set_front
+    EQUW action_set_clock
+    EQUW action_launch
+    EQUW action_explode
+    EQUW action_set_monster
     EQUW trigger_move_monster
-    EQUW L20F5
-    EQUW L20B7
-    EQUW L2048
-    EQUW L2073
-    EQUW L2026
-    EQUW L2005
-    EQUW L1F10
-    EQUW L200E
-.D2351
+    EQUW action_teleport
+    EQUW action_toggle
+    EQUW action_enable
+    EQUW action_disable
+    EQUW action_recharge
+    EQUW action_set_pushes
+    EQUW action_push
+    EQUW action_swap_keys
+
+; The player's actions, by action number: 0 nothing, P, D, M, CTRL, T,
+; Return, the four directions, and 11 (nothing, when a trigger has stopped
+; the player).
+.action_table
     EQUW clear_keys_down
-    EQUW L1C8B
-    EQUW L1CC2
+    EQUW pick_up
+    EQUW drop
     EQUW map_key
     EQUW backpack_screen
-    EQUW L1CF5
-    EQUW L1DFC
+    EQUW throw
+    EQUW use
     EQUW move
     EQUW move
     EQUW move
     EQUW move
     EQUW clear_keys_down
+
+; For each move action (7-10), the opposite one: a pipe turns the player back.
 .reverse_moves
     EQUB &08, &07, &0A, &09
+
+; Each trigger's place, x and y, copied in by setup_level over what was here.
 .trigger_places
     EQUB &0C
 .D236E
