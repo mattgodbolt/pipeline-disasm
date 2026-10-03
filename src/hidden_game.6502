@@ -3244,7 +3244,7 @@ NEXT
     STA work2
 .play_cycle_step
     JSR wait_vsync                      ; ...then four frames
-    JSR L1A8F
+    JSR read_keys
     JSR move_things
     DEC work2
     BNE play_cycle_step
@@ -3333,7 +3333,7 @@ NEXT
     LDX player_x
     LDY player_y
     JSR cell_at                         ; what the player stands on...
-    JSR L19C4                           ; ...as it affects pipes
+    JSR check_pipe_end                  ; ...as it affects pipes
     LDA #&00
 .player_turn_triggers
     PHA
@@ -3347,7 +3347,7 @@ NEXT
     LDX player_x
     LDY player_y
     JSR cell_at
-    JSR L194D                           ; lava, fire, the exit...
+    JSR check_underfoot                 ; lava, fire, the exit...
     LDA player_dead
     BNE do_nothing
     LDA action                          ; an action already decided?
@@ -3355,7 +3355,7 @@ NEXT
     BEQ do_action
     LDA pipe_move                       ; in a pipe, carried on...
     BNE do_action
-    JSR L1A8F                           ; ...or a key
+    JSR read_keys                       ; ...or a key
     LDA action
 .do_action
     ASL A                               ; action_table
@@ -3708,229 +3708,272 @@ NEXT
     LDA view_y
     STA work5
     RTS
-.L18A9
-    TYA
-    SBC #&0D
-    LSR A
+
+; Actions 7-10: a step left, right, up or down (Y is the action * 2). Turn
+; that way, then step into the next cell if it's empty, the thing to collect
+; (7), or a pipe running this way (C across, D down), which carries the player
+; along until it ends; a crate (6) is pushed if the player has pushes left.
+; Anything else stops the player: lava or fire kill. After a step, the move
+; ends the cycle (the walk moved everything four times already).
+.move
+    TYA                                 ; (action - 7) * 2 with the carry clear...
+    SBC #14 - 1
+    LSR A                               ; ...halved: the direction
     STA facing
     TAY
-    LSR A
+    LSR A                               ; the pipe that runs this way
     CLC
     ADC #&0C
-    STA work4
+    STA work4                           ; C across, D up and down
     TYA
     LDX player_x
     LDY player_y
-    JSR L21C6
+    JSR L21C6                           ; the cell to step into...
     TXA
     PHA
     TYA
     PHA
-    JSR look_at
-    LDA pipe_move
-    BNE L18EE
+    JSR look_at                         ; ...and what's there
+    LDA pipe_move                       ; already in a pipe?
+    BNE move_on
+    LDA front_cell                      ; empty?
+    BEQ move_on
+    CMP work4                           ; a pipe this way?
+    BEQ move_into_pipe
+    CMP #7                              ; something to collect?
+    BEQ move_on
+    JSR try_push                        ; a crate to push?
+    BCS move_on
     LDA front_cell
-    BEQ L18EE
-    CMP work4
-    BEQ L18E4
-    CMP #&07
-    BEQ L18EE
-    JSR L191F
-    BCS L18EE
-    LDA front_cell
-    JSR L19B9
-    PLA
+    JSR check_deadly                    ; something in the way: lava or fire kill
+    PLA                                 ; no step: drop the cell pushed
     PLA
     JMP draw_player
-.L18E4
-    JSR return_0AD0
-    LDA facing
+
+; Into a pipe: it carries the player on with this move.
+.move_into_pipe
+    JSR return_0AD0                     ; (just an RTS)
+    LDA facing                          ; carried on by this move
     CLC
-    ADC #&07
+    ADC #7
     STA pipe_move
-.L18EE
-    JSR think
-    LDA action
-    BNE L1912
+
+; Unless a trigger has called for action 11, step: walk the view a cell
+; (walks, by direction), and see what's ahead now.
+.move_on
+    JSR think                           ; everything else moves
+    LDA action                          ; a trigger said stop?
+    BNE move_done
     PLA
     TAY
     PLA
     TAX
-    STX player_x
+    STX player_x                        ; the step
     STY player_y
-    LDA facing
+    LDA facing                          ; and the cell in front
     JSR L21C6
     JSR look_at
-    LDA facing
+    LDA facing                          ; the walk
     ASL A
     TAY
-    LDX D1917, Y
-    LDA D1917+1, Y
+    LDX walks, Y
+    LDA walks + 1, Y
     JSR jump_to
-.L1912
-    PLA
-    PLA
+.move_done
+    PLA                                 ; drop the cell pushed...
+    PLA                                 ; ...and return from player_turn's caller too
     JMP mark_monsters
-.D1917
+
+; The walk routines, by direction.
+.walks
     EQUW walk_left
     EQUW walk_right
     EQUW walk_up
     EQUW walk_down
-.L191F
+
+; Can the player push the crate (cell 6) in front of them? Only with pushes
+; left, and only into an empty cell.
+; Returns: carry set if it moved.
+.try_push
     CMP #&06
-    BEQ L1925
-.L1923
+    BEQ try_push_crate
+.no_push
     CLC
-.L1924
+.try_push_done
     RTS
-.L1925
-    LDA pushes_left
-    BEQ L1923
+.try_push_crate
+    LDA pushes_left                     ; no pushes left?
+    BEQ no_push
     LDY facing
-    JSR L1933
-    BCC L1932
-    DEC pushes_left
-.L1932
+    JSR push_cell
+    BCC try_push_return
+    DEC pushes_left                     ; one fewer
+.try_push_return
     RTS
-.L1933
+
+; Push the cell in front of the player a cell further in direction Y, if the
+; cell beyond is empty. Returns: carry set if it moved.
+.push_cell
     STY work2
     TYA
-    LDX front_x
+    LDX front_x                         ; the cell beyond the one in front
     LDY front_y
     JSR L21C6
-    JSR cell_at
-    BNE L1923
+    JSR cell_at                         ; empty?
+    BNE no_push
     LDX front_x
     LDY front_y
     LDA work2
-    JSR L1A4F
+    JSR move_cell
     SEC
     RTS
-.L194D
+
+; What the player stands on (A), after the triggers have had their turn: the
+; thing to collect is collected and anything else (fire, a monster) kills,
+; unless the player's in a pipe. In a pipe: at a junction (B), follow the
+; pipe round a corner or straight on; a dead end, or a cell a pipe can't go
+; into, turns the player back.
+.check_underfoot
     STA work0
+    LDX pipe_move                       ; in a pipe?
+    BEQ underfoot_on_foot
+    JSR check_pipe_end_in_pipe          ; out of it?
     LDX pipe_move
-    BEQ L198F
-    JSR L19C8
-    LDX pipe_move
-    BEQ L1924
-    CMP #&0B
-    BNE L199E
-    LDA #&0C
+    BEQ try_push_done
+    CMP #&0B                            ; a junction?
+    BNE pipe_check_ahead
+    LDA #12                             ; anticlockwise first
     STA work2
-.L1962
+
+; Try turning anticlockwise, then clockwise, then straight on, for a pipe
+; going that way.
+.pipe_junction_turn
     LDA work2
     CLC
     ADC facing
     TAY
-    LDA turns, Y
+    LDA turns, Y                        ; a direction
     STA work0
-    LDX #&0C
+    LDX #&0C                            ; C for left or right...
     CMP #&02
-    BCC L1974
-    INX
-.L1974
+    BCC pipe_junction_try
+    INX                                 ; ...D for up or down
+.pipe_junction_try
     STX work1
     LDX player_x
     LDY player_y
     JSR L21C6
-    JSR look_at
+    JSR look_at                         ; the next cell that way
     CMP work1
-    BEQ L1997
-    LDA work2
+    BEQ pipe_junction_found
+    LDA work2                           ; then clockwise, then straight on
     SEC
     SBC #&04
     STA work2
-    BNE L1962
-    BEQ L19AE
-.L198F
-    CMP #&07
-    BEQ L19D4
-    TAX
-    BNE L19C1
+    BNE pipe_junction_turn
+    BEQ pipe_reverse                    ; no way on: turn back
+.underfoot_on_foot
+    CMP #&07                            ; the thing to collect?
+    BEQ collect
+    TAX                                 ; anything else kills
+    BNE kill_player
     RTS
-.L1997
-    LDA work0
-    ADC #&06
+.pipe_junction_found
+    LDA work0                           ; carry set: + 7, the move
+    ADC #7 - 1
     STA pipe_move
     RTS
-.L199E
-    LDA front_cell
-    BEQ L19B9
-    CMP #&07
-    BEQ L19B9
-    CMP #&0A
-    BCC L19AE
-    CMP #&0F
-    BCC L19B9
-.L19AE
-    LDY pipe_move
-    LDA D2361+1, Y
+.pipe_check_ahead
+    LDA front_cell                      ; the cell ahead: empty...
+    BEQ check_deadly
+    CMP #&07                            ; ...or to collect: carry on
+    BEQ check_deadly
+    CMP #&0A                            ; 1-9 or F: blocked
+    BCC pipe_reverse
+    CMP #&0F                            ; lava or fire: as below; B-D: carry on
+    BCC check_deadly
+.pipe_reverse
+    LDY pipe_move                       ; the reverse move
+    LDA reverse_moves - 7, Y
     STA pipe_move
     LDA #&00
     STA work1
-.L19B9
+
+; Lava (A) and fire (E) kill.
+.check_deadly
     CMP #&0A
-    BEQ L19C1
+    BEQ kill_player
     CMP #&0E
-    BNE L19C3
-.L19C1
-    STA player_dead
-.L19C3
+    BNE check_deadly_done
+.kill_player
+    STA player_dead                     ; nonzero: dead
+.check_deadly_done
     RTS
-.L19C4
+
+; At the start of the player's turn, with A what they stand on: out of the
+; end of a pipe onto the floor, the pipe lets go.
+.check_pipe_end
     LDX pipe_move
-    BEQ L198F
-.L19C8
+    BEQ underfoot_on_foot
+.check_pipe_end_in_pipe
     CMP #&07
-    BEQ L19D4
+    BEQ collect
     TAX
-    BNE L19C3
+    BNE check_deadly_done               ; out of the pipe
     STA pipe_move
     JMP draw_player
-.L19D4
-    LDA #&00
+
+; Collect the thing the player stands on (cell 7): a point, and when it's the
+; last one, the player spins round with rising tones.
+; Returns: carry clear.
+.collect
+    LDA #&00                            ; pipes let go
     STA pipe_move
-    JSR clear_player_cell
+    JSR clear_player_cell               ; it's gone
     JSR draw_player
-    LDA #&B4
+    LDA #&B4                            ; a sound
     JSR L1FF1
-    JSR L21E1
-    LDA to_collect
-    BEQ L19C3
+    JSR L21E1                           ; a point
+    LDA to_collect                      ; the last one?
+    BEQ check_deadly_done
     DEC to_collect
-    BNE L19C3
+    BNE check_deadly_done
     STA clock_fraction
     STA work1
-    LDA #&10
+    LDA #16                             ; 16 turns
     STA work0
-.L19F6
-    LDA facing
+.collect_spin
+    LDA facing                          ; anticlockwise
     CLC
     ADC #&0C
     TAY
     LDA turns, Y
     STA facing
     JSR draw_player
-    LDA work1
+    LDA work1                           ; the note rises
     SEC
     SBC #&3F
     STA work1
     JSR L1FE1
-    LDY #&80
+    LDY #&80                            ; a pause
     JSR L1E20
     DEC work0
-    BNE L19F6
+    BNE collect_spin
     CLC
     RTS
-.L1A19
+
+; Trigger action 7: move monster A AND 3 to cell (A, Y) / 4, going direction
+; Y AND 3 with turning preferences X (the trigger's arguments), moving its
+; mark on the map with it.
+.trigger_move_monster
     JSR L2122
     STX work0
     PHA
-    AND #&03
+    AND #&03                            ; monster A AND 3
     ASL A
     ASL A
     TAX
-    LDA monster_x, X
+    LDA monster_x, X                    ; where it was, in cells
     LSR A
     LSR A
     STA work2
@@ -3939,7 +3982,7 @@ NEXT
     LSR A
     STA work3
     PLA
-    AND #&FC
+    AND #&FC                            ; where it goes
     STA monster_x, X
     LSR A
     LSR A
@@ -3950,91 +3993,102 @@ NEXT
     LSR A
     LSR A
     STA work5
-    TYA
+    TYA                                 ; its direction
     AND #&03
     STA monster_direction, X
-    LDA work0
+    LDA work0                           ; its turning preferences
     STA monster_turns, X
-    LDA #&0E
-    BNE L1A64
-.L1A4F
+    LDA #&0E                            ; move its mark, a fire cell
+    BNE move_cell_type
+
+; Move what's in map cell (X, Y) a cell in direction A, objects and all, and
+; draw both cells. Returns: carry set if the cell was empty (nothing moved).
+.move_cell
     STX work2
     STY work3
-    JSR L21C6
+    JSR L21C6                           ; the destination
     STX work4
     STY work5
     LDX work2
     LDY work3
-    JSR cell_at
-    SEC
-    BEQ L1A8E
-.L1A64
+    JSR cell_at                         ; what's here
+    SEC                                 ; nothing: carry set
+    BEQ move_cell_done
+.move_cell_type
     PHA
-    CMP #&0F
-    BNE L1A7C
+    CMP #&0F                            ; an object?
+    BNE move_cell_draw
     LDX work2
     LDY work3
     JSR L1C69
-    BCC L1A7C
-.L1A72
-    LDA work4
+    BCC move_cell_draw
+.move_object
+    LDA work4                           ; it moves too
     STA objects, Y
     LDA work5
     STA objects + 1, Y
-.L1A7C
+.move_cell_draw
     LDX work2
     LDY work3
-    LDA #&00
+    LDA #&00                            ; empty where it was
     JSR set_cell_and_draw
     PLA
     LDX work4
-    LDY work5
+    LDY work5                           ; and fill where it goes
     JSR set_cell_and_draw
     CLC
-.L1A8E
+.move_cell_done
     RTS
-.L1A8F
+
+; Read the keys into action, unless an action's waiting: P, D, M, CTRL, T and
+; Return are actions 1-6 (the first pressed, from 6 down), the directions 7-10.
+; The direction the player faces walks on while its key is held; a new
+; direction only once its key has been let go since it was last pressed.
+.read_keys
     LDA action
-    BNE L1A8E
-    LDA #&06
+    BNE move_cell_done
+    LDA #&06                            ; 6 action keys...
     STA action
-.L1A97
+.read_action_key
     LDY action
-    LDX effects_off, Y
+    LDX action_keys - 1, Y              ; ...tested from Return down to P
     JSR key_pressed
-    BEQ L1A8E
+    BEQ move_cell_done
     DEC action
-    BNE L1A97
-    LDY facing
-    CLC
-    JSR L1ABB
+    BNE read_action_key
+    LDY facing                          ; the way the player faces...
+    CLC                                 ; ...may be held
+    JSR test_move_key
     LDA action
-    BNE L1AB1
-    JSR clear_keys_down
-.L1AB1
+    BNE read_move_keys
+    JSR clear_keys_down                 ; no move: forget what was held
+.read_move_keys
     LDY #&03
-.L1AB3
-    SEC
-    JSR L1ABB
+.read_move_key
+    SEC                                 ; a new direction must be pressed afresh
+    JSR test_move_key
     DEY
-    BPL L1AB3
+    BPL read_move_key
     RTS
-.L1ABB
-    ROL work1
+
+; Is direction key Y pressed? With the carry set it counts only if it wasn't
+; down last time. Sets action to Y + 7 if it counts.
+.test_move_key
+    ROL work1                           ; the carry into the mask
     STY work0
     LDX key_left, Y
     JSR key_pressed
-    BNE L1AD5
+    BNE test_move_key_note
     LDY work0
-    LDA keys_were_down, Y
+    LDA keys_were_down, Y               ; held since last time?
     AND work1
-    BNE L1A8E
+    BNE move_cell_done
     TYA
-    CLC
-    ADC #&07
+    CLC                                 ; action 7-10
+    ADC #7
     STA action
-.L1AD5
-    LDY work0
+.test_move_key_note
+    LDY work0                           ; remember: 1 if it's down
     TXA
     EOR #&01
     STA keys_were_down, Y
@@ -4294,7 +4348,7 @@ NEXT
     TAY
     LDA #&0F
     PHA
-    JMP L1A72
+    JMP move_object
 .L1CE3
     LDX backpack_slot
     LDA backpack, X
@@ -4623,7 +4677,7 @@ NEXT
     JMP find_front
 .L1F01
     JSR L2122
-    JSR L1A4F
+    JSR move_cell
     BCS L1F0D
     BCC L1F76
 .L1F0B
@@ -4641,7 +4695,7 @@ NEXT
     ADC work4
     TAX
     LDY turns, X
-    JSR L1933
+    JSR push_cell
     BCC L1F0D
     BCS L1F76
 .L1F25
@@ -5190,7 +5244,7 @@ NEXT
     EQUW L20D7
     EQUW L1F56
     EQUW L208A
-    EQUW L1A19
+    EQUW trigger_move_monster
     EQUW L20F5
     EQUW L20B7
     EQUW L2048
@@ -5207,12 +5261,12 @@ NEXT
     EQUW backpack_screen
     EQUW L1CF5
     EQUW L1DFC
-    EQUW L18A9
-.D2361
-    EQUW L18A9
-    EQUW L18A9
-    EQUW L18A9
+    EQUW move
+    EQUW move
+    EQUW move
+    EQUW move
     EQUW clear_keys_down
+.reverse_moves
     EQUB &08, &07, &0A, &09
 .trigger_places
     EQUB &0C
