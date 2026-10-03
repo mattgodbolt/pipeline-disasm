@@ -1,0 +1,99 @@
+; The level the Level Designer edits, as it sits in memory from &25A1 to
+; &2FFF and as it is saved: "Save level" writes exactly these &A5F bytes
+; (load &25A1, exec &8380), and LEVEL1 on the disc is one. MISSION *LOADs
+; such files and packs them into IO for the game.
+;
+; Up to 8 objects, 4 walking monsters and 32 puzzles; positions are map
+; cells, x across and y down, 0-63.
+
+level           = &25A1
+level_end       = &3000
+
+; Puzzle names, ten characters each, kept as eight in one table and the
+; last two in another.
+level_names     = &25A1         ; 32 x 8 characters
+level_name_ends = &26A1         ; 32 x 2 characters
+NAME_LENGTH     = 10
+
+; A three-byte editing code; the designer won't keep a loaded level unless
+; the user types its six digits. Each pair of digits is packed as BCD,
+; then adjacent bits are swapped and the byte rotated right one place.
+level_code      = &26E1
+
+; Four VDU 19 palette settings, logical colour in the top nibble and
+; physical colour in the bottom.
+level_palette   = &26E4
+
+; Where the player starts, less 4 in each coordinate.
+level_start_x   = &26E8
+level_start_y   = &26E9
+level_collects  = &26EA         ; collectables needed to finish
+level_time      = &26EB         ; time allowed
+level_finish_x  = &26EC
+level_finish_y  = &26ED
+; Bits 0-3: the block that kills a monster; bits 4-7: the block it leaves.
+level_monster_rules = &26EE
+; The sprite for wall one, wall two, the collectable and the fatal trap, two
+; bits each, wall one in the top two.
+level_sprites   = &26EF
+
+; Objects, 4 bytes each:
+;   +0  x; bit 7 set when the object doesn't exist (with bit 6, both kept
+;       clear when it does)
+;   +1  y; likewise
+;   +2  sprite number
+;   +3  bits 0-4 number of charges; bit 5 set if it has no charges;
+;       bit 6 set if it vanishes; bit 7 set if it can't be thrown
+level_objects   = &26F0
+OBJECTS         = 8
+OBJECT_ABSENT   = &80
+
+; Walking monsters, 4 bytes each:
+;   +0  x * 4
+;   +1  y * 4 (&80 for none)
+;   +2  direction: 0 west, 1 east, 2 north, 3 south, 8 dead
+;   +3  pattern: which way to try at a junction, four two-bit choices,
+;       first in bits 0-1, each 0 backwards, 1 forwards, 2 right, 3 left
+level_monsters  = &2710
+MONSTERS        = 4
+
+; Puzzles. A type byte each:
+;   bits 0-3  type (the order of the "Puzzle types" menu; 9 is Teleport)
+;   bit 4     re-usable
+;   bit 5     clear when the puzzle starts turned on
+;   bit 6     the collectables condition applies
+;   bit 7     needs object 1
+level_puzzle_types = &2720
+; Where each puzzle is, 2 bytes: x and y, bit 7 set to ignore that
+; coordinate.
+level_puzzle_positions = &2740
+; What each puzzle checks and does, 4 bytes, by type (see the effect editors
+; in the designer). The fourth byte also holds the conditions: bits 0-3 the
+; next-block type, bits 4-5 the direction, bit 6 check the next block, bit 7
+; check the direction.
+level_puzzle_effects = &2780
+PUZZLES         = 32
+
+; The map: 64 x 64 cells of one nibble, stored a column at a time (32 bytes
+; per x, top to bottom), the even y in the top nibble.
+level_map       = &2800
+MAP_SIZE        = 64
+MAP_COLUMN_BYTES = MAP_SIZE / 2
+
+; Map cell values.
+TILE_BLANK      = &0
+TILE_SE_CURVE   = &1
+TILE_SW_CURVE   = &2
+TILE_NE_CURVE   = &3
+TILE_NW_CURVE   = &4
+TILE_WALL_1     = &5
+TILE_FATAL_TRAP = &6
+TILE_COLLECTABLE = &7
+TILE_CRATE      = &8
+TILE_MARKER     = &9
+TILE_WALL_2     = &A
+TILE_MONSTER    = &B
+TILE_HORZ_PIPE  = &C
+TILE_VERT_PIPE  = &D
+TILE_BARRICADE  = &E
+TILE_JUNCTION   = &F
