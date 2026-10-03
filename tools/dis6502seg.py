@@ -20,6 +20,7 @@ data, symbols; addresses are run-time addresses) plus:
 
     scope = "game"           # wrap everything in a named baron scope
     include = ["io.6502inc"] # extra INCLUDEs
+    include_os = true        # INCLUDE os.6502inc even if no operand needs it
     clean = true             # no "; addr: bytes" comments on every line
     header = '''...'''       # comment block at the top of the file
     trace_only = ["0x3000-0x30FF"]   # only believe trace PCs in the
@@ -62,12 +63,16 @@ data, symbols; addresses are run-time addresses) plus:
     [refer]                  # how to refer to an address in operands, where
     0x12A5 = "objects + 2"   # that isn't its label (an overlaid table)
     [operands]               # operand text for the instruction at an address
-    0x0C9D = "#HI(restore - 1)"
+    0x0C9D = "#HI(restore - 1)"  # (without the ", X" or brackets of its mode)
     [rows]                   # data ranges laid out N bytes to a line
     "0x0880-0x08BF" = 32
 
     annotations = ["hints/x/a.toml"]  # more files of any of the above, merged
                              # in: tables combined, arrays of tables appended
+
+A relocated piece's first byte is labelled with its section's name unless
+[labels] names it. Annotations at addresses that aren't the start of a line
+are reported on stderr, so they don't go quietly missing.
 
 Relocated code is assumed to run after the loader has finished, so it never
 refers to the unrelocated parts of the file: an operand from relocated code
@@ -482,10 +487,7 @@ class SegmentedDisassembler(Disassembler):
                 text = f"{name} = {value}"
             defs.append(text)
         if scope:
-            lines = head + [f".{scope}", "{"]
-            if "symbols_comment" in self.hints:
-                lines += [f"; {t}".rstrip() for t in self.hints["symbols_comment"].strip("\n").splitlines()]
-            lines += defs + [""] + body + ["}", "ENDSECTION", ""]
+            lines = head + [f".{scope}", "{"] + defs + [""] + body + ["}", "ENDSECTION", ""]
         else:
             lines = head + defs + body + ["ENDSECTION", ""]
         return "\n".join(lines)
