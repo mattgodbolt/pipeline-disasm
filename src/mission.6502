@@ -1,4 +1,330 @@
-; $.MISSION: &1828 bytes at sector &0E7.
+; $.MISSION: the PIPELINE mission generator, a BASIC program.
+;
+; NOT UTF-8: lines 1430 and 2780 hold raw teletext colour codes (bytes
+; &81-&86) inside REMs, because a BASIC block takes its text byte for byte
+; and has no escape for them. An editor that rewrites the file as UTF-8
+; (Claude's Edit tool does) corrupts them; `make verify` will then point
+; at those two lines. Edit with sed or a byte-preserving editor.
+INCLUDE "basic.6502inc"
+INCLUDE "teletext.6502inc"
+
 SECTION mission, filename="MISSION", org=&1900, load=&FFFF1900, exec=&FFFF8023
-    INCBIN "../data/mission.bin"
+.program
+    EQUB basic_line(10, CHR(BASIC_TOKEN_REM) + """" + CHR(VDU_DELETE) + "   " + CHR(TT_ALPHA_CYAN) + " PIPELINE")
+    EQUB basic_line(20, CHR(BASIC_TOKEN_REM) + """" + CHR({VDU_DELETE, TT_ALPHA_YELLOW}) + "MISSION GENERATOR.")
+    EQUB basic_line(30, CHR(BASIC_TOKEN_REM) + """" + CHR({VDU_DELETE, TT_ALPHA_MAGENTA}) + "By" + CHR(TT_ALPHA_GREEN) + "Ian Holmes !")
+    EQUB basic_line(40, CHR(BASIC_TOKEN_REM) + """" + CHR({VDU_DELETE, TT_ALPHA_MAGENTA}) + "Game by" + CHR(TT_ALPHA_GREEN) + "IAN HOLMES")
+    EQUB basic_line(50, CHR(BASIC_TOKEN_REM) + """" + CHR({VDU_DELETE, TT_ALPHA_MAGENTA}) + "and" + CHR(TT_ALPHA_GREEN) + "WILLIAM REEVE")
+.line_60
+    EQUB &0D, HI(60), LO(60), line_70 - line_60
+    EQUB CHR(BASIC_TOKEN_REM) + """" + CHR({VDU_DELETE, TT_ALPHA_BLUE, TT_NEW_BACKGROUND, TT_ALPHA_GREEN, TT_DOUBLE_HEIGHT}) + "Hello," + CHR({TT_ALPHA_YELLOW, TT_FLASH}) + "all my friends!  " + CHR(TT_BLACK_BACKGROUND) + "          " + CHR({TT_ALPHA_BLUE, TT_NEW_BACKGROUND, TT_ALPHA_GREEN, TT_DOUBLE_HEIGHT}) + "Hello," + CHR({TT_ALPHA_YELLOW, TT_FLASH}) + "all my friends!  " + CHR(TT_BLACK_BACKGROUND)
+    EQUB VDU_DISABLE
+.unscramble_editing_code
+    ASSERT unscramble_editing_code = program + 198
+    LDX #2
+.each_byte
+    LDA BASIC_RESIDENT_INTEGERS + 4 * 5, X
+    PHA
+    AND #%01010101
+    ASL A
+    STA &70
+    PLA
+    AND #%10101010
+    LSR A
+    ORA &70
+    PHA
+    LSR A
+    PLA
+    ROR A
+    STA BASIC_RESIDENT_INTEGERS + 4 * 5, X
+    DEX
+    BPL each_byte
+    RTS
+    EQUB VDU_ENABLE
+.line_70
+BASIC
+70:
+80*FX229 1
+90ONERRORPROCerr:IFERR<>17GOTO130
+100REM Sorry about the GOTO
+110CLEAR
+120MODE7:PROCinit
+130ONERRORPROCerr
+140*FX229
+150REPEAT
+160CLS
+170PRINT"Key:";
+180RESTORE420
+190FORN%=1TOopts
+200READA$
+210PRINTTAB(7);N%" to "A$TAB(28)CHR$(132)CHR$(157);:NEXT
+220PRINTTAB(3)"ESCAPE to leave this program"
+230VDU26:K%=0:REPEAT
+240REPEAT:A%=GET:*FX15
+250I%=0:IFA%=105ORA%=104PROClock
+260IFA%>13ANDA%<138 A%=A%OR16
+270UNTILA%>=49ANDA%<=(opts+48)ORA%=13ORA%=138ORA%=139
+280IFA%<>13PROCline
+290UNTILA%=13ANDK%>0:PROCw
+300PRINTTAB(0,opts+2);
+310IFK%=1PROCmiss
+320IFK%=2PROCattrs
+330IFK%=3PROCloadgrf(FNname)
+340IFK%=4PROCsavegrf
+350IFK%=5PROCloadlev
+360IFK%=6PROCsavelev
+370IFK%=7PROCloadmss
+380IFK%=8PROCsavemss
+390IFK%=9PROCviewcat
+400UNTIL0
+410:
+420DATAchange name,change features,load graphics,save graphics,load a level,save a level,load a mission,save a mission,see a catalogue
+430:
+440DEFPROCinit
+450Y%=0:A%=0
+460X%=USR(&FFDA)AND&FF
+470T%=(X%=1ORX%=2)
+480*FX4 1
+490numlev=4
+500size=&91F
+510grfs=&E00
+520attrs=5
+530miss=30
+540names=&134
+550data=size-&800
+560puznms=320
+570opts=9+T%
+580DIM F% (2*names+miss+attrs+numlev*size+grfs)
+590DIM osc 40,B% size+puznms
+600L%=F%+names+miss+attrs
+610G%=L%+numlev*size
+620addr=&5800-numlev*size-grfs-attrs-miss-names
+630PROCtitle
+640PRINT''TAB(1-7*T%)CHR$(134)CHR$(157)CHR$(132);
+650IFT%PRINT"Please wait";ELSEPRINT"Loading Standard Graphics";
+660PRINT":  "CHR$(157)
+670FORN%=0TOnames+miss+4STEP4
+680N%!F%=0:NEXT
+690FORN%=numlev*4TOnumlev*data-4STEP4
+700L%!N%=-1:NEXT
+710L%!(numlev*data-4)=-1
+720FORN%=(numlev*data)TO(numlev*size)STEP4
+730L%!N%=0:NEXT
+740X%=L%+(numlev*3)
+750FORN%=0TOnumlev-1
+760X%!(N%*4)=1319473
+770NEXT:F%?(names+miss)=15
+780F%!(names+miss+1)=393730
+790IFNOTT%THENPROCloadgrf("Default")
+800ENDPROC
+810DEFPROCcursor(N%)
+820VDU23,1,N%;0;0;0;
+830ENDPROC
+840DEFPROCtitle
+850PROCcursor(0)
+860VDU26,12:FORN%=1TO2
+870PRINTTAB(3,N%)CHR$(141)CHR$(129)CHR$(157)CHR$(131)"PIPELINE Mission Generator  "CHR$(156)
+880NEXT:FORN%=4TO24
+890PRINTTAB(0,N%)CHR$(132)CHR$(157)CHR$(131)TAB(38,N%)CHR$(156);:NEXT
+900PROCw:C%=0:ENDPROC
+910DEFPROCw:VDU28,3,23,36,5:ENDPROC
+920DEFPROCline:A%=A%-48
+930IFA%>89ANDK%=0ENDPROC
+940IFA%=90A%=K%+1:IFA%>opts A%=1
+950IFA%=91A%=K%-1:IFA%=0A%=opts
+960*FX19
+970IFK%>0ANDK%<>A%VDU31,7,K%+4,32,32,32
+980K%=A%:VDU31,7,K%+4,130,157,132
+990ENDPROC
+1000:
+1010DEFPROCosc($osc)
+1020X%=osc MOD256:Y%=osc DIV256
+1030CALL&FFF7:ENDPROC
+1040DEFFNinput(A$,N%,min,max)
+1050PRINTA$CHR$(134)CHR$(157)CHR$(132)SPC(N%+2)CHR$(157)STRING$(N%+3,CHR$(8));:PROCcursor(1)
+1060A$="":REPEAT
+1070REPEAT:A%=GET
+1080IFA%>min ANDA%<max ANDLEN(A$)=N% VDU7
+1090UNTIL(A%=127ANDLEN(A$)>0)ORA%=13OR(A%>min ANDA%<max ANDLEN(A$)<N%)
+1100VDUA%:IFA%=13PRINT
+1110IFA%>min ANDA%<max A$=A$+CHR$(A%)
+1120IFA%=127 A$=LEFT$(A$,LEN(A$)-1)
+1130UNTILA%=13:PROCcursor(0):=A$
+1140DEFFNname=FNinput("Enter filename: ",12+2*T%,32,127)
+1150DEFFNlevel=(VAL(FNinput("Which level number ? ",1,48,49+numlev))-1)AND3
+1160DEFFNn
+1170E%=EVAL("&0"+FNinput("Enter editing code: ",6,47,58)):CALLPAGE+198:=E%
+1180DEFFNattr(N%)
+1190RESTORE2110:FORA%=0TON%
+1200READA$:NEXT:A%=F%?(names+miss+N%)
+1210IFN%=0A%=A%-6ELSEIFN%=2A%=A%+1
+1220=A$+": "+STR$(A%)+STRING$(8," ")
+1230DEFPROCbit(A%)
+1240VDU34:FORN%=3TO14
+1250X%=F%?(names+A%+N%)
+1260IFX%>31ANDX%<127ORX%=9VDUX%
+1270NEXT:VDU34:ENDPROC
+1280DEFPROCstore(A%):FORN%=0TO11
+1290X%=ASC(MID$(A$+STRING$(12," "),N%+1,1))
+1300IFX%=32X%=9
+1310F%?(names+A%+N%+3)=X%
+1320NEXT:ENDPROC
+1330DEFPROCname(A$)
+1340FORA%=1TO8
+1350B%?(N%*8+A%-9)=ASC(MID$(A$,A%,1))
+1360NEXT:FORA%=9TO10
+1370B%?(N%*2+A%+245)=ASC(MID$(A$,A%,1))
+1380NEXT:ENDPROC
+1390DEFPROClock:I%=A%*2-209
+1400A%=opts+47:PROCline
+1410A%=13:ENDPROC
+1420:
+1430REM"ÇHello,ÉSoni
+1440:
+1450DEFPROCloadgrf(A$)
+1460PROCosc("LOAD "+CHR$(34)+A$+CHR$(34)+" "+STR$~G%)
+1470X%=G%+grfs
+1480FORA%=0TOnames-4STEP4
+1490A%!F%=A%!X%:NEXT
+1500ENDPROC
+1510:
+1520DEFPROCsavegrf
+1530X%=G%+grfs
+1540FORA%=0TOnames-4STEP4
+1550A%!X%=A%!F%:NEXT
+1560PROCosc("SAVE "+CHR$(34)+FNname+CHR$(34)+" "+STR$~G%+"+"+STR$~(grfs+names)+" 0 4000")
+1570ENDPROC
+1580:
+1590DEFPROCloadlev
+1600S%=FNlevel:PRINT
+1610PROCosc("LOAD "+CHR$(34)+FNname+CHR$(34)+" "+STR$~B%)
+1620PRINT'"Please wait..."
+1630X%=L%+S%*&800+numlev*data
+1640Y%=B%+puznms+data
+1650FORZ%=0TO&7FC STEP4
+1660Z%!X%=Z%!Y%
+1670NEXT:pnt=0:RESTORE2090
+1680FORN%=1TO11:READext
+1690X%=L%+numlev*pnt+S%*ext
+1700Y%=B%+puznms+pnt
+1710FORD%=0TOext-1
+1720D%?X%=D%?Y%
+1730NEXT:pnt=pnt+ext:NEXT
+1740ENDPROC
+1750:
+1760DEFPROCsavelev
+1770S%=FNlevel
+1780IFL%?-1PRINT:IFFNn<>L%?S%*65536+L%?(S%+4)*256+L%?(S%+8)ENDPROC
+1790PRINT'"Please wait..."'
+1800X%=B%+puznms+data
+1810Y%=L%+S%*&800+numlev*data
+1820FORZ%=0TO&7FC STEP4
+1830Z%!X%=Z%!Y%
+1840NEXT:pnt=0:RESTORE2090
+1850FORN%=1TO11:READext
+1860X%=B%+puznms+pnt
+1870Y%=L%+numlev*pnt+S%*ext
+1880FORD%=0TOext-1
+1890D%?X%=D%?Y%
+1900NEXT:pnt=pnt+ext:NEXT
+1910FORN%=1TO32
+1920PROCname("Puzzle "+STR$N%+"  ")
+1930NEXT:PROCosc("SAVE "+CHR$(34)+FNname+CHR$(34)+" "+STR$~B%+"+"+STR$~(size+puznms)+" 8380 "+STR$~(&3000-size-puznms))
+1940ENDPROC
+1950:
+1960DEFPROCloadmss
+1970PROCosc("LOAD "+CHR$(34)+FNname+CHR$(34)+" "+STR$~F%)
+1980ENDPROC
+1990:
+2000DEFPROCsavemss
+2010N%=F%+names
+2020?N%=31:N%?1=18:N%?2=16
+2030N%=N%+miss/2
+2040?N%=31:N%?1=14:N%?2=17
+2050IFL%?-1>0ENDPROC ELSEL%?-1=I%
+2060PROCosc("SAVE "+CHR$(34)+FNname+CHR$(34)+" "+STR$~F%+"+"+STR$~(names+miss+attrs+numlev*size+grfs)+" 0 "+STR$~addr)
+2070ENDPROC
+2080:
+2090DATA1,1,1,4,8,32,16,32,64,64,64
+2100:
+2110DATA Time consumption,Mapping ability,Backpack size,Throwing distance
+2120DATA 2,47,58,1,47,53,1,49,53,2,47,58,1,48,52
+2130DEFPROCattrs
+2140PRINT"Select feature to change:"'
+2150V%=VPOS:PRINT"]";
+2160FORN%=0TO3
+2170PRINTTAB(3)FNattr(N%)
+2180NEXT
+2190PRINTTAB(3)"Return to main menu"
+2200N%=0:REPEAT:*FX15
+2210K%=GET:IFK%=138ORK%=139PROCarrow
+2220IFK%=13ANDN%<4PROCchangeattr
+2230UNTILK%=13ANDN%=4:ENDPROC
+2240DEFPROCarrow
+2250PRINTTAB(0,N%+V%)" "
+2260IFK%=138N%=(N%+1)MOD5
+2270IFK%=139N%=N%-1:IFN%<0N%=4
+2280PRINTTAB(0,N%+V%)"]"
+2290ENDPROC
+2300DEFPROCchangeattr
+2310REPEAT:RESTORE2110
+2320FORH%=0TON%
+2330READA$:NEXT
+2340RESTORE2120
+2350FORH%=0TON%
+2360READA%,X%,Y%:NEXT
+2370PRINTTAB(3,N%+V%);
+2380A%=VAL(FNinput(A$+": ",A%,X%,Y%))
+2390UNTIL(A%<17AND(A%>0ORN%=1))OR(A%<64ANDN%=3)
+2400IFN%=0A%=A%+6ELSEIFN%=2A%=A%-1
+2410F%?(names+miss+N%)=A%
+2420PRINTTAB(3,N%+V%)FNattr(N%)
+2430ENDPROC
+2440:
+2450DEFPROCmiss:PRINT
+2460PROCbit(0):VDU32
+2470PROCbit(miss/2):PRINT'
+2480A$=FNinput("First part:",miss/2-3,31,127):PRINT:IFA$<>""PROCstore(0)
+2490A$=FNinput("Second part:",miss/2-3,31,127):IFA$<>""PROCstore(miss/2)
+2500ENDPROC
+2510:
+2520DEFPROCviewcat
+2530A$=FNinput("Which drive ?",1,47,52)
+2540C%=1:VDU28,0,23,39,5
+2550CLS:VDU28,0,22,39,6,14
+2560PROCosc("CAT "+A$):VDU15
+2570PRINT'"Press"CHR$(135)CHR$(157)CHR$(129)"SPACE...  "CHR$(156);
+2580REPEATA%=GET
+2590UNTILA%=32
+2600PROCtitle
+2610ENDPROC
+2620:
+2630DEFPROCerr:VDU15
+2640IFC%=1PROCtitle
+2650IFERR=17 PROCquit:ENDPROC
+2660PROCreport
+2670ENDPROC
+2680DEFPROCquit
+2690PROCw:REPEAT:CLS
+2700A$=LEFT$(FNinput("Are you sure (Y/N) ? ",3,68,90),1)
+2710UNTILA$="Y"ORA$="N"
+2720IFA$="N" ENDPROC
+2730IFT%THENCALL!-4
+2740PRINT''"Insert PIPELINE disk and"'" press a key":IFGET
+2750*/MRUN
+2760END
+2770:
+2780REM"ÜThis subroutine was written by             ÅWilliamÉReeveÇ(mainly)
+2790:
+2800DEFPROCreport:C%=1
+2810VDU26:FORN%=1TO6
+2820Y%=20-(N% AND1)*N% DIV2+(N% AND1EOR1)*N% DIV2:*FX19
+2830PRINTTAB(2,Y%);CHR$135;CHR$157;CHR$132;SPC(30);CHR$132;CHR$157;
+2840NEXT:VDU28,5,23,33,18
+2850PRINT"Error ";ERR;" has occurred."
+2860REPORT
+2870PRINT''"Press a key - or"CHR$(136)"ESCAPE";
+2880N%=GET:PROCtitle
+2890ENDPROC
+ENDBASIC
 ENDSECTION
