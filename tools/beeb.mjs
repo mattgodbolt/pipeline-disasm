@@ -13,6 +13,8 @@
 //   down CODE / up CODE  hold or release a key
 //   type TEXT            type at the keyboard (rest of the command is the text)
 //   until ADDR           run until the PC reaches ADDR (hex, & or 0x optional)
+//   prompt [SECS]        run until the machine waits for keyboard input
+//   out                  print the text written to the screen since the last `out`
 //   shot FILE            save a PNG of the active display
 //   dump ADDR LEN FILE   save memory to FILE
 //   hex ADDR LEN         print memory as hex
@@ -22,7 +24,8 @@
 //   reads FILE           likewise every address read or written by an instruction,
 //                        as {"read": [...], "written": [...]}
 //
-// The disc is autobooted with SHIFT+BREAK before the script starts.
+// The disc is autobooted with SHIFT+BREAK before the script starts, unless
+// --boot no, which leaves the machine at the BASIC prompt with the disc in.
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { MachineSession } from "jsbeeb/machine-session";
@@ -33,11 +36,15 @@ const CYCLES_PER_SEC = 2_000_000;
 const parseAddr = (s) => parseInt(s.replace(/^(&|0x|\$)/i, ""), 16);
 const hex4 = (n) => n.toString(16).toUpperCase().padStart(4, "0");
 
-export async function startBeeb({ disc = "original/pipeline.ssd", model = "B-DFS1.2" } = {}) {
+export async function startBeeb({ disc = "original/pipeline.ssd", model = "B-DFS1.2", boot = "yes" } = {}) {
     const session = new MachineSession(model);
     await session.initialise();
     await session.boot(30);
     session.loadDisc(resolve(disc));
+    if (boot === "no") {
+        session.drainOutput();
+        return session;
+    }
     session.keyDownRaw(BBC.SHIFT);
     try {
         session.reset(true);
@@ -124,6 +131,12 @@ export async function runScript(session, commands) {
                 break;
             case "type":
                 await session.type(command.trim().slice(5));
+                break;
+            case "prompt":
+                await session.runUntilPrompt(parseFloat(args[0] ?? "60"), { clear: false });
+                break;
+            case "out":
+                for (const element of session.drainOutput().elements) console.log(element.text);
                 break;
             case "until":
                 await session.runUntilAddress(parseAddr(args[0]));

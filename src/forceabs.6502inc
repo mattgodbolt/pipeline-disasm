@@ -1,0 +1,117 @@
+; Absolute addressing of a zero-page operand. Baron always picks the
+; shorter zero-page encoding when it can, and has no syntax to ask for the
+; absolute one, so where the original code used it (sometimes for the
+; cycle, sometimes just because) these macros emit it byte for byte.
+; Generated from tools/dis6502.py's opcode table.
+
+MACRO ADC_ABS addr
+    EQUB &6D : EQUW addr
+ENDMACRO
+MACRO ADC_ABS addr, "X"
+    EQUB &7D : EQUW addr
+ENDMACRO
+MACRO AND_ABS addr
+    EQUB &2D : EQUW addr
+ENDMACRO
+MACRO AND_ABS addr, "X"
+    EQUB &3D : EQUW addr
+ENDMACRO
+MACRO ASL_ABS addr
+    EQUB &0E : EQUW addr
+ENDMACRO
+MACRO ASL_ABS addr, "X"
+    EQUB &1E : EQUW addr
+ENDMACRO
+MACRO BIT_ABS addr
+    EQUB &2C : EQUW addr
+ENDMACRO
+MACRO CMP_ABS addr
+    EQUB &CD : EQUW addr
+ENDMACRO
+MACRO CMP_ABS addr, "X"
+    EQUB &DD : EQUW addr
+ENDMACRO
+MACRO CPX_ABS addr
+    EQUB &EC : EQUW addr
+ENDMACRO
+MACRO CPY_ABS addr
+    EQUB &CC : EQUW addr
+ENDMACRO
+MACRO DEC_ABS addr
+    EQUB &CE : EQUW addr
+ENDMACRO
+MACRO DEC_ABS addr, "X"
+    EQUB &DE : EQUW addr
+ENDMACRO
+MACRO EOR_ABS addr
+    EQUB &4D : EQUW addr
+ENDMACRO
+MACRO EOR_ABS addr, "X"
+    EQUB &5D : EQUW addr
+ENDMACRO
+MACRO INC_ABS addr
+    EQUB &EE : EQUW addr
+ENDMACRO
+MACRO INC_ABS addr, "X"
+    EQUB &FE : EQUW addr
+ENDMACRO
+MACRO LDA_ABS addr
+    EQUB &AD : EQUW addr
+ENDMACRO
+MACRO LDA_ABS addr, "X"
+    EQUB &BD : EQUW addr
+ENDMACRO
+MACRO LDX_ABS addr
+    EQUB &AE : EQUW addr
+ENDMACRO
+MACRO LDX_ABS addr, "Y"
+    EQUB &BE : EQUW addr
+ENDMACRO
+MACRO LDY_ABS addr
+    EQUB &AC : EQUW addr
+ENDMACRO
+MACRO LDY_ABS addr, "X"
+    EQUB &BC : EQUW addr
+ENDMACRO
+MACRO LSR_ABS addr
+    EQUB &4E : EQUW addr
+ENDMACRO
+MACRO LSR_ABS addr, "X"
+    EQUB &5E : EQUW addr
+ENDMACRO
+MACRO ORA_ABS addr
+    EQUB &0D : EQUW addr
+ENDMACRO
+MACRO ORA_ABS addr, "X"
+    EQUB &1D : EQUW addr
+ENDMACRO
+MACRO ROL_ABS addr
+    EQUB &2E : EQUW addr
+ENDMACRO
+MACRO ROL_ABS addr, "X"
+    EQUB &3E : EQUW addr
+ENDMACRO
+MACRO ROR_ABS addr
+    EQUB &6E : EQUW addr
+ENDMACRO
+MACRO ROR_ABS addr, "X"
+    EQUB &7E : EQUW addr
+ENDMACRO
+MACRO SBC_ABS addr
+    EQUB &ED : EQUW addr
+ENDMACRO
+MACRO SBC_ABS addr, "X"
+    EQUB &FD : EQUW addr
+ENDMACRO
+MACRO STA_ABS addr
+    EQUB &8D : EQUW addr
+ENDMACRO
+MACRO STA_ABS addr, "X"
+    EQUB &9D : EQUW addr
+ENDMACRO
+MACRO STX_ABS addr
+    EQUB &8E : EQUW addr
+ENDMACRO
+MACRO STY_ABS addr
+    EQUB &8C : EQUW addr
+ENDMACRO

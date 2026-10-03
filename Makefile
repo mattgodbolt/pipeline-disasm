@@ -5,7 +5,10 @@
 #   make test     verify, plus the tools' own tests
 #   make clean
 
-BARON   ?= $(firstword $(wildcard ../baron/build/src/baron) baron)
+# Baron is looked for beside this checkout, or beside the main checkout when
+# this is a git worktree, then on the PATH.
+MAIN     = $(dir $(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null))
+BARON   ?= $(firstword $(wildcard ../baron/build/src/baron $(MAIN)../baron/build/src/baron) baron)
 PYTHON  ?= python3
 TARGET   = build/pipeline.ssd
 ORIGINAL = original/pipeline.ssd
@@ -32,7 +35,7 @@ verify: $(TARGET)
 	$(PYTHON) tools/ssdcmp.py $(ORIGINAL) $(TARGET) $(LAYOUT)
 
 test: verify
-	$(PYTHON) -m unittest discover -s tests
+	BARON=$(BARON) $(PYTHON) -m unittest discover -s tests
 
 clean:
 	rm -rf build

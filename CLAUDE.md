@@ -27,6 +27,39 @@ with baron pinned by commit; bumping the pin is its own commit.
 - `tools/mkssd.py` builds the image; `tools/ssdcmp.py` compares and names the
   file and offset (and load address) of any difference.
 
+## Tools
+
+- `tools/dis6502.py hints/PIECE.toml > src/PIECE.6502`: first-draft
+  disassembly from a hints file (binary, org, SECTION line, entry points,
+  optional jsbeeb traces, labels, forced data ranges, local symbols). Run it
+  once per piece, then edit the source by hand; don't regenerate over
+  annotated work. Its output is guaranteed to reassemble identically
+  (`tests/test_dis6502.py` checks this on every built binary).
+- `node tools/beeb.mjs [--disc X.ssd] [--boot no] 'script; ...'`: headless
+  jsbeeb (run `npm ci` once). `trace FILE` records executed PCs for the
+  disassembler's `traces`; `shot`, `dump`, `hex`, `out`, `type`, `key`,
+  `prompt`, `until` - see its header.
+- `src/os.6502inc`: MOS entry points, vectors and hardware registers.
+  INCLUDE it; add OS names there rather than locally (one name per address).
+- `src/forceabs.6502inc`: macros for absolute addressing of zero page.
+
+## The pieces
+
+| Piece | Source | What it is |
+|---|---|---|
+| `!BOOT` | boot.6502 | `*EXEC` text: credits, `*FX200,3`, CHAIN"MENU" |
+| MENU | menu.6502 | BASIC menu (`Originally: GUILDMASTER`) at &1900, with a Mode 7 scroller and menu screen pre-loaded into its DIM'd heap |
+| MISSION | mission.6502 | BASIC "MISSION GENERATOR": builds IO from the editors' data |
+| GAME, GRAPHIC, LEVDES | game/graphic/levdes.6502 | &D9-byte stubs at &0900 that read the hidden runs with OSWORD &7F |
+| H.GAME | hidden_game.6502 | the game, run at &3000; loads IO |
+| H.GRAPH | hidden_graphic.6502 | the Graphics Designer; uses DEFAULT, exits via /MRUN |
+| H.LEVDES | hidden_levdes.6502 | the Level Designer; loads WDATA and LDATA, exits via /MRUN |
+| TITLE | title.6502 | `*RUN` before the game, in MODE 1 |
+| MRUN | mrun.6502 | &80 bytes at &0780: back to the menu (`*E.!BOOT`) |
+| PL | pl.6502 | &400; run by MENU only if two keys are held at boot |
+| WARNING, SCREEN | warning/screen.6502 | Mode 7 warning page; MODE 5 loading picture |
+| IO, LDATA, LEVEL1, DEFAULT, WDATA | *.6502 | data (IO ends at &5800: the game's levels, graphics, missions) |
+
 ## Baron notes
 
 - `&` hex, `.label`, `;` comments, `SECTION name, filename=..., org=..., load=..., exec=...`.
@@ -56,10 +89,15 @@ with baron pinned by commit; bumping the pin is its own commit.
 
 - `docs/journal.md` is append-only and timestamped: discoveries, decisions,
   dead ends. Correct with a later entry, don't rewrite history.
-- Use subagents in git worktrees for independent pieces (one source file
-  each, so merges don't fight). Each subagent must leave `make verify`
-  identical and add its findings to the journal (append, under its own
-  timestamped heading) before its branch is merged.
+- Use subagents in git worktrees for independent pieces (their own source
+  files, so merges don't fight). Each subagent leaves `make test` passing at
+  every commit on its branch, and writes what it learns to
+  `docs/notes/AREA.md` (its own file, so parallel branches don't collide).
+  The journal is appended by whoever merges, summarising the notes.
+- Shared files (`src/os.6502inc`, `Makefile`, `src/disc.toml`, `CLAUDE.md`)
+  change on main, not on piece branches. A piece needing shared
+  definitions from another piece (an entry point, a zero-page variable)
+  keeps its own `src/PIECE.6502inc` and says so in its notes.
 - Running the game: the jsbeeb MCP (`.mcp.json`), or headless jsbeeb from
   node. Check behaviour there, not just bytes, when understanding code.
 - Commits: messages end at the `Co-Authored-By:` line. Never put a

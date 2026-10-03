@@ -1,0 +1,111 @@
+; The BBC Micro's operating system entry points, vectors and memory-mapped
+; hardware, shared by every piece. tools/dis6502.py names operands from this
+; file, so add here rather than defining an OS address locally.
+
+; MOS entry points.
+OSRDRM = &FFB9
+VDUCHR = &FFBC
+OSEVEN = &FFBF
+GSINIT = &FFC2
+GSREAD = &FFC5
+NVRDCH = &FFC8
+NVWRCH = &FFCB
+OSFIND = &FFCE
+OSGBPB = &FFD1
+OSBPUT = &FFD4
+OSBGET = &FFD7
+OSARGS = &FFDA
+OSFILE = &FFDD
+OSRDCH = &FFE0
+OSASCI = &FFE3
+OSNEWL = &FFE7
+OSWRCH = &FFEE
+OSWORD = &FFF1
+OSBYTE = &FFF4
+OSCLI  = &FFF7
+
+; Vectors in page 2.
+USERV = &0200
+BRKV  = &0202
+IRQ1V = &0204
+IRQ2V = &0206
+CLIV  = &0208
+BYTEV = &020A
+WORDV = &020C
+WRCHV = &020E
+RDCHV = &0210
+FILEV = &0212
+ARGSV = &0214
+BGETV = &0216
+BPUTV = &0218
+GBPBV = &021A
+FINDV = &021C
+FSCV  = &021E
+EVNTV = &0220
+UPTV  = &0222
+NETV  = &0224
+VDUV  = &0226
+KEYV  = &0228
+INSV  = &022A
+REMV  = &022C
+CNPV  = &022E
+IND1V = &0230
+IND2V = &0232
+IND3V = &0234
+
+; 6845 CRTC.
+CRTC_ADDR = &FE00
+CRTC_DATA = &FE01
+
+; Video ULA.
+ULA_CONTROL = &FE20
+ULA_PALETTE = &FE21
+
+; Sideways ROM select.
+ROMSEL = &FE30
+
+; System VIA: keyboard, sound, vsync and the addressable latch.
+SYSVIA_ORB  = &FE40
+SYSVIA_ORA  = &FE41
+SYSVIA_DDRB = &FE42
+SYSVIA_DDRA = &FE43
+SYSVIA_T1CL = &FE44
+SYSVIA_T1CH = &FE45
+SYSVIA_T1LL = &FE46
+SYSVIA_T1LH = &FE47
+SYSVIA_T2CL = &FE48
+SYSVIA_T2CH = &FE49
+SYSVIA_SR   = &FE4A
+SYSVIA_ACR  = &FE4B
+SYSVIA_PCR  = &FE4C
+SYSVIA_IFR  = &FE4D
+SYSVIA_IER  = &FE4E
+SYSVIA_ORA_NH = &FE4F
+
+; User VIA: printer port, user port and the second timer pair.
+USRVIA_ORB  = &FE60
+USRVIA_ORA  = &FE61
+USRVIA_DDRB = &FE62
+USRVIA_DDRA = &FE63
+USRVIA_T1CL = &FE64
+USRVIA_T1CH = &FE65
+USRVIA_T1LL = &FE66
+USRVIA_T1LH = &FE67
+USRVIA_T2CL = &FE68
+USRVIA_T2CH = &FE69
+USRVIA_SR   = &FE6A
+USRVIA_ACR  = &FE6B
+USRVIA_PCR  = &FE6C
+USRVIA_IFR  = &FE6D
+USRVIA_IER  = &FE6E
+USRVIA_ORA_NH = &FE6F
+
+; 8271 floppy disc controller.
+FDC_COMMAND_STATUS = &FE80   ; command on write, status on read
+FDC_PARAM_RESULT   = &FE81   ; parameter on write, result on read
+FDC_DATA           = &FE84
+
+; uPD7002 analogue to digital converter (joysticks).
+ADC_STATUS = &FEC0
+ADC_HIGH   = &FEC1
+ADC_LOW    = &FEC2
