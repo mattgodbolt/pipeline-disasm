@@ -169,6 +169,7 @@ KEY_SHIFT = -1                          ; negative INKEY numbers
 KEY_T = -36
 KEY_S = -82
 KEY_SPACE = -99
+bit4_mask = show_map_centre + 1         ; the byte there is &10
 
 ; Entered from the GAME stub with the ten keys MENU set up in key_codes, as
 ; negative INKEY numbers. Copies the keys where the game wants them, copies
@@ -3033,7 +3034,7 @@ NEXT
     JSR print_inline
     EQUB &06, &04, &1A, &11, &80
     NOP
-    JSR L179D
+    JSR draw_screen_frame
     JMP draw_title_pictures
 
 ; Return from the caller's caller.
@@ -3374,19 +3375,19 @@ NEXT
 ; contents and the selected object's name, the time, level, score and sound
 ; settings; see backpack_keys. Space goes back to the game.
 .backpack_screen
-    JSR L18A0                           ; remember where the view was
+    JSR save_view                       ; remember where the view was
     LDA lives
-    JSR L17C1                           ; the screen, the lives
+    JSR draw_backpack_screen            ; the screen, the lives
     LDA #&80
-    JSR L1870                           ; no name yet
-    JSR L178F                           ; the selection box...
+    JSR print_selected_name             ; no name yet
+    JSR selection_position              ; the selection box...
     LDA #&55
-    JSR L1785                           ; ...drawn
+    JSR draw_page_picture               ; ...drawn
     JSR print_status
 .backpack_screen_loop
     BIT ESCAPE_FLAG                     ; Escape: lose a life
     BMI give_up
-    JSR L16A6                           ; the backpack screen's keys
+    JSR backpack_keys                   ; the backpack screen's keys
     LDX #LO(KEY_SPACE)                  ; Space
     JSR key_pressed
     BNE backpack_screen_loop
@@ -3396,143 +3397,160 @@ NEXT
     LDA work5
     STA view_y
     JMP redraw_view
-.L16A6
-    LDX backpack_slot
+
+; The backpack screen's keys: Z and X (as MENU set them, whatever a trigger
+; has done to this level's) move the selection, M shows the map, S and T turn
+; the sound effects and the tune on and off. Called round a loop until Space.
+.backpack_keys
+    LDX backpack_slot                   ; the selected object's name
     LDA backpack, X
-    JSR L1870
-    LDX menu_key_left
+    JSR print_selected_name
+    LDX menu_key_left                   ; left...
     JSR key_pressed
-    BEQ L1705
-    LDX menu_key_right
+    BEQ backpack_select
+    LDX menu_key_right                  ; ...or right
     JSR key_pressed
-    BEQ L1703
-    LDA level
+    BEQ backpack_select_right
+    LDA level                           ; the map?
     CMP io_map_levels
-    BCS L16CE
+    BCS backpack_keys_sound
     LDX key_map
     JSR key_pressed
-    BNE L16CE
+    BNE backpack_keys_sound
+    PLA                                 ; out of the backpack screen
     PLA
-    PLA
-    JMP L182B
-.L16CE
-    LDX #&AE
+    JMP show_map
+.backpack_keys_sound
+    LDX #LO(KEY_S)                      ; S: sound effects
     JSR key_pressed
-    BEQ L16FB
-    LDX #&DC
+    BEQ backpack_toggle_effects
+    LDX #LO(KEY_T)                      ; T: the tune
     JSR key_pressed
-    BNE L1744
+    BNE backpack_keys_done
     LDA tune_off
     EOR #&01
     STA tune_off
-    BNE L16E9
-    JSR start_tune
-    BNE L16EC
-.L16E9
-    JSR flush_buffers
-.L16EC
-    LDX #&18
+    BNE backpack_tune_off
+    JSR start_tune                      ; on
+    BNE backpack_show_settings
+
+; Show the new setting, then wait a moment so the key doesn't repeat.
+.backpack_tune_off
+    JSR flush_buffers                   ; off
+.backpack_show_settings
+    LDX #&18                            ; blank the old setting
     LDY #&17
     LDA #&00
     JSR draw_thing_at
-    JSR print_sound_settings
-    JMP L1B12
-.L16FB
+    JSR print_sound_settings            ; and print the new
+    JMP L1B12                           ; a pause
+.backpack_toggle_effects
     LDA effects_off
     EOR #&01
     STA effects_off
-    BPL L16EC
-.L1703
-    LDY #&01
-.L1705
+    BPL backpack_show_settings
+.backpack_select_right
+    LDY #&01                            ; right (key_pressed leaves Y = &FF for left)
+
+; Move the selection Y (-1 or 1) slots, sliding the cursor (the player's
+; picture) along below the backpack; off either end it slides all the way
+; back to the other.
+.backpack_select
     STY work2
-    JSR L178F
+    JSR selection_position              ; where the cursor is
     STX work0
     STY work1
     LDA backpack_slot
     CLC
     ADC work2
-    BMI L1745
-    CMP io_backpack_last
-    BEQ L171C
-    BCS L174A
-.L171C
+    BMI backpack_select_wrap_left       ; off the left?
+    CMP io_backpack_last                ; off the right?
+    BEQ backpack_select_slide
+    BCS backpack_select_wrap_right
+.backpack_select_slide
     STA backpack_slot
-    LDA #&06
+    LDA #&06                            ; six character steps a slot
     STA work3
-.L1722
+.backpack_slide_cursor
     JSR wait_vsync
     JSR wait_vsync
-    LDX work0
+    LDX work0                           ; rub out...
     LDY work1
-    LDA #&4A
-    JSR L1785
+    LDA #HI(io_tiles)                   ; ...with the floor
+    JSR draw_page_picture
     LDA work0
     CLC
     ADC work2
     STA work0
     TAX
     LDY work1
-    LDA #&55
-    JSR L1785
+    LDA #HI(io_player + 2 * 128)        ; draw it a character on
+    JSR draw_page_picture
     DEC work3
-    BNE L1722
-.L1744
+    BNE backpack_slide_cursor
+.backpack_keys_done
     RTS
-.L1745
+.backpack_select_wrap_left
     LDA io_backpack_last
-    BNE L174C
-.L174A
+    BNE backpack_select_wrap
+.backpack_select_wrap_right
     LDA #&00
-.L174C
+.backpack_select_wrap
     PHA
-    LDA work2
+    LDA work2                           ; slide back the other way
     EOR #&FE
     STA work2
-    JSR L178F
-    LDA #&4A
-    JSR L1785
-    LDY #&0B
+    JSR selection_position
+    LDA #HI(io_tiles)
+    JSR draw_page_picture
+    LDY #&0B                            ; from below the screen's middle row
     STY work1
     LDX work0
-    LDA #&55
-    JSR L1785
-    LDA io_backpack_last
+    LDA #HI(io_player + 2 * 128)
+    JSR draw_page_picture
+    LDA io_backpack_last                ; six steps for each slot
     ASL A
     STA work3
     ASL A
     ADC work3
     STA work3
-    JSR L1722
+    JSR backpack_slide_cursor
     PLA
     STA backpack_slot
-    JSR L178F
+    JSR selection_position
     INY
-    LDA #&4A
-    JSR L1785
-    JSR L178F
-    LDA #&55
-.L1785
+    LDA #HI(io_tiles)
+    JSR draw_page_picture
+    JSR selection_position
+    LDA #HI(io_player + 2 * 128)
+
+; Draw the picture at A * 256 at character position (X, Y).
+.draw_page_picture
     STA sprite_high
     LDA #&00
     STA sprite
     SEC
     JMP draw_sprite
-.L178F
+
+; The selection cursor's character position: X = slot * 6 + 7, Y = 10.
+.selection_position
     LDA backpack_slot
-    ASL A
+    ASL A                               ; * 6
     ASL A
     ADC backpack_slot
     ADC backpack_slot
-    ADC #&07
+    ADC #&07                            ; + 7
     TAX
     LDY #&0A
     RTS
-.L179D
+
+; A clear screen with the floor pattern, the frame and the PIPELINE heading,
+; for the title and backpack screens.
+.draw_screen_frame
     LDA #&02
     STA view_x
     STA view_y
-    DEC fill_screen
+    DEC fill_screen                     ; fill with the floor pattern
     JSR clear_screen
     INC fill_screen
     JSR draw_title_border
@@ -3541,50 +3559,54 @@ NEXT
     EQUS "PIPELINE"
     NOP
     RTS
-.L17C1
+
+; The backpack screen (A is the number of lives; the carry set leaves out the
+; mission text): the mission, a picture of the player for each life, the
+; exit's icon once it's lit, and what's in the backpack.
+.draw_backpack_screen
     PHP
     STA work3
-    JSR L179D
+    JSR draw_screen_frame
     PLP
-    BCS L17D1
-    LDY #&B4
-    LDX #&1D
+    BCS draw_lives
+    LDY #LO(io_mission_text - io_object_names); the mission text
+    LDX #IO_MISSION_SIZE - 1
     JSR print_names_text
-.L17D1
-    LDA facing
+.draw_lives
+    LDA facing                          ; the player's picture for the way they face
     LSR A
     ROR A
     STA sprite
     LDA #&00
-    ADC #&54
+    ADC #HI(io_player)
     STA sprite_high
     LDA work3
     ASL A
     ASL A
     ASL A
     TAX
-    LDY #&1B
+    LDY #&1B                            ; along the bottom
     SEC
     JSR draw_sprite
     DEC work3
-    BNE L17D1
-    LDA stage
-    BEQ L17F4
+    BNE draw_lives
+    LDA stage                           ; the exit lit?
+    BEQ draw_backpack
     JSR draw_exit_icon
-.L17F4
+.draw_backpack
     LDA #&03
     STA work0
-.L17F8
+.draw_backpack_slot
     LDX work0
     LDA backpack, X
-    BMI L1819
+    BMI draw_backpack_next              ; empty?
     ASL A
     ASL A
     TAY
-    JSR object_icon
+    JSR object_icon                     ; its icon
     STX sprite
     STY sprite_high
-    LDA work0
+    LDA work0                           ; at slot * 6 + 7, 7
     ASL A
     ASL A
     ADC work0
@@ -3592,84 +3614,95 @@ NEXT
     ADC #&07
     TAX
     LDY #&07
-    CLC
+    CLC                                 ; on the floor
     JSR draw_sprite
-.L1819
+.draw_backpack_next
     DEC work0
-    BPL L17F8
-.L181D
+    BPL draw_backpack_slot
+.map_key_done
     RTS
-.L181E
+
+; M: the map, on levels below io_map_levels. Also from the backpack screen.
+.map_key
     LDA level
-    CMP io_map_levels
-    BCS L181D
-    JSR L18A0
+    CMP io_map_levels                   ; no map this level?
+    BCS map_key_done
+    JSR save_view                       ; remember the view
     JSR clear_screen
-.L182B
-    LDA player_x
+
+; The map view, scrolled to put the player in the middle where it can: Z and
+; X scroll it, Space goes back. The SBC's operand, &10, is also used as a
+; mask by BIT (see bit4_mask).
+.show_map
+    LDA player_x                        ; player_x - 16...
     SEC
-.L182E
-    SBC #&10
-    BCS L1834
+.show_map_centre
+    SBC #16
+    BCS show_map_clamp
     LDA #&00
-.L1834
-    CMP #&21
-    BCC L183A
-    LDA #&20
-.L183A
+.show_map_clamp
+    CMP #33                             ; ...between 0 and 32
+    BCC show_map_draw
+    LDA #32
+.show_map_draw
     STA screen_start
-    JSR blank_display
+    JSR blank_display                   ; draw it with the display off
     JSR draw_map_view
     JSR setup_crtc
-.L1845
+.show_map_loop
     BIT ESCAPE_FLAG
-    BMI L186D
-    LDX menu_key_left
+    BMI show_map_escape
+    LDX menu_key_left                   ; Z
     JSR key_pressed
-    BNE L1856
+    BNE show_map_right
     JSR map_view_scroll_left
-    JMP L1860
-.L1856
-    LDX menu_key_right
+    JMP show_map_space
+.show_map_right
+    LDX menu_key_right                  ; X
     JSR key_pressed
-    BNE L1860
+    BNE show_map_space
     JSR map_view_scroll_right
-.L1860
-    LDX #&9D
+.show_map_space
+    LDX #LO(KEY_SPACE)                  ; Space
     JSR key_pressed
-    BNE L1845
-    JSR clear_screen
+    BNE show_map_loop
+    JSR clear_screen                    ; back to the game
     JMP backpack_screen_done
-.L186D
+.show_map_escape
     JMP give_up
-.L1870
+
+; The selected object's name, A, under the backpack: or blank if A is
+; negative.
+.print_selected_name
     PHA
-    JSR print_inline
+    JSR print_inline                    ; TAB(6, 31) COLOUR 129 COLOUR 3
     EQUB &1F, &06, &1F, &11, &81, &11, &03
     NOP
     PLA
-    BPL L1890
-    LDA #&08
+    BPL print_selected_object
+    LDA #&08                            ; nothing selected: back a character...
     JSR OSWRCH
     LDY #&0E
-    LDA #&20
-.L1888
+    LDA #&20                            ; ...and 14 spaces
+.print_selected_blank
     JSR OSWRCH
     DEY
-    BNE L1888
-    BEQ L1899
-.L1890
+    BNE print_selected_blank
+    BEQ print_selected_done
+.print_selected_object
     ASL A
     ASL A
     TAY
     LDA objects + 2, Y
     JSR print_object_name
-.L1899
-    JSR print_inline
+.print_selected_done
+    JSR print_inline                    ; COLOUR 128
     EQUB &11, &80
     NOP
     RTS
-.L18A0
+
+; Remember where the view is, in work4 and work5, for backpack_screen_done.
+.save_view
     LDA view_x
     STA work4
     LDA view_y
@@ -4173,7 +4206,7 @@ NEXT
     BNE L1C2A
     RTS
 .L1C31
-    JSR L17C1
+    JSR draw_backpack_screen
     JSR print_inline
     EQUB &1F, &07, &13, &11, &81, &11, &02
     EQUS "Edit code:"
@@ -4573,7 +4606,7 @@ NEXT
     BNE L1F0D
     LDA work2
 .L1EE1
-    BIT L182E+1
+    BIT bit4_mask
     BNE L1EEB
     ORA #&20
     STA trigger_flags, X
@@ -5170,7 +5203,7 @@ NEXT
     EQUW clear_keys_down
     EQUW L1C8B
     EQUW L1CC2
-    EQUW L181E
+    EQUW map_key
     EQUW backpack_screen
     EQUW L1CF5
     EQUW L1DFC
