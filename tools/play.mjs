@@ -14,7 +14,9 @@
 //   random SECS [KEYS]   hold random keys from KEYS (comma list, default the
 //                        four directions) for random short spells
 //   shots SECS EVERY PREFIX   run SECS, saving PREFIX-N.png every EVERY secs
-//   peek ADDR            print one byte of memory
+//   peek ADDR [LEN]      print memory as hex on one line
+//   poke ADDR BYTE...    write bytes (hex) to memory
+//   save NAME / restore NAME   snapshot the machine, and go back to it
 import { writeFileSync } from "node:fs";
 import { BBC } from "jsbeeb/src/keymap.js";
 import { runScript, startBeeb } from "./beeb.mjs";
@@ -58,6 +60,7 @@ async function main() {
         if (plain.length) await runScript(session, plain.splice(0));
     };
     let tracing = null;
+    const snapshots = {};
     for (const command of commands) {
         const [op, ...args] = command.trim().split(/\s+/);
         switch (op) {
@@ -116,9 +119,23 @@ async function main() {
                 }
                 break;
             }
-            case "peek":
+            case "peek": {
                 await flush();
-                console.log(`&${args[0]}: ${session.readMemory(parseAddr(args[0]), 1)[0].toString(16)}`);
+                const bytes = session.readMemory(parseAddr(args[0]), parseAddr(args[1] ?? "1"));
+                console.log(`&${args[0]}: ${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join(" ")}`);
+                break;
+            }
+            case "poke":
+                await flush();
+                session.writeMemory(parseAddr(args[0]), args.slice(1).map(parseAddr));
+                break;
+            case "save":
+                await flush();
+                snapshots[args[0]] = session.snapshot();
+                break;
+            case "restore":
+                await flush();
+                session.restore(snapshots[args[0]]);
                 break;
             default:
                 plain.push(command);

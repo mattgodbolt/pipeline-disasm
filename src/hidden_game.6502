@@ -1277,8 +1277,10 @@ SECTION main, org=&0900
     DEC &90                         ; 0C5B: C6 90
     BPL L0C12                       ; 0C5D: 10 B3
     RTS                             ; 0C5F: 60
-    EQUB &A5, &90, &20, &69, &0C, &F0, &0B, &A5; 0C60
-    EQUB &91                        ; 0C68
+    LDA &90                         ; 0C60: A5 90
+    JSR L0C69                       ; 0C62: 20 69 0C
+    BEQ L0C72                       ; 0C65: F0 0B
+    LDA &91                         ; 0C67: A5 91
 .L0C69
     CMP &4F                         ; 0C69: C5 4F
     BEQ L0C72                       ; 0C6B: F0 05
@@ -1332,9 +1334,18 @@ SECTION main, org=&0900
     JSR L0CCE                       ; 0CB2: 20 CE 0C
     JSR L0CF3                       ; 0CB5: 20 F3 0C
     JMP L0BFB                       ; 0CB8: 4C FB 0B
-    EQUB &A0, &3F, &A2, &07, &BD, &78, &4A, &99; 0CBB
-    EQUB &20, &4A, &CA, &8A, &29, &07, &AA, &88; 0CC3
-    EQUB &10, &F2, &60              ; 0CCB
+    LDY #&3F                        ; 0CBB: A0 3F
+    LDX #&07                        ; 0CBD: A2 07
+.L0CBF
+    LDA &4A78, X                    ; 0CBF: BD 78 4A
+    STA &4A20, Y                    ; 0CC2: 99 20 4A
+    DEX                             ; 0CC5: CA
+    TXA                             ; 0CC6: 8A
+    AND #&07                        ; 0CC7: 29 07
+    TAX                             ; 0CC9: AA
+    DEY                             ; 0CCA: 88
+    BPL L0CBF                       ; 0CCB: 10 F2
+    RTS                             ; 0CCD: 60
 .L0CCE
     STX &1F                         ; 0CCE: 86 1F
     LDA &8A                         ; 0CD0: A5 8A
@@ -3830,19 +3841,60 @@ SECTION main, org=&0900
     BNE L1E22                       ; 1E26: D0 FA
 .L1E28
     RTS                             ; 1E28: 60
-    EQUB &AA, &BD, &00, &01, &49, &80, &29, &A0; 1E29
-    EQUB &D0, &F5, &E6, &48, &8A, &0A, &A8, &B9; 1E31
-    EQUB &6D, &23, &30, &04, &C5, &10, &D0, &79; 1E39
-    EQUB &B9, &6E, &23, &30, &04, &C5, &11, &D0; 1E41
-    EQUB &70, &98, &0A, &A8, &B9, &B0, &23, &85; 1E49
-    EQUB &50, &10, &0C              ; 1E51
-    EQUS ")0JJJJ"                   ; 1E54
-    EQUB &C5, &12, &D0, &5C, &A5, &50, &2C, &EE; 1E5A
-    EQUB &1D, &F0, &06, &29, &0F, &C5, &13, &D0; 1E62
-    EQUB &4F, &84, &50, &A5, &13, &85, &55, &86; 1E6A
-    EQUB &54, &A6, &10, &A4, &11, &A5, &12, &20; 1E72
-    EQUB &C6, &21, &86, &15, &84, &16, &A6, &54; 1E7A
-    EQUB &A4, &50, &A5, &12, &10, &47; 1E82
+    TAX                             ; 1E29: AA
+    LDA &0100, X                    ; 1E2A: BD 00 01
+    EOR #&80                        ; 1E2D: 49 80
+    AND #&A0                        ; 1E2F: 29 A0
+    BNE L1E28                       ; 1E31: D0 F5
+    INC &48                         ; 1E33: E6 48
+    TXA                             ; 1E35: 8A
+    ASL A                           ; 1E36: 0A
+    TAY                             ; 1E37: A8
+    LDA D236D, Y                    ; 1E38: B9 6D 23
+    BMI L1E41                       ; 1E3B: 30 04
+    CMP &10                         ; 1E3D: C5 10
+    BNE L1EBA                       ; 1E3F: D0 79
+.L1E41
+    LDA D236E, Y                    ; 1E41: B9 6E 23
+    BMI L1E4A                       ; 1E44: 30 04
+    CMP &11                         ; 1E46: C5 11
+    BNE L1EBA                       ; 1E48: D0 70
+.L1E4A
+    TYA                             ; 1E4A: 98
+    ASL A                           ; 1E4B: 0A
+    TAY                             ; 1E4C: A8
+    LDA &23B0, Y                    ; 1E4D: B9 B0 23
+    STA &50                         ; 1E50: 85 50
+    BPL L1E60                       ; 1E52: 10 0C
+    AND #&30                        ; 1E54: 29 30
+    LSR A                           ; 1E56: 4A
+    LSR A                           ; 1E57: 4A
+    LSR A                           ; 1E58: 4A
+    LSR A                           ; 1E59: 4A
+    CMP &12                         ; 1E5A: C5 12
+    BNE L1EBA                       ; 1E5C: D0 5C
+    LDA &50                         ; 1E5E: A5 50
+.L1E60
+    BIT L1DED+1                     ; 1E60: 2C EE 1D
+    BEQ L1E6B                       ; 1E63: F0 06
+    AND #&0F                        ; 1E65: 29 0F
+    CMP &13                         ; 1E67: C5 13
+    BNE L1EBA                       ; 1E69: D0 4F
+.L1E6B
+    STY &50                         ; 1E6B: 84 50
+    LDA &13                         ; 1E6D: A5 13
+    STA &55                         ; 1E6F: 85 55
+    STX &54                         ; 1E71: 86 54
+    LDX &10                         ; 1E73: A6 10
+    LDY &11                         ; 1E75: A4 11
+    LDA &12                         ; 1E77: A5 12
+    JSR L21C6                       ; 1E79: 20 C6 21
+    STX &15                         ; 1E7C: 86 15
+    STY &16                         ; 1E7E: 84 16
+    LDX &54                         ; 1E80: A6 54
+    LDY &50                         ; 1E82: A4 50
+    LDA &12                         ; 1E84: A5 12
+    BPL L1ECF                       ; 1E86: 10 47
 .L1E88
     INC &48                         ; 1E88: E6 48
     TAX                             ; 1E8A: AA
@@ -3888,6 +3940,7 @@ SECTION main, org=&0900
     LDA &62                         ; 1EC9: A5 62
     STA &55                         ; 1ECB: 85 55
     LDA &89                         ; 1ECD: A5 89
+.L1ECF
     STA &54                         ; 1ECF: 85 54
     LDA &0100, X                    ; 1ED1: BD 00 01
     STA &52                         ; 1ED4: 85 52

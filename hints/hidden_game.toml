@@ -3,8 +3,9 @@
 binary = "data/hidden_game.bin"
 org = 0x3000
 section = 'hidden_game, filename="H.GAME", org=&3000'
-entries = [0x3000]
-traces = ["build/trace/attract.json", "build/trace/play1.json"]
+# 0x0C60, 0x0CBB and 0x1E29 are code nothing calls (left over).
+entries = [0x3000, 0x0C60, 0x0CBB, 0x1E29]
+traces = ["build/trace/attract.json", "build/trace/play1.json", "build/trace/play2.json", "build/trace/play3.json"]
 # IO is loaded over the loader once it has run.
 trace_only = ["0x3000-0x30FF"]
 
