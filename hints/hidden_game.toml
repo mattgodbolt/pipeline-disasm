@@ -1,0 +1,52 @@
+# H.GAME: loaded at &3000 by the GAME stub, which copies most of it down
+# into low memory and jumps there. Disassemble with tools/dis6502seg.py.
+binary = "data/hidden_game.bin"
+org = 0x3000
+section = 'hidden_game, filename="H.GAME", org=&3000'
+entries = [0x3000]
+traces = ["build/trace/attract.json", "build/trace/play1.json"]
+# IO is loaded over the loader once it has run.
+trace_only = ["0x3000-0x30FF"]
+
+[[segment]]
+name = "event_handler"
+load = 0x3100
+run = 0x0131
+length = 0x60
+
+[[segment]]
+name = "page8"
+load = 0x3160
+run = 0x0880
+length = 0x80
+
+[[segment]]
+name = "low"
+load = 0x3200
+run = 0x0400
+length = 0x400
+
+[[segment]]
+name = "main"
+load = 0x3600
+run = 0x0900
+length = 0x1AAD
+
+# Print the text after the JSR, up to a NOP that is then executed.
+[[inline]]
+routine = 0x103E
+terminator = 0xEA
+
+# Copy a block: source, destination and length follow the JSR.
+[[inline]]
+routine = 0x30AC
+length = 6
+
+# Jump tables.
+[[table]]
+start = 0x2331
+count = 16
+
+[[table]]
+start = 0x2351
+count = 12
