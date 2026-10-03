@@ -64,7 +64,6 @@
 0x0BDD = "monster_moved"
 0x0BE8 = "next_monster"
 0x0BED = "monster_stuck"
-0x12A3 = "game_start"
 
 [comments]
 0x0900 = '''

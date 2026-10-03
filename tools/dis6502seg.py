@@ -59,6 +59,8 @@ data, symbols; addresses are run-time addresses) plus:
     [symbol_comments]        # block comment above a [symbols] definition
     [comments]               # block comment above the line at an address
     [remarks]                # comment at the end of the line at an address
+    [refer]                  # how to refer to an address in operands, where
+    0x12A5 = "objects + 2"   # that isn't its label (an overlaid table)
     [operands]               # operand text for the instruction at an address
     0x0C9D = "#HI(restore - 1)"
     [rows]                   # data ranges laid out N bytes to a line
@@ -152,6 +154,7 @@ class SegmentedDisassembler(Disassembler):
         self.comments = {addr_key(k): v for k, v in hints.get("comments", {}).items()}
         self.remarks = {addr_key(k): v for k, v in hints.get("remarks", {}).items()}
         self.operands = {addr_key(k): v for k, v in hints.get("operands", {}).items()}
+        self.refer = {addr_key(k): v for k, v in hints.get("refer", {}).items()}
         self.rows = ranges(hints.get("rows", {}))
         self.replacements = {r["start"]: r for r in hints.get("source", [])}
         for r in self.replacements.values():
@@ -270,7 +273,7 @@ class SegmentedDisassembler(Disassembler):
         for addr, (mnemonic, mode, operand, size) in self.code.items():
             if mode in ("imp", "acc", "imm") or operand is None:
                 continue
-            if self.visible(addr, operand):
+            if self.visible(addr, operand) and operand not in self.refer:
                 # A table's high bytes are reached as table+1.
                 self.refs.add(operand - 1 if operand in self.word_high else operand)
                 for back in (1, 2):
@@ -301,6 +304,8 @@ class SegmentedDisassembler(Disassembler):
             self.context = None
 
     def operand_text(self, operand, zp_mode):
+        if self.visible(self.context, operand) and operand in self.refer:
+            return self.refer[operand]
         if self.visible(self.context, operand):
             return self.label_for(operand)
         if operand in self.local:

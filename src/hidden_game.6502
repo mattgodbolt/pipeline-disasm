@@ -164,6 +164,7 @@ copy_return = &00
 copy_from = &02
 copy_to = &04
 copy_count = &06
+objects = game_start                    ; 8 objects of 4 bytes: x, y, icon, uses and flags
 
 ; Entered from the GAME stub with the ten keys MENU set up in key_codes, as
 ; negative INKEY numbers. Copies the keys where the game wants them, copies
@@ -495,7 +496,7 @@ SECTION low_code, org=&0400
 .cell_type_picture
     CMP #&0F
     BCC tile_picture
-    JSR L1284                           ; the object here's icon
+    JSR object_picture_at               ; the object here's icon
     STX picture
     STY picture_high
     CPY #HI(io_no_object_picture)       ; none here?
@@ -2300,71 +2301,84 @@ NEXT
     DEX
     BPL print_names_text
     RTS
-.L0FE2
-    LDA #&08
+
+; The title and backpack screens' frame: a row of cell 5's picture across the
+; top and bottom of the view and a column down each side (the view is offset
+; two characters, so only half of each shows).
+.draw_title_border
+    LDA #&08                            ; 9 pictures a side
     STA work2
-.L0FE6
+.draw_title_border_loop
     LDY #&00
-    JSR L0FFF
+    JSR draw_border_across
     LDY #&20
-    JSR L0FFF
+    JSR draw_border_across
     LDX #&00
-    JSR L1006
+    JSR draw_border_down
     LDX #&20
-    JSR L1006
+    JSR draw_border_down
     DEC work2
-    BPL L0FE6
+    BPL draw_title_border_loop
     RTS
-.L0FFF
+.draw_border_across
     LDA work2
     ASL A
     ASL A
     TAX
-    BPL L100B
-.L1006
+    BPL draw_border_picture
+.draw_border_down
     LDA work2
     ASL A
     ASL A
     TAY
-.L100B
-    LDA #&80
+.draw_border_picture
+    LDA #LO(io_tiles + 5 * 128)
     STA sprite
-    LDA #&4C
+    LDA #HI(io_tiles + 5 * 128)
     STA sprite_high
     SEC
     JMP draw_sprite
-.L1017
+
+; The entry and edit codes are printed in a base-32 alphabet, "1"-"9" then
+; "A"-"W". Print A's low 5 bits, then its top 5 (bits 3-7).
+.print_code_byte
     PHA
-    JSR L101F
+    JSR print_code_digit
     PLA
     LSR A
     LSR A
     LSR A
-.L101F
+.print_code_digit
     AND #&1F
     CLC
-    ADC #&31
+    ADC #&31                            ; '1' for 0
     CMP #&3A
-    BCC L102A
-    ADC #&06
-.L102A
+    BCC print_code_char
+    ADC #&06                            ; 'A' for 9
+.print_code_char
     JMP OSWRCH
-.L102D
+
+; Scramble a byte for a code: rotate it left a bit, then swap each pair of
+; bits. Returns: A. Clobbers: work0.
+.scramble
     PHA
-    ASL A
+    ASL A                               ; the top bit...
     PLA
-    ROL A
+    ROL A                               ; ...round to the bottom
     PHA
-    AND #&55
+    AND #&55                            ; the even bits up...
     ASL A
     STA work0
     PLA
-    AND #&AA
+    AND #&AA                            ; ...and the odd ones down
     LSR A
     ORA work0
     RTS
-.L103E
-    PLA
+
+; Print the characters after the JSR, up to a NOP (&EA), and carry on at the
+; NOP. Clobbers: A, Y, work0, work1.
+.print_inline
+    PLA                                 ; the return address is the byte before the text
     CLC
     ADC #&01
     STA work0
@@ -2372,232 +2386,270 @@ NEXT
     ADC #&00
     STA work1
     LDY #&00
-.L104B
+.print_inline_loop
     LDA (work0), Y
-    CMP #&EA
-    BEQ L105C
+    CMP #&EA                            ; NOP ends it
+    BEQ print_inline_return
     JSR OSWRCH
     INC work0
-    BNE L104B
+    BNE print_inline_loop
     INC work1
-    BNE L104B
-.L105C
-    JMP (work0)
-.L105F
-    JSR L103E
+    BNE print_inline_loop
+.print_inline_return
+    JMP (work0)                         ; and runs
+
+; The backpack screen's text: the time left (in red when it's under 10), the
+; level, the tune and sound effects settings, and the score.
+.print_status
+    JSR print_inline
     EQUB &1F, &09, &13, &11, &03
     EQUS "Time:"
     NOP
     LDA time_left
-    CMP #&0A
-    BCC L107B
+    CMP #10                             ; under 10...
+    BCC print_status_time
     PHA
-    JSR L103E
+    JSR print_inline                    ; ...stays red
     EQUB &11, &02
     NOP
     PLA
-.L107B
+
+; A decimal number up to 255.
+.print_status_time
     LDX #&FF
-.L107D
+.print_hundreds
     INX
     SEC
-    SBC #&64
-    BCS L107D
-    ADC #&64
+    SBC #100                            ; hundreds
+    BCS print_hundreds
+    ADC #100
     PHA
     TXA
-    BEQ L108C
-    JSR L110F
-.L108C
+    BEQ print_tens
+    JSR print_digit
+.print_tens
     TAY
     PLA
     LDX #&00
-.L1090
+.print_tens_loop
     INX
     SEC
-    SBC #&0A
-    BCS L1090
-    ADC #&0A
+    SBC #10                             ; tens
+    BCS print_tens_loop
+    ADC #10
     PHA
     DEX
-    BNE L109F
+    BNE print_tens_digit                ; no tens...
     TYA
-    BEQ L10A7
-.L109F
+    BEQ print_units                     ; ...and no hundreds: just the units
+.print_tens_digit
     TXA
     LDX #&03
     CMP #&00
-    JSR L110F
-.L10A7
+    JSR print_digit
+.print_units
     PLA
-    JSR L110F
-    JSR L103E
+    JSR print_digit
+    JSR print_inline
     EQUB &1F, &00, &15, &11, &03
     EQUS "Level:"
     EQUB &11, &02
     NOP
-    JSR L1144
-.L10BF
-    JSR L103E
+    JSR print_level
+
+; Also printed when T or S changes them.
+.print_sound_settings
+    JSR print_inline
     EQUB &1F, &09, &17, &11, &03
     EQUS "Tune"
     NOP
     LDA tune_off
-    JSR L1121
-    JSR L103E
+    JSR print_yes_no
+    JSR print_inline
     EQUB &1F, &02, &18, &11, &03
     EQUS "SoundFX"
     NOP
     LDA effects_off
-    JSR L1121
-    JSR L103E
+    JSR print_yes_no
+    JSR print_inline
     EQUB &1F, &10, &15
     NOP
-.L10ED
-    JSR L103E
+
+; "Score:" and the score, 4 BCD digits.
+.print_score
+    JSR print_inline
     EQUB &11, &03
     EQUS "Score:"
     EQUB &11, &02
     NOP
     LDX #&00
     LDA score_high
-    JSR L1104
+    JSR print_bcd
     LDA score
-.L1104
+.print_bcd
     PHA
     LSR A
     LSR A
     LSR A
     LSR A
-    JSR L110F
+    JSR print_digit
     PLA
     AND #&0F
-.L110F
-    BEQ L1117
+
+; Print digit A, counting digits in X: leading zeros print nothing (VDU 0)
+; until the third, and 0 prints as the letter O.
+.print_digit
+    BEQ print_digit_zero
     LDX #&03
-    ORA #&30
-    BNE L111D
-.L1117
-    CPX #&03
-    BCC L111D
-    LDA #&4F
-.L111D
-    INX
+    ORA #&30                            ; a digit; zeros from now on print
+    BNE print_digit_char
+.print_digit_zero
+    CPX #&03                            ; a leading zero?
+    BCC print_digit_char
+    LDA #&4F                            ; zero is the letter O
+.print_digit_char
+    INX                                 ; VDU 0 prints nothing
     JMP OSWRCH
-.L1121
+
+; Print ": yes" for A zero (the tune_off and effects_off flags), else ": no".
+.print_yes_no
     PHA
-    JSR L103E
+    JSR print_inline
     EQUB &3A, &11, &02
     NOP
     PLA
-    BEQ L1133
-    JSR L103E
+    BEQ print_yes
+    JSR print_inline
     EQUB &6E, &6F
     NOP
     RTS
-.L1133
-    JSR L103E
+.print_yes
+    JSR print_inline
     EQUB &79, &65, &73
     NOP
     RTS
-    JSR L103E
+
+; Never called.
+.print_level_at
+    JSR print_inline
     EQUB &1F, &08, &11, &11, &02
     NOP
-.L1144
+.print_level
     LDA level
     CLC
-    ADC #&31
+    ADC #&31                            ; '1' for level 0
     JMP OSWRCH
-.D114C
-    EQUB &8B, &A1, &00, &00, &8A, &21, &00, &00
-    EQUB &8B, &21, &00, &00, &AA, &21, &00, &00
-    EQUB &53, &BD, &E0, &00, &00, &00, &00, &00
-    EQUB &E3, &25, &D0, &00, &94, &B5, &10, &00
-    EQUB &94, &BD, &90, &00, &94, &AD, &00, &00
-    EQUB &E3, &25, &D0, &00
-.D1178
+
+; "WELL DONE" in blocks: 11 rows of 32 bits, a bit a character cell.
+.well_done_bitmap
+    EQUB %10001011, %10100001, %00000000, %00000000
+    EQUB %10001010, %00100001, %00000000, %00000000
+    EQUB %10001011, %00100001, %00000000, %00000000
+    EQUB %10101010, %00100001, %00000000, %00000000
+    EQUB %01010011, %10111101, %11100000, %00000000
+    EQUB %00000000, %00000000, %00000000, %00000000
+    EQUB %11100011, %00100101, %11010000, %00000000
+    EQUB %10010100, %10110101, %00010000, %00000000
+    EQUB %10010100, %10111101, %10010000, %00000000
+    EQUB %10010100, %10101101, %00000000, %00000000
+    EQUB %11100011, %00100101, %11010000, %00000000
+
+; The bottom half of a block's character cells: a shadow.
+.well_done_block
     EQUB &F5, &FE, &FB, &FE, &F7, &FD, &FB, &FF
-.L1180
+
+; After a level: clear 13 character rows across the middle of the view and
+; show WELL DONE in big letters, then wait 4 seconds.
+.show_well_done
     LDA view_screen
     STA screen
     LDA view_screen_high
-    CLC
-    ADC #&09
+    CLC                                 ; nine character rows down
+    ADC #9
     JSR wrap_screen_high
-    LDA #&0D
+    LDA #13                             ; 13 rows
     STA cell_low_nibble
-.L1190
+.show_well_done_clear
     LDX #&20
-.L1192
+.show_well_done_cell
     LDY #&07
     LDA #&00
-.L1196
+.show_well_done_blank
     STA (screen), Y
     DEY
-    BPL L1196
+    BPL show_well_done_blank
     JSR next_screen_cell
     DEX
-    BNE L1192
+    BNE show_well_done_cell
     DEC cell_low_nibble
-    BNE L1190
-    LDA view_screen
+    BNE show_well_done_clear
+    LDA view_screen                     ; 6 characters in...
     CLC
-    ADC #&30
+    ADC #6 * 8
     STA screen
-    LDA view_screen_high
-    ADC #&0A
+    LDA view_screen_high                ; ...ten rows down
+    ADC #10
     AND #&3F
-    ORA #&60
+    ORA #HI(SCREEN)
     STA screen_high
-    LDA #&80
+    LDA #&80                            ; the bitmap's top bit first
     STA cell_low_nibble
-.L11BA
-    LDA D114C, X
+.show_well_done_bit
+    LDA well_done_bitmap, X
     AND cell_low_nibble
-    BEQ L11D4
-    LDY #&0F
+    BEQ show_well_done_next
+    LDY #&0F                            ; the block's two character cells...
     LDA #&0C
-.L11C5
+.show_well_done_block
     STA (screen), Y
     DEY
-    BPL L11C5
-    LDY #&07
-.L11CC
-    LDA D1178, Y
+    BPL show_well_done_block
+    LDY #&07                            ; ...the lower with its shadow
+.show_well_done_shade
+    LDA well_done_block, Y
     STA (screen), Y
     DEY
-    BPL L11CC
-.L11D4
+    BPL show_well_done_shade
+.show_well_done_next
     JSR next_screen_cell
     LSR cell_low_nibble
-    BCC L11BA
-    ROR cell_low_nibble
+    BCC show_well_done_bit
+    ROR cell_low_nibble                 ; the carry: back to the top bit
     INX
-    CPX #&2C
-    BCC L11BA
-    LDA #&C8
-    EQUB &2C
-.L11E5
-    LDA #&32
+    CPX #well_done_block - well_done_bitmap; 11 rows of 4 bytes
+    BCC show_well_done_bit
+    LDA #200                            ; 4 seconds
+    BITABS                                  ; skip the next LDA
+
+; Wait A fiftieths of a second, by the OS's vsync countdown.
+.wait_a_second
+    LDA #50
+.wait_ticks
     STA OS_COUNTDOWN
-.L11EA
+.wait_ticks_loop
     LDA OS_COUNTDOWN
-    BNE L11EA
+    BNE wait_ticks_loop
     RTS
-.L11F0
-    EOR SYSVIA_T1CL
+
+; A random number from 0 to Y - 1, from the free-running VIA timers.
+; Clobbers: work0.
+.random
+    EOR SYSVIA_T1CL                     ; the timers' low bytes are as good as random
     EOR USRVIA_T2CH
     STY work0
-.L11F8
+.random_mod
     CMP work0
-    BCC L1200
+    BCC random_done
     SBC work0
-    BCS L11F8
-.L1200
+    BCS random_mod
+.random_done
     RTS
-.L1201
-    JSR L11E5
-    LDA view_x
+
+; The game is over: the player bursts into flames that spread out across the
+; view, crackling.
+.burn_up
+    JSR wait_a_second
+    LDA view_x                          ; the middle of the view
     CLC
     ADC #&0E
     STA view_sub_x
@@ -2605,79 +2657,89 @@ NEXT
     CLC
     ADC #&0D
     STA view_sub_y
-    LDA #&02
+    LDA #&02                            ; flames spread from 2 cells to 31
     STA steps
-.L1216
-    LDA #&64
+.burn_up_ring
+    LDA #&64                            ; 100 flames a ring
     STA count_across
-.L121A
-    LDA USRVIA_T2CL
+.burn_up_flame
+    LDA USRVIA_T2CL                     ; either flame picture
     AND #&80
     STA sprite
     LDY steps
-    JSR L11F0
+    JSR random
     ADC view_sub_x
     TAX
-    JSR L11F0
+    JSR random                          ; within steps of the middle
     ADC view_sub_y
     TAY
-    LDA #&51
+    LDA #HI(io_tiles + &E * 128)
     STA sprite_high
     SEC
-    JSR draw_sprite
+    JSR draw_sprite                     ; a flame
     DEC count_across
-    BNE L121A
-    BIT USRVIA_T2CL
-    BVC L1251
+    BNE burn_up_flame
+    BIT USRVIA_T2CL                     ; now and then...
+    BVC burn_up_next_ring
     LDY #&04
-    JSR L11F0
+    JSR random
     TAX
     INX
     LDY #&03
-    JSR L11F0
+    JSR random
     ORA #&04
-    JSR L1F7A
-.L1251
-    DEC view_sub_x
+    JSR L1F7A                           ; ...a crackle
+.burn_up_next_ring
+    DEC view_sub_x                      ; the ring grows
     DEC view_sub_y
     INC steps
     INC steps
     LDA steps
     CMP #&20
-    BCC L1216
+    BCC burn_up_ring
     RTS
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00
-    EQUB &00, &00, &00, &00
-.L1284
+
+; Never used.
+.unused_1260
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00
+
+; The picture for an object cell (F) at (X, Y): the exit's icon, the icon of
+; the object there, or if none, the picture kept for that.
+; Returns: X, Y = the picture's address.
+.object_picture_at
     CPX exit_x
-    BNE L1291
+    BNE object_picture_find
     CPY exit_y
-    BNE L1291
-.L128C
-    LDX #&E0
-    LDY #&53
+    BNE object_picture_find
+.exit_picture
+    LDX #LO(io_object_icons + 15 * 32)
+    LDY #HI(io_object_icons + 15 * 32)
     RTS
-.L1291
+.object_picture_find
     JSR L1C69
-    BCC L129E
-.L1296
-    LDA L12A5, Y
-    ORA #&10
+    BCC no_object_picture
+
+; Object Y / 4's icon.
+.object_icon
+    LDA objects + 2, Y
+    ORA #&10                            ; &10 + the icon
     JMP thing_picture
-.L129E
-    LDX #&2D
-    LDY #&24
+.no_object_picture
+    LDX #LO(io_no_object_picture)
+    LDY #HI(io_no_object_picture)
     RTS
+
+; The game proper starts here, run once. It's also where each level's eight
+; objects are kept, 4 bytes each (see objects), over this code once it has
+; run.
 .game_start
-    EOR #&48
-.L12A5
-    LDA #&DB
+    EOR #&48                            ; (the first object's x and y, harmless)
+    LDA #LO(error_handler)              ; errors go to error_handler
     STA BRKV
-    LDA #&22
-    STA &0203
+    LDA #HI(error_handler)
+    STA BRKV + 1
     LDA #&00
     STA score
     STA score_high
@@ -2685,120 +2747,140 @@ NEXT
     STA tune_off
     STA fill_screen
     STA level
-    JSR flush_buffers
-    JSR L222E
-.L12C3
+    JSR flush_buffers                   ; no keys waiting
+    JSR L222E                           ; load the mission
+
+; The title screen, then a game: three lives.
+.new_game
     JSR L1423
-    LDX #&03
+    LDX #&03                            ; three lives
     STX lives
     LDA #&00
     STA score
     STA score_high
-.L12D0
+
+; A level from the start, and after losing a life.
+.start_level
     JSR L1515
-.L12D3
+.restart_level
     JSR L14D4
     JSR clear_screen
-    JSR L13CA
+    JSR L13CA                           ; the level's palette
     JSR redraw_view
     LDA tune_off
-    BNE L12E6
+    BNE game_loop
     JSR start_tune
-.L12E6
+
+; The game's main loop, a cycle at a time: the clock ticks at the mission's
+; rate (not while in a pipe), with warning beeps in the last 20; once the
+; exit's charge is set (stage 1) the time left is scored and the player has 4
+; ticks to get clear.
+.game_loop
     LDA time_left
-    BEQ L132D
-    JSR L15A1
+    BEQ time_up                         ; out of time?
+    JSR L15A1                           ; move the player and everything else
     LDA pipe_move
-    BNE L1316
+    BNE check_dead                      ; the clock stops in pipes
     LDA clock_fraction
     CLC
-    ADC &257F
+    ADC io_time_rate                    ; the mission's clock rate
     STA clock_fraction
-    BCC L1316
+    BCC check_dead
     DEC time_left
     LDA time_left
-    CMP #&14
-    BCS L1316
+    CMP #20                             ; the last 20 ticks...
+    BCS check_dead
     LDA stage
-    BNE L130F
-    LDA #&00
+    BNE warn_time_running_out
+    LDA #&00                            ; ...beep
     JSR L1FF1
-    JMP L1316
-.L130F
-    LDX #&02
+    JMP check_dead
+.warn_time_running_out
+    LDX #&02                            ; ...a different beep with the charge set
     LDA #&04
     JSR L1F7A
-.L1316
+.check_dead
     LDA player_dead
-    BNE L1346
+    BNE lose_life
     LDA stage
-    CMP #&01
-    BNE L12E6
-    INC stage
-    LDX time_left
+    CMP #&01                            ; the charge has just been set:
+    BNE game_loop
+    INC stage                           ; stage 2: run
+    LDX time_left                       ; a point for each tick left
     JSR L21DB
-    LDA #&04
+    LDA #&04                            ; and 4 ticks to get clear
     STA time_left
-    BNE L12E6
-.L132D
+    BNE game_loop
+
+; Out of time: with the charge set, the player is safe 5 or more cells from
+; the exit, across or down; otherwise they're caught (the screen flashes).
+.time_up
     LDX stage
-    CPX #&02
-    BNE L1346
-    JSR L13FC
-    BCS L136B
+    CPX #&02                            ; the charge set?
+    BNE lose_life
+    JSR L13FC                           ; far enough across...
+    BCS level_complete
     INX
     SEC
-    JSR L13FC
-    BCS L136B
-    INC fill_screen
+    JSR L13FC                           ; ...or down: safe
+    BCS level_complete
+    INC fill_screen                     ; caught in it: flash
     JSR clear_screen
     DEC fill_screen
-.L1346
+
+; Lose a life. With none left, burn up and back to the title; if the charge
+; had been set the level counts as done.
+.lose_life
     JSR flush_buffers
-    JSR L1F76
+    JSR L1F76                           ; a sound
     JSR draw_player
     DEC lives
-    BNE L135C
-    JSR L1201
+    BNE lose_life_again
+    JSR burn_up                         ; the last life
     JSR L1ADE
-    JMP L12C3
-.L135C
+    JMP new_game
+.lose_life_again
     LDX #&09
-    JSR L13E0
+    JSR L13E0                           ; colour 0 flashes
     JSR L1ADE
-    LDA stage
-    BNE L1380
-    JMP L12D3
-.L136B
+    LDA stage                           ; died after setting the charge?
+    BNE next_level
+    JMP restart_level
+
+; The level's done: flash the palette, WELL DONE, 100 points.
+.level_complete
     JSR flush_buffers
     LDA #&05
     JSR L1F78
-    JSR L13A9
-    JSR L1180
-    INC stage
-    LDX #&64
+    JSR L13A9                           ; flash
+    JSR show_well_done
+    INC stage                           ; stage 3: done
+    LDX #100                            ; 100 points
     JSR L21DB
-.L1380
+
+; On to the next level, or after the fourth, the end of the mission. Doing a
+; level without losing a life lets the next game start from the next one.
+.next_level
     INC level
     LDA level
-    CMP #&04
-    BCS L13A3
+    CMP #IO_LEVELS                      ; four levels
+    BCS mission_complete
     LDX lives
-    CPX #&03
-    BCC L1394
-    CMP furthest_level
-    BCC L1394
+    CPX #&03                            ; no lives lost...
+    BCC show_edit_code
+    CMP furthest_level                  ; ...so the title can start on the next level
+    BCC show_edit_code
     STA furthest_level
-.L1394
+.show_edit_code
     JSR L13CA
     LDA lives
     CLC
-    JSR L1C31
-    JSR L1C13
-    JMP L12D0
-.L13A3
+    JSR L1C31                           ; the backpack screen, with the next level's edit code
+    JSR L1C13                           ; wait for Space
+    JMP start_level
+.mission_complete
     JSR L1B1A
-    JMP L12C3
+    JMP new_game
 .L13A9
     LDA #&08
     LDX #&01
@@ -2880,20 +2962,20 @@ NEXT
     STA level
     JSR L13CA
     JSR L147D
-    JSR L103E
+    JSR print_inline
     EQUB &1F, &13, &10, &11, &03
     EQUS "Start:"
     EQUB &1F, &07, &0F
     NOP
-    JSR L10ED
+    JSR print_score
     LDX #&01
     LDA #&0F
     JSR OSBYTE
 .L144B
-    JSR L103E
+    JSR print_inline
     EQUB &1F, &05, &11, &11, &02
     NOP
-    JSR L1144
+    JSR print_level
     JSR OSRDCH
     BCC L145F
     JSR L1C21
@@ -2916,7 +2998,7 @@ NEXT
     STX started_late
     BPL L144B
 .L147D
-    JSR L103E
+    JSR print_inline
     EQUB &06, &04, &1A, &11, &80
     NOP
     JSR L179D
@@ -2969,7 +3051,7 @@ NEXT
     LDA #&04
     STA sprite
     STA sprite_high
-    JSR L128C
+    JSR exit_picture
     JMP L14BA
 .L14D4
     LDX #&02
@@ -3067,7 +3149,7 @@ NEXT
     LDX #&1F
 .L1569
     LDA &25C0, Y
-    STA game_start, X
+    STA objects, X
     LDA &2680, Y
     STA trigger_flags, X
     DEY
@@ -3227,7 +3309,7 @@ NEXT
     JSR L178F
     LDA #&55
     JSR L1785
-    JSR L105F
+    JSR print_status
 .L168D
     BIT ESCAPE_FLAG
     BMI L1615
@@ -3280,7 +3362,7 @@ NEXT
     LDY #&17
     LDA #&00
     JSR L14AB
-    JSR L10BF
+    JSR print_sound_settings
     JMP L1B12
 .L16FB
     LDA effects_off
@@ -3380,8 +3462,8 @@ NEXT
     DEC fill_screen
     JSR clear_screen
     INC fill_screen
-    JSR L0FE2
-    JSR L103E
+    JSR draw_title_border
+    JSR print_inline
     EQUB &1F, &00, &09, &11, &02, &11, &80
     EQUS "PIPELINE"
     NOP
@@ -3426,7 +3508,7 @@ NEXT
     ASL A
     ASL A
     TAY
-    JSR L1296
+    JSR object_icon
     STX sprite
     STY sprite_high
     LDA work0
@@ -3489,7 +3571,7 @@ NEXT
     JMP L1615
 .L1870
     PHA
-    JSR L103E
+    JSR print_inline
     EQUB &1F, &06, &1F, &11, &81, &11, &03
     NOP
     PLA
@@ -3507,10 +3589,10 @@ NEXT
     ASL A
     ASL A
     TAY
-    LDA L12A5, Y
+    LDA objects + 2, Y
     JSR print_object_name
 .L1899
-    JSR L103E
+    JSR print_inline
     EQUB &11, &80
     NOP
     RTS
@@ -3790,9 +3872,9 @@ NEXT
     BCC L1A7C
 .L1A72
     LDA work4
-    STA game_start, Y
+    STA objects, Y
     LDA work5
-    STA game_start+1, Y
+    STA objects + 1, Y
 .L1A7C
     LDX work2
     LDY work3
@@ -3909,7 +3991,7 @@ NEXT
     LDA #&03
     SEC
     JSR L1C31
-    JSR L103E
+    JSR print_inline
     EQUB &1F, &07, &0F, &11, &03
     EQUS "Praise"
     EQUB &09, &61, &6E, &64, &1F, &01, &10
@@ -3922,7 +4004,7 @@ NEXT
 .L1B76
     JMP L1C13
 .L1B79
-    JSR L103E
+    JSR print_inline
     EQUB &1F, &0E, &15
     EQUS "Entry"
     EQUB &09
@@ -3930,10 +4012,10 @@ NEXT
     EQUB &11, &82, &11, &01, &1F, &02, &18
     NOP
     LDA score_high
-    JSR L102D
+    JSR scramble
     PHA
     LDA score
-    JSR L102D
+    JSR scramble
     PHA
     LDA #&25
     STA work5
@@ -3968,34 +4050,34 @@ NEXT
     LDA #&20
     JSR OSWRCH
     PLA
-    JSR L101F
+    JSR print_code_digit
     PLA
     EOR #&AA
-    JSR L1017
+    JSR print_code_byte
     LDX #&03
 .L1BDE
     LDA work0, X
-    JSR L101F
+    JSR print_code_digit
     DEX
     BPL L1BDE
     LDA score
     ASL A
     ROL A
     EOR score_high
-    JSR L102D
-    JSR L101F
+    JSR scramble
+    JSR print_code_digit
     PLA
     EOR #&55
-    JSR L1017
-    JSR L103E
+    JSR print_code_byte
+    JSR print_inline
     EQUB &20, &1F, &06, &17
     NOP
     JSR L1C26
-    JSR L103E
+    JSR print_inline
     EQUB &1F, &12, &18
     NOP
     JSR L1C26
-    JSR L103E
+    JSR print_inline
     EQUB &11, &80
     NOP
 .L1C13
@@ -4019,7 +4101,7 @@ NEXT
     RTS
 .L1C31
     JSR L17C1
-    JSR L103E
+    JSR print_inline
     EQUB &1F, &07, &13, &11, &81, &11, &02
     EQUS "Edit code:"
     EQUB &1F, &05, &14, &11, &80, &11, &03
@@ -4031,19 +4113,19 @@ NEXT
     JSR L1C61
     LDA &258B, Y
 .L1C61
-    JSR L102D
+    JSR scramble
     LDX #&03
-    JMP L1104
+    JMP print_bcd
 .L1C69
     STX work0
     STY work1
     LDY #&1C
     LDX #&07
 .L1C71
-    LDA game_start, Y
+    LDA objects, Y
     CMP work0
     BNE L1C7F
-    LDA game_start+1, Y
+    LDA objects + 1, Y
     CMP work1
     BEQ L1C87
 .L1C7F
@@ -4080,7 +4162,7 @@ NEXT
     JSR L1C69
     BCC L1CA4
     LDA #&80
-    STA game_start, Y
+    STA objects, Y
     LDY backpack_slot
     STX backpack, Y
     LDX front_x
@@ -4152,8 +4234,8 @@ NEXT
     ASL A
     TAY
     LDA #&80
-    STA game_start, Y
-    JSR L1296
+    STA objects, Y
+    JSR object_icon
     STX thrown_picture
     STY thrown_picture_high
     LDX facing
@@ -4206,7 +4288,7 @@ NEXT
     ASL A
     ASL A
     TAY
-    LDA L12A5+1, Y
+    LDA objects + 3, Y
     SEC
     BMI L1D91
     JSR L1DA2
@@ -4248,7 +4330,7 @@ NEXT
     TAY
     LDA triggers_fired
     BEQ L1DF3
-    LDA L12A5+1, Y
+    LDA objects + 3, Y
     PHA
     AND #&C0
     STA work0
@@ -4262,7 +4344,7 @@ NEXT
     SEC
     PHA
     ORA work0
-    STA L12A5+1, Y
+    STA objects + 3, Y
     PLA
     BNE L1DF2
     LDA work0
@@ -4291,7 +4373,7 @@ NEXT
     ASL A
     ASL A
     TAY
-    LDA L12A5+1, Y
+    LDA objects + 3, Y
     JSR L1DA2
     BMI L1E28
     BCS L1E1E
@@ -4485,10 +4567,10 @@ NEXT
     JSR L2122
     JSR L205F
     BEQ L1F9E
-    LDA game_start, Y
+    LDA objects, Y
     PHA
     TAX
-    LDA game_start+1, Y
+    LDA objects + 1, Y
     PHA
     TAY
     JSR cell_at
@@ -4618,10 +4700,10 @@ NEXT
     ASL A
     TAX
     STY work0
-    LDA L12A5+1, X
+    LDA objects + 3, X
     AND #&E0
     ORA work0
-    STA L12A5+1, X
+    STA objects + 3, X
     LDA #&01
     TAX
     JSR L13AD
@@ -4895,7 +4977,7 @@ NEXT
     RTS
 .L21F1
     JSR L147D
-    JSR L103E
+    JSR print_inline
     EQUB &1F, &07, &0F, &11, &81, &11, &02
     EQUS "Filename ?"
     EQUB &1F, &03, &13, &3C, &08, &08, &7F, &7F
@@ -4978,8 +5060,10 @@ NEXT
     EQUS ":0.$.IO     "
     EQUB &0D, &C4, &22, &0C, &20, &FF
     EQUS "DISK"
-    EQUB &0D, &AD, &B1, &13, &C9, &A2, &D0, &07
-    EQUB &AD, &B2, &13, &C9, &07, &F0, &03
+    EQUB &0D
+.error_handler
+    EQUB &AD, &B1, &13, &C9, &A2, &D0, &07, &AD
+    EQUB &B2, &13, &C9, &07, &F0, &03
     EQUS " {"" "
     EQUB &F7, &0E, &20, &7D, &14, &20, &3E, &10
     EQUB &1F, &0A, &12
