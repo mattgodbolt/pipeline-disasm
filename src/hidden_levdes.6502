@@ -2170,136 +2170,167 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     ORA cursor_y
     STA level_puzzle_positions+1, Y
     JMP open_conditions_window
+; Files menu, Load level: ask for the file and its editing code, load it, and
+; keep it only if the code matches; otherwise start a new level.
 .files_load
-    LDA #&27                        ; 1D54: A9 27
-    JSR ask_filename                ; 1D56: 20 0A 1E
-    JSR vector_open_message_box     ; 1D59: 20 95 08
-    LDA #&27                        ; 1D5C: A9 27
-    JSR vector_print_line1          ; 1D5E: 20 56 23
-    JSR input_editing_code          ; 1D61: 20 92 1D
-    INC loading                     ; 1D64: E6 67
-    LDA #&FF                        ; 1D66: A9 FF
-    JSR level_file                  ; 1D68: 20 F2 1D
-    DEC loading                     ; 1D6B: C6 67
-    LDX #&02                        ; 1D6D: A2 02
+    LDA #M_LOADING
+    JSR ask_filename
+    JSR vector_open_message_box
+    LDA #M_LOADING
+    JSR vector_print_line1
+    JSR input_editing_code
+    INC loading                 ; an error now clears the level
+    LDA #&FF                    ; OSFILE &FF: load
+    JSR level_file
+    DEC loading
+    LDX #2
 .files_load_check_code
-    LDA level_code, X               ; 1D6F: BD E1 26
-    CMP ptr+1, X                    ; 1D72: D5 53
-    BNE files_load_wrong_code       ; 1D74: D0 06
-    DEX                             ; 1D76: CA
-    BPL files_load_check_code       ; 1D77: 10 F6
-    JMP vector_draw_map             ; 1D79: 4C 8C 08
+    LDA level_code, X
+    CMP ptr+1, X
+    BNE files_load_wrong_code
+    DEX
+    BPL files_load_check_code
+    JMP vector_draw_map
 .files_load_wrong_code
-    JSR new_level                   ; 1D7C: 20 68 23
-    JSR vector_open_message_box     ; 1D7F: 20 95 08
-    LDA #&41                        ; 1D82: A9 41
-    JSR vector_print_line1          ; 1D84: 20 56 23
-    LDA #&0A                        ; 1D87: A9 0A
-    JSR vector_print_message        ; 1D89: 20 59 23
-    JSR wait_for_key                ; 1D8C: 20 34 12
-    JMP vector_close_message_box    ; 1D8F: 4C 98 08
+    JSR new_level
+    JSR vector_open_message_box
+    LDA #M_WRONG_CODE
+    JSR vector_print_line1
+    LDA #M_PRESS_ANY_KEY
+    JSR vector_print_message
+    JSR wait_for_key
+    JMP vector_close_message_box
+
+; Read a six-digit editing code and encode it as level_code is kept: each
+; pair of digits as a BCD byte, its odd and even bits swapped and then
+; rotated right a place.
+; Out: ptr+1 to ptr+3 = the code.
+; Clobbers: A, X, Y, ptr, the input buffer.
 .input_editing_code
-    LDA #&30                        ; 1D92: A9 30
-    STA input_min_char              ; 1D94: 8D B4 21
-    LDA #&39                        ; 1D97: A9 39
-    STA input_max_char              ; 1D99: 8D B5 21
-    LDA #&06                        ; 1D9C: A9 06
-    LDX #&40                        ; 1D9E: A2 40
-    JSR input_line                  ; 1DA0: 20 42 13
-    LDY #&02                        ; 1DA3: A0 02
-    LDX #&04                        ; 1DA5: A2 04
+    LDA #asc("0")
+    STA input_min_char
+    LDA #asc("9")
+    STA input_max_char
+    LDA #6
+    LDX #M_ENTER_CODE
+    JSR input_line
+    LDY #2
+    LDX #4
 .input_editing_code_pair
-    LDA input_buffer+1, X           ; 1DA7: B5 41
-    SEC                             ; 1DA9: 38
-    SBC #&30                        ; 1DAA: E9 30
-    STA ptr                         ; 1DAC: 85 52
-    LDA input_buffer, X             ; 1DAE: B5 40
-    SEC                             ; 1DB0: 38
-    SBC #&30                        ; 1DB1: E9 30
-    ASL A                           ; 1DB3: 0A
-    ASL A                           ; 1DB4: 0A
-    ASL A                           ; 1DB5: 0A
-    ASL A                           ; 1DB6: 0A
-    ORA ptr                         ; 1DB7: 05 52
-    PHA                             ; 1DB9: 48
-    AND #&55                        ; 1DBA: 29 55
-    ASL A                           ; 1DBC: 0A
-    STA ptr                         ; 1DBD: 85 52
-    PLA                             ; 1DBF: 68
-    AND #&AA                        ; 1DC0: 29 AA
-    LSR A                           ; 1DC2: 4A
-    ORA ptr                         ; 1DC3: 05 52
-    PHA                             ; 1DC5: 48
-    LSR A                           ; 1DC6: 4A
-    PLA                             ; 1DC7: 68
-    ROR A                           ; 1DC8: 6A
-    STA ptr+1, Y                    ; 1DC9: 99 53 00
-    DEX                             ; 1DCC: CA
-    DEX                             ; 1DCD: CA
-    DEY                             ; 1DCE: 88
-    BPL input_editing_code_pair     ; 1DCF: 10 D6
-    RTS                             ; 1DD1: 60
+    LDA input_buffer+1, X
+    SEC
+    SBC #asc("0")
+    STA ptr
+    LDA input_buffer, X
+    SEC
+    SBC #asc("0")
+    ASL A
+    ASL A
+    ASL A
+    ASL A
+    ORA ptr
+    PHA
+    AND #%01010101
+    ASL A
+    STA ptr
+    PLA
+    AND #%10101010
+    LSR A
+    ORA ptr
+    PHA
+    LSR A                       ; bit 0 into the carry
+    PLA
+    ROR A                       ; and round to bit 7
+    STA ptr+1, Y
+    DEX
+    DEX
+    DEY
+    BPL input_editing_code_pair
+    RTS
+
+; Files menu, Edit code: give the level a new editing code.
 .files_edit_code
-    JSR vector_open_message_box     ; 1DD2: 20 95 08
-    JSR input_editing_code          ; 1DD5: 20 92 1D
-    LDX #&02                        ; 1DD8: A2 02
+    JSR vector_open_message_box
+    JSR input_editing_code
+    LDX #2
 .files_edit_code_store
-    LDA ptr+1, X                    ; 1DDA: B5 53
-    STA level_code, X               ; 1DDC: 9D E1 26
-    DEX                             ; 1DDF: CA
-    BPL files_edit_code_store       ; 1DE0: 10 F8
-    JMP vector_close_message_box    ; 1DE2: 4C 98 08
+    LDA ptr+1, X
+    STA level_code, X
+    DEX
+    BPL files_edit_code_store
+    JMP vector_close_message_box
+
+; Files menu, Save level.
 .files_save
-    LDA #&28                        ; 1DE5: A9 28
-    JSR ask_filename                ; 1DE7: 20 0A 1E
-    LDA #&00                        ; 1DEA: A9 00
-    JSR level_file                  ; 1DEC: 20 F2 1D
-    JMP vector_close_message_box    ; 1DEF: 4C 98 08
+    LDA #M_SAVING
+    JSR ask_filename
+    LDA #0                      ; OSFILE 0: save
+    JSR level_file
+    JMP vector_close_message_box
+
+; Load or save the level, with a one-line text window for the filing
+; system's messages, then set the level's palette.
+; In: A = the OSFILE call; osfile_block filled in by ask_filename.
+; Clobbers: A, X, Y.
 .level_file
-    PHA                             ; 1DF2: 48
-    LDA #&47                        ; 1DF3: A9 47
-    JSR vector_print_line2          ; 1DF5: 20 53 23
-    PLA                             ; 1DF8: 68
-    LDX #&3C                        ; 1DF9: A2 3C
-    LDY #&1E                        ; 1DFB: A0 1E
-    SEI                             ; 1DFD: 78
-    JSR OSFILE                      ; 1DFE: 20 DD FF
-    JSR vector_set_level_palette    ; 1E01: 20 50 23
+    PHA
+    LDA #M_FILING_WINDOW
+    JSR vector_print_line2
+    PLA
+    LDX #LO(osfile_block)
+    LDY #HI(osfile_block)
+    SEI
+    JSR OSFILE
+    JSR vector_set_level_palette
 .level_file_done
-    CLI                             ; 1E04: 58
-    LDA #&49                        ; 1E05: A9 49
-    JMP vector_print_message        ; 1E07: 4C 59 23
+    CLI
+    LDA #M_RESET_WINDOWS
+    JMP vector_print_message
+
+; Ask for a filename and set up osfile_block for it.
+; In: A = the message saying what's happening.
+; Clobbers: A, X, Y, ptr, the input buffer.
 .ask_filename
-    PHA                             ; 1E0A: 48
-    JSR vector_open_message_box     ; 1E0B: 20 95 08
-    PLA                             ; 1E0E: 68
-    JSR vector_print_line1          ; 1E0F: 20 56 23
-    LDA #&0C                        ; 1E12: A9 0C
-    LDX #&29                        ; 1E14: A2 29
-    JSR input_text                  ; 1E16: 20 38 13
-    LDY ptr                         ; 1E19: A4 52
+    PHA
+    JSR vector_open_message_box
+    PLA
+    JSR vector_print_line1
+    LDA #12
+    LDX #M_ENTER_FILENAME
+    JSR input_text
+    LDY ptr
 .ask_filename_copy
-    LDA input_buffer, Y             ; 1E1B: B9 40 00
-    STA filename, Y                 ; 1E1E: 99 30 1E
-    DEY                             ; 1E21: 88
-    BPL ask_filename_copy           ; 1E22: 10 F7
-    LDY #&11                        ; 1E24: A0 11
+    LDA input_buffer, Y
+    STA filename, Y
+    DEY
+    BPL ask_filename_copy
+    LDY #osfile_template_end - osfile_template - 1
 .ask_filename_block
-    LDA osfile_template, Y          ; 1E26: B9 4E 1E
-    STA osfile_block, Y             ; 1E29: 99 3C 1E
-    DEY                             ; 1E2C: 88
-    BPL ask_filename_block          ; 1E2D: 10 F7
-    RTS                             ; 1E2F: 60
+    LDA osfile_template, Y
+    STA osfile_block, Y
+    DEY
+    BPL ask_filename_block
+    RTS
+
+; Room for a filename of 12 characters, with an author's mark in it.
 .filename
-    EQUS "_Ian Holmes_"             ; 1E30
+    EQUS "_Ian Holmes_"
+; OSFILE's control block, filled in from the template before use (left over
+; bytes until then).
 .osfile_block
-    EQUB &00, &00, &A1, &25, &00, &00, &23, &A5; 1E3C
-    EQUB &63, &20, &4C, &18, &A2, &12, &20, &C4; 1E44
-    EQUB &12, &C5                   ; 1E4C
+    EQUB &00, &00, &A1, &25, &00, &00, &23, &A5
+    EQUB &63, &20, &4C, &18, &A2, &12, &20, &C4
+    EQUB &12, &C5
+; The level is saved with its own address as load address, and an exec
+; address of &8380 that means nothing here.
 .osfile_template
-    EQUB &30, &1E, &A1, &25, &00, &00, &80, &83; 1E4E
-    EQUB &00, &00, &A1, &25, &00, &00, &00, &30; 1E56
-    EQUB &00, &00                   ; 1E5E
+    EQUW filename
+    EQUD level                  ; load address
+    EQUD &8380                  ; exec address; loading, nonzero means load the
+                                ; file at its own address
+    EQUD level                  ; start of the data to save
+    EQUD level_end              ; and its end
+.osfile_template_end
 .effect_place_monster
     JSR vector_close_window         ; 1E60: 20 83 08
     LDY record                      ; 1E63: A4 5B
