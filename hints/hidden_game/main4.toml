@@ -239,7 +239,7 @@ settings; see backpack_keys. Space goes back to the game.
 0x1675 = "remember where the view was"
 0x167A = "the screen, the lives"
 0x167F = "no name yet"
-0x1682 = "the selection box..."
+0x1682 = "the selection cursor, the player's picture..."
 0x1687 = "...drawn"
 0x168D = "Escape: lose a life"
 0x1691 = "the backpack screen's keys"
@@ -247,6 +247,7 @@ settings; see backpack_keys. Space goes back to the game.
 0x169B = "the view as it was"
 
 [operands]
+0x1685 = "#HI(io_player + 2 * 128)"
 0x1655 = "#ACTION_STOP"
 0x15BC = "#CELL_FIRE"
 0x13DD = "io_palettes"

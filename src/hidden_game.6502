@@ -481,8 +481,8 @@ SECTION low_code, org=&0400
     LDY cell_y
     JSR cell_at_checked                 ; carry set: off the map
     BCC cell_picture_on_map
-    LDX #LO(io_animation + 3 * 128)     ; outside the map is lava
-    LDY #HI(io_animation + 3 * 128)
+    LDX #LO(io_alternates + 3 * 128)    ; outside the map is lava
+    LDY #HI(io_alternates + 3 * 128)
     BCS cell_picture_found
 .cell_picture_on_map
     LDX cell_x
@@ -3385,8 +3385,8 @@ NEXT
     JSR draw_backpack_screen            ; the screen, the lives
     LDA #&80
     JSR print_selected_name             ; no name yet
-    JSR selection_position              ; the selection box...
-    LDA #&55
+    JSR selection_position              ; the selection cursor, the player's picture...
+    LDA #HI(io_player + 2 * 128)
     JSR draw_page_picture               ; ...drawn
     JSR print_status
 .backpack_screen_loop

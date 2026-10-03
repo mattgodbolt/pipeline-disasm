@@ -9,7 +9,9 @@
 # so they're optional; tools/play.mjs makes them, e.g.
 #   node tools/play.mjs 'game; trace build/trace/play1.json; wait 6;
 #     bkey SPACE 5; wait 8; random 30'
-binary = "data/hidden_game.bin"
+# The binary is the one the build makes from src/hidden_game.6502 (run make
+# first): the source is the original, byte for byte, so nothing is lost.
+binary = "build/files/H.GAME"
 org = 0x3000
 section = 'hidden_game, filename="H.GAME", org=&3000'
 scope = "game"
