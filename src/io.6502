@@ -217,8 +217,9 @@ SECTION io, filename="IO", org=io_start, load=io_start, exec=0
     ASSERT level_monsters = io_level_monsters
 
 ; Triggers' flags: bits 0-3 the action; bit 4: it can fire again; bit 5:
-; disabled (as it is once fired, unless bit 4); bit 6: only once everything's collected; bit 7:
-; it needs an object used or thrown, rather than the player walking on.
+; disabled (as it is once fired, without bit 4); bit 6: only once
+; everything's collected; bit 7: it needs an object used or thrown, rather
+; than the player walking on.
 .level_trigger_flags
     ; level 1
     EQUB &91    ; 0: move a cell, with an object, again
