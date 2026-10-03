@@ -23,7 +23,9 @@ include_os = true
 # the error handler 0x22DB (through BRKV); and 0x0C60, 0x113B and 0x1C88,
 # code nothing uses.
 entries = [0x3000, 0x0131, 0x0C60, 0x0CBB, 0x1E29, 0x113B, 0x1C88, 0x22DB]
-traces = ["build/trace/attract.json", "build/trace/play1.json", "build/trace/play2.json", "build/trace/play3.json"]
+traces = ["build/trace/attract.json", "build/trace/play1.json", "build/trace/play2.json",
+          "build/trace/play3.json", "build/trace/play4.json", "build/trace/play5.json",
+          "build/trace/play6.json"]
 # IO is loaded over the loader once it has run.
 trace_only = ["0x3000-0x30FF"]
 annotations = [
