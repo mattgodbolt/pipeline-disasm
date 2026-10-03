@@ -1,0 +1,4 @@
+; $.MISSION: &1828 bytes at sector &0E7.
+SECTION mission, filename="MISSION", org=&1900, load=&FFFF1900, exec=&FFFF8023
+    INCBIN "../data/mission.bin"
+ENDSECTION

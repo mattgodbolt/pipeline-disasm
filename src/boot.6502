@@ -1,0 +1,4 @@
+; $.!BOOT: &94 bytes at sector &002.
+SECTION boot, filename="!BOOT", org=0, load=&FFFFFFFF, exec=&FFFFFFFF
+    INCBIN "../data/boot.bin"
+ENDSECTION

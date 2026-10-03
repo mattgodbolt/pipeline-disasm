@@ -1,0 +1,4 @@
+; $.IO: &33D3 bytes at sector &076.
+SECTION io, filename="IO", org=&242D, load=&242D, exec=&0
+    INCBIN "../data/io.bin"
+ENDSECTION

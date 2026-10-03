@@ -1,0 +1,4 @@
+; $.WARNING: &380 bytes at sector &023.
+SECTION warning, filename="WARNING", org=&7C00, load=&7C00, exec=&7C00
+    INCBIN "../data/warning.bin"
+ENDSECTION

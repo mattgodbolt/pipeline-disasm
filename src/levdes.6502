@@ -1,0 +1,4 @@
+; $.LEVDES: &D9 bytes at sector &113.
+SECTION levdes, filename="LEVDES", org=&0900, load=&900, exec=&900
+    INCBIN "../data/levdes.bin"
+ENDSECTION

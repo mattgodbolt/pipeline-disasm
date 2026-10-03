@@ -1,0 +1,4 @@
+; $.DEFAULT: &F34 bytes at sector &066.
+SECTION default, filename="DEFAULT", org=&4000, load=&4000, exec=&0
+    INCBIN "../data/default.bin"
+ENDSECTION

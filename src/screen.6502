@@ -1,0 +1,4 @@
+; $.SCREEN: &2800 bytes at sector &03E.
+SECTION screen, filename="SCREEN", org=&5800, load=&5800, exec=&5800
+    INCBIN "../data/screen.bin"
+ENDSECTION

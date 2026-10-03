@@ -1,0 +1,4 @@
+; $.GRAPHIC: &D9 bytes at sector &112.
+SECTION graphic, filename="GRAPHIC", org=&0900, load=&900, exec=&900
+    INCBIN "../data/graphic.bin"
+ENDSECTION

@@ -1,0 +1,4 @@
+; $.LDATA: &3200 bytes at sector &0AA.
+SECTION ldata, filename="LDATA", org=&3400, load=&3400, exec=&3820
+    INCBIN "../data/ldata.bin"
+ENDSECTION

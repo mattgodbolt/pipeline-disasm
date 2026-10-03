@@ -1,0 +1,4 @@
+; $.GAME: &D9 bytes at sector &111.
+SECTION game, filename="GAME", org=&0900, load=&900, exec=&900
+    INCBIN "../data/game.bin"
+ENDSECTION

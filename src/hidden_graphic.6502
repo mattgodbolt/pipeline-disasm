@@ -1,0 +1,4 @@
+; The graphics, hidden in sectors &145-&165.
+SECTION hidden_graphic, filename="H.GRAPH"
+    INCBIN "../data/hidden_graphic.bin"
+ENDSECTION

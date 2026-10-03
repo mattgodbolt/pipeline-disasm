@@ -1,0 +1,4 @@
+; $.LEVEL1: &A5F bytes at sector &0DC.
+SECTION level1, filename="LEVEL1", org=&25A1, load=&25A1, exec=&8380
+    INCBIN "../data/level1.bin"
+ENDSECTION

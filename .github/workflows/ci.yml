@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    name: rebuild the disc and compare
+    runs-on: ubuntu-latest
+    env:
+      # Baron is pre-1.0 and its syntax still moves; pin it, and bump
+      # deliberately (the verify step proves a bump changed nothing).
+      BARON_REPO: https://github.com/waitingforvsync/baron
+      BARON_REF: 016a7641b44850f22abffeeaf5a4635e8961294a
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cache baron
+        id: baron-cache
+        uses: actions/cache@v4
+        with:
+          path: baron-bin
+          key: baron-${{ runner.os }}-${{ env.BARON_REF }}
+
+      - name: Build baron
+        if: steps.baron-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update && sudo apt-get install -y ninja-build
+          git clone "$BARON_REPO" "$RUNNER_TEMP/baron"
+          cd "$RUNNER_TEMP/baron"
+          git checkout "$BARON_REF"
+          git submodule update --init --recursive
+          cmake -B build -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+          mkdir -p "$GITHUB_WORKSPACE/baron-bin"
+          cp build/src/baron "$GITHUB_WORKSPACE/baron-bin/"
+
+      - name: Rebuild and verify against the original
+        run: make test BARON="$GITHUB_WORKSPACE/baron-bin/baron"
+
+      - name: Keep the rebuilt disc and symbols
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-build
+          path: |
+            build/pipeline.ssd
+            build/symbols.json
+            build/listing.txt

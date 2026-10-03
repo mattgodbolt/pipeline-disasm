@@ -1,0 +1,4 @@
+; $.TITLE: &1679 bytes at sector &027.
+SECTION title, filename="TITLE", org=&6300, load=&6300, exec=&7900
+    INCBIN "../data/title.bin"
+ENDSECTION

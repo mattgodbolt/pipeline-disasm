@@ -1,0 +1,4 @@
+; $.MENU: &2000 bytes at sector &003.
+SECTION menu, filename="MENU", org=&1900, load=&1900, exec=&8023
+    INCBIN "../data/menu.bin"
+ENDSECTION

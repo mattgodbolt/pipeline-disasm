@@ -1,0 +1,4 @@
+; $.MRUN: &80 bytes at sector &100.
+SECTION mrun, filename="MRUN", org=&0780, load=&780, exec=&780
+    INCBIN "../data/mrun.bin"
+ENDSECTION

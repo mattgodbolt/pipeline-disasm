@@ -1,0 +1,4 @@
+build/
+baron-bin/
+node_modules/
+__pycache__/

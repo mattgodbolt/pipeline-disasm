@@ -1,0 +1,4 @@
+; $.WDATA: &C4E bytes at sector &104.
+SECTION wdata, filename="WDATA", org=&7000, load=&7000, exec=&0
+    INCBIN "../data/wdata.bin"
+ENDSECTION

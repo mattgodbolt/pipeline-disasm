@@ -1,0 +1,4 @@
+; The level designer, hidden in sectors &16D-&18B.
+SECTION hidden_levdes, filename="H.LEVDES"
+    INCBIN "../data/hidden_levdes.bin"
+ENDSECTION

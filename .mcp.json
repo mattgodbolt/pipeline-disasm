@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "jsbeeb": {
+      "command": "npx",
+      "args": ["-y", "jsbeeb-mcp"]
+    }
+  }
+}

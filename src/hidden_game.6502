@@ -1,0 +1,4 @@
+; The game proper, hidden in sectors &122-&142.
+SECTION hidden_game, filename="H.GAME"
+    INCBIN "../data/hidden_game.bin"
+ENDSECTION

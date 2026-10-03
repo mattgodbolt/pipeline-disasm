@@ -1,0 +1,4 @@
+; $.PL: &2FC bytes at sector &101.
+SECTION pl, filename="PL", org=&0400, load=&400, exec=&400
+    INCBIN "../data/pl.bin"
+ENDSECTION
