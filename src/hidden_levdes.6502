@@ -80,7 +80,6 @@ window_flags    = &88           ; its y byte with bit 7
 menu_first_item = &89
 
 error_ptr       = &FD           ; the OS's pointer to the last error
-startup_options = &028F         ; the keyboard links, read by the OS at reset
 
 screen          = &3000
 SCREEN_ROW      = 512           ; bytes per character row: 64 columns of 8
@@ -270,7 +269,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     JSR vector_draw_map
     JMP main_reset_input
 .debug_exit_check
-    LDA startup_options
+    LDA MOS_STARTUP_OPTIONS
     CMP #&CF
     BNE restart_main_loop
     JSR hide_cursor

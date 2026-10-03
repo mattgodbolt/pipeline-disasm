@@ -212,3 +212,38 @@ Details in `docs/notes/loaders.md`. The headlines:
   (jsbeeb) needs from baron's dump: label vs constant, which section a label
   is in, and a way to tell which of several overlapping programs is loaded.
   Both ends are works in progress, so it's feedback, not a plan.
+
+## 2026-10-03 20:35 — Merged: the Level Designer, WDATA, LEVEL1 (agent branch)
+
+Details in `docs/notes/levdes.md`.
+
+- H.LEVDES is fully source: loaded at &1100, entered at &2E21, which moves
+  three pieces of itself (low code to &0880, a 64-glyph font to &0400, and
+  17 pointers to menu handler tables into zero page, read by a `LDA &FFFE,Y`
+  that wraps), then reuses &25A1-&2FFF as the level being edited. Its font,
+  digit glyphs and map-block patterns are pixel-art macros.
+- The screen is MODE 1 narrowed to 64 columns (CRTC R1=64, 512 bytes a
+  row), so the 64x64 map is one byte (4x4 pixels) per cell. LDATA is its
+  title picture (`docs/img/levdes-title.png`), not code; its exec address
+  &3820 means nothing.
+- The three bytes the STH crack changes (&600, &601, &69C) aren't
+  protection: they're two ordinary stores, broken in the crack (a `FF FF`
+  that runs as an illegal opcode, and a store to the wrong object's byte).
+  Shown in jsbeeb: Options, Start, Display puts the cursor at (62, 35) on
+  the original and (31, 15) on the crack. Probably a bad sector in whatever
+  the crack was made from.
+- Its last &E1 bytes are H.GRAPH's bytes at the same offsets: the file was
+  saved from a buffer that had held the Graphics Designer.
+- A back door: with the keyboard links at &CF, typing `i` at an error drops
+  to BASIC.
+- LEVEL1 is the designer's save format (and the game's first level, verbatim
+  in IO); WDATA its windows and messages, both now readable source with
+  their layouts in `src/level.6502inc` and `src/wdata.6502inc` for MISSION
+  and IO to reuse.
+- On main: `screen2png.py` (needed Pillow) folded into `beebscreen.py`
+  (`--columns`, `--offset`); `MOS_STARTUP_OPTIONS` into `os.6502inc`.
+- Baron: list literals can span lines already (the agent built long tables
+  eight at a time with CONCAT; simplify later). A stepped range whose limit
+  equals its second element fails (`0..2..2`, `1..3..3`, `10..8..8` all give
+  "Argument out of domain"); reported upstream. Character literals are now
+  asked for by two pieces; `CODES("c")[0]` works.

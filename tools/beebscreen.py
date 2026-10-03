@@ -2,9 +2,13 @@
 """Render BBC Micro screen memory (MODE 1 or MODE 5) to a PNG, for docs/img.
 
     beebscreen.py MODE IN.bin OUT.png [--palette 0,1,4,7] [--title]
+                  [--columns N] [--offset HEX]
 
 IN.bin is screen memory from its start (&3000 for MODE 1, &5800 for MODE 5),
-as *SAVEd or as a loading picture is stored. --title unpacks it as TITLE
+as *SAVEd or as a loading picture is stored, or from --offset bytes into it.
+--columns narrows the screen as a program reprogramming the CRTC does (the
+Level Designer runs MODE 1 with 64 columns: `beebscreen.py 1 data/ldata.bin
+OUT.png --columns 64 --offset 400 --palette 0,4,3,1`). --title unpacks it as TITLE
 does (see src/title.6502) first: a nonzero byte stands for itself, a zero is
 followed by a count of zeros (0 meaning 256), and the screen's last 2K is
 cleared afterwards. --palette
@@ -54,11 +58,10 @@ def unpack_title(packed: bytes) -> bytes:
     return bytes(screen)
 
 
-def pixels(mode: int, screen: bytes):
+def pixels(row_bytes: int, screen: bytes):
     """Rows of logical colours. Both modes have 4 colours: pixel p of a byte
     takes bit 7-p as its high bit and bit 3-p as its low."""
-    row_bytes, size, _ = MODES[mode]
-    screen = screen.ljust(size, b"\0")
+    screen = screen.ljust(row_bytes * 32, b"\0")
     width = row_bytes // 8 * 4
     rows = []
     for y in range(256):
@@ -93,17 +96,24 @@ def main():
     ap.add_argument("output", type=Path)
     ap.add_argument("--palette", help="physical colours for logical 0-3, e.g. 0,1,4,7")
     ap.add_argument("--title", action="store_true", help="unpack IN.bin as TITLE does first")
+    ap.add_argument("--columns", type=int, help="character columns, if the CRTC has narrowed the screen")
+    ap.add_argument("--offset", type=lambda h: int(h.lstrip("&$"), 16), default=0,
+                    help="where in screen memory IN.bin starts (hex)")
     args = ap.parse_args()
 
-    _, size, palette = MODES[args.mode]
+    row_bytes, _, palette = MODES[args.mode]
     if args.palette:
         palette = [int(c) for c in args.palette.split(",")]
     data = args.input.read_bytes()
     if args.title:
         data = unpack_title(data)
-    xscale = 640 // (MODES[args.mode][0] // 8 * 4)
+    data = bytes(args.offset) + data
+    # A pixel keeps its mode's shape however many columns there are.
+    xscale = 640 // (row_bytes // 8 * 4)
+    if args.columns:
+        row_bytes = args.columns * 8
     out = []
-    for row in pixels(args.mode, data):
+    for row in pixels(row_bytes, data):
         line = [RGB[palette[c]] for c in row for _ in range(xscale)]
         out += [line, line]
     write_png(args.output, out)

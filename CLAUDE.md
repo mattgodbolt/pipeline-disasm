@@ -53,6 +53,11 @@ with baron pinned by commit; bumping the pin is its own commit.
 - `src/teletext.6502inc`: Mode 7 control codes and `TT_ROW`.
 - `tools/mode7.py` (Mode 7 binary to `TT_ROW` source), `tools/beebscreen.py`
   (MODE 1/5 screen memory to PNG), `tools/plcrypt.py` (PL's encryption).
+  Python tools use the standard library only.
+- `tools/dis6502seg.py` wraps dis6502 for a binary that moves pieces of
+  itself at startup: each moved piece becomes a nested, rephased section.
+- `tools/beebscreen.py` also draws a CRTC-narrowed screen (`--columns`) from
+  part-way into screen memory (`--offset`).
 - `tools/basic.py` lists a tokenised BASIC program as text a baron `BASIC`
   block takes back; `src/basic.6502inc` has `basic_line()` for lines that
   must be EQUB records.
@@ -72,12 +77,15 @@ with baron pinned by commit; bumping the pin is its own commit.
 | GAME, GRAPHIC, LEVDES | game/graphic/levdes.6502 | &D9-byte stubs at &0900, one source (hidden_loader.6502inc), reading the hidden runs with OSWORD &7F |
 | H.GAME | hidden_game.6502 | the game, run at &3000; loads IO |
 | H.GRAPH | hidden_graphic.6502 | the Graphics Designer, at &1AB0 entered at &2BAE; uses DEFAULT, exits via /MRUN |
-| H.LEVDES | hidden_levdes.6502 | the Level Designer, at &1100 entered at &2E21; loads WDATA and LDATA, exits via /MRUN |
+| H.LEVDES | hidden_levdes.6502 | the Level Designer, at &1100 entered at &2E21; moves pieces to &0880, &0400 and zero page; loads WDATA and LDATA, exits via /MRUN |
 | TITLE | title.6502 | `*RUN` in MODE 1 before the game: unpacks the title picture over itself |
 | MRUN | mrun.6502 | &80 bytes at &0780: restores the editors' vectors, back to the menu via `*E.!BOOT` |
 | PL | pl.6502 | "Ian's cheat!": self-decrypting, run by MENU if W and T are held at boot; tools/plcrypt.py |
 | WARNING, SCREEN | warning/screen.6502 | Mode 7 warning page (as rows); MODE 5 loading picture |
-| IO, LDATA, LEVEL1, DEFAULT, WDATA | *.6502 | data (IO ends at &5800: the game's levels, graphics, missions) |
+| WDATA | wdata.6502 (+ wdata.6502inc) | the Level Designer's windows and messages |
+| LDATA | ldata.6502 | the Level Designer's title picture (raw MODE 1 screen, narrowed to 64 columns) |
+| LEVEL1 | level1.6502 (+ level.6502inc) | a level in the designer's save format, loaded by MISSION; the game's first level |
+| IO, DEFAULT | io/default.6502 | the game's data (ends at &5800: names, mission, levels, graphics); the default graphics set |
 
 ## Baron notes
 
@@ -88,8 +96,10 @@ with baron pinned by commit; bumping the pin is its own commit.
   original does that, use a macro emitting `EQUB opcode : EQUW addr`
   (overloads by shape: `MACRO LDA_ABS addr` and `MACRO LDA_ABS addr, "X"`).
 - `INCBIN` takes a whole file; to convert part of a binary, split the binary.
-- `BASIC`...`ENDBASIC` tokenises BBC BASIC inline; worth trying for MENU and
-  MISSION, checking the tokenisation matches byte for byte.
+- List literals may span lines (`{1, 2,` newline `3}`); no need to build long
+  tables in groups with CONCAT.
+- Stepped ranges whose limit equals their second element fail
+  (`0..2..2`: "Argument out of domain"); write `0..2..3` or a list.
 - The symbol dump also holds FUNCTION and macro parameters under `@...`
   scopes; anything feeding jsbeeb should drop names starting with `@`.
 - Named scopes (`.game { ... }`) give dotted symbol paths in the dump; use them

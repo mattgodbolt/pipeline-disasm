@@ -40,6 +40,10 @@ OSCLI  = &FFF7
 ; The internal key number (bit 7 set) of the key last pressed, while it's held.
 MOS_KEY_PRESSED = &EC
 
+; The startup options: the keyboard links, read by the OS at reset (bits 0-2
+; the screen mode, bit 3 the boot action, bits 4-5 the disc timings).
+MOS_STARTUP_OPTIONS = &028F
+
 ; Vectors in page 2.
 USERV = &0200
 BRKV  = &0202
