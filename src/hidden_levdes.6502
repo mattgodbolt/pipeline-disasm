@@ -1,4 +1,3669 @@
-; The level designer, hidden in sectors &16D-&18B.
-SECTION hidden_levdes, filename="H.LEVDES"
-    INCBIN "../data/hidden_levdes.bin"
+INCLUDE "os.6502inc"
+SECTION hidden_levdes, filename="H.LEVDES", org=&1100
+.L1100
+    JMP L138D                       ; 1100: 4C 8D 13
+.L1103
+    JMP L136C                       ; 1103: 4C 6C 13
+.D1106
+    EQUB &4B                        ; 1106
+.D1107
+    EQUB &12                        ; 1107
+.D1108
+    EQUB &96                        ; 1108
+.D1109
+    EQUB &11                        ; 1109
+.L110A
+    JMP L15D0                       ; 110A: 4C D0 15
+.L110D
+    JMP L15B3                       ; 110D: 4C B3 15
+.L1110
+    LDA #&30                        ; 1110: A9 30
+    STA &53                         ; 1112: 85 53
+    LDA #&00                        ; 1114: A9 00
+    TAY                             ; 1116: A8
+    STA &52                         ; 1117: 85 52
+    LDX #&40                        ; 1119: A2 40
+.L111B
+    STA (&52), Y                    ; 111B: 91 52
+    INY                             ; 111D: C8
+    BNE L111B                       ; 111E: D0 FB
+    INC &53                         ; 1120: E6 53
+    DEX                             ; 1122: CA
+    BNE L111B                       ; 1123: D0 F6
+    RTS                             ; 1125: 60
+.L1126
+    LDY #&00                        ; 1126: A0 00
+.L1128
+    TAX                             ; 1128: AA
+    DEX                             ; 1129: CA
+    STX &6C                         ; 112A: 86 6C
+    BNE L1138                       ; 112C: D0 0A
+    LDA D21BF, Y                    ; 112E: B9 BF 21
+    LSR A                           ; 1131: 4A
+    LSR A                           ; 1132: 4A
+    LSR A                           ; 1133: 4A
+    LSR A                           ; 1134: 4A
+    TAY                             ; 1135: A8
+    INX                             ; 1136: E8
+    TXA                             ; 1137: 8A
+.L1138
+    STY &52                         ; 1138: 84 52
+    JSR L14A8                       ; 113A: 20 A8 14
+    LDA &52                         ; 113D: A5 52
+    JSR L1152                       ; 113F: 20 52 11
+    PHA                             ; 1142: 48
+    JSR L0883                       ; 1143: 20 83 08
+    PLA                             ; 1146: 68
+    LDX &6C                         ; 1147: A6 6C
+    BNE L1151                       ; 1149: D0 06
+    TAY                             ; 114B: A8
+    LDA D21BF, Y                    ; 114C: B9 BF 21
+    AND #&0F                        ; 114F: 29 0F
+.L1151
+    RTS                             ; 1151: 60
+.L1152
+    JSR L0886                       ; 1152: 20 86 08
+    BCC L1151                       ; 1155: 90 FA
+.L1157
+    LDA #&7E                        ; 1157: A9 7E
+    JSR OSBYTE                      ; 1159: 20 F4 FF
+    TXA                             ; 115C: 8A
+    BEQ L1157                       ; 115D: F0 F8
+    JSR L1165                       ; 115F: 20 65 11
+    JMP L1202                       ; 1162: 4C 02 12
+.L1165
+    JSR L136C                       ; 1165: 20 6C 13
+    JSR L1381                       ; 1168: 20 81 13
+    JSR L088C                       ; 116B: 20 8C 08
+    LDX #&FF                        ; 116E: A2 FF
+    JSR L14AE                       ; 1170: 20 AE 14
+    BNE L1151                       ; 1173: D0 DC
+    JSR L1323                       ; 1175: 20 23 13
+    JSR L0895                       ; 1178: 20 95 08
+    LDA #&4B                        ; 117B: A9 4B
+    JSR L2356                       ; 117D: 20 56 23
+    LDA #&0A                        ; 1180: A9 0A
+    JSR L2359                       ; 1182: 20 59 23
+    JSR L1234                       ; 1185: 20 34 12
+    LDX #&90                        ; 1188: A2 90
+    LDY #&11                        ; 118A: A0 11
+    JSR OSCLI                       ; 118C: 20 F7 FF
+    RTS                             ; 118F: 60
+    EQUS "/MRUN"                    ; 1190
+    EQUB &0D                        ; 1195
+    LDX #&FF                        ; 1196: A2 FF
+    TXS                             ; 1198: 9A
+    STX &6B                         ; 1199: 86 6B
+    LDA &67                         ; 119B: A5 67
+    BEQ L11A4                       ; 119D: F0 05
+    JSR L2368                       ; 119F: 20 68 23
+    DEC &67                         ; 11A2: C6 67
+.L11A4
+    LDA &FD                         ; 11A4: A5 FD
+    STA &54                         ; 11A6: 85 54
+    LDA &FE                         ; 11A8: A5 FE
+    STA &55                         ; 11AA: 85 55
+    JSR L1283                       ; 11AC: 20 83 12
+    JSR L136C                       ; 11AF: 20 6C 13
+    LDA D124B                       ; 11B2: AD 4B 12
+    STA RDCHV                       ; 11B5: 8D 10 02
+    LDA D124C                       ; 11B8: AD 4C 12
+    STA &0211                       ; 11BB: 8D 11 02
+    JSR L1E04                       ; 11BE: 20 04 1E
+    JSR L0895                       ; 11C1: 20 95 08
+    LDY #&00                        ; 11C4: A0 00
+    LDA (&54), Y                    ; 11C6: B1 54
+    CMP #&1B                        ; 11C8: C9 1B
+    BNE L11D9                       ; 11CA: D0 0D
+    LDA #&0A                        ; 11CC: A9 0A
+    JSR L2359                       ; 11CE: 20 59 23
+    LDA #&4C                        ; 11D1: A9 4C
+    JSR L2356                       ; 11D3: 20 56 23
+    JMP L11ED                       ; 11D6: 4C ED 11
+.L11D9
+    PHA                             ; 11D9: 48
+    LDA #&09                        ; 11DA: A9 09
+    JSR L2356                       ; 11DC: 20 56 23
+    LDA #&44                        ; 11DF: A9 44
+    JSR L2359                       ; 11E1: 20 59 23
+    PLA                             ; 11E4: 68
+    JSR L184C                       ; 11E5: 20 4C 18
+    LDA #&45                        ; 11E8: A9 45
+    JSR L2359                       ; 11EA: 20 59 23
+.L11ED
+    LDY #&01                        ; 11ED: A0 01
+.L11EF
+    LDA (&54), Y                    ; 11EF: B1 54
+    BEQ L11F9                       ; 11F1: F0 06
+    JSR OSWRCH                      ; 11F3: 20 EE FF
+    INY                             ; 11F6: C8
+    BNE L11EF                       ; 11F7: D0 F6
+.L11F9
+    JSR L1234                       ; 11F9: 20 34 12
+    INC &6B                         ; 11FC: E6 6B
+    CMP #&69                        ; 11FE: C9 69
+    BEQ L1208                       ; 1200: F0 06
+.L1202
+    JSR L088C                       ; 1202: 20 8C 08
+    JMP L15D3                       ; 1205: 4C D3 15
+.L1208
+    LDA &028F                       ; 1208: AD 8F 02
+    CMP #&CF                        ; 120B: C9 CF
+    BNE L1202                       ; 120D: D0 F3
+    JSR L1283                       ; 120F: 20 83 12
+    JSR L1375                       ; 1212: 20 75 13
+    JSR L1375                       ; 1215: 20 75 13
+    LDA #&0C                        ; 1218: A9 0C
+    LDX #&02                        ; 121A: A2 02
+    JSR OSBYTE                      ; 121C: 20 F4 FF
+    LDA &FD                         ; 121F: A5 FD
+    STA &52                         ; 1221: 85 52
+    LDA &FE                         ; 1223: A5 FE
+    STA &53                         ; 1225: 85 53
+    LDX #&2E                        ; 1227: A2 2E
+    LDY #&12                        ; 1229: A0 12
+    JSR OSCLI                       ; 122B: 20 F7 FF
+    EQUS "BASIC"                    ; 122E
+    EQUB &0D                        ; 1233
+.L1234
+    JSR L1242                       ; 1234: 20 42 12
+.L1237
+    LDA #&7E                        ; 1237: A9 7E
+    JSR OSBYTE                      ; 1239: 20 F4 FF
+    JSR OSRDCH                      ; 123C: 20 E0 FF
+    BCS L1237                       ; 123F: B0 F6
+    RTS                             ; 1241: 60
+.L1242
+    LDA #&0F                        ; 1242: A9 0F
+    LDX #&01                        ; 1244: A2 01
+    JMP OSBYTE                      ; 1246: 4C F4 FF
+    EQUB &28, &20                   ; 1249
+.D124B
+    EQUB &A6                        ; 124B
+.D124C
+    EQUB &FF, &B0, &19, &08, &20, &69, &12, &C9; 124C
+    EQUB &0D, &F0, &10, &C9, &7F, &F0, &0C, &CD; 1254
+    EQUB &B4, &21, &90, &E9, &CD, &B5, &21, &F0; 125C
+    EQUB &02, &B0, &E2, &28         ; 1264
+.L1268
+    RTS                             ; 1268: 60
+.L1269
+    PHA                             ; 1269: 48
+    EOR #&80                        ; 126A: 49 80
+    CMP #&06                        ; 126C: C9 06
+    BCC L1272                       ; 126E: 90 02
+    PLA                             ; 1270: 68
+    RTS                             ; 1271: 60
+.L1272
+    LDX #&FF                        ; 1272: A2 FF
+    TXS                             ; 1274: 9A
+    PHA                             ; 1275: 48
+    JSR L088C                       ; 1276: 20 8C 08
+    JSR L1381                       ; 1279: 20 81 13
+    JSR L136C                       ; 127C: 20 6C 13
+    PLA                             ; 127F: 68
+    JMP L15F3                       ; 1280: 4C F3 15
+.L1283
+    LDA &56                         ; 1283: A5 56
+    BEQ L1268                       ; 1285: F0 E1
+.L1287
+    LDA &56                         ; 1287: A5 56
+    EOR #&01                        ; 1289: 49 01
+    STA &56                         ; 128B: 85 56
+    LDA #&13                        ; 128D: A9 13
+    JSR OSBYTE                      ; 128F: 20 F4 FF
+    LDX &50                         ; 1292: A6 50
+    LDY &51                         ; 1294: A4 51
+    JMP L088F                       ; 1296: 4C 8F 08
+.L1299
+    PHA                             ; 1299: 48
+    JSR L1283                       ; 129A: 20 83 12
+    LDX &50                         ; 129D: A6 50
+    LDY &51                         ; 129F: A4 51
+    PLA                             ; 12A1: 68
+    JMP L2365                       ; 12A2: 4C 65 23
+.L12A5
+    STX &54                         ; 12A5: 86 54
+    STA &5B                         ; 12A7: 85 5B
+.L12A9
+    JSR L0895                       ; 12A9: 20 95 08
+    LDX &54                         ; 12AC: A6 54
+    JSR L12C4                       ; 12AE: 20 C4 12
+    DEX                             ; 12B1: CA
+    BPL L12A9                       ; 12B2: 10 F5
+    SEC                             ; 12B4: 38
+    SBC #&01                        ; 12B5: E9 01
+    BCC L12A9                       ; 12B7: 90 F0
+    CMP &5B                         ; 12B9: C5 5B
+    BCS L12A9                       ; 12BB: B0 EC
+    ASL A                           ; 12BD: 0A
+    ASL A                           ; 12BE: 0A
+    STA &5B                         ; 12BF: 85 5B
+    JMP L0898                       ; 12C1: 4C 98 08
+.L12C4
+    LDA #&30                        ; 12C4: A9 30
+    STA D21B4                       ; 12C6: 8D B4 21
+    LDA #&39                        ; 12C9: A9 39
+    STA D21B5                       ; 12CB: 8D B5 21
+    LDA #&03                        ; 12CE: A9 03
+    JSR L1342                       ; 12D0: 20 42 13
+    LDA #&00                        ; 12D3: A9 00
+    TAY                             ; 12D5: A8
+.L12D6
+    PHA                             ; 12D6: 48
+    LDA &40, Y                      ; 12D7: B9 40 00
+    SEC                             ; 12DA: 38
+    SBC #&30                        ; 12DB: E9 30
+    BCC L12FD                       ; 12DD: 90 1E
+    STA &40, Y                      ; 12DF: 99 40 00
+    PLA                             ; 12E2: 68
+    ASL A                           ; 12E3: 0A
+    BCS L1320                       ; 12E4: B0 3A
+    STA &52                         ; 12E6: 85 52
+    ASL A                           ; 12E8: 0A
+    BCS L1320                       ; 12E9: B0 35
+    ASL A                           ; 12EB: 0A
+    BCS L1320                       ; 12EC: B0 32
+    ADC &52                         ; 12EE: 65 52
+    BCS L1320                       ; 12F0: B0 2E
+    ADC &40, Y                      ; 12F2: 79 40 00
+    BCS L1320                       ; 12F5: B0 29
+    INY                             ; 12F7: C8
+    BNE L12D6                       ; 12F8: D0 DC
+    LDX #&02                        ; 12FA: A2 02
+    RTS                             ; 12FC: 60
+.L12FD
+    LDX #&00                        ; 12FD: A2 00
+    TYA                             ; 12FF: 98
+    BNE L131E                       ; 1300: D0 1C
+    PLA                             ; 1302: 68
+    INX                             ; 1303: E8
+    RTS                             ; 1304: 60
+    LDY &5B                         ; 1305: A4 5B
+    LDA &50                         ; 1307: A5 50
+    ASL A                           ; 1309: 0A
+    ASL A                           ; 130A: 0A
+    ORA &62                         ; 130B: 05 62
+    STA &2780, Y                    ; 130D: 99 80 27
+    LDA &51                         ; 1310: A5 51
+    ASL A                           ; 1312: 0A
+    ASL A                           ; 1313: 0A
+    ORA &55                         ; 1314: 05 55
+    STA &2782, Y                    ; 1316: 99 82 27
+    PLA                             ; 1319: 68
+.L131A
+    JSR L0883                       ; 131A: 20 83 08
+    PLA                             ; 131D: 68
+.L131E
+    PLA                             ; 131E: 68
+    RTS                             ; 131F: 60
+.L1320
+    LDX #&03                        ; 1320: A2 03
+    RTS                             ; 1322: 60
+.L1323
+    LDA #&26                        ; 1323: A9 26
+    JSR L14A8                       ; 1325: 20 A8 14
+.L1328
+    JSR L1234                       ; 1328: 20 34 12
+    ORA #&20                        ; 132B: 09 20
+    CMP #&6E                        ; 132D: C9 6E
+    BEQ L131A                       ; 132F: F0 E9
+    CMP #&79                        ; 1331: C9 79
+    BNE L1328                       ; 1333: D0 F3
+    JMP L0883                       ; 1335: 4C 83 08
+.L1338
+    LDY #&20                        ; 1338: A0 20
+    STY D21B4                       ; 133A: 8C B4 21
+    LDY #&7E                        ; 133D: A0 7E
+    STY D21B5                       ; 133F: 8C B5 21
+.L1342
+    STA D21B3                       ; 1342: 8D B3 21
+    TXA                             ; 1345: 8A
+    JSR L2353                       ; 1346: 20 53 23
+    JSR L1375                       ; 1349: 20 75 13
+    LDA #&20                        ; 134C: A9 20
+    JSR OSWRCH                      ; 134E: 20 EE FF
+    LDY #&0F                        ; 1351: A0 0F
+.L1353
+    STA &40, Y                      ; 1353: 99 40 00
+    DEY                             ; 1356: 88
+    BNE L1353                       ; 1357: D0 FA
+    LDX #&B1                        ; 1359: A2 B1
+    LDY #&21                        ; 135B: A0 21
+    LDA #&00                        ; 135D: A9 00
+    JSR OSWORD                      ; 135F: 20 F1 FF
+    STY &52                         ; 1362: 84 52
+    JSR L1381                       ; 1364: 20 81 13
+    BCC L136C                       ; 1367: 90 03
+    JMP L1394                       ; 1369: 4C 94 13
+.L136C
+    LDA #&20                        ; 136C: A9 20
+    JSR L138B                       ; 136E: 20 8B 13
+    LDX #&02                        ; 1371: A2 02
+    BNE L137C                       ; 1373: D0 07
+.L1375
+    LDA #&67                        ; 1375: A9 67
+    JSR L138B                       ; 1377: 20 8B 13
+    LDX #&00                        ; 137A: A2 00
+.L137C
+    LDA #&04                        ; 137C: A9 04
+    JMP OSBYTE                      ; 137E: 4C F4 FF
+.L1381
+    LDX #&00                        ; 1381: A2 00
+    STX D21B4                       ; 1383: 8E B4 21
+    DEX                             ; 1386: CA
+    STX D21B5                       ; 1387: 8E B5 21
+    RTS                             ; 138A: 60
+.L138B
+    LDX #&0A                        ; 138B: A2 0A
+.L138D
+    STX CRTC_ADDR                   ; 138D: 8E 00 FE
+    STA CRTC_DATA                   ; 1390: 8D 01 FE
+    RTS                             ; 1393: 60
+.L1394
+    JSR L1165                       ; 1394: 20 65 11
+    BRK                             ; 1397: 00
+    EQUB &1B                        ; 1398
+    EQUS "Escape key pressed"       ; 1399
+    EQUB &00                        ; 13AB
+.L13AC
+    ASL A                           ; 13AC: 0A
+    BCC L13B1                       ; 13AD: 90 02
+    INC &58                         ; 13AF: E6 58
+.L13B1
+    LDY #&11                        ; 13B1: A0 11
+    LDA &69                         ; 13B3: A5 69
+    JSR L166B                       ; 13B5: 20 6B 16
+    JMP L142D                       ; 13B8: 4C 2D 14
+.L13BB
+    LDA #&00                        ; 13BB: A9 00
+.L13BD
+    STA &5A                         ; 13BD: 85 5A
+    STX &5D                         ; 13BF: 86 5D
+    TXA                             ; 13C1: 8A
+    BMI L13C7                       ; 13C2: 30 03
+    JSR L14A8                       ; 13C4: 20 A8 14
+.L13C7
+    JSR L1287                       ; 13C7: 20 87 12
+    LDX #&20                        ; 13CA: A2 20
+    LDY #&4F                        ; 13CC: A0 4F
+    LDA #&CA                        ; 13CE: A9 CA
+    JSR OSBYTE                      ; 13D0: 20 F4 FF
+    LDX &6A                         ; 13D3: A6 6A
+    BNE L13D9                       ; 13D5: D0 02
+    LDX #&14                        ; 13D7: A2 14
+.L13D9
+    LDA #&81                        ; 13D9: A9 81
+    LDY #&00                        ; 13DB: A0 00
+    STY &58                         ; 13DD: 84 58
+    JSR OSBYTE                      ; 13DF: 20 F4 FF
+    PHP                             ; 13E2: 08
+    STX &57                         ; 13E3: 86 57
+    LDA &6B                         ; 13E5: A5 6B
+    BNE L13ED                       ; 13E7: D0 04
+    TXA                             ; 13E9: 8A
+    JSR L1269                       ; 13EA: 20 69 12
+.L13ED
+    PLP                             ; 13ED: 28
+    ROR A                           ; 13EE: 6A
+    CPY #&1B                        ; 13EF: C0 1B
+    BEQ L1394                       ; 13F1: F0 A1
+    LDY &6A                         ; 13F3: A4 6A
+    BNE L13AC                       ; 13F5: D0 B5
+    ASL A                           ; 13F7: 0A
+    BCS L13C7                       ; 13F8: B0 CD
+    JSR L1242                       ; 13FA: 20 42 12
+    LDX #&9E                        ; 13FD: A2 9E
+    JSR L14AE                       ; 13FF: 20 AE 14
+    BNE L1409                       ; 1402: D0 05
+    INC &58                         ; 1404: E6 58
+    JSR L1470                       ; 1406: 20 70 14
+.L1409
+    LDX #&BD                        ; 1409: A2 BD
+    JSR L14AE                       ; 140B: 20 AE 14
+    BNE L1415                       ; 140E: D0 05
+    INC &58                         ; 1410: E6 58
+    JSR L147C                       ; 1412: 20 7C 14
+.L1415
+    LDX #&B7                        ; 1415: A2 B7
+    JSR L14AE                       ; 1417: 20 AE 14
+    BNE L1421                       ; 141A: D0 05
+    INC &58                         ; 141C: E6 58
+    JSR L1488                       ; 141E: 20 88 14
+.L1421
+    LDX #&97                        ; 1421: A2 97
+    JSR L14AE                       ; 1423: 20 AE 14
+    BNE L142D                       ; 1426: D0 05
+    INC &58                         ; 1428: E6 58
+    JSR L1494                       ; 142A: 20 94 14
+.L142D
+    LDX #&AE                        ; 142D: A2 AE
+    JSR L14AE                       ; 142F: 20 AE 14
+    BNE L143C                       ; 1432: D0 08
+    INC &58                         ; 1434: E6 58
+    JSR L1613                       ; 1436: 20 13 16
+    JSR L16BE                       ; 1439: 20 BE 16
+.L143C
+    LDA &5A                         ; 143C: A5 5A
+    BEQ L145C                       ; 143E: F0 1C
+    LDX #&A6                        ; 1440: A2 A6
+    JSR L14AE                       ; 1442: 20 AE 14
+    BNE L144E                       ; 1445: D0 07
+    INC &58                         ; 1447: E6 58
+    LDA #&00                        ; 1449: A9 00
+    JSR L1299                       ; 144B: 20 99 12
+.L144E
+    LDX #&B6                        ; 144E: A2 B6
+    JSR L14AE                       ; 1450: 20 AE 14
+    BNE L145C                       ; 1453: D0 07
+    INC &58                         ; 1455: E6 58
+    LDA &59                         ; 1457: A5 59
+    JSR L1299                       ; 1459: 20 99 12
+.L145C
+    LDA &58                         ; 145C: A5 58
+    BEQ L1463                       ; 145E: F0 03
+    JMP L13C7                       ; 1460: 4C C7 13
+.L1463
+    JSR L1283                       ; 1463: 20 83 12
+    LDA &5D                         ; 1466: A5 5D
+    BMI L146D                       ; 1468: 30 03
+    JSR L0883                       ; 146A: 20 83 08
+.L146D
+    LDA &57                         ; 146D: A5 57
+    RTS                             ; 146F: 60
+.L1470
+    LDY #&00                        ; 1470: A0 00
+    JSR L14C9                       ; 1472: 20 C9 14
+    BCS L1493                       ; 1475: B0 1C
+    CPX #&1F                        ; 1477: E0 1F
+    BEQ L149F                       ; 1479: F0 24
+    RTS                             ; 147B: 60
+.L147C
+    LDY #&02                        ; 147C: A0 02
+    JSR L14C9                       ; 147E: 20 C9 14
+    BCS L1493                       ; 1481: B0 10
+    CPX #&20                        ; 1483: E0 20
+    BEQ L149F                       ; 1485: F0 18
+    RTS                             ; 1487: 60
+.L1488
+    LDY #&01                        ; 1488: A0 01
+    JSR L14C9                       ; 148A: 20 C9 14
+    BCS L1493                       ; 148D: B0 04
+    CPY #&1F                        ; 148F: C0 1F
+    BEQ L149F                       ; 1491: F0 0C
+.L1493
+    RTS                             ; 1493: 60
+.L1494
+    LDY #&03                        ; 1494: A0 03
+    JSR L14C9                       ; 1496: 20 C9 14
+    BCS L1493                       ; 1499: B0 F8
+    CPY #&20                        ; 149B: C0 20
+    BNE L1493                       ; 149D: D0 F4
+.L149F
+    LDA &5D                         ; 149F: A5 5D
+    BMI L1493                       ; 14A1: 30 F0
+    JSR L0883                       ; 14A3: 20 83 08
+    LDA &5D                         ; 14A6: A5 5D
+.L14A8
+    JSR L235F                       ; 14A8: 20 5F 23
+    JMP L0880                       ; 14AB: 4C 80 08
+.L14AE
+    LDY #&FF                        ; 14AE: A0 FF
+    LDA #&81                        ; 14B0: A9 81
+    JSR OSBYTE                      ; 14B2: 20 F4 FF
+    INX                             ; 14B5: E8
+    RTS                             ; 14B6: 60
+.L14B7
+    LDA &50                         ; 14B7: A5 50
+    CLC                             ; 14B9: 18
+    ADC D21BB, Y                    ; 14BA: 79 BB 21
+    TAX                             ; 14BD: AA
+    LDA &51                         ; 14BE: A5 51
+    CLC                             ; 14C0: 18
+    ADC D21BA, Y                    ; 14C1: 79 BA 21
+    TAY                             ; 14C4: A8
+    RTS                             ; 14C5: 60
+.L14C6
+    SEC                             ; 14C6: 38
+.L14C7
+    PLA                             ; 14C7: 68
+    RTS                             ; 14C8: 60
+.L14C9
+    TYA                             ; 14C9: 98
+    PHA                             ; 14CA: 48
+    JSR L14B7                       ; 14CB: 20 B7 14
+    JSR L2362                       ; 14CE: 20 62 23
+    BMI L14E2                       ; 14D1: 30 0F
+    PHA                             ; 14D3: 48
+    LDX #&FF                        ; 14D4: A2 FF
+    JSR L14AE                       ; 14D6: 20 AE 14
+    PLA                             ; 14D9: 68
+    DEX                             ; 14DA: CA
+    BEQ L14E2                       ; 14DB: F0 05
+    INX                             ; 14DD: E8
+    STX &6A                         ; 14DE: 86 6A
+    BEQ L1522                       ; 14E0: F0 40
+.L14E2
+    LDX &6A                         ; 14E2: A6 6A
+    BNE L154F                       ; 14E4: D0 69
+    TAX                             ; 14E6: AA
+    BEQ L1522                       ; 14E7: F0 39
+    LDX &68                         ; 14E9: A6 68
+    BEQ L1522                       ; 14EB: F0 35
+    CMP #&07                        ; 14ED: C9 07
+    BEQ L1522                       ; 14EF: F0 31
+    CMP #&0A                        ; 14F1: C9 0A
+    BEQ L1535                       ; 14F3: F0 40
+    CMP #&0E                        ; 14F5: C9 0E
+    BEQ L1535                       ; 14F7: F0 3C
+    TAX                             ; 14F9: AA
+    BMI L1535                       ; 14FA: 30 39
+    PLA                             ; 14FC: 68
+    PHA                             ; 14FD: 48
+    TAY                             ; 14FE: A8
+    TXA                             ; 14FF: 8A
+    CMP D21B6, Y                    ; 1500: D9 B6 21
+    SEC                             ; 1503: 38
+    BNE L14C7                       ; 1504: D0 C1
+    INC &6A                         ; 1506: E6 6A
+    PLA                             ; 1508: 68
+    JSR L1521                       ; 1509: 20 21 15
+    PLA                             ; 150C: 68
+    ADC #&01                        ; 150D: 69 01
+    STA &52                         ; 150F: 85 52
+    PLA                             ; 1511: 68
+    ADC #&00                        ; 1512: 69 00
+    STA &53                         ; 1514: 85 53
+    JSR L151E                       ; 1516: 20 1E 15
+    PLA                             ; 1519: 68
+    PLA                             ; 151A: 68
+    JMP L142D                       ; 151B: 4C 2D 14
+.L151E
+    JMP (&52)                       ; 151E: 6C 52 00
+.L1521
+    PHA                             ; 1521: 48
+.L1522
+    TAX                             ; 1522: AA
+    BMI L14C6                       ; 1523: 30 A1
+    JSR L1283                       ; 1525: 20 83 12
+    PLA                             ; 1528: 68
+    STA &69                         ; 1529: 85 69
+    TAY                             ; 152B: A8
+    JSR L14B7                       ; 152C: 20 B7 14
+    STX &50                         ; 152F: 86 50
+    STY &51                         ; 1531: 84 51
+    CLC                             ; 1533: 18
+    RTS                             ; 1534: 60
+.L1535
+    PLA                             ; 1535: 68
+    JSR L1283                       ; 1536: 20 83 12
+    JSR L1287                       ; 1539: 20 87 12
+    JSR L1613                       ; 153C: 20 13 16
+    LDA #&42                        ; 153F: A9 42
+    JSR L14A8                       ; 1541: 20 A8 14
+    JSR L1234                       ; 1544: 20 34 12
+    JSR L149F                       ; 1547: 20 9F 14
+    LDA #&00                        ; 154A: A9 00
+    STA &6A                         ; 154C: 85 6A
+    RTS                             ; 154E: 60
+.L154F
+    LDY &69                         ; 154F: A4 69
+    JSR L14B7                       ; 1551: 20 B7 14
+    JSR L2362                       ; 1554: 20 62 23
+    BEQ L1577                       ; 1557: F0 1E
+    BMI L1535                       ; 1559: 30 DA
+    CMP #&07                        ; 155B: C9 07
+    BEQ L1575                       ; 155D: F0 16
+    CMP #&0B                        ; 155F: C9 0B
+    BEQ L157B                       ; 1561: F0 18
+    CMP #&0A                        ; 1563: C9 0A
+    BEQ L1535                       ; 1565: F0 CE
+    BCC L156F                       ; 1567: 90 06
+    CMP #&0E                        ; 1569: C9 0E
+    BEQ L1535                       ; 156B: F0 C8
+    BCC L1522                       ; 156D: 90 B3
+.L156F
+    PLA                             ; 156F: 68
+    EOR #&02                        ; 1570: 49 02
+    STA &69                         ; 1572: 85 69
+    RTS                             ; 1574: 60
+.L1575
+    LDA #&00                        ; 1575: A9 00
+.L1577
+    STA &6A                         ; 1577: 85 6A
+    BEQ L1522                       ; 1579: F0 A7
+.L157B
+    PLA                             ; 157B: 68
+    JSR L1521                       ; 157C: 20 21 15
+    LDY &69                         ; 157F: A4 69
+    DEY                             ; 1581: 88
+    JSR L1594                       ; 1582: 20 94 15
+    INY                             ; 1585: C8
+    INY                             ; 1586: C8
+    JSR L1594                       ; 1587: 20 94 15
+    DEY                             ; 158A: 88
+    JSR L1594                       ; 158B: 20 94 15
+    TYA                             ; 158E: 98
+    EOR #&02                        ; 158F: 49 02
+    TAY                             ; 1591: A8
+    BPL L15AB                       ; 1592: 10 17
+.L1594
+    TYA                             ; 1594: 98
+    AND #&03                        ; 1595: 29 03
+    TAY                             ; 1597: A8
+    PHA                             ; 1598: 48
+    JSR L14B7                       ; 1599: 20 B7 14
+    JSR L2362                       ; 159C: 20 62 23
+    TAX                             ; 159F: AA
+    PLA                             ; 15A0: 68
+    TAY                             ; 15A1: A8
+    TXA                             ; 15A2: 8A
+    CMP D21B6, Y                    ; 15A3: D9 B6 21
+    BEQ L15A9                       ; 15A6: F0 01
+    RTS                             ; 15A8: 60
+.L15A9
+    PLA                             ; 15A9: 68
+    PLA                             ; 15AA: 68
+.L15AB
+    STY &69                         ; 15AB: 84 69
+    CLC                             ; 15AD: 18
+    LDX &50                         ; 15AE: A6 50
+    LDY &51                         ; 15B0: A4 51
+    RTS                             ; 15B2: 60
+.L15B3
+    TAX                             ; 15B3: AA
+    LDA #&13                        ; 15B4: A9 13
+    JSR OSWRCH                      ; 15B6: 20 EE FF
+    TXA                             ; 15B9: 8A
+    LSR A                           ; 15BA: 4A
+    LSR A                           ; 15BB: 4A
+    LSR A                           ; 15BC: 4A
+    LSR A                           ; 15BD: 4A
+    JSR OSWRCH                      ; 15BE: 20 EE FF
+    TXA                             ; 15C1: 8A
+    JSR OSWRCH                      ; 15C2: 20 EE FF
+    LDA #&00                        ; 15C5: A9 00
+    JSR OSWRCH                      ; 15C7: 20 EE FF
+    JSR OSWRCH                      ; 15CA: 20 EE FF
+    JMP OSWRCH                      ; 15CD: 4C EE FF
+.L15D0
+    JSR L2368                       ; 15D0: 20 68 23
+.L15D3
+    JSR L1381                       ; 15D3: 20 81 13
+    LDA #&4A                        ; 15D6: A9 4A
+    STA RDCHV                       ; 15D8: 8D 10 02
+    LDA #&12                        ; 15DB: A9 12
+    STA &0211                       ; 15DD: 8D 11 02
+.L15E0
+    DEC &6B                         ; 15E0: C6 6B
+    LDA #&01                        ; 15E2: A9 01
+    LDX &68                         ; 15E4: A6 68
+    DEX                             ; 15E6: CA
+    JSR L13BD                       ; 15E7: 20 BD 13
+    INC &6B                         ; 15EA: E6 6B
+    PHA                             ; 15EC: 48
+    JSR L15F9                       ; 15ED: 20 F9 15
+    PLA                             ; 15F0: 68
+    EOR #&80                        ; 15F1: 49 80
+.L15F3
+    JSR L1638                       ; 15F3: 20 38 16
+    JMP L15E0                       ; 15F6: 4C E0 15
+.L15F9
+    CMP #&30                        ; 15F9: C9 30
+    BCC L1637                       ; 15FB: 90 3A
+    CMP #&47                        ; 15FD: C9 47
+    BCS L1618                       ; 15FF: B0 17
+    CMP #&3A                        ; 1601: C9 3A
+    BCC L160B                       ; 1603: 90 06
+    SBC #&41                        ; 1605: E9 41
+    BCC L1618                       ; 1607: 90 0F
+    ADC #&39                        ; 1609: 69 39
+.L160B
+    TAY                             ; 160B: A8
+    LDA L218F, Y                    ; 160C: B9 8F 21
+    AND #&0F                        ; 160F: 29 0F
+    STA &59                         ; 1611: 85 59
+.L1613
+    LDA #&07                        ; 1613: A9 07
+    JMP OSWRCH                      ; 1615: 4C EE FF
+.L1618
+    CMP #&8E                        ; 1618: C9 8E
+    BEQ L1620                       ; 161A: F0 04
+    CMP #&8F                        ; 161C: C9 8F
+    BNE L1637                       ; 161E: D0 17
+.L1620
+    TAY                             ; 1620: A8
+    LDX #&00                        ; 1621: A2 00
+    LDA #&8A                        ; 1623: A9 8A
+    JSR OSBYTE                      ; 1625: 20 F4 FF
+.L1628
+    LDA #&00                        ; 1628: A9 00
+    STA &68                         ; 162A: 85 68
+    STA &6A                         ; 162C: 85 6A
+    LDA #&01                        ; 162E: A9 01
+    LDY &59                         ; 1630: A4 59
+    JSR L1128                       ; 1632: 20 28 11
+    STA &59                         ; 1635: 85 59
+.L1637
+    RTS                             ; 1637: 60
+.L1638
+    TAY                             ; 1638: A8
+    BEQ L1628                       ; 1639: F0 ED
+    LDA &68                         ; 163B: A5 68
+    PHA                             ; 163D: 48
+    LDA &6A                         ; 163E: A5 6A
+    LDX #&00                        ; 1640: A2 00
+    STX &68                         ; 1642: 86 68
+    STX &6A                         ; 1644: 86 6A
+    TAX                             ; 1646: AA
+    PLA                             ; 1647: 68
+    DEY                             ; 1648: 88
+    BEQ L1664                       ; 1649: F0 19
+    DEY                             ; 164B: 88
+    BEQ L168A                       ; 164C: F0 3C
+    DEY                             ; 164E: 88
+    BEQ L169E                       ; 164F: F0 4D
+    DEY                             ; 1651: 88
+    BEQ L1659                       ; 1652: F0 05
+    STX &6A                         ; 1654: 86 6A
+    STA &68                         ; 1656: 85 68
+    RTS                             ; 1658: 60
+.L1659
+    LDA #&3F                        ; 1659: A9 3F
+    JSR L14A8                       ; 165B: 20 A8 14
+    JSR L1234                       ; 165E: 20 34 12
+    JMP L0883                       ; 1661: 4C 83 08
+.L1664
+    LDA #&02                        ; 1664: A9 02
+    JSR L1126                       ; 1666: 20 26 11
+    LDY #&01                        ; 1669: A0 01
+.L166B
+    PHA                             ; 166B: 48
+    TYA                             ; 166C: 98
+    ASL A                           ; 166D: 0A
+    TAY                             ; 166E: A8
+    LDA &FFFE, Y                    ; 166F: B9 FE FF
+    STA &52                         ; 1672: 85 52
+    LDA &FFFF, Y                    ; 1674: B9 FF FF
+    STA &53                         ; 1677: 85 53
+    PLA                             ; 1679: 68
+    ASL A                           ; 167A: 0A
+    TAY                             ; 167B: A8
+    LDA (&52), Y                    ; 167C: B1 52
+    STA L1687+1                     ; 167E: 8D 88 16
+    INY                             ; 1681: C8
+    LDA (&52), Y                    ; 1682: B1 52
+    STA L1687+2                     ; 1684: 8D 89 16
+.L1687
+    JMP &FFA6                       ; 1687: 4C A6 FF
+.L168A
+    LDA #&25                        ; 168A: A9 25
+    JSR L1126                       ; 168C: 20 26 11
+    CMP #&04                        ; 168F: C9 04
+    BEQ L1637                       ; 1691: F0 A4
+    STA &54                         ; 1693: 85 54
+    JSR L1323                       ; 1695: 20 23 13
+    LDA &54                         ; 1698: A5 54
+    LDY #&07                        ; 169A: A0 07
+    BNE L166B                       ; 169C: D0 CD
+.L169E
+    LDA #&3E                        ; 169E: A9 3E
+    JSR L14A8                       ; 16A0: 20 A8 14
+    LDA #&00                        ; 16A3: A9 00
+    BEQ L16AD                       ; 16A5: F0 06
+    SEC                             ; 16A7: 38
+    JSR L16BE                       ; 16A8: 20 BE 16
+    LDA #&01                        ; 16AB: A9 01
+.L16AD
+    PHA                             ; 16AD: 48
+    LDA &68                         ; 16AE: A5 68
+    LDY #&02                        ; 16B0: A0 02
+    JSR L0889                       ; 16B2: 20 89 08
+    PLA                             ; 16B5: 68
+    TAY                             ; 16B6: A8
+    JSR L1152                       ; 16B7: 20 52 11
+    LDY #&10                        ; 16BA: A0 10
+    BNE L166B                       ; 16BC: D0 AD
+.L16BE
+    LDA &68                         ; 16BE: A5 68
+    EOR #&44                        ; 16C0: 49 44
+    STA &68                         ; 16C2: 85 68
+    BNE L16D8                       ; 16C4: D0 12
+    STA &6A                         ; 16C6: 85 6A
+    BCS L16D7                       ; 16C8: B0 0D
+    LDA &5D                         ; 16CA: A5 5D
+    CMP #&43                        ; 16CC: C9 43
+    BNE L16D7                       ; 16CE: D0 07
+    JSR L0883                       ; 16D0: 20 83 08
+    LDA #&FF                        ; 16D3: A9 FF
+    STA &5D                         ; 16D5: 85 5D
+.L16D7
+    RTS                             ; 16D7: 60
+.L16D8
+    BCS L16D7                       ; 16D8: B0 FD
+    LDA &5D                         ; 16DA: A5 5D
+    BPL L16D7                       ; 16DC: 10 F9
+    LDA #&43                        ; 16DE: A9 43
+    STA &5D                         ; 16E0: 85 5D
+    JMP L14A8                       ; 16E2: 4C A8 14
+    LDY #&00                        ; 16E5: A0 00
+    BEQ L16EB                       ; 16E7: F0 02
+    LDY #&04                        ; 16E9: A0 04
+.L16EB
+    STY &5B                         ; 16EB: 84 5B
+    LDA #&35                        ; 16ED: A9 35
+    JSR L1126                       ; 16EF: 20 26 11
+    CMP #&02                        ; 16F2: C9 02
+    BEQ L16D7                       ; 16F4: F0 E1
+    PHA                             ; 16F6: 48
+    LDY &5B                         ; 16F7: A4 5B
+    TYA                             ; 16F9: 98
+    EOR #&04                        ; 16FA: 49 04
+    CLC                             ; 16FC: 18
+    ADC &26E8, Y                    ; 16FD: 79 E8 26
+    STA &50                         ; 1700: 85 50
+    STA &54                         ; 1702: 85 54
+    TYA                             ; 1704: 98
+    EOR #&04                        ; 1705: 49 04
+    CLC                             ; 1707: 18
+    ADC &26E9, Y                    ; 1708: 79 E9 26
+    STA &51                         ; 170B: 85 51
+    STA &55                         ; 170D: 85 55
+    PLA                             ; 170F: 68
+    BNE L16D7                       ; 1710: D0 C5
+.L1712
+    LDX #&03                        ; 1712: A2 03
+    JSR L13BB                       ; 1714: 20 BB 13
+    CMP #&20                        ; 1717: C9 20
+    BEQ L16D7                       ; 1719: F0 BC
+    CMP #&0D                        ; 171B: C9 0D
+    BNE L1712                       ; 171D: D0 F3
+    LDY &5B                         ; 171F: A4 5B
+    TYA                             ; 1721: 98
+    SEC                             ; 1722: 38
+    SBC #&04                        ; 1723: E9 04
+    CLC                             ; 1725: 18
+    ADC &50                         ; 1726: 65 50
+    STA &26E8, Y                    ; 1728: 99 E8 26
+    TYA                             ; 172B: 98
+    SEC                             ; 172C: 38
+    SBC #&04                        ; 172D: E9 04
+    CLC                             ; 172F: 18
+    ADC &51                         ; 1730: 65 51
+    STA &26E9, Y                    ; 1732: 99 E9 26
+    LDA #&0F                        ; 1735: A9 0F
+.L1737
+    PHA                             ; 1737: 48
+    LDX &54                         ; 1738: A6 54
+    LDY &55                         ; 173A: A4 55
+    JSR L2362                       ; 173C: 20 62 23
+    STA &52                         ; 173F: 85 52
+    PLA                             ; 1741: 68
+    PHA                             ; 1742: 48
+    EOR &52                         ; 1743: 45 52
+    BNE L174E                       ; 1745: D0 07
+    LDX &54                         ; 1747: A6 54
+    LDY &55                         ; 1749: A4 55
+    JSR L2365                       ; 174B: 20 65 23
+.L174E
+    LDX &50                         ; 174E: A6 50
+    LDY &51                         ; 1750: A4 51
+    PLA                             ; 1752: 68
+    JMP L2365                       ; 1753: 4C 65 23
+    LDX #&04                        ; 1756: A2 04
+    LDA #&08                        ; 1758: A9 08
+    JSR L12A5                       ; 175A: 20 A5 12
+    JSR L17A3                       ; 175D: 20 A3 17
+    LDA #&00                        ; 1760: A9 00
+.L1762
+    JSR L1152                       ; 1762: 20 52 11
+    PHA                             ; 1765: 48
+    LDY #&02                        ; 1766: A0 02
+    JSR L166B                       ; 1768: 20 6B 16
+    PLA                             ; 176B: 68
+    BPL L1762                       ; 176C: 10 F4
+    JSR L0883                       ; 176E: 20 83 08
+    LDY &5B                         ; 1771: A4 5B
+    LDA &26F0, Y                    ; 1773: B9 F0 26
+    AND #&3F                        ; 1776: 29 3F
+    STA &50                         ; 1778: 85 50
+    STA &54                         ; 177A: 85 54
+    LDA &26F1, Y                    ; 177C: B9 F1 26
+    AND #&3F                        ; 177F: 29 3F
+    STA &51                         ; 1781: 85 51
+    STA &55                         ; 1783: 85 55
+.L1785
+    LDX #&1E                        ; 1785: A2 1E
+    JSR L13BB                       ; 1787: 20 BB 13
+    CMP #&20                        ; 178A: C9 20
+    BEQ L17A3                       ; 178C: F0 15
+    CMP #&0D                        ; 178E: C9 0D
+    BNE L1785                       ; 1790: D0 F3
+    LDY &5B                         ; 1792: A4 5B
+    LDA &50                         ; 1794: A5 50
+    STA &26F0, Y                    ; 1796: 99 F0 26
+    LDA &51                         ; 1799: A5 51
+    STA &26F1, Y                    ; 179B: 99 F1 26
+    LDA #&0F                        ; 179E: A9 0F
+    JSR L1737                       ; 17A0: 20 37 17
+.L17A3
+    LDA #&05                        ; 17A3: A9 05
+    JSR L18D1                       ; 17A5: 20 D1 18
+.L17A8
+    LDY &5B                         ; 17A8: A4 5B
+    LDA &26F0, Y                    ; 17AA: B9 F0 26
+    ORA &26F1, Y                    ; 17AD: 19 F1 26
+    AND #&C0                        ; 17B0: 29 C0
+    BEQ L17B6                       ; 17B2: F0 02
+    LDA #&01                        ; 17B4: A9 01
+.L17B6
+    EOR #&01                        ; 17B6: 49 01
+    LDY #&02                        ; 17B8: A0 02
+    JSR L0889                       ; 17BA: 20 89 08
+    LDY &5B                         ; 17BD: A4 5B
+    LDA &26F3, Y                    ; 17BF: B9 F3 26
+    AND #&20                        ; 17C2: 29 20
+    EOR #&20                        ; 17C4: 49 20
+    LDY #&05                        ; 17C6: A0 05
+    JSR L0889                       ; 17C8: 20 89 08
+    LDY &5B                         ; 17CB: A4 5B
+    LDA &26F3, Y                    ; 17CD: B9 F3 26
+    PHA                             ; 17D0: 48
+    AND #&40                        ; 17D1: 29 40
+    LDY #&06                        ; 17D3: A0 06
+    JSR L0889                       ; 17D5: 20 89 08
+    PLA                             ; 17D8: 68
+    AND #&80                        ; 17D9: 29 80
+    EOR #&80                        ; 17DB: 49 80
+    LDY #&07                        ; 17DD: A0 07
+    JMP L0889                       ; 17DF: 4C 89 08
+    LDY #&1F                        ; 17E2: A0 1F
+    TYA                             ; 17E4: 98
+    LDX &5B                         ; 17E5: A6 5B
+    AND &26F3, X                    ; 17E7: 3D F3 26
+    TAX                             ; 17EA: AA
+    LDA #&08                        ; 17EB: A9 08
+    SEC                             ; 17ED: 38
+    JSR L1A52                       ; 17EE: 20 52 1A
+    STA &52                         ; 17F1: 85 52
+    LDY &5B                         ; 17F3: A4 5B
+    LDA &26F3, Y                    ; 17F5: B9 F3 26
+    AND #&C0                        ; 17F8: 29 C0
+    ORA &52                         ; 17FA: 05 52
+    STA &26F3, Y                    ; 17FC: 99 F3 26
+    JMP L17A3                       ; 17FF: 4C A3 17
+    LDY &5B                         ; 1802: A4 5B
+    LDX &26F2, Y                    ; 1804: BE F2 26
+    INX                             ; 1807: E8
+    LDA #&07                        ; 1808: A9 07
+    LDY #&0F                        ; 180A: A0 0F
+    CLC                             ; 180C: 18
+    JSR L1A52                       ; 180D: 20 52 1A
+    SEC                             ; 1810: 38
+    SBC #&01                        ; 1811: E9 01
+    LDY &5B                         ; 1813: A4 5B
+    STA &26F2, Y                    ; 1815: 99 F2 26
+    BPL L17A3                       ; 1818: 10 89
+    LDA #&20                        ; 181A: A9 20
+    BNE L1824                       ; 181C: D0 06
+    LDA #&40                        ; 181E: A9 40
+    BNE L1824                       ; 1820: D0 02
+    LDA #&80                        ; 1822: A9 80
+.L1824
+    LDY &5B                         ; 1824: A4 5B
+    EOR &26F3, Y                    ; 1826: 59 F3 26
+    STA &26F3, Y                    ; 1829: 99 F3 26
+    JMP L17A8                       ; 182C: 4C A8 17
+    LDY &5B                         ; 182F: A4 5B
+    LDA &26F0, Y                    ; 1831: B9 F0 26
+    AND #&BF                        ; 1834: 29 BF
+    EOR #&80                        ; 1836: 49 80
+    STA &26F0, Y                    ; 1838: 99 F0 26
+    AND #&80                        ; 183B: 29 80
+    STA &52                         ; 183D: 85 52
+    LDA &26F1, Y                    ; 183F: B9 F1 26
+    AND #&3F                        ; 1842: 29 3F
+    ORA &52                         ; 1844: 05 52
+    STA &26F1, Y                    ; 1846: 99 F1 26
+    JMP L17A8                       ; 1849: 4C A8 17
+.L184C
+    STA &52                         ; 184C: 85 52
+    LDY #&00                        ; 184E: A0 00
+    LDA #&64                        ; 1850: A9 64
+    JSR L185C                       ; 1852: 20 5C 18
+    LDA #&0A                        ; 1855: A9 0A
+    JSR L185C                       ; 1857: 20 5C 18
+    LDA #&01                        ; 185A: A9 01
+.L185C
+    STA &53                         ; 185C: 85 53
+    LDA &52                         ; 185E: A5 52
+    LDX #&FF                        ; 1860: A2 FF
+.L1862
+    INX                             ; 1862: E8
+    STA &52                         ; 1863: 85 52
+    SEC                             ; 1865: 38
+    SBC &53                         ; 1866: E5 53
+    BCS L1862                       ; 1868: B0 F8
+    TXA                             ; 186A: 8A
+    BNE L1878                       ; 186B: D0 0B
+    DEY                             ; 186D: 88
+    INY                             ; 186E: C8
+    BNE L1878                       ; 186F: D0 07
+    DEC &53                         ; 1871: C6 53
+    BEQ L1878                       ; 1873: F0 03
+    LDA #&D0                        ; 1875: A9 D0
+    DEY                             ; 1877: 88
+.L1878
+    INY                             ; 1878: C8
+    ADC #&30                        ; 1879: 69 30
+    JMP OSWRCH                      ; 187B: 4C EE FF
+    LDX #&0B                        ; 187E: A2 0B
+    LDA #&04                        ; 1880: A9 04
+    JSR L12A5                       ; 1882: 20 A5 12
+    JSR L18CF                       ; 1885: 20 CF 18
+    LDA #&00                        ; 1888: A9 00
+.L188A
+    JSR L1152                       ; 188A: 20 52 11
+    PHA                             ; 188D: 48
+    LDY #&03                        ; 188E: A0 03
+    JSR L166B                       ; 1890: 20 6B 16
+    PLA                             ; 1893: 68
+    BPL L188A                       ; 1894: 10 F4
+    JSR L0883                       ; 1896: 20 83 08
+    LDY &5B                         ; 1899: A4 5B
+    LDA &2710, Y                    ; 189B: B9 10 27
+    LSR A                           ; 189E: 4A
+    LSR A                           ; 189F: 4A
+    STA &54                         ; 18A0: 85 54
+    STA &50                         ; 18A2: 85 50
+    LDA &2711, Y                    ; 18A4: B9 11 27
+    LSR A                           ; 18A7: 4A
+    LSR A                           ; 18A8: 4A
+    STA &55                         ; 18A9: 85 55
+    STA &51                         ; 18AB: 85 51
+.L18AD
+    LDX #&1F                        ; 18AD: A2 1F
+    JSR L13BB                       ; 18AF: 20 BB 13
+    CMP #&20                        ; 18B2: C9 20
+    BEQ L18CF                       ; 18B4: F0 19
+    CMP #&0D                        ; 18B6: C9 0D
+    BNE L18AD                       ; 18B8: D0 F3
+    LDY &5B                         ; 18BA: A4 5B
+    LDA &50                         ; 18BC: A5 50
+    ASL A                           ; 18BE: 0A
+    ASL A                           ; 18BF: 0A
+    STA &2710, Y                    ; 18C0: 99 10 27
+    LDA &51                         ; 18C3: A5 51
+    ASL A                           ; 18C5: 0A
+    ASL A                           ; 18C6: 0A
+    STA &2711, Y                    ; 18C7: 99 11 27
+    LDA #&0E                        ; 18CA: A9 0E
+    JSR L1737                       ; 18CC: 20 37 17
+.L18CF
+    LDA #&0C                        ; 18CF: A9 0C
+.L18D1
+    JSR L14A8                       ; 18D1: 20 A8 14
+    LDA #&06                        ; 18D4: A9 06
+    JSR L2359                       ; 18D6: 20 59 23
+    LDA &5B                         ; 18D9: A5 5B
+    LSR A                           ; 18DB: 4A
+    LSR A                           ; 18DC: 4A
+    ADC #&31                        ; 18DD: 69 31
+    JSR OSWRCH                      ; 18DF: 20 EE FF
+    JMP L234D                       ; 18E2: 4C 4D 23
+    LDY &5B                         ; 18E5: A4 5B
+    LDX &2712, Y                    ; 18E7: BE 12 27
+    JSR L18F2                       ; 18EA: 20 F2 18
+    STA &2712, Y                    ; 18ED: 99 12 27
+    BPL L18CF                       ; 18F0: 10 DD
+.L18F2
+    CPX #&05                        ; 18F2: E0 05
+    BCC L18F8                       ; 18F4: 90 02
+    LDX #&04                        ; 18F6: A2 04
+.L18F8
+    LDY D190C, X                    ; 18F8: BC 0C 19
+    LDA #&0D                        ; 18FB: A9 0D
+    JSR L1128                       ; 18FD: 20 28 11
+    TAY                             ; 1900: A8
+    LDA D1907, Y                    ; 1901: B9 07 19
+    LDY &5B                         ; 1904: A4 5B
+    RTS                             ; 1906: 60
+.D1907
+    EQUB &02, &03, &01, &00, &08    ; 1907
+.D190C
+    EQUB &03, &02, &00, &01, &04    ; 190C
+    LDY &5B                         ; 1911: A4 5B
+    LDA &2713, Y                    ; 1913: B9 13 27
+    JSR L191F                       ; 1916: 20 1F 19
+    STA &2713, Y                    ; 1919: 99 13 27
+    JMP L18CF                       ; 191C: 4C CF 18
+.L191F
+    STA &53                         ; 191F: 85 53
+    LDY #&00                        ; 1921: A0 00
+.L1923
+    CMP D1997, Y                    ; 1923: D9 97 19
+    BEQ L192D                       ; 1926: F0 05
+    INY                             ; 1928: C8
+    CPY #&04                        ; 1929: C0 04
+    BCC L1923                       ; 192B: 90 F6
+.L192D
+    LDA #&46                        ; 192D: A9 46
+    JSR L1128                       ; 192F: 20 28 11
+    CMP #&04                        ; 1932: C9 04
+    BEQ L193D                       ; 1934: F0 07
+    TAY                             ; 1936: A8
+    LDA D1997, Y                    ; 1937: B9 97 19
+    LDY &5B                         ; 193A: A4 5B
+    RTS                             ; 193C: 60
+.L193D
+    LDA &53                         ; 193D: A5 53
+    JSR L19CB                       ; 193F: 20 CB 19
+    PHA                             ; 1942: 48
+.L1943
+    LDA #&0E                        ; 1943: A9 0E
+    JSR L14A8                       ; 1945: 20 A8 14
+    LDA #&10                        ; 1948: A9 10
+    JSR L2359                       ; 194A: 20 59 23
+    LDX #&03                        ; 194D: A2 03
+.L194F
+    LDY &5E, X                      ; 194F: B4 5E
+    LDA D1993, Y                    ; 1951: B9 93 19
+    JSR OSWRCH                      ; 1954: 20 EE FF
+    DEX                             ; 1957: CA
+    BPL L194F                       ; 1958: 10 F5
+    PLA                             ; 195A: 68
+    JSR L1152                       ; 195B: 20 52 11
+    CMP #&04                        ; 195E: C9 04
+    BEQ L1981                       ; 1960: F0 1F
+    PHA                             ; 1962: 48
+    EOR #&03                        ; 1963: 49 03
+    TAX                             ; 1965: AA
+    LDA &5E, X                      ; 1966: B5 5E
+    JSR L1976                       ; 1968: 20 76 19
+    TAY                             ; 196B: A8
+    PLA                             ; 196C: 68
+    PHA                             ; 196D: 48
+    EOR #&03                        ; 196E: 49 03
+    TAX                             ; 1970: AA
+    TYA                             ; 1971: 98
+    STA &5E, X                      ; 1972: 95 5E
+    BPL L1943                       ; 1974: 10 CD
+.L1976
+    EOR #&01                        ; 1976: 49 01
+    TAY                             ; 1978: A8
+    LDA #&0F                        ; 1979: A9 0F
+    JSR L1128                       ; 197B: 20 28 11
+    EOR #&01                        ; 197E: 49 01
+    RTS                             ; 1980: 60
+.L1981
+    JSR L0883                       ; 1981: 20 83 08
+    LDY &5B                         ; 1984: A4 5B
+.L1986
+    LDA #&00                        ; 1986: A9 00
+    TAX                             ; 1988: AA
+.L1989
+    ASL A                           ; 1989: 0A
+    ASL A                           ; 198A: 0A
+    ORA &5E, X                      ; 198B: 15 5E
+    INX                             ; 198D: E8
+    CPX #&04                        ; 198E: E0 04
+    BCC L1989                       ; 1990: 90 F7
+    RTS                             ; 1992: 60
+.D1993
+    EQUS "BFRL"                     ; 1993
+.D1997
+    EQUB &B1, &39, &27, &36         ; 1997
+    LDA &26EE                       ; 199B: AD EE 26
+    AND #&0F                        ; 199E: 29 0F
+    TAY                             ; 19A0: A8
+    LDA #&01                        ; 19A1: A9 01
+    JSR L1128                       ; 19A3: 20 28 11
+    LDX #&F0                        ; 19A6: A2 F0
+    BMI L19BD                       ; 19A8: 30 13
+    LDA &26EE                       ; 19AA: AD EE 26
+    LSR A                           ; 19AD: 4A
+    LSR A                           ; 19AE: 4A
+    LSR A                           ; 19AF: 4A
+    LSR A                           ; 19B0: 4A
+    TAY                             ; 19B1: A8
+    LDA #&01                        ; 19B2: A9 01
+    JSR L1128                       ; 19B4: 20 28 11
+    LDX #&0F                        ; 19B7: A2 0F
+    ASL A                           ; 19B9: 0A
+    ASL A                           ; 19BA: 0A
+    ASL A                           ; 19BB: 0A
+    ASL A                           ; 19BC: 0A
+.L19BD
+    STA &52                         ; 19BD: 85 52
+    TXA                             ; 19BF: 8A
+    AND &26EE                       ; 19C0: 2D EE 26
+    ORA &52                         ; 19C3: 05 52
+    STA &26EE                       ; 19C5: 8D EE 26
+    JMP L18CF                       ; 19C8: 4C CF 18
+.L19CB
+    LDX #&03                        ; 19CB: A2 03
+.L19CD
+    PHA                             ; 19CD: 48
+    AND #&03                        ; 19CE: 29 03
+    STA &5E, X                      ; 19D0: 95 5E
+    PLA                             ; 19D2: 68
+    LSR A                           ; 19D3: 4A
+    LSR A                           ; 19D4: 4A
+    DEX                             ; 19D5: CA
+    BPL L19CD                       ; 19D6: 10 F5
+    RTS                             ; 19D8: 60
+.L19D9
+    INC &54                         ; 19D9: E6 54
+    BNE L19DF                       ; 19DB: D0 02
+    INC &55                         ; 19DD: E6 55
+.L19DF
+    RTS                             ; 19DF: 60
+    LDY #&00                        ; 19E0: A0 00
+    STY &52                         ; 19E2: 84 52
+    STY &54                         ; 19E4: 84 54
+    STY &55                         ; 19E6: 84 55
+    LDA #&28                        ; 19E8: A9 28
+    STA &53                         ; 19EA: 85 53
+    LDX #&08                        ; 19EC: A2 08
+.L19EE
+    LDA (&52), Y                    ; 19EE: B1 52
+    PHA                             ; 19F0: 48
+    AND #&0F                        ; 19F1: 29 0F
+    CMP #&07                        ; 19F3: C9 07
+    BNE L19FA                       ; 19F5: D0 03
+    JSR L19D9                       ; 19F7: 20 D9 19
+.L19FA
+    PLA                             ; 19FA: 68
+    LSR A                           ; 19FB: 4A
+    LSR A                           ; 19FC: 4A
+    LSR A                           ; 19FD: 4A
+    LSR A                           ; 19FE: 4A
+    CMP #&07                        ; 19FF: C9 07
+    BNE L1A06                       ; 1A01: D0 03
+    JSR L19D9                       ; 1A03: 20 D9 19
+.L1A06
+    INY                             ; 1A06: C8
+    BNE L19EE                       ; 1A07: D0 E5
+    INC &53                         ; 1A09: E6 53
+    DEX                             ; 1A0B: CA
+    BNE L19EE                       ; 1A0C: D0 E0
+.L1A0E
+    JSR L0895                       ; 1A0E: 20 95 08
+    LDA &54                         ; 1A11: A5 54
+    LDX &55                         ; 1A13: A6 55
+    BEQ L1A1E                       ; 1A15: F0 07
+    LDA #&48                        ; 1A17: A9 48
+    JSR L2359                       ; 1A19: 20 59 23
+    LDA #&FA                        ; 1A1C: A9 FA
+.L1A1E
+    PHA                             ; 1A1E: 48
+    LDA #&13                        ; 1A1F: A9 13
+    JSR L2356                       ; 1A21: 20 56 23
+    PLA                             ; 1A24: 68
+    JSR L184C                       ; 1A25: 20 4C 18
+    LDA #&14                        ; 1A28: A9 14
+    JSR L2359                       ; 1A2A: 20 59 23
+    LDA &26EA                       ; 1A2D: AD EA 26
+    JSR L184C                       ; 1A30: 20 4C 18
+    LDX #&12                        ; 1A33: A2 12
+    JSR L12C4                       ; 1A35: 20 C4 12
+    DEX                             ; 1A38: CA
+    BEQ L1A40                       ; 1A39: F0 05
+    BPL L1A0E                       ; 1A3B: 10 D1
+    STA &26EA                       ; 1A3D: 8D EA 26
+.L1A40
+    JMP L0898                       ; 1A40: 4C 98 08
+    LDA #&11                        ; 1A43: A9 11
+    LDX &26EB                       ; 1A45: AE EB 26
+    JSR L1A4F                       ; 1A48: 20 4F 1A
+    STA &26EB                       ; 1A4B: 8D EB 26
+    RTS                             ; 1A4E: 60
+.L1A4F
+    SEC                             ; 1A4F: 38
+    LDY #&FF                        ; 1A50: A0 FF
+.L1A52
+    PHP                             ; 1A52: 08
+    STA &62                         ; 1A53: 85 62
+    STY &5A                         ; 1A55: 84 5A
+    TXA                             ; 1A57: 8A
+    BNE L1A5C                       ; 1A58: D0 02
+    BCC L1A62                       ; 1A5A: 90 06
+.L1A5C
+    CPX &5A                         ; 1A5C: E4 5A
+    BEQ L1A64                       ; 1A5E: F0 04
+    BCC L1A64                       ; 1A60: 90 02
+.L1A62
+    LDX #&01                        ; 1A62: A2 01
+.L1A64
+    STX &63                         ; 1A64: 86 63
+.L1A66
+    JSR L0895                       ; 1A66: 20 95 08
+    LDA &62                         ; 1A69: A5 62
+    JSR L2356                       ; 1A6B: 20 56 23
+    LDA &63                         ; 1A6E: A5 63
+    JSR L184C                       ; 1A70: 20 4C 18
+    LDX #&12                        ; 1A73: A2 12
+    JSR L12C4                       ; 1A75: 20 C4 12
+    CMP &5A                         ; 1A78: C5 5A
+    BEQ L1A7E                       ; 1A7A: F0 02
+    BCS L1A66                       ; 1A7C: B0 E8
+.L1A7E
+    DEX                             ; 1A7E: CA
+    BMI L1A85                       ; 1A7F: 30 04
+    BNE L1A66                       ; 1A81: D0 E3
+    LDA &63                         ; 1A83: A5 63
+.L1A85
+    PLP                             ; 1A85: 28
+    PHP                             ; 1A86: 08
+    TAY                             ; 1A87: A8
+    BNE L1A8C                       ; 1A88: D0 02
+    BCC L1A66                       ; 1A8A: 90 DA
+.L1A8C
+    PLP                             ; 1A8C: 28
+    PHA                             ; 1A8D: 48
+    JSR L0898                       ; 1A8E: 20 98 08
+    PLA                             ; 1A91: 68
+    RTS                             ; 1A92: 60
+    LDA &26EF                       ; 1A93: AD EF 26
+    JSR L19CB                       ; 1A96: 20 CB 19
+    LDA #&00                        ; 1A99: A9 00
+.L1A9B
+    PHA                             ; 1A9B: 48
+    LDA #&15                        ; 1A9C: A9 15
+    JSR L14A8                       ; 1A9E: 20 A8 14
+    PLA                             ; 1AA1: 68
+    JSR L1152                       ; 1AA2: 20 52 11
+    CMP #&08                        ; 1AA5: C9 08
+    BNE L1AB2                       ; 1AA7: D0 09
+    JSR L1986                       ; 1AA9: 20 86 19
+    STA &26EF                       ; 1AAC: 8D EF 26
+    JMP L0883                       ; 1AAF: 4C 83 08
+.L1AB2
+    PHA                             ; 1AB2: 48
+    CMP #&04                        ; 1AB3: C9 04
+    BCC L1ADE                       ; 1AB5: 90 27
+    SBC #&04                        ; 1AB7: E9 04
+    STA &54                         ; 1AB9: 85 54
+    TAY                             ; 1ABB: A8
+    ASL A                           ; 1ABC: 0A
+    ASL A                           ; 1ABD: 0A
+    ASL A                           ; 1ABE: 0A
+    ASL A                           ; 1ABF: 0A
+    STA &55                         ; 1AC0: 85 55
+    LDA &26E4, Y                    ; 1AC2: B9 E4 26
+    AND #&0F                        ; 1AC5: 29 0F
+    TAY                             ; 1AC7: A8
+    LDA #&17                        ; 1AC8: A9 17
+    JSR L1128                       ; 1ACA: 20 28 11
+    ORA &55                         ; 1ACD: 05 55
+    LDY &54                         ; 1ACF: A4 54
+    STA &26E4, Y                    ; 1AD1: 99 E4 26
+    JSR L15B3                       ; 1AD4: 20 B3 15
+.L1AD7
+    JSR L0883                       ; 1AD7: 20 83 08
+    PLA                             ; 1ADA: 68
+    JMP L1A9B                       ; 1ADB: 4C 9B 1A
+.L1ADE
+    TAY                             ; 1ADE: A8
+    STY &54                         ; 1ADF: 84 54
+    LDX &5E, Y                      ; 1AE1: B6 5E
+    LDY D1AF9, X                    ; 1AE3: BC F9 1A
+    LDA #&16                        ; 1AE6: A9 16
+    JSR L1128                       ; 1AE8: 20 28 11
+    TAX                             ; 1AEB: AA
+    LDA L1AF5, X                    ; 1AEC: BD F5 1A
+    LDX &54                         ; 1AEF: A6 54
+    STA &5E, X                      ; 1AF1: 95 5E
+    BPL L1AD7                       ; 1AF3: 10 E2
+.L1AF5
+    BRK                             ; 1AF5: 00
+    EQUB &03, &01, &02              ; 1AF6
+.D1AF9
+    EQUB &00, &02, &03, &01         ; 1AF9
+    LDA #&20                        ; 1AFD: A9 20
+    LDX #&18                        ; 1AFF: A2 18
+    JSR L12A5                       ; 1B01: 20 A5 12
+.L1B04
+    LDA &5B                         ; 1B04: A5 5B
+    LSR A                           ; 1B06: 4A
+    LSR A                           ; 1B07: 4A
+    STA &5C                         ; 1B08: 85 5C
+    LDA #&00                        ; 1B0A: A9 00
+    STA &54                         ; 1B0C: 85 54
+.L1B0E
+    LDA #&19                        ; 1B0E: A9 19
+    JSR L14A8                       ; 1B10: 20 A8 14
+    LDA #&1A                        ; 1B13: A9 1A
+    JSR L2359                       ; 1B15: 20 59 23
+    JSR L1B58                       ; 1B18: 20 58 1B
+    LDA &54                         ; 1B1B: A5 54
+    JSR L1152                       ; 1B1D: 20 52 11
+    STA &54                         ; 1B20: 85 54
+    LDY #&04                        ; 1B22: A0 04
+    JSR L166B                       ; 1B24: 20 6B 16
+    JMP L1B0E                       ; 1B27: 4C 0E 1B
+    LDA #&1D                        ; 1B2A: A9 1D
+    JSR L14A8                       ; 1B2C: 20 A8 14
+    LDY &5C                         ; 1B2F: A4 5C
+    LDA &2720, Y                    ; 1B31: B9 20 27
+    AND #&0F                        ; 1B34: 29 0F
+    JSR L1152                       ; 1B36: 20 52 11
+    STA &52                         ; 1B39: 85 52
+    CMP #&09                        ; 1B3B: C9 09
+    BNE L1B49                       ; 1B3D: D0 0A
+    LDY &5B                         ; 1B3F: A4 5B
+    LDA &2783, Y                    ; 1B41: B9 83 27
+    AND #&BF                        ; 1B44: 29 BF
+    STA &2783, Y                    ; 1B46: 99 83 27
+.L1B49
+    LDY &5C                         ; 1B49: A4 5C
+    LDA &2720, Y                    ; 1B4B: B9 20 27
+    AND #&F0                        ; 1B4E: 29 F0
+    ORA &52                         ; 1B50: 05 52
+    STA &2720, Y                    ; 1B52: 99 20 27
+    JMP L0883                       ; 1B55: 4C 83 08
+.L1B58
+    LDA &5B                         ; 1B58: A5 5B
+.L1B5A
+    ASL A                           ; 1B5A: 0A
+    TAY                             ; 1B5B: A8
+    LDX #&08                        ; 1B5C: A2 08
+.L1B5E
+    LDA &25A1, Y                    ; 1B5E: B9 A1 25
+    JSR OSWRCH                      ; 1B61: 20 EE FF
+    INY                             ; 1B64: C8
+    DEX                             ; 1B65: CA
+    BNE L1B5E                       ; 1B66: D0 F6
+    LDA &5C                         ; 1B68: A5 5C
+    ASL A                           ; 1B6A: 0A
+    TAY                             ; 1B6B: A8
+    LDA &26A1, Y                    ; 1B6C: B9 A1 26
+    JSR OSWRCH                      ; 1B6F: 20 EE FF
+    LDA &26A2, Y                    ; 1B72: B9 A2 26
+    JMP OSWRCH                      ; 1B75: 4C EE FF
+    JSR L0895                       ; 1B78: 20 95 08
+    LDA #&1B                        ; 1B7B: A9 1B
+    JSR L2356                       ; 1B7D: 20 56 23
+    JSR L1B58                       ; 1B80: 20 58 1B
+    LDA #&0A                        ; 1B83: A9 0A
+    LDX #&1C                        ; 1B85: A2 1C
+    JSR L1338                       ; 1B87: 20 38 13
+    JSR L212B                       ; 1B8A: 20 2B 21
+    LDA &52                         ; 1B8D: A5 52
+    BEQ L1BB4                       ; 1B8F: F0 23
+    LDA &5B                         ; 1B91: A5 5B
+    ASL A                           ; 1B93: 0A
+    TAY                             ; 1B94: A8
+    LDX #&00                        ; 1B95: A2 00
+.L1B97
+    JSR L1BBA                       ; 1B97: 20 BA 1B
+    STA &25A1, Y                    ; 1B9A: 99 A1 25
+    INY                             ; 1B9D: C8
+    INX                             ; 1B9E: E8
+    CPX #&08                        ; 1B9F: E0 08
+    BCC L1B97                       ; 1BA1: 90 F4
+    LDA &5C                         ; 1BA3: A5 5C
+    ASL A                           ; 1BA5: 0A
+    TAY                             ; 1BA6: A8
+    JSR L1BBA                       ; 1BA7: 20 BA 1B
+    STA &26A1, Y                    ; 1BAA: 99 A1 26
+    INX                             ; 1BAD: E8
+    JSR L1BBA                       ; 1BAE: 20 BA 1B
+    STA &26A2, Y                    ; 1BB1: 99 A2 26
+.L1BB4
+    JSR L0898                       ; 1BB4: 20 98 08
+    JMP L0883                       ; 1BB7: 4C 83 08
+.L1BBA
+    LDA &40, X                      ; 1BBA: B5 40
+    CMP #&20                        ; 1BBC: C9 20
+    BCS L1BC2                       ; 1BBE: B0 02
+    LDA #&20                        ; 1BC0: A9 20
+.L1BC2
+    RTS                             ; 1BC2: 60
+    LDA #&20                        ; 1BC3: A9 20
+    JSR L14A8                       ; 1BC5: 20 A8 14
+    LDA #&21                        ; 1BC8: A9 21
+    JSR L2359                       ; 1BCA: 20 59 23
+    LDA &5C                         ; 1BCD: A5 5C
+    AND #&07                        ; 1BCF: 29 07
+    CLC                             ; 1BD1: 18
+    ADC #&31                        ; 1BD2: 69 31
+    JSR OSWRCH                      ; 1BD4: 20 EE FF
+    LDA #&00                        ; 1BD7: A9 00
+    STA &55                         ; 1BD9: 85 55
+.L1BDB
+    LDY &5C                         ; 1BDB: A4 5C
+    LDA &2720, Y                    ; 1BDD: B9 20 27
+    PHA                             ; 1BE0: 48
+    AND #&80                        ; 1BE1: 29 80
+    LDY #&01                        ; 1BE3: A0 01
+    JSR L0889                       ; 1BE5: 20 89 08
+    PLA                             ; 1BE8: 68
+    PHA                             ; 1BE9: 48
+    AND #&20                        ; 1BEA: 29 20
+    EOR #&20                        ; 1BEC: 49 20
+    LDY #&02                        ; 1BEE: A0 02
+    JSR L0889                       ; 1BF0: 20 89 08
+    PLA                             ; 1BF3: 68
+    AND #&10                        ; 1BF4: 29 10
+    LDY #&03                        ; 1BF6: A0 03
+    JSR L0889                       ; 1BF8: 20 89 08
+    LDA &55                         ; 1BFB: A5 55
+    JSR L1152                       ; 1BFD: 20 52 11
+    STA &55                         ; 1C00: 85 55
+    LDY #&05                        ; 1C02: A0 05
+    JSR L166B                       ; 1C04: 20 6B 16
+    JMP L1BDB                       ; 1C07: 4C DB 1B
+    LDA #&40                        ; 1C0A: A9 40
+    BNE L1C18                       ; 1C0C: D0 0A
+    LDA #&80                        ; 1C0E: A9 80
+    BNE L1C18                       ; 1C10: D0 06
+    LDA #&20                        ; 1C12: A9 20
+    BNE L1C18                       ; 1C14: D0 02
+    LDA #&10                        ; 1C16: A9 10
+.L1C18
+    LDY &5C                         ; 1C18: A4 5C
+    EOR &2720, Y                    ; 1C1A: 59 20 27
+    STA &2720, Y                    ; 1C1D: 99 20 27
+    RTS                             ; 1C20: 60
+    JSR L0883                       ; 1C21: 20 83 08
+    JSR L1D12                       ; 1C24: 20 12 1D
+    LDA #&00                        ; 1C27: A9 00
+    STA &55                         ; 1C29: 85 55
+.L1C2B
+    LDA &5C                         ; 1C2B: A5 5C
+    ASL A                           ; 1C2D: 0A
+    PHA                             ; 1C2E: 48
+    TAY                             ; 1C2F: A8
+    LDA &2740, Y                    ; 1C30: B9 40 27
+    AND #&80                        ; 1C33: 29 80
+    EOR #&80                        ; 1C35: 49 80
+    LDY #&02                        ; 1C37: A0 02
+    JSR L0889                       ; 1C39: 20 89 08
+    PLA                             ; 1C3C: 68
+    TAY                             ; 1C3D: A8
+    LDA &2741, Y                    ; 1C3E: B9 41 27
+    AND #&80                        ; 1C41: 29 80
+    EOR #&80                        ; 1C43: 49 80
+    LDY #&03                        ; 1C45: A0 03
+    JSR L0889                       ; 1C47: 20 89 08
+    LDY &5B                         ; 1C4A: A4 5B
+    LDA &2783, Y                    ; 1C4C: B9 83 27
+    PHA                             ; 1C4F: 48
+    LDY &5C                         ; 1C50: A4 5C
+    LDA &2720, Y                    ; 1C52: B9 20 27
+    AND #&0F                        ; 1C55: 29 0F
+    CMP #&09                        ; 1C57: C9 09
+    BEQ L1C5F                       ; 1C59: F0 04
+    PLA                             ; 1C5B: 68
+    PHA                             ; 1C5C: 48
+    AND #&40                        ; 1C5D: 29 40
+.L1C5F
+    LDY #&05                        ; 1C5F: A0 05
+    JSR L0889                       ; 1C61: 20 89 08
+    PLA                             ; 1C64: 68
+    AND #&80                        ; 1C65: 29 80
+    LDY #&07                        ; 1C67: A0 07
+    JSR L0889                       ; 1C69: 20 89 08
+    LDY &5C                         ; 1C6C: A4 5C
+    LDA &2720, Y                    ; 1C6E: B9 20 27
+    AND #&40                        ; 1C71: 29 40
+    LDY #&08                        ; 1C73: A0 08
+    JSR L0889                       ; 1C75: 20 89 08
+    LDA &55                         ; 1C78: A5 55
+    JSR L1152                       ; 1C7A: 20 52 11
+    STA &55                         ; 1C7D: 85 55
+    LDY #&06                        ; 1C7F: A0 06
+    JSR L166B                       ; 1C81: 20 6B 16
+    JMP L1C2B                       ; 1C84: 4C 2B 1C
+.L1C87
+    LDY &5C                         ; 1C87: A4 5C
+    LDA &2720, Y                    ; 1C89: B9 20 27
+    AND #&0F                        ; 1C8C: 29 0F
+    CMP #&09                        ; 1C8E: C9 09
+    BNE L1C94                       ; 1C90: D0 02
+    PLA                             ; 1C92: 68
+    PLA                             ; 1C93: 68
+.L1C94
+    RTS                             ; 1C94: 60
+    JSR L1C87                       ; 1C95: 20 87 1C
+    LDA #&40                        ; 1C98: A9 40
+    BNE L1C9E                       ; 1C9A: D0 02
+    LDA #&80                        ; 1C9C: A9 80
+.L1C9E
+    LDY &5B                         ; 1C9E: A4 5B
+    EOR &2783, Y                    ; 1CA0: 59 83 27
+    STA &2783, Y                    ; 1CA3: 99 83 27
+    RTS                             ; 1CA6: 60
+    CLC                             ; 1CA7: 18
+    BCC L1CAB                       ; 1CA8: 90 01
+    SEC                             ; 1CAA: 38
+.L1CAB
+    LDA &5C                         ; 1CAB: A5 5C
+    ROL A                           ; 1CAD: 2A
+    TAY                             ; 1CAE: A8
+    LDA &2740, Y                    ; 1CAF: B9 40 27
+    AND #&BF                        ; 1CB2: 29 BF
+    EOR #&80                        ; 1CB4: 49 80
+    STA &2740, Y                    ; 1CB6: 99 40 27
+    RTS                             ; 1CB9: 60
+.L1CBA
+    PHA                             ; 1CBA: 48
+    LDA #&23                        ; 1CBB: A9 23
+    JSR L235F                       ; 1CBD: 20 5F 23
+    STX &52                         ; 1CC0: 86 52
+    STY &53                         ; 1CC2: 84 53
+    LDY #&03                        ; 1CC4: A0 03
+    PLA                             ; 1CC6: 68
+    STA (&52), Y                    ; 1CC7: 91 52
+    RTS                             ; 1CC9: 60
+    JSR L1C87                       ; 1CCA: 20 87 1C
+    LDY &5B                         ; 1CCD: A4 5B
+    LDA &2783, Y                    ; 1CCF: B9 83 27
+    AND #&0F                        ; 1CD2: 29 0F
+    TAY                             ; 1CD4: A8
+    LDA #&01                        ; 1CD5: A9 01
+    JSR L1128                       ; 1CD7: 20 28 11
+    ORA #&40                        ; 1CDA: 09 40
+    LDX #&B0                        ; 1CDC: A2 B0
+    BMI L1D05                       ; 1CDE: 30 25
+    LDA #&04                        ; 1CE0: A9 04
+    JSR L1CBA                       ; 1CE2: 20 BA 1C
+    LDY &5B                         ; 1CE5: A4 5B
+    LDA &2783, Y                    ; 1CE7: B9 83 27
+    AND #&30                        ; 1CEA: 29 30
+    LSR A                           ; 1CEC: 4A
+    LSR A                           ; 1CED: 4A
+    LSR A                           ; 1CEE: 4A
+    LSR A                           ; 1CEF: 4A
+    TAX                             ; 1CF0: AA
+    LDY D190C, X                    ; 1CF1: BC 0C 19
+    LDA #&23                        ; 1CF4: A9 23
+    JSR L1128                       ; 1CF6: 20 28 11
+    TAY                             ; 1CF9: A8
+    LDA D1907, Y                    ; 1CFA: B9 07 19
+    ASL A                           ; 1CFD: 0A
+    ASL A                           ; 1CFE: 0A
+    ASL A                           ; 1CFF: 0A
+    ASL A                           ; 1D00: 0A
+    ORA #&80                        ; 1D01: 09 80
+    LDX #&4F                        ; 1D03: A2 4F
+.L1D05
+    STA &52                         ; 1D05: 85 52
+    LDY &5B                         ; 1D07: A4 5B
+    TXA                             ; 1D09: 8A
+    AND &2783, Y                    ; 1D0A: 39 83 27
+    ORA &52                         ; 1D0D: 05 52
+    STA &2783, Y                    ; 1D0F: 99 83 27
+.L1D12
+    LDA #&22                        ; 1D12: A9 22
+    JMP L14A8                       ; 1D14: 4C A8 14
+    JSR L0883                       ; 1D17: 20 83 08
+    LDA &5C                         ; 1D1A: A5 5C
+    ASL A                           ; 1D1C: 0A
+    TAY                             ; 1D1D: A8
+    LDA &2740, Y                    ; 1D1E: B9 40 27
+    AND #&3F                        ; 1D21: 29 3F
+    STA &50                         ; 1D23: 85 50
+    LDA &2741, Y                    ; 1D25: B9 41 27
+    AND #&3F                        ; 1D28: 29 3F
+    STA &51                         ; 1D2A: 85 51
+.L1D2C
+    LDX #&24                        ; 1D2C: A2 24
+    JSR L13BB                       ; 1D2E: 20 BB 13
+    CMP #&20                        ; 1D31: C9 20
+    BEQ L1D12                       ; 1D33: F0 DD
+    CMP #&0D                        ; 1D35: C9 0D
+    BNE L1D2C                       ; 1D37: D0 F3
+    LDA &5C                         ; 1D39: A5 5C
+    ASL A                           ; 1D3B: 0A
+    TAY                             ; 1D3C: A8
+    LDA &2740, Y                    ; 1D3D: B9 40 27
+    AND #&80                        ; 1D40: 29 80
+    ORA &50                         ; 1D42: 05 50
+    STA &2740, Y                    ; 1D44: 99 40 27
+    LDA &2741, Y                    ; 1D47: B9 41 27
+    AND #&80                        ; 1D4A: 29 80
+    ORA &51                         ; 1D4C: 05 51
+    STA &2741, Y                    ; 1D4E: 99 41 27
+    JMP L1D12                       ; 1D51: 4C 12 1D
+    LDA #&27                        ; 1D54: A9 27
+    JSR L1E0A                       ; 1D56: 20 0A 1E
+    JSR L0895                       ; 1D59: 20 95 08
+    LDA #&27                        ; 1D5C: A9 27
+    JSR L2356                       ; 1D5E: 20 56 23
+    JSR L1D92                       ; 1D61: 20 92 1D
+    INC &67                         ; 1D64: E6 67
+    LDA #&FF                        ; 1D66: A9 FF
+    JSR L1DF2                       ; 1D68: 20 F2 1D
+    DEC &67                         ; 1D6B: C6 67
+    LDX #&02                        ; 1D6D: A2 02
+.L1D6F
+    LDA &26E1, X                    ; 1D6F: BD E1 26
+    CMP &53, X                      ; 1D72: D5 53
+    BNE L1D7C                       ; 1D74: D0 06
+    DEX                             ; 1D76: CA
+    BPL L1D6F                       ; 1D77: 10 F6
+    JMP L088C                       ; 1D79: 4C 8C 08
+.L1D7C
+    JSR L2368                       ; 1D7C: 20 68 23
+    JSR L0895                       ; 1D7F: 20 95 08
+    LDA #&41                        ; 1D82: A9 41
+    JSR L2356                       ; 1D84: 20 56 23
+    LDA #&0A                        ; 1D87: A9 0A
+    JSR L2359                       ; 1D89: 20 59 23
+    JSR L1234                       ; 1D8C: 20 34 12
+    JMP L0898                       ; 1D8F: 4C 98 08
+.L1D92
+    LDA #&30                        ; 1D92: A9 30
+    STA D21B4                       ; 1D94: 8D B4 21
+    LDA #&39                        ; 1D97: A9 39
+    STA D21B5                       ; 1D99: 8D B5 21
+    LDA #&06                        ; 1D9C: A9 06
+    LDX #&40                        ; 1D9E: A2 40
+    JSR L1342                       ; 1DA0: 20 42 13
+    LDY #&02                        ; 1DA3: A0 02
+    LDX #&04                        ; 1DA5: A2 04
+.L1DA7
+    LDA &41, X                      ; 1DA7: B5 41
+    SEC                             ; 1DA9: 38
+    SBC #&30                        ; 1DAA: E9 30
+    STA &52                         ; 1DAC: 85 52
+    LDA &40, X                      ; 1DAE: B5 40
+    SEC                             ; 1DB0: 38
+    SBC #&30                        ; 1DB1: E9 30
+    ASL A                           ; 1DB3: 0A
+    ASL A                           ; 1DB4: 0A
+    ASL A                           ; 1DB5: 0A
+    ASL A                           ; 1DB6: 0A
+    ORA &52                         ; 1DB7: 05 52
+    PHA                             ; 1DB9: 48
+    AND #&55                        ; 1DBA: 29 55
+    ASL A                           ; 1DBC: 0A
+    STA &52                         ; 1DBD: 85 52
+    PLA                             ; 1DBF: 68
+    AND #&AA                        ; 1DC0: 29 AA
+    LSR A                           ; 1DC2: 4A
+    ORA &52                         ; 1DC3: 05 52
+    PHA                             ; 1DC5: 48
+    LSR A                           ; 1DC6: 4A
+    PLA                             ; 1DC7: 68
+    ROR A                           ; 1DC8: 6A
+    STA &53, Y                      ; 1DC9: 99 53 00
+    DEX                             ; 1DCC: CA
+    DEX                             ; 1DCD: CA
+    DEY                             ; 1DCE: 88
+    BPL L1DA7                       ; 1DCF: 10 D6
+    RTS                             ; 1DD1: 60
+    JSR L0895                       ; 1DD2: 20 95 08
+    JSR L1D92                       ; 1DD5: 20 92 1D
+    LDX #&02                        ; 1DD8: A2 02
+.L1DDA
+    LDA &53, X                      ; 1DDA: B5 53
+    STA &26E1, X                    ; 1DDC: 9D E1 26
+    DEX                             ; 1DDF: CA
+    BPL L1DDA                       ; 1DE0: 10 F8
+    JMP L0898                       ; 1DE2: 4C 98 08
+    LDA #&28                        ; 1DE5: A9 28
+    JSR L1E0A                       ; 1DE7: 20 0A 1E
+    LDA #&00                        ; 1DEA: A9 00
+    JSR L1DF2                       ; 1DEC: 20 F2 1D
+    JMP L0898                       ; 1DEF: 4C 98 08
+.L1DF2
+    PHA                             ; 1DF2: 48
+    LDA #&47                        ; 1DF3: A9 47
+    JSR L2353                       ; 1DF5: 20 53 23
+    PLA                             ; 1DF8: 68
+    LDX #&3C                        ; 1DF9: A2 3C
+    LDY #&1E                        ; 1DFB: A0 1E
+    SEI                             ; 1DFD: 78
+    JSR OSFILE                      ; 1DFE: 20 DD FF
+    JSR L2350                       ; 1E01: 20 50 23
+.L1E04
+    CLI                             ; 1E04: 58
+    LDA #&49                        ; 1E05: A9 49
+    JMP L2359                       ; 1E07: 4C 59 23
+.L1E0A
+    PHA                             ; 1E0A: 48
+    JSR L0895                       ; 1E0B: 20 95 08
+    PLA                             ; 1E0E: 68
+    JSR L2356                       ; 1E0F: 20 56 23
+    LDA #&0C                        ; 1E12: A9 0C
+    LDX #&29                        ; 1E14: A2 29
+    JSR L1338                       ; 1E16: 20 38 13
+    LDY &52                         ; 1E19: A4 52
+.L1E1B
+    LDA &40, Y                      ; 1E1B: B9 40 00
+    STA D1E30, Y                    ; 1E1E: 99 30 1E
+    DEY                             ; 1E21: 88
+    BPL L1E1B                       ; 1E22: 10 F7
+    LDY #&11                        ; 1E24: A0 11
+.L1E26
+    LDA D1E4E, Y                    ; 1E26: B9 4E 1E
+    STA D1E3C, Y                    ; 1E29: 99 3C 1E
+    DEY                             ; 1E2C: 88
+    BPL L1E26                       ; 1E2D: 10 F7
+    RTS                             ; 1E2F: 60
+.D1E30
+    EQUS "_Ian Holmes_"             ; 1E30
+.D1E3C
+    EQUB &00, &00, &A1, &25, &00, &00, &23, &A5; 1E3C
+    EQUB &63, &20, &4C, &18, &A2, &12, &20, &C4; 1E44
+    EQUB &12, &C5                   ; 1E4C
+.D1E4E
+    EQUB &30, &1E, &A1, &25, &00, &00, &80, &83; 1E4E
+    EQUB &00, &00, &A1, &25, &00, &00, &00, &30; 1E56
+    EQUB &00, &00                   ; 1E5E
+    JSR L0883                       ; 1E60: 20 83 08
+    LDY &5B                         ; 1E63: A4 5B
+    LDA &2780, Y                    ; 1E65: B9 80 27
+    PHA                             ; 1E68: 48
+    LSR A                           ; 1E69: 4A
+    LSR A                           ; 1E6A: 4A
+    STA &50                         ; 1E6B: 85 50
+    PLA                             ; 1E6D: 68
+    AND #&03                        ; 1E6E: 29 03
+    STA &62                         ; 1E70: 85 62
+    LDA &2782, Y                    ; 1E72: B9 82 27
+    PHA                             ; 1E75: 48
+    LSR A                           ; 1E76: 4A
+    LSR A                           ; 1E77: 4A
+    STA &51                         ; 1E78: 85 51
+    PLA                             ; 1E7A: 68
+    AND #&03                        ; 1E7B: 29 03
+    STA &55                         ; 1E7D: 85 55
+    LDA #&3B                        ; 1E7F: A9 3B
+    LDY #&0F                        ; 1E81: A0 0F
+    BNE L1EA1                       ; 1E83: D0 1C
+    LDA #&39                        ; 1E85: A9 39
+    LDY #&0E                        ; 1E87: A0 0E
+    BNE L1EA1                       ; 1E89: D0 16
+    LDA #&34                        ; 1E8B: A9 34
+    LDY #&0D                        ; 1E8D: A0 0D
+    BNE L1EA1                       ; 1E8F: D0 10
+    LDA #&31                        ; 1E91: A9 31
+    LDY #&0C                        ; 1E93: A0 0C
+    BNE L1EA1                       ; 1E95: D0 0A
+    LDA #&30                        ; 1E97: A9 30
+    LDY #&0B                        ; 1E99: A0 0B
+    BNE L1EA1                       ; 1E9B: D0 04
+    LDA #&2B                        ; 1E9D: A9 2B
+    LDY #&09                        ; 1E9F: A0 09
+.L1EA1
+    STA &64                         ; 1EA1: 85 64
+    STY &65                         ; 1EA3: 84 65
+    JSR L0883                       ; 1EA5: 20 83 08
+    LDA #&00                        ; 1EA8: A9 00
+    PHA                             ; 1EAA: 48
+.L1EAB
+    LDA &64                         ; 1EAB: A5 64
+    JSR L14A8                       ; 1EAD: 20 A8 14
+    PLA                             ; 1EB0: 68
+    JSR L1152                       ; 1EB1: 20 52 11
+    PHA                             ; 1EB4: 48
+    LDY &65                         ; 1EB5: A4 65
+    JSR L166B                       ; 1EB7: 20 6B 16
+    JMP L1EAB                       ; 1EBA: 4C AB 1E
+    LDY &5C                         ; 1EBD: A4 5C
+    LDA &2720, Y                    ; 1EBF: B9 20 27
+    AND #&0F                        ; 1EC2: 29 0F
+    LDY #&08                        ; 1EC4: A0 08
+    JMP L166B                       ; 1EC6: 4C 6B 16
+    JSR L1613                       ; 1EC9: 20 13 16
+    LDA #&2A                        ; 1ECC: A9 2A
+    JSR L14A8                       ; 1ECE: 20 A8 14
+    JSR L1234                       ; 1ED1: 20 34 12
+    JMP L0883                       ; 1ED4: 4C 83 08
+    LDA #&00                        ; 1ED7: A9 00
+    BEQ L1EDD                       ; 1ED9: F0 02
+    LDA #&04                        ; 1EDB: A9 04
+.L1EDD
+    STA &62                         ; 1EDD: 85 62
+    JSR L0883                       ; 1EDF: 20 83 08
+    LDY &5B                         ; 1EE2: A4 5B
+    LDA &2781, Y                    ; 1EE4: B9 81 27
+    CLC                             ; 1EE7: 18
+    ADC &62                         ; 1EE8: 65 62
+    AND #&3F                        ; 1EEA: 29 3F
+    STA &50                         ; 1EEC: 85 50
+    LDA &2782, Y                    ; 1EEE: B9 82 27
+    CLC                             ; 1EF1: 18
+    ADC &62                         ; 1EF2: 65 62
+    AND #&3F                        ; 1EF4: 29 3F
+    STA &51                         ; 1EF6: 85 51
+.L1EF8
+    LDX #&24                        ; 1EF8: A2 24
+    JSR L13BB                       ; 1EFA: 20 BB 13
+    CMP #&20                        ; 1EFD: C9 20
+    BEQ L1F17                       ; 1EFF: F0 16
+    CMP #&0D                        ; 1F01: C9 0D
+    BNE L1EF8                       ; 1F03: D0 F3
+    LDY &5B                         ; 1F05: A4 5B
+    LDA &50                         ; 1F07: A5 50
+    SEC                             ; 1F09: 38
+    SBC &62                         ; 1F0A: E5 62
+    STA &2781, Y                    ; 1F0C: 99 81 27
+    LDA &51                         ; 1F0F: A5 51
+    SEC                             ; 1F11: 38
+    SBC &62                         ; 1F12: E5 62
+    STA &2782, Y                    ; 1F14: 99 82 27
+.L1F17
+    RTS                             ; 1F17: 60
+    LDX &5B                         ; 1F18: A6 5B
+    LDY &2780, X                    ; 1F1A: BC 80 27
+    LDA #&01                        ; 1F1D: A9 01
+    JSR L1128                       ; 1F1F: 20 28 11
+    LDY &5B                         ; 1F22: A4 5B
+    STA &2780, Y                    ; 1F24: 99 80 27
+    RTS                             ; 1F27: 60
+    LDA #&2C                        ; 1F28: A9 2C
+    JSR L14A8                       ; 1F2A: 20 A8 14
+    LDA #&00                        ; 1F2D: A9 00
+    PHA                             ; 1F2F: 48
+.L1F30
+    LDY &5B                         ; 1F30: A4 5B
+    LDA &2780, Y                    ; 1F32: B9 80 27
+    PHA                             ; 1F35: 48
+    AND #&80                        ; 1F36: 29 80
+    EOR #&80                        ; 1F38: 49 80
+    LDY #&02                        ; 1F3A: A0 02
+    JSR L0889                       ; 1F3C: 20 89 08
+    PLA                             ; 1F3F: 68
+    AND #&01                        ; 1F40: 29 01
+    EOR #&01                        ; 1F42: 49 01
+    LDY #&04                        ; 1F44: A0 04
+    JSR L0889                       ; 1F46: 20 89 08
+    PLA                             ; 1F49: 68
+    JSR L1152                       ; 1F4A: 20 52 11
+    PHA                             ; 1F4D: 48
+    LDY #&0A                        ; 1F4E: A0 0A
+    JSR L166B                       ; 1F50: 20 6B 16
+    JMP L1F30                       ; 1F53: 4C 30 1F
+    LDA #&80                        ; 1F56: A9 80
+    BMI L1F5C                       ; 1F58: 30 02
+    LDA #&01                        ; 1F5A: A9 01
+.L1F5C
+    LDY &5B                         ; 1F5C: A4 5B
+    EOR &2780, Y                    ; 1F5E: 59 80 27
+    STA &2780, Y                    ; 1F61: 99 80 27
+    RTS                             ; 1F64: 60
+    LDY &5B                         ; 1F65: A4 5B
+    LDX &2781, Y                    ; 1F67: BE 81 27
+    LDA #&2D                        ; 1F6A: A9 2D
+    JSR L1A4F                       ; 1F6C: 20 4F 1A
+    LDY &5B                         ; 1F6F: A4 5B
+    STA &2781, Y                    ; 1F71: 99 81 27
+    LDA #&01                        ; 1F74: A9 01
+    BPL L1F89                       ; 1F76: 10 11
+    LDY &5B                         ; 1F78: A4 5B
+    LDX &2782, Y                    ; 1F7A: BE 82 27
+    LDA #&2E                        ; 1F7D: A9 2E
+    JSR L1A4F                       ; 1F7F: 20 4F 1A
+    LDY &5B                         ; 1F82: A4 5B
+    STA &2782, Y                    ; 1F84: 99 82 27
+    LDA #&80                        ; 1F87: A9 80
+.L1F89
+    AND &2780, Y                    ; 1F89: 39 80 27
+    STA &2780, Y                    ; 1F8C: 99 80 27
+    RTS                             ; 1F8F: 60
+    LDA #&00                        ; 1F90: A9 00
+    PHA                             ; 1F92: 48
+.L1F93
+    LDA #&2F                        ; 1F93: A9 2F
+    JSR L14A8                       ; 1F95: 20 A8 14
+    PLA                             ; 1F98: 68
+    JSR L1152                       ; 1F99: 20 52 11
+    CMP #&02                        ; 1F9C: C9 02
+    BEQ L1FBA                       ; 1F9E: F0 1A
+    PHA                             ; 1FA0: 48
+    ADC &5B                         ; 1FA1: 65 5B
+    TAX                             ; 1FA3: AA
+    LDY &2780, X                    ; 1FA4: BC 80 27
+    LDA #&01                        ; 1FA7: A9 01
+    JSR L1128                       ; 1FA9: 20 28 11
+    TAX                             ; 1FAC: AA
+    PLA                             ; 1FAD: 68
+    PHA                             ; 1FAE: 48
+    CLC                             ; 1FAF: 18
+    ADC &5B                         ; 1FB0: 65 5B
+    TAY                             ; 1FB2: A8
+    TXA                             ; 1FB3: 8A
+    STA &2780, Y                    ; 1FB4: 99 80 27
+    JMP L1F93                       ; 1FB7: 4C 93 1F
+.L1FBA
+    JMP L0883                       ; 1FBA: 4C 83 08
+    LDY &5B                         ; 1FBD: A4 5B
+    LDA &2780, Y                    ; 1FBF: B9 80 27
+    AND #&07                        ; 1FC2: 29 07
+    LDX #&08                        ; 1FC4: A2 08
+    JSR L1FCF                       ; 1FC6: 20 CF 1F
+    LDY &5B                         ; 1FC9: A4 5B
+    STA &2780, Y                    ; 1FCB: 99 80 27
+    RTS                             ; 1FCE: 60
+.L1FCF
+    PHA                             ; 1FCF: 48
+    TXA                             ; 1FD0: 8A
+    JSR L1CBA                       ; 1FD1: 20 BA 1C
+    PLA                             ; 1FD4: 68
+    LDY #&07                        ; 1FD5: A0 07
+.L1FD7
+    CMP D1FE9, Y                    ; 1FD7: D9 E9 1F
+    BEQ L1FDF                       ; 1FDA: F0 03
+    DEY                             ; 1FDC: 88
+    BNE L1FD7                       ; 1FDD: D0 F8
+.L1FDF
+    LDA #&23                        ; 1FDF: A9 23
+    JSR L1128                       ; 1FE1: 20 28 11
+    TAY                             ; 1FE4: A8
+    LDA D1FE9, Y                    ; 1FE5: B9 E9 1F
+    RTS                             ; 1FE8: 60
+.D1FE9
+    EQUB &02, &03, &01, &00, &04, &05, &06, &07; 1FE9
+    JSR L1FFA                       ; 1FF1: 20 FA 1F
+    ASL A                           ; 1FF4: 0A
+    ASL A                           ; 1FF5: 0A
+    STA &2782, Y                    ; 1FF6: 99 82 27
+    RTS                             ; 1FF9: 60
+.L1FFA
+    CLC                             ; 1FFA: 18
+    LDA #&32                        ; 1FFB: A9 32
+    LDY &5B                         ; 1FFD: A4 5B
+    LDX &2780, Y                    ; 1FFF: BE 80 27
+    INX                             ; 2002: E8
+    LDY #&08                        ; 2003: A0 08
+    JSR L1A52                       ; 2005: 20 52 1A
+    SEC                             ; 2008: 38
+    SBC #&01                        ; 2009: E9 01
+    LDY &5B                         ; 200B: A4 5B
+    STA &2780, Y                    ; 200D: 99 80 27
+    RTS                             ; 2010: 60
+    LDA #&33                        ; 2011: A9 33
+    LDX #&01                        ; 2013: A2 01
+    LDY #&3F                        ; 2015: A0 3F
+    CLC                             ; 2017: 18
+    BNE L2021                       ; 2018: D0 07
+    LDA #&08                        ; 201A: A9 08
+    LDX #&00                        ; 201C: A2 00
+    LDY #&1F                        ; 201E: A0 1F
+    SEC                             ; 2020: 38
+.L2021
+    PHA                             ; 2021: 48
+    STX &52                         ; 2022: 86 52
+    LDX &5B                         ; 2024: A6 5B
+    TYA                             ; 2026: 98
+    AND &2782, X                    ; 2027: 3D 82 27
+    BNE L202E                       ; 202A: D0 02
+    LDA &52                         ; 202C: A5 52
+.L202E
+    TAX                             ; 202E: AA
+    PLA                             ; 202F: 68
+    JSR L1A52                       ; 2030: 20 52 1A
+    LDY &5B                         ; 2033: A4 5B
+    STA &2782, Y                    ; 2035: 99 82 27
+    RTS                             ; 2038: 60
+    LDA #&00                        ; 2039: A9 00
+.L203B
+    PHA                             ; 203B: 48
+    LDA #&36                        ; 203C: A9 36
+    JSR L14A8                       ; 203E: 20 A8 14
+    LDX #&00                        ; 2041: A2 00
+    LDY &5B                         ; 2043: A4 5B
+    LDA &2780, Y                    ; 2045: B9 80 27
+    CMP &2781, Y                    ; 2048: D9 81 27
+    BNE L2053                       ; 204B: D0 06
+    CMP &2782, Y                    ; 204D: D9 82 27
+    BNE L2053                       ; 2050: D0 01
+    INX                             ; 2052: E8
+.L2053
+    STX &52                         ; 2053: 86 52
+    TXA                             ; 2055: 8A
+    LDY #&04                        ; 2056: A0 04
+    JSR L0889                       ; 2058: 20 89 08
+    PLA                             ; 205B: 68
+    JSR L1152                       ; 205C: 20 52 11
+    CMP #&04                        ; 205F: C9 04
+    BCC L2066                       ; 2061: 90 03
+    JMP L0883                       ; 2063: 4C 83 08
+.L2066
+    CMP #&03                        ; 2066: C9 03
+    BCC L207D                       ; 2068: 90 13
+    LDX &52                         ; 206A: A6 52
+    BNE L203B                       ; 206C: D0 CD
+    LDY &5B                         ; 206E: A4 5B
+    LDA &2780, Y                    ; 2070: B9 80 27
+    STA &2781, Y                    ; 2073: 99 81 27
+    STA &2782, Y                    ; 2076: 99 82 27
+    LDA #&03                        ; 2079: A9 03
+    BNE L203B                       ; 207B: D0 BE
+.L207D
+    PHA                             ; 207D: 48
+    ADC &5B                         ; 207E: 65 5B
+    STA &58                         ; 2080: 85 58
+    TAY                             ; 2082: A8
+    LDX &2780, Y                    ; 2083: BE 80 27
+    INX                             ; 2086: E8
+    LDY #&20                        ; 2087: A0 20
+    LDA #&37                        ; 2089: A9 37
+    CLC                             ; 208B: 18
+    JSR L1A52                       ; 208C: 20 52 1A
+    SEC                             ; 208F: 38
+    SBC #&01                        ; 2090: E9 01
+    LDY &58                         ; 2092: A4 58
+    STA &2780, Y                    ; 2094: 99 80 27
+    PLA                             ; 2097: 68
+    BPL L203B                       ; 2098: 10 A1
+    LDY &5B                         ; 209A: A4 5B
+    LDX &2780, Y                    ; 209C: BE 80 27
+    LDA #&38                        ; 209F: A9 38
+    JSR L1A4F                       ; 20A1: 20 4F 1A
+    LDY &5B                         ; 20A4: A4 5B
+    STA &2780, Y                    ; 20A6: 99 80 27
+    RTS                             ; 20A9: 60
+    LDY &5B                         ; 20AA: A4 5B
+    LDA &2781, Y                    ; 20AC: B9 81 27
+    LSR A                           ; 20AF: 4A
+    LSR A                           ; 20B0: 4A
+    TAY                             ; 20B1: A8
+    LDA #&4A                        ; 20B2: A9 4A
+    JSR L1128                       ; 20B4: 20 28 11
+    ASL A                           ; 20B7: 0A
+    ASL A                           ; 20B8: 0A
+    LDY &5B                         ; 20B9: A4 5B
+    STA &2781, Y                    ; 20BB: 99 81 27
+    RTS                             ; 20BE: 60
+    LDY &5B                         ; 20BF: A4 5B
+    LDX &2780, Y                    ; 20C1: BE 80 27
+    JSR L18F2                       ; 20C4: 20 F2 18
+    STA &2780, Y                    ; 20C7: 99 80 27
+    RTS                             ; 20CA: 60
+    LDY &5B                         ; 20CB: A4 5B
+    LDA &2780, Y                    ; 20CD: B9 80 27
+    LSR A                           ; 20D0: 4A
+    LSR A                           ; 20D1: 4A
+    JSR L1976                       ; 20D2: 20 76 19
+    ASL A                           ; 20D5: 0A
+    ASL A                           ; 20D6: 0A
+    LDY &5B                         ; 20D7: A4 5B
+    STA &2780, Y                    ; 20D9: 99 80 27
+    RTS                             ; 20DC: 60
+    LDA #&3A                        ; 20DD: A9 3A
+    LDY #&04                        ; 20DF: A0 04
+    LDX &62                         ; 20E1: A6 62
+    INX                             ; 20E3: E8
+    CLC                             ; 20E4: 18
+    JSR L1A52                       ; 20E5: 20 52 1A
+    SEC                             ; 20E8: 38
+    SBC #&01                        ; 20E9: E9 01
+    STA &62                         ; 20EB: 85 62
+    RTS                             ; 20ED: 60
+    JSR L0883                       ; 20EE: 20 83 08
+    LDA &50                         ; 20F1: A5 50
+    PHA                             ; 20F3: 48
+    LDA &51                         ; 20F4: A5 51
+    PHA                             ; 20F6: 48
+.L20F7
+    LDX #&1F                        ; 20F7: A2 1F
+    JSR L13BB                       ; 20F9: 20 BB 13
+    CMP #&0D                        ; 20FC: C9 0D
+    BEQ L210B                       ; 20FE: F0 0B
+    CMP #&20                        ; 2100: C9 20
+    BNE L20F7                       ; 2102: D0 F3
+    PLA                             ; 2104: 68
+    STA &51                         ; 2105: 85 51
+    PLA                             ; 2107: 68
+    STA &50                         ; 2108: 85 50
+    RTS                             ; 210A: 60
+.L210B
+    PLA                             ; 210B: 68
+    PLA                             ; 210C: 68
+    RTS                             ; 210D: 60
+    LDX #&04                        ; 210E: A2 04
+    LDA &55                         ; 2110: A5 55
+    JSR L1FCF                       ; 2112: 20 CF 1F
+    STA &55                         ; 2115: 85 55
+    RTS                             ; 2117: 60
+    LDY &5B                         ; 2118: A4 5B
+    LDA &2781, Y                    ; 211A: B9 81 27
+    JSR L191F                       ; 211D: 20 1F 19
+    STA &2781, Y                    ; 2120: 99 81 27
+    RTS                             ; 2123: 60
+.L2124
+    DEC &5B                         ; 2124: C6 5B
+    BPL L214C                       ; 2126: 10 24
+    JMP L0898                       ; 2128: 4C 98 08
+.L212B
+    LDY &52                         ; 212B: A4 52
+    LDA #&20                        ; 212D: A9 20
+.L212F
+    STA &40, Y                      ; 212F: 99 40 00
+    INY                             ; 2132: C8
+    CPY #&0B                        ; 2133: C0 0B
+    BCC L212F                       ; 2135: 90 F8
+    RTS                             ; 2137: 60
+    JSR L0883                       ; 2138: 20 83 08
+    JSR L0895                       ; 213B: 20 95 08
+    LDA #&0A                        ; 213E: A9 0A
+    LDX #&1C                        ; 2140: A2 1C
+    JSR L1338                       ; 2142: 20 38 13
+    JSR L212B                       ; 2145: 20 2B 21
+    LDA #&1F                        ; 2148: A9 1F
+    STA &5B                         ; 214A: 85 5B
+.L214C
+    LDA &5B                         ; 214C: A5 5B
+    ASL A                           ; 214E: 0A
+    ASL A                           ; 214F: 0A
+    ASL A                           ; 2150: 0A
+    TAY                             ; 2151: A8
+    LDX #&00                        ; 2152: A2 00
+.L2154
+    LDA &25A1, Y                    ; 2154: B9 A1 25
+    EOR &40, X                      ; 2157: 55 40
+    AND #&DF                        ; 2159: 29 DF
+    BNE L2124                       ; 215B: D0 C7
+    INY                             ; 215D: C8
+    INX                             ; 215E: E8
+    CPX #&08                        ; 215F: E0 08
+    BCC L2154                       ; 2161: 90 F1
+    LDA &5B                         ; 2163: A5 5B
+    ASL A                           ; 2165: 0A
+    TAY                             ; 2166: A8
+.L2167
+    LDA &26A1, Y                    ; 2167: B9 A1 26
+    EOR &40, X                      ; 216A: 55 40
+    AND #&DF                        ; 216C: 29 DF
+    BNE L2124                       ; 216E: D0 B4
+    INY                             ; 2170: C8
+    INX                             ; 2171: E8
+    CPX #&0A                        ; 2172: E0 0A
+    BCC L2167                       ; 2174: 90 F1
+    JSR L0895                       ; 2176: 20 95 08
+    LDA #&3C                        ; 2179: A9 3C
+    JSR L2356                       ; 217B: 20 56 23
+    LDA &5B                         ; 217E: A5 5B
+    STA &5C                         ; 2180: 85 5C
+    ASL A                           ; 2182: 0A
+    ASL A                           ; 2183: 0A
+    JSR L1B5A                       ; 2184: 20 5A 1B
+    LDA #&3D                        ; 2187: A9 3D
+    JSR L2359                       ; 2189: 20 59 23
+    LDX &5B                         ; 218C: A6 5B
+    INX                             ; 218E: E8
+.L218F
+    TXA                             ; 218F: 8A
+    JSR L184C                       ; 2190: 20 4C 18
+    LDA #&0A                        ; 2193: A9 0A
+    JSR L2353                       ; 2195: 20 53 23
+    JSR L1234                       ; 2198: 20 34 12
+    JSR L0898                       ; 219B: 20 98 08
+    LDA &5B                         ; 219E: A5 5B
+    ASL A                           ; 21A0: 0A
+    ASL A                           ; 21A1: 0A
+    STA &5B                         ; 21A2: 85 5B
+    JMP L1B04                       ; 21A4: 4C 04 1B
+    JSR L0883                       ; 21A7: 20 83 08
+    JSR L1323                       ; 21AA: 20 23 13
+    JMP L2368                       ; 21AD: 4C 68 23
+    EQUB &60, &40, &00              ; 21B0
+.D21B3
+    EQUB &00                        ; 21B3
+.D21B4
+    EQUB &00                        ; 21B4
+.D21B5
+    EQUB &FF                        ; 21B5
+.D21B6
+    EQUB &0C, &0D, &0C, &0D         ; 21B6
+.D21BA
+    EQUB &00                        ; 21BA
+.D21BB
+    EQUB &FF, &00, &01, &00         ; 21BB
+.D21BF
+    EQUB &00, &11                   ; 21BF
+    EQUS """3DU"                    ; 21C1
+    EQUB &A8, &77, &6A, &FE, &86, &EF, &CC, &DD; 21C5
+    EQUB &9B, &B9, &E5, &16, &E9, &16, &56, &17; 21CD
+    EQUB &7E, &18, &FD, &1A, &E0, &19, &93, &1A; 21D5
+    EQUB &43, &1A, &A7, &21, &68, &12, &6E, &17; 21DD
+    EQUB &2F, &18, &02, &18, &E2, &17, &1A, &18; 21E5
+    EQUB &1E, &18, &22, &18, &19, &13, &96, &18; 21ED
+    EQUB &E5, &18, &11, &19, &9B, &19, &AA, &19; 21F5
+    EQUB &19, &13, &78, &1B, &2A, &1B, &C3, &1B; 21FD
+    EQUB &21, &1C, &BD, &1E, &1A, &13, &0E, &1C; 2205
+    EQUB &12, &1C, &16, &1C, &1A, &13, &17, &1D; 220D
+    EQUB &A7, &1C, &AA, &1C, &CA, &1C, &95, &1C; 2215
+    EQUB &E0, &1C, &9C, &1C, &0A, &1C, &1A, &13; 221D
+    EQUB &54, &1D, &E5, &1D, &D2, &1D, &78, &11; 2225
+    EQUB &9D, &1E, &97, &1E, &18, &1F, &28, &1F; 222D
+    EQUB &91, &1E, &F1, &1F, &85, &1E, &60, &1E; 2235
+    EQUB &DB, &1E, &90, &1F         ; 223D
+    EQUS "9 9 "                     ; 2241
+    EQUB &8B, &1E, &9A, &20, &CB, &20, &C9, &1E; 2245
+    EQUB &D7, &1E, &18, &1F, &19, &13, &65, &1F; 224D
+    EQUB &56, &1F, &78, &1F, &5A, &1F, &19, &13; 2255
+    EQUB &D7, &1E, &BD, &1F, &19, &13, &FA, &1F; 225D
+    EQUB &11, &20, &19, &13, &FA, &1F, &1A, &20; 2265
+    EQUB &19, &13, &AA, &20, &BF, &20, &19, &13; 226D
+    EQUB &DD, &20, &EE, &20, &0E, &21, &18, &21; 2275
+    EQUB &05, &13, &38, &21, &A7, &16, &83, &08; 227D
+    EQUB &70, &14, &88, &14, &7C, &14, &94, &14; 2285
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 228D
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 2295
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 229D
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 22A5
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 22AD
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 22B5
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 22BD
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 22C5
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 22CD
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 22D5
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 22DD
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 22E5
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 22ED
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 22F5
+    EQUB &00, &00, &00, &20, &00, &00, &00, &00; 22FD
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 2305
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 230D
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 2315
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 231D
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 2325
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 232D
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 2335
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 233D
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 2345
+.L234D
+    JMP L2484                       ; 234D: 4C 84 24
+.L2350
+    JMP L2403                       ; 2350: 4C 03 24
+.L2353
+    JMP L2430                       ; 2353: 4C 30 24
+.L2356
+    JMP L2445                       ; 2356: 4C 45 24
+.L2359
+    JMP L245A                       ; 2359: 4C 5A 24
+    JMP L2488                       ; 235C: 4C 88 24
+.L235F
+    JMP L249E                       ; 235F: 4C 9E 24
+.L2362
+    JMP L24CF                       ; 2362: 4C CF 24
+.L2365
+    JMP L24A9                       ; 2365: 4C A9 24
+.L2368
+    LDA #&28                        ; 2368: A9 28
+    STA &53                         ; 236A: 85 53
+    LDA #&00                        ; 236C: A9 00
+    STA &52                         ; 236E: 85 52
+    TAY                             ; 2370: A8
+    LDX #&08                        ; 2371: A2 08
+.L2373
+    STA (&52), Y                    ; 2373: 91 52
+    INY                             ; 2375: C8
+    BNE L2373                       ; 2376: D0 FB
+    INC &53                         ; 2378: E6 53
+    DEX                             ; 237A: CA
+    BNE L2373                       ; 237B: D0 F6
+    LDA #&33                        ; 237D: A9 33
+    STA &2690                       ; 237F: 8D 90 26
+    STA &2698                       ; 2382: 8D 98 26
+    STA &26A0                       ; 2385: 8D A0 26
+    LDX #&4F                        ; 2388: A2 4F
+.L238A
+    LDA #&20                        ; 238A: A9 20
+    STA &25A1, X                    ; 238C: 9D A1 25
+    LDA #&31                        ; 238F: A9 31
+    STA &25E9, X                    ; 2391: 9D E9 25
+    LDA #&32                        ; 2394: A9 32
+    STA &2639, X                    ; 2396: 9D 39 26
+    DEX                             ; 2399: CA
+    BPL L238A                       ; 239A: 10 EE
+    LDX #&3E                        ; 239C: A2 3E
+.L239E
+    LDA #&20                        ; 239E: A9 20
+    STA &26A2, X                    ; 23A0: 9D A2 26
+    TXA                             ; 23A3: 8A
+    LSR A                           ; 23A4: 4A
+    ADC #&01                        ; 23A5: 69 01
+    JSR L240F                       ; 23A7: 20 0F 24
+    JSR L240F                       ; 23AA: 20 0F 24
+    JSR L240F                       ; 23AD: 20 0F 24
+    CLC                             ; 23B0: 18
+    ADC #&30                        ; 23B1: 69 30
+    STA &26A1, X                    ; 23B3: 9D A1 26
+    DEX                             ; 23B6: CA
+    DEX                             ; 23B7: CA
+    BPL L239E                       ; 23B8: 10 E4
+    LDY #&00                        ; 23BA: A0 00
+.L23BC
+    DEY                             ; 23BC: 88
+    LDX #&06                        ; 23BD: A2 06
+.L23BF
+    LDA D2416, X                    ; 23BF: BD 16 24
+    STA D25A0, Y                    ; 23C2: 99 A0 25
+    DEY                             ; 23C5: 88
+    DEX                             ; 23C6: CA
+    BPL L23BF                       ; 23C7: 10 F6
+    TYA                             ; 23C9: 98
+    BNE L23BC                       ; 23CA: D0 F0
+    LDY #&0F                        ; 23CC: A0 0F
+.L23CE
+    LDA D241D, Y                    ; 23CE: B9 1D 24
+    STA &26E1, Y                    ; 23D1: 99 E1 26
+    DEY                             ; 23D4: 88
+    BPL L23CE                       ; 23D5: 10 F7
+    LDA #&04                        ; 23D7: A9 04
+    STA &52                         ; 23D9: 85 52
+    INY                             ; 23DB: C8
+.L23DC
+    LDX #&00                        ; 23DC: A2 00
+.L23DE
+    LDA D242C, X                    ; 23DE: BD 2C 24
+    STA &2710, Y                    ; 23E1: 99 10 27
+    INY                             ; 23E4: C8
+    INX                             ; 23E5: E8
+    CPX #&04                        ; 23E6: E0 04
+    BCC L23DE                       ; 23E8: 90 F4
+    DEC &52                         ; 23EA: C6 52
+    BNE L23DC                       ; 23EC: D0 EE
+    LDA #&A0                        ; 23EE: A9 A0
+    LDX #&1F                        ; 23F0: A2 1F
+.L23F2
+    STA &26F0, X                    ; 23F2: 9D F0 26
+    DEX                             ; 23F5: CA
+    BPL L23F2                       ; 23F6: 10 FA
+    LDX #&E0                        ; 23F8: A2 E0
+.L23FA
+    STA &271F, X                    ; 23FA: 9D 1F 27
+    DEX                             ; 23FD: CA
+    BNE L23FA                       ; 23FE: D0 FA
+    JSR L1110                       ; 2400: 20 10 11
+.L2403
+    LDY #&03                        ; 2403: A0 03
+.L2405
+    LDA &26E4, Y                    ; 2405: B9 E4 26
+    JSR L110D                       ; 2408: 20 0D 11
+    DEY                             ; 240B: 88
+    BPL L2405                       ; 240C: 10 F7
+    RTS                             ; 240E: 60
+.L240F
+    CMP #&0A                        ; 240F: C9 0A
+    BCC L2415                       ; 2411: 90 02
+    SBC #&0A                        ; 2413: E9 0A
+.L2415
+    RTS                             ; 2415: 60
+.D2416
+    EQUS "Puzzle "                  ; 2416
+.D241D
+    EQUB &90, &1C, &D4, &00, &14, &23, &31, &1C; 241D
+    EQUB &1C, &00, &FA, &20, &20, &AA, &00; 2425
+.D242C
+    EQUB &80, &80, &08, &B1         ; 242C
+.L2430
+    JSR L249E                       ; 2430: 20 9E 24
+    LDA #&1F                        ; 2433: A9 1F
+    JSR OSWRCH                      ; 2435: 20 EE FF
+    LDA #&22                        ; 2438: A9 22
+    JSR OSWRCH                      ; 243A: 20 EE FF
+    LDA #&0C                        ; 243D: A9 0C
+    JSR OSWRCH                      ; 243F: 20 EE FF
+    JMP L245D                       ; 2442: 4C 5D 24
+.L2445
+    JSR L249E                       ; 2445: 20 9E 24
+    LDA #&1F                        ; 2448: A9 1F
+    JSR OSWRCH                      ; 244A: 20 EE FF
+    LDA #&0A                        ; 244D: A9 0A
+    JSR OSWRCH                      ; 244F: 20 EE FF
+    LDA #&0B                        ; 2452: A9 0B
+    JSR OSWRCH                      ; 2454: 20 EE FF
+    JMP L245D                       ; 2457: 4C 5D 24
+.L245A
+    JSR L249E                       ; 245A: 20 9E 24
+.L245D
+    STX &76                         ; 245D: 86 76
+    STY &77                         ; 245F: 84 77
+    JSR L2484                       ; 2461: 20 84 24
+.L2464
+    LDY #&00                        ; 2464: A0 00
+    LDA (&76), Y                    ; 2466: B1 76
+    CMP #&7C                        ; 2468: C9 7C
+    BEQ L2492                       ; 246A: F0 26
+    CMP #&FF                        ; 246C: C9 FF
+    BEQ L247C                       ; 246E: F0 0C
+    JSR OSWRCH                      ; 2470: 20 EE FF
+.L2473
+    INC &76                         ; 2473: E6 76
+    BNE L2464                       ; 2475: D0 ED
+    INC &77                         ; 2477: E6 77
+    JMP L2464                       ; 2479: 4C 64 24
+.L247C
+    LDY #&0A                        ; 247C: A0 0A
+    JSR L2486                       ; 247E: 20 86 24
+    JMP L2473                       ; 2481: 4C 73 24
+.L2484
+    LDY #&03                        ; 2484: A0 03
+.L2486
+    LDX #&03                        ; 2486: A2 03
+.L2488
+    LDA D2493, Y                    ; 2488: B9 93 24
+    JSR OSWRCH                      ; 248B: 20 EE FF
+    DEY                             ; 248E: 88
+    DEX                             ; 248F: CA
+    BPL L2488                       ; 2490: 10 F6
+.L2492
+    RTS                             ; 2492: 60
+.D2493
+    EQUB &02, &11, &81, &11, &0C, &80, &11, &00; 2493
+    EQUB &11, &83, &11              ; 249B
+.L249E
+    ASL A                           ; 249E: 0A
+    TAY                             ; 249F: A8
+    LDA &6FFE, Y                    ; 24A0: B9 FE 6F
+    TAX                             ; 24A3: AA
+    LDA &6FFF, Y                    ; 24A4: B9 FF 6F
+    TAY                             ; 24A7: A8
+    RTS                             ; 24A8: 60
+.L24A9
+    PHA                             ; 24A9: 48
+    STX &52                         ; 24AA: 86 52
+    STY &53                         ; 24AC: 84 53
+    JSR L0892                       ; 24AE: 20 92 08
+    LDX &52                         ; 24B1: A6 52
+    LDY &53                         ; 24B3: A4 53
+    JSR L24E7                       ; 24B5: 20 E7 24
+    PLA                             ; 24B8: 68
+    LDX #&F0                        ; 24B9: A2 F0
+    BCS L24C3                       ; 24BB: B0 06
+    LDX #&0F                        ; 24BD: A2 0F
+    ASL A                           ; 24BF: 0A
+    ASL A                           ; 24C0: 0A
+    ASL A                           ; 24C1: 0A
+    ASL A                           ; 24C2: 0A
+.L24C3
+    STA &54                         ; 24C3: 85 54
+    TXA                             ; 24C5: 8A
+    LDY #&00                        ; 24C6: A0 00
+    AND (&52), Y                    ; 24C8: 31 52
+    ORA &54                         ; 24CA: 05 54
+    STA (&52), Y                    ; 24CC: 91 52
+    RTS                             ; 24CE: 60
+.L24CF
+    TXA                             ; 24CF: 8A
+    ASL A                           ; 24D0: 0A
+    BMI L24E6                       ; 24D1: 30 13
+    TYA                             ; 24D3: 98
+    ASL A                           ; 24D4: 0A
+    BMI L24E6                       ; 24D5: 30 0F
+    JSR L24E7                       ; 24D7: 20 E7 24
+    LDY #&00                        ; 24DA: A0 00
+    LDA (&52), Y                    ; 24DC: B1 52
+    BCS L24E4                       ; 24DE: B0 04
+    LSR A                           ; 24E0: 4A
+    LSR A                           ; 24E1: 4A
+    LSR A                           ; 24E2: 4A
+    LSR A                           ; 24E3: 4A
+.L24E4
+    AND #&0F                        ; 24E4: 29 0F
+.L24E6
+    RTS                             ; 24E6: 60
+.L24E7
+    TXA                             ; 24E7: 8A
+    LDX #&03                        ; 24E8: A2 03
+    STX &52                         ; 24EA: 86 52
+.L24EC
+    LSR A                           ; 24EC: 4A
+    ROR &52                         ; 24ED: 66 52
+    DEX                             ; 24EF: CA
+    BNE L24EC                       ; 24F0: D0 FA
+    ADC #&28                        ; 24F2: 69 28
+    STA &53                         ; 24F4: 85 53
+    TYA                             ; 24F6: 98
+    LSR A                           ; 24F7: 4A
+    CLC                             ; 24F8: 18
+    ADC &52                         ; 24F9: 65 52
+    STA &52                         ; 24FB: 85 52
+    TYA                             ; 24FD: 98
+    LSR A                           ; 24FE: 4A
+    RTS                             ; 24FF: 60
+    EQUB &78, &0F, &0F, &1E, &3C, &3C, &3C, &0F; 2500
+    EQUB &E1, &69, &C3, &87, &0F, &0F, &0F, &0F; 2508
+    EQUS "<ii<ii<"                  ; 2510
+    EQUB &0F, &C3, &69, &69, &C3, &69, &69, &C3; 2517
+    EQUB &0F                        ; 251F
+    EQUS "<ii<"                     ; 2520
+    EQUB &0F, &0F, &3C, &0F, &C3, &69, &69, &E1; 2524
+    EQUB &69, &C3, &87, &0F         ; 252C
+    EQUS "<iixxi<"                  ; 2530
+    EQUB &0F, &C3, &69, &E1, &E1, &69, &69, &C3; 2537
+    EQUB &0F, &0F, &0F, &0F, &0F, &D2, &78, &2D; 253F
+    EQUB &0F, &0F, &0F, &69, &C3, &87, &0F, &0F; 2547
+    EQUB &0F, &0F, &0F, &0F, &78, &0F, &0F, &0F; 254F
+    EQUB &0F, &0F, &0F, &0F, &E1, &0F, &0F, &0F; 2557
+    EQUB &0F                        ; 255F
+.D2560
+    EQUB &00                        ; 2560
+.D2561
+    EQUB &00, &00, &00, &F0, &70, &30, &10, &F0; 2561
+    EQUB &E0, &C0, &80, &10, &30, &70, &F0, &80; 2569
+    EQUB &C0, &E0, &F0, &F0, &F0, &F0, &F0, &06; 2571
+    EQUB &69, &69, &06, &66, &66, &66, &FF, &8F; 2579
+    EQUB &4F, &2F, &1F, &FF, &60, &60, &FF, &60; 2581
+    EQUB &90, &90, &60, &06, &0F, &0F, &06, &00; 2589
+    EQUB &0F, &0F, &00, &06, &06, &06, &06, &F0; 2591
+    EQUB &96, &96, &F0, &66, &FF, &FF, &66; 2599
+.D25A0
+    EQUB &00                        ; 25A0
+.zero_page_init_load
+SECTION zero_page_init, org=&0000
+.D0000
+    EQUB &CF, &21, &E3, &21, &F3, &21, &FF, &21; 0000
+    EQUB &0B, &22, &13              ; 0008
+    EQUS """%""-""M""S""]""c""i""o""u"""; 000B
+    EQUB &7F, &22, &85, &22, &00, &00, &00, &00; 001E
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 0026
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 002E
+    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 0036
+    EQUB &00, &00                   ; 003E
+ENDSECTION
+.low_code_load
+SECTION low_code, org=&0880
+.L0880
+    JMP L0A27                       ; 0880: 4C 27 0A
+.L0883
+    JMP L0B47                       ; 0883: 4C 47 0B
+.L0886
+    JMP L0BEE                       ; 0886: 4C EE 0B
+.L0889
+    JMP L0BA8                       ; 0889: 4C A8 0B
+.L088C
+    JMP L089B                       ; 088C: 4C 9B 08
+.L088F
+    JMP L0B85                       ; 088F: 4C 85 0B
+.L0892
+    JMP L0B94                       ; 0892: 4C 94 0B
+.L0895
+    JMP L099F                       ; 0895: 4C 9F 09
+.L0898
+    JMP L0B6F                       ; 0898: 4C 6F 0B
+.L089B
+    LDY #&00                        ; 089B: A0 00
+    STY &7E                         ; 089D: 84 7E
+    LDA #&28                        ; 089F: A9 28
+    STA &7F                         ; 08A1: 85 7F
+    STY &72                         ; 08A3: 84 72
+    LDA #&30                        ; 08A5: A9 30
+    STA &73                         ; 08A7: 85 73
+    LDA #&F0                        ; 08A9: A9 F0
+    STA &7B                         ; 08AB: 85 7B
+    STY &79                         ; 08AD: 84 79
+    DEY                             ; 08AF: 88
+.L08B0
+    LDA #&08                        ; 08B0: A9 08
+    STA &78                         ; 08B2: 85 78
+.L08B4
+    INY                             ; 08B4: C8
+    LDA (&7E), Y                    ; 08B5: B1 7E
+    BIT &7B                         ; 08B7: 24 7B
+    BPL L08BF                       ; 08B9: 10 04
+    LSR A                           ; 08BB: 4A
+    LSR A                           ; 08BC: 4A
+    LSR A                           ; 08BD: 4A
+    LSR A                           ; 08BE: 4A
+.L08BF
+    AND #&0F                        ; 08BF: 29 0F
+    ASL A                           ; 08C1: 0A
+    ASL A                           ; 08C2: 0A
+    TAX                             ; 08C3: AA
+    LDY #&03                        ; 08C4: A0 03
+.L08C6
+    LDA D2560, X                    ; 08C6: BD 60 25
+    STA (&72), Y                    ; 08C9: 91 72
+    INX                             ; 08CB: E8
+    DEY                             ; 08CC: 88
+    BPL L08C6                       ; 08CD: 10 F7
+    LDA &72                         ; 08CF: A5 72
+    ADC #&08                        ; 08D1: 69 08
+    STA &72                         ; 08D3: 85 72
+    BCC L08D9                       ; 08D5: 90 02
+    INC &73                         ; 08D7: E6 73
+.L08D9
+    LDA &7E                         ; 08D9: A5 7E
+    CLC                             ; 08DB: 18
+    ADC #&20                        ; 08DC: 69 20
+    STA &7E                         ; 08DE: 85 7E
+    BCC L08B4                       ; 08E0: 90 D2
+    INC &7F                         ; 08E2: E6 7F
+    DEC &78                         ; 08E4: C6 78
+    BNE L08B4                       ; 08E6: D0 CC
+    INC &79                         ; 08E8: E6 79
+    LDA &7F                         ; 08EA: A5 7F
+    SBC #&08                        ; 08EC: E9 08
+    STA &7F                         ; 08EE: 85 7F
+    LDA &79                         ; 08F0: A5 79
+    AND #&FE                        ; 08F2: 29 FE
+    ADC #&2F                        ; 08F4: 69 2F
+    STA &73                         ; 08F6: 85 73
+    LDA &79                         ; 08F8: A5 79
+    LDX #&0F                        ; 08FA: A2 0F
+    AND #&01                        ; 08FC: 29 01
+    BNE L0908                       ; 08FE: D0 08
+    LDX #&F0                        ; 0900: A2 F0
+    INC &7E                         ; 0902: E6 7E
+    BNE L0908                       ; 0904: D0 02
+    INC &7F                         ; 0906: E6 7F
+.L0908
+    STX &7B                         ; 0908: 86 7B
+    ASL A                           ; 090A: 0A
+    ASL A                           ; 090B: 0A
+    STA &72                         ; 090C: 85 72
+    BIT &79                         ; 090E: 24 79
+    BVC L08B0                       ; 0910: 50 9E
+    RTS                             ; 0912: 60
+.L0913
+    LDA #&00                        ; 0913: A9 00
+    STA &73                         ; 0915: 85 73
+    TXA                             ; 0917: 8A
+    ASL A                           ; 0918: 0A
+    ASL A                           ; 0919: 0A
+    ROL &73                         ; 091A: 26 73
+    ASL A                           ; 091C: 0A
+    ROL &73                         ; 091D: 26 73
+    STA &72                         ; 091F: 85 72
+    TYA                             ; 0921: 98
+    AND #&FE                        ; 0922: 29 FE
+    ADC #&30                        ; 0924: 69 30
+    ADC &73                         ; 0926: 65 73
+    STA &73                         ; 0928: 85 73
+    TYA                             ; 092A: 98
+    LSR A                           ; 092B: 4A
+    LDA #&00                        ; 092C: A9 00
+    BCC L0932                       ; 092E: 90 02
+    LDA #&04                        ; 0930: A9 04
+.L0932
+    ORA &72                         ; 0932: 05 72
+    STA &72                         ; 0934: 85 72
+    RTS                             ; 0936: 60
+.L0937
+    LDY #&00                        ; 0937: A0 00
+    LDA (&7E), Y                    ; 0939: B1 7E
+    BIT &7B                         ; 093B: 24 7B
+    BPL L0943                       ; 093D: 10 04
+    LSR A                           ; 093F: 4A
+    LSR A                           ; 0940: 4A
+    LSR A                           ; 0941: 4A
+    LSR A                           ; 0942: 4A
+.L0943
+    AND #&0F                        ; 0943: 29 0F
+    RTS                             ; 0945: 60
+.L0946
+    STA &78                         ; 0946: 85 78
+    STX &7A                         ; 0948: 86 7A
+    LDA #&00                        ; 094A: A9 00
+    STA &7F                         ; 094C: 85 7F
+    TXA                             ; 094E: 8A
+    LDX #&05                        ; 094F: A2 05
+.L0951
+    ASL A                           ; 0951: 0A
+    ROL &7F                         ; 0952: 26 7F
+    DEX                             ; 0954: CA
+    BNE L0951                       ; 0955: D0 FA
+    STA &7E                         ; 0957: 85 7E
+    TYA                             ; 0959: 98
+    LSR A                           ; 095A: 4A
+    LDX #&F0                        ; 095B: A2 F0
+    BCC L0961                       ; 095D: 90 02
+    LDX #&0F                        ; 095F: A2 0F
+.L0961
+    STX &7B                         ; 0961: 86 7B
+    ORA &7E                         ; 0963: 05 7E
+    CLC                             ; 0965: 18
+    STA &7E                         ; 0966: 85 7E
+    LDA &7F                         ; 0968: A5 7F
+    ADC #&28                        ; 096A: 69 28
+    STA &7F                         ; 096C: 85 7F
+    LDX &7A                         ; 096E: A6 7A
+    JSR L0913                       ; 0970: 20 13 09
+.L0973
+    JSR L0937                       ; 0973: 20 37 09
+    ASL A                           ; 0976: 0A
+    ASL A                           ; 0977: 0A
+    TAX                             ; 0978: AA
+    LDY #&03                        ; 0979: A0 03
+.L097B
+    LDA D2560, X                    ; 097B: BD 60 25
+    INX                             ; 097E: E8
+    STA (&72), Y                    ; 097F: 91 72
+    DEY                             ; 0981: 88
+    BPL L097B                       ; 0982: 10 F7
+    LDA &72                         ; 0984: A5 72
+    CLC                             ; 0986: 18
+    ADC #&08                        ; 0987: 69 08
+    STA &72                         ; 0989: 85 72
+    BCC L098F                       ; 098B: 90 02
+    INC &73                         ; 098D: E6 73
+.L098F
+    LDA &7E                         ; 098F: A5 7E
+    CLC                             ; 0991: 18
+    ADC #&20                        ; 0992: 69 20
+    STA &7E                         ; 0994: 85 7E
+    BCC L099A                       ; 0996: 90 02
+    INC &7F                         ; 0998: E6 7F
+.L099A
+    DEC &78                         ; 099A: C6 78
+    BNE L0973                       ; 099C: D0 D5
+    RTS                             ; 099E: 60
+.L099F
+    LDA #&10                        ; 099F: A9 10
+    STA &72                         ; 09A1: 85 72
+    LDA #&4C                        ; 09A3: A9 4C
+    STA &73                         ; 09A5: 85 73
+    LDX #&04                        ; 09A7: A2 04
+.L09A9
+    LDY #&00                        ; 09A9: A0 00
+    LDA #&0F                        ; 09AB: A9 0F
+.L09AD
+    STA (&72), Y                    ; 09AD: 91 72
+    DEY                             ; 09AF: 88
+    BNE L09AD                       ; 09B0: D0 FB
+    INC &73                         ; 09B2: E6 73
+    LDY #&DF                        ; 09B4: A0 DF
+.L09B6
+    STA (&72), Y                    ; 09B6: 91 72
+    DEY                             ; 09B8: 88
+    CPY #&FF                        ; 09B9: C0 FF
+    BNE L09B6                       ; 09BB: D0 F9
+    INC &73                         ; 09BD: E6 73
+    DEX                             ; 09BF: CA
+    BNE L09A9                       ; 09C0: D0 E7
+    LDX #&F0                        ; 09C2: A2 F0
+.L09C4
+    LDA #&FF                        ; 09C4: A9 FF
+    STA &5410, X                    ; 09C6: 9D 10 54
+    STA &54F8, X                    ; 09C9: 9D F8 54
+    STA &4A17, X                    ; 09CC: 9D 17 4A
+    STA &4AFF, X                    ; 09CF: 9D FF 4A
+    TXA                             ; 09D2: 8A
+    SEC                             ; 09D3: 38
+    SBC #&08                        ; 09D4: E9 08
+    TAX                             ; 09D6: AA
+    BCS L09C4                       ; 09D7: B0 EB
+    LDA #&08                        ; 09D9: A9 08
+    STA &72                         ; 09DB: 85 72
+    LDX #&52                        ; 09DD: A2 52
+    STX &73                         ; 09DF: 86 73
+    INX                             ; 09E1: E8
+    STX &75                         ; 09E2: 86 75
+    LDA #&F0                        ; 09E4: A9 F0
+    STA &74                         ; 09E6: 85 74
+    LDX #&04                        ; 09E8: A2 04
+.L09EA
+    LDY #&07                        ; 09EA: A0 07
+.L09EC
+    LDA #&11                        ; 09EC: A9 11
+    ORA (&72), Y                    ; 09EE: 11 72
+    STA (&72), Y                    ; 09F0: 91 72
+    LDA #&88                        ; 09F2: A9 88
+    ORA (&74), Y                    ; 09F4: 11 74
+    STA (&74), Y                    ; 09F6: 91 74
+    DEY                             ; 09F8: 88
+    BPL L09EC                       ; 09F9: 10 F1
+    DEC &73                         ; 09FB: C6 73
+    DEC &73                         ; 09FD: C6 73
+    DEC &75                         ; 09FF: C6 75
+    DEC &75                         ; 0A01: C6 75
+    DEX                             ; 0A03: CA
+    BNE L09EA                       ; 0A04: D0 E4
+    LDA #&11                        ; 0A06: A9 11
+    ORA &4A0F                       ; 0A08: 0D 0F 4A
+    STA &4A0F                       ; 0A0B: 8D 0F 4A
+    LDA #&11                        ; 0A0E: A9 11
+    ORA &5408                       ; 0A10: 0D 08 54
+    STA &5408                       ; 0A13: 8D 08 54
+    LDA #&88                        ; 0A16: A9 88
+    ORA &4BF7                       ; 0A18: 0D F7 4B
+    STA &4BF7                       ; 0A1B: 8D F7 4B
+    LDA #&88                        ; 0A1E: A9 88
+    ORA &55F0                       ; 0A20: 0D F0 55
+    STA &55F0                       ; 0A23: 8D F0 55
+    RTS                             ; 0A26: 60
+.L0A27
+    STX &76                         ; 0A27: 86 76
+    STY &77                         ; 0A29: 84 77
+    LDX #&03                        ; 0A2B: A2 03
+    LDY #&03                        ; 0A2D: A0 03
+.L0A2F
+    LDA (&76), Y                    ; 0A2F: B1 76
+    STA &84, X                      ; 0A31: 95 84
+    DEX                             ; 0A33: CA
+    DEY                             ; 0A34: 88
+    BPL L0A2F                       ; 0A35: 10 F8
+    LDA &85                         ; 0A37: A5 85
+    STA &88                         ; 0A39: 85 88
+    AND #&7F                        ; 0A3B: 29 7F
+    STA &85                         ; 0A3D: 85 85
+    LDA &84                         ; 0A3F: A5 84
+    PHP                             ; 0A41: 08
+    AND #&7F                        ; 0A42: 29 7F
+    STA &84                         ; 0A44: 85 84
+    PLP                             ; 0A46: 28
+    BMI L0A65                       ; 0A47: 30 1C
+    LDA &50                         ; 0A49: A5 50
+    CMP #&20                        ; 0A4B: C9 20
+    BCS L0A57                       ; 0A4D: B0 08
+    LDA #&41                        ; 0A4F: A9 41
+    SBC &86                         ; 0A51: E5 86
+    SBC &84                         ; 0A53: E5 84
+    STA &84                         ; 0A55: 85 84
+.L0A57
+    LDA &51                         ; 0A57: A5 51
+    CMP #&20                        ; 0A59: C9 20
+    BCS L0A65                       ; 0A5B: B0 08
+    LDA #&20                        ; 0A5D: A9 20
+    SBC &87                         ; 0A5F: E5 87
+    SBC &85                         ; 0A61: E5 85
+    STA &85                         ; 0A63: 85 85
+.L0A65
+    ASL &85                         ; 0A65: 06 85
+    LDY &85                         ; 0A67: A4 85
+    LDA &84                         ; 0A69: A5 84
+    TAX                             ; 0A6B: AA
+    JSR L0913                       ; 0A6C: 20 13 09
+    LDA &73                         ; 0A6F: A5 73
+    PHA                             ; 0A71: 48
+    STA &75                         ; 0A72: 85 75
+    LDA &72                         ; 0A74: A5 72
+    PHA                             ; 0A76: 48
+    STA &74                         ; 0A77: 85 74
+    SEC                             ; 0A79: 38
+    SBC #&01                        ; 0A7A: E9 01
+    STA &72                         ; 0A7C: 85 72
+    BCS L0A82                       ; 0A7E: B0 02
+    DEC &73                         ; 0A80: C6 73
+.L0A82
+    LDA &86                         ; 0A82: A5 86
+    ASL A                           ; 0A84: 0A
+    ASL A                           ; 0A85: 0A
+    ASL A                           ; 0A86: 0A
+    STA &78                         ; 0A87: 85 78
+    ADC &74                         ; 0A89: 65 74
+    STA &74                         ; 0A8B: 85 74
+    BCC L0A91                       ; 0A8D: 90 02
+    INC &75                         ; 0A8F: E6 75
+.L0A91
+    LDA &87                         ; 0A91: A5 87
+    STA &79                         ; 0A93: 85 79
+    PHA                             ; 0A95: 48
+.L0A96
+    LDA #&0F                        ; 0A96: A9 0F
+    LDY &78                         ; 0A98: A4 78
+.L0A9A
+    STA (&72), Y                    ; 0A9A: 91 72
+    DEY                             ; 0A9C: 88
+    BNE L0A9A                       ; 0A9D: D0 FB
+    LDY #&07                        ; 0A9F: A0 07
+.L0AA1
+    LDA (&74), Y                    ; 0AA1: B1 74
+    AND #&77                        ; 0AA3: 29 77
+    ORA #&88                        ; 0AA5: 09 88
+    STA (&74), Y                    ; 0AA7: 91 74
+    DEY                             ; 0AA9: 88
+    BPL L0AA1                       ; 0AAA: 10 F5
+    INC &75                         ; 0AAC: E6 75
+    INC &75                         ; 0AAE: E6 75
+    INC &73                         ; 0AB0: E6 73
+    INC &73                         ; 0AB2: E6 73
+    DEC &79                         ; 0AB4: C6 79
+    BPL L0A96                       ; 0AB6: 10 DE
+    PLA                             ; 0AB8: 68
+    STA &79                         ; 0AB9: 85 79
+    INY                             ; 0ABB: C8
+    LDA (&74), Y                    ; 0ABC: B1 74
+    AND #&77                        ; 0ABE: 29 77
+    ORA #&88                        ; 0AC0: 09 88
+    STA (&74), Y                    ; 0AC2: 91 74
+    LDA &78                         ; 0AC4: A5 78
+    SEC                             ; 0AC6: 38
+    SBC #&07                        ; 0AC7: E9 07
+    TAY                             ; 0AC9: A8
+.L0ACA
+    LDA #&FF                        ; 0ACA: A9 FF
+    STA (&72), Y                    ; 0ACC: 91 72
+    TYA                             ; 0ACE: 98
+    SEC                             ; 0ACF: 38
+    SBC #&08                        ; 0AD0: E9 08
+    TAY                             ; 0AD2: A8
+    BCS L0ACA                       ; 0AD3: B0 F5
+    PLA                             ; 0AD5: 68
+    STA &72                         ; 0AD6: 85 72
+    STA &7E                         ; 0AD8: 85 7E
+    PLA                             ; 0ADA: 68
+    STA &73                         ; 0ADB: 85 73
+    STA &7F                         ; 0ADD: 85 7F
+    LDA &76                         ; 0ADF: A5 76
+    CLC                             ; 0AE1: 18
+    ADC #&03                        ; 0AE2: 69 03
+    STA &76                         ; 0AE4: 85 76
+    BCC L0AEA                       ; 0AE6: 90 02
+    INC &77                         ; 0AE8: E6 77
+.L0AEA
+    JSR L0B40                       ; 0AEA: 20 40 0B
+    LDY #&00                        ; 0AED: A0 00
+    LDA (&76), Y                    ; 0AEF: B1 76
+    STA &74                         ; 0AF1: 85 74
+    AND #&7F                        ; 0AF3: 29 7F
+    TAX                             ; 0AF5: AA
+    BIT &74                         ; 0AF6: 24 74
+    BMI L0B0D                       ; 0AF8: 30 13
+    STX &74                         ; 0AFA: 86 74
+    LDA &86                         ; 0AFC: A5 86
+    LSR A                           ; 0AFE: 4A
+    SEC                             ; 0AFF: 38
+    SBC &74                         ; 0B00: E5 74
+    ASL A                           ; 0B02: 0A
+    ASL A                           ; 0B03: 0A
+    ASL A                           ; 0B04: 0A
+    ADC &72                         ; 0B05: 65 72
+    STA &72                         ; 0B07: 85 72
+    BCC L0B0D                       ; 0B09: 90 02
+    INC &73                         ; 0B0B: E6 73
+.L0B0D
+    JSR L0B40                       ; 0B0D: 20 40 0B
+    LDY #&00                        ; 0B10: A0 00
+    LDA (&76), Y                    ; 0B12: B1 76
+    JSR L0BC4                       ; 0B14: 20 C4 0B
+    DEX                             ; 0B17: CA
+    BNE L0B0D                       ; 0B18: D0 F3
+    LDA &79                         ; 0B1A: A5 79
+    CMP &87                         ; 0B1C: C5 87
+    BCC L0B2E                       ; 0B1E: 90 0E
+    LDY &78                         ; 0B20: A4 78
+    LDX &78                         ; 0B22: A6 78
+.L0B24
+    DEY                             ; 0B24: 88
+    LDA (&7E), Y                    ; 0B25: B1 7E
+    EOR #&F0                        ; 0B27: 49 F0
+    STA (&7E), Y                    ; 0B29: 91 7E
+    DEX                             ; 0B2B: CA
+    BNE L0B24                       ; 0B2C: D0 F6
+.L0B2E
+    LDA &7E                         ; 0B2E: A5 7E
+    CLC                             ; 0B30: 18
+    STA &72                         ; 0B31: 85 72
+    LDA &7F                         ; 0B33: A5 7F
+    ADC #&02                        ; 0B35: 69 02
+    STA &73                         ; 0B37: 85 73
+    STA &7F                         ; 0B39: 85 7F
+    DEC &79                         ; 0B3B: C6 79
+    BPL L0AEA                       ; 0B3D: 10 AB
+    RTS                             ; 0B3F: 60
+.L0B40
+    INC &76                         ; 0B40: E6 76
+    BNE L0B46                       ; 0B42: D0 02
+    INC &77                         ; 0B44: E6 77
+.L0B46
+    RTS                             ; 0B46: 60
+.L0B47
+    LDA &85                         ; 0B47: A5 85
+    STA &83                         ; 0B49: 85 83
+    LDA &84                         ; 0B4B: A5 84
+    STA &80                         ; 0B4D: 85 80
+    LDA &86                         ; 0B4F: A5 86
+    STA &7C                         ; 0B51: 85 7C
+    LDA &87                         ; 0B53: A5 87
+    ASL A                           ; 0B55: 0A
+    CLC                             ; 0B56: 18
+    ADC #&02                        ; 0B57: 69 02
+    STA &81                         ; 0B59: 85 81
+    INC &7C                         ; 0B5B: E6 7C
+.L0B5D
+    LDA &81                         ; 0B5D: A5 81
+    CLC                             ; 0B5F: 18
+    ADC &83                         ; 0B60: 65 83
+    TAY                             ; 0B62: A8
+    LDX &80                         ; 0B63: A6 80
+    LDA &7C                         ; 0B65: A5 7C
+    JSR L0946                       ; 0B67: 20 46 09
+    DEC &81                         ; 0B6A: C6 81
+    BPL L0B5D                       ; 0B6C: 10 EF
+    RTS                             ; 0B6E: 60
+.L0B6F
+    LDA #&24                        ; 0B6F: A9 24
+    STA &81                         ; 0B71: 85 81
+.L0B73
+    LDA #&3E                        ; 0B73: A9 3E
+    LDX #&01                        ; 0B75: A2 01
+    LDY &81                         ; 0B77: A4 81
+    JSR L0946                       ; 0B79: 20 46 09
+    DEC &81                         ; 0B7C: C6 81
+    LDA &81                         ; 0B7E: A5 81
+    CMP #&1B                        ; 0B80: C9 1B
+    BCS L0B73                       ; 0B82: B0 EF
+    RTS                             ; 0B84: 60
+.L0B85
+    JSR L0913                       ; 0B85: 20 13 09
+    LDY #&03                        ; 0B88: A0 03
+.L0B8A
+    LDA (&72), Y                    ; 0B8A: B1 72
+    EOR #&FF                        ; 0B8C: 49 FF
+    STA (&72), Y                    ; 0B8E: 91 72
+    DEY                             ; 0B90: 88
+    BPL L0B8A                       ; 0B91: 10 F7
+    RTS                             ; 0B93: 60
+.L0B94
+    PHA                             ; 0B94: 48
+    JSR L0913                       ; 0B95: 20 13 09
+    PLA                             ; 0B98: 68
+    ASL A                           ; 0B99: 0A
+    ASL A                           ; 0B9A: 0A
+    TAX                             ; 0B9B: AA
+    LDY #&03                        ; 0B9C: A0 03
+.L0B9E
+    LDA D2560, X                    ; 0B9E: BD 60 25
+    STA (&72), Y                    ; 0BA1: 91 72
+    INX                             ; 0BA3: E8
+    DEY                             ; 0BA4: 88
+    BPL L0B9E                       ; 0BA5: 10 F7
+    RTS                             ; 0BA7: 60
+.L0BA8
+    PHA                             ; 0BA8: 48
+    TXA                             ; 0BA9: 8A
+    ASL A                           ; 0BAA: 0A
+    ASL A                           ; 0BAB: 0A
+    TAX                             ; 0BAC: AA
+    TYA                             ; 0BAD: 98
+    ASL A                           ; 0BAE: 0A
+    ADC &85                         ; 0BAF: 65 85
+    TAY                             ; 0BB1: A8
+    LDA &86                         ; 0BB2: A5 86
+    ADC &84                         ; 0BB4: 65 84
+    TAX                             ; 0BB6: AA
+    DEX                             ; 0BB7: CA
+    DEX                             ; 0BB8: CA
+    JSR L0913                       ; 0BB9: 20 13 09
+    PLA                             ; 0BBC: 68
+    BEQ L0BC1                       ; 0BBD: F0 02
+    LDA #&0D                        ; 0BBF: A9 0D
+.L0BC1
+    CLC                             ; 0BC1: 18
+    ADC #&37                        ; 0BC2: 69 37
+.L0BC4
+    ASL A                           ; 0BC4: 0A
+    LDY #&04                        ; 0BC5: A0 04
+    ASL A                           ; 0BC7: 0A
+    BCC L0BCC                       ; 0BC8: 90 02
+    LDY #&25                        ; 0BCA: A0 25
+.L0BCC
+    ASL A                           ; 0BCC: 0A
+    BCC L0BD1                       ; 0BCD: 90 02
+    INY                             ; 0BCF: C8
+    INY                             ; 0BD0: C8
+.L0BD1
+    ASL A                           ; 0BD1: 0A
+    BCC L0BD5                       ; 0BD2: 90 01
+    INY                             ; 0BD4: C8
+.L0BD5
+    STA &74                         ; 0BD5: 85 74
+    STY &75                         ; 0BD7: 84 75
+    LDY #&0F                        ; 0BD9: A0 0F
+.L0BDB
+    LDA (&74), Y                    ; 0BDB: B1 74
+    STA (&72), Y                    ; 0BDD: 91 72
+    DEY                             ; 0BDF: 88
+    BPL L0BDB                       ; 0BE0: 10 F9
+    LDA &72                         ; 0BE2: A5 72
+    CLC                             ; 0BE4: 18
+    ADC #&10                        ; 0BE5: 69 10
+    STA &72                         ; 0BE7: 85 72
+    BCC L0BED                       ; 0BE9: 90 02
+    INC &73                         ; 0BEB: E6 73
+.L0BED
+    RTS                             ; 0BED: 60
+.L0BEE
+    CMP &87                         ; 0BEE: C5 87
+    BCC L0BF4                       ; 0BF0: 90 02
+    LDA #&00                        ; 0BF2: A9 00
+.L0BF4
+    STA &82                         ; 0BF4: 85 82
+    STA &89                         ; 0BF6: 85 89
+    LDA &86                         ; 0BF8: A5 86
+    ASL A                           ; 0BFA: 0A
+    ASL A                           ; 0BFB: 0A
+    ASL A                           ; 0BFC: 0A
+    SBC #&00                        ; 0BFD: E9 00
+    STA &78                         ; 0BFF: 85 78
+    LDA &87                         ; 0C01: A5 87
+    STA &79                         ; 0C03: 85 79
+    LDA &82                         ; 0C05: A5 82
+    STA &83                         ; 0C07: 85 83
+    JSR L0CA1                       ; 0C09: 20 A1 0C
+    LDA #&04                        ; 0C0C: A9 04
+    LDX #&02                        ; 0C0E: A2 02
+    JSR OSBYTE                      ; 0C10: 20 F4 FF
+    STX D0CBA                       ; 0C13: 8E BA 0C
+.L0C16
+    LDA #&13                        ; 0C16: A9 13
+    JSR OSBYTE                      ; 0C18: 20 F4 FF
+    JSR OSRDCH                      ; 0C1B: 20 E0 FF
+    BCC L0C2C                       ; 0C1E: 90 0C
+    LDA #&04                        ; 0C20: A9 04
+    LDX D0CBA                       ; 0C22: AE BA 0C
+    JSR OSBYTE                      ; 0C25: 20 F4 FF
+    SEC                             ; 0C28: 38
+    LDA #&FF                        ; 0C29: A9 FF
+    RTS                             ; 0C2B: 60
+.L0C2C
+    CMP #&8E                        ; 0C2C: C9 8E
+    BNE L0C3F                       ; 0C2E: D0 0F
+    INC &82                         ; 0C30: E6 82
+    LDA &82                         ; 0C32: A5 82
+    CMP &79                         ; 0C34: C5 79
+    BCC L0C3A                       ; 0C36: 90 02
+    LDA #&00                        ; 0C38: A9 00
+.L0C3A
+    STA &82                         ; 0C3A: 85 82
+    JMP L0C4E                       ; 0C3C: 4C 4E 0C
+.L0C3F
+    CMP #&8F                        ; 0C3F: C9 8F
+    BNE L0C50                       ; 0C41: D0 0D
+    DEC &82                         ; 0C43: C6 82
+    BPL L0C4E                       ; 0C45: 10 07
+    LDA &79                         ; 0C47: A5 79
+    SEC                             ; 0C49: 38
+    SBC #&01                        ; 0C4A: E9 01
+    STA &82                         ; 0C4C: 85 82
+.L0C4E
+    LDA #&00                        ; 0C4E: A9 00
+.L0C50
+    PHA                             ; 0C50: 48
+    LDA &82                         ; 0C51: A5 82
+    CMP &83                         ; 0C53: C5 83
+    BEQ L0C63                       ; 0C55: F0 0C
+    JSR L0CA1                       ; 0C57: 20 A1 0C
+    LDA &83                         ; 0C5A: A5 83
+    JSR L0CA1                       ; 0C5C: 20 A1 0C
+    LDA &82                         ; 0C5F: A5 82
+    STA &83                         ; 0C61: 85 83
+.L0C63
+    PLA                             ; 0C63: 68
+    CMP #&0D                        ; 0C64: C9 0D
+    BEQ L0C85                       ; 0C66: F0 1D
+    CMP #&20                        ; 0C68: C9 20
+    BEQ L0C74                       ; 0C6A: F0 08
+    LDA #&0F                        ; 0C6C: A9 0F
+    JSR OSBYTE                      ; 0C6E: 20 F4 FF
+    JMP L0C16                       ; 0C71: 4C 16 0C
+.L0C74
+    LDA &88                         ; 0C74: A5 88
+    BMI L0C81                       ; 0C76: 30 09
+    JSR L0C91                       ; 0C78: 20 91 0C
+    LDX &79                         ; 0C7B: A6 79
+    DEX                             ; 0C7D: CA
+    TXA                             ; 0C7E: 8A
+    CLC                             ; 0C7F: 18
+    RTS                             ; 0C80: 60
+.L0C81
+    LDA &89                         ; 0C81: A5 89
+    CLC                             ; 0C83: 18
+    RTS                             ; 0C84: 60
+.L0C85
+    JSR L0C91                       ; 0C85: 20 91 0C
+    LDA &82                         ; 0C88: A5 82
+    JSR L0CA1                       ; 0C8A: 20 A1 0C
+    LDA &82                         ; 0C8D: A5 82
+    CLC                             ; 0C8F: 18
+    RTS                             ; 0C90: 60
+.L0C91
+    LDA #&04                        ; 0C91: A9 04
+    LDX D0CBA                       ; 0C93: AE BA 0C
+    JMP OSBYTE                      ; 0C96: 4C F4 FF
+    EQUB &A9, &81, &A8, &20, &F4, &FF, &8A, &60; 0C99
+.L0CA1
+    ASL A                           ; 0CA1: 0A
+    ADC &85                         ; 0CA2: 65 85
+    LDX &84                         ; 0CA4: A6 84
+    TAY                             ; 0CA6: A8
+    INY                             ; 0CA7: C8
+    INY                             ; 0CA8: C8
+    JSR L0913                       ; 0CA9: 20 13 09
+    LDY &78                         ; 0CAC: A4 78
+.L0CAE
+    LDA (&72), Y                    ; 0CAE: B1 72
+    EOR #&FF                        ; 0CB0: 49 FF
+    STA (&72), Y                    ; 0CB2: 91 72
+    DEY                             ; 0CB4: 88
+    CPY #&FF                        ; 0CB5: C0 FF
+    BNE L0CAE                       ; 0CB7: D0 F5
+    RTS                             ; 0CB9: 60
+.D0CBA
+    EQUB &00, &00, &00, &00, &00, &00; 0CBA
+ENDSECTION
+.font_load
+SECTION font, org=&0400
+.D0400
+    EQUS "<iixiii"                  ; 0400
+    EQUB &0F, &C3, &69, &69, &E1, &69, &69, &69; 0407
+    EQUB &0F                        ; 040F
+    EQUS "xiixiix"                  ; 0410
+    EQUB &0F, &C3, &69, &69, &C3, &69, &69, &C3; 0417
+    EQUB &0F                        ; 041F
+    EQUS "<iiiii<"                  ; 0420
+    EQUB &0F, &C3, &69, &0F, &0F, &0F, &69, &C3; 0427
+    EQUB &0F                        ; 042F
+    EQUS "xiiiiix"                  ; 0430
+    EQUB &0F, &87, &C3, &69, &69, &69, &C3, &87; 0437
+    EQUB &0F                        ; 043F
+    EQUS "xiixiix"                  ; 0440
+    EQUB &0F, &E1, &0F, &0F, &C3, &0F, &0F, &E1; 0447
+    EQUB &0F                        ; 044F
+    EQUS "xiixiii"                  ; 0450
+    EQUB &0F, &E1, &0F, &0F, &C3, &0F, &0F, &0F; 0457
+    EQUB &0F                        ; 045F
+    EQUS "<iiiii<"                  ; 0460
+    EQUB &0F, &C3, &69, &0F, &E1, &69, &69, &C3; 0467
+    EQUB &0F                        ; 046F
+    EQUS "iiixiii"                  ; 0470
+    EQUB &0F, &69, &69, &69, &E1, &69, &69, &69; 0477
+    EQUB &0F, &78, &1E, &1E, &1E, &1E, &1E, &78; 047F
+    EQUB &0F, &E1, &87, &87, &87, &87, &87, &E1; 0487
+    EQUB &0F, &3C, &0F, &0F, &0F, &0F, &69, &3C; 048F
+    EQUB &0F, &E1, &C3, &C3, &C3, &C3, &C3, &87; 0497
+    EQUB &0F                        ; 049F
+    EQUS "iixxxii"                  ; 04A0
+    EQUB &0F, &69, &C3, &87, &0F, &87, &C3, &69; 04A7
+    EQUB &0F                        ; 04AF
+    EQUS "iiiiiix"                  ; 04B0
+    EQUB &0F, &0F, &0F, &0F, &0F, &0F, &0F, &E1; 04B7
+    EQUB &0F                        ; 04BF
+    EQUS "ixxiiii"                  ; 04C0
+    EQUB &0F, &3C, &78, &F0, &B4, &B4, &3C, &3C; 04C7
+    EQUB &0F                        ; 04CF
+    EQUS "iixxiii"                  ; 04D0
+    EQUB &0F, &69, &69, &69, &E1, &E1, &69, &69; 04D7
+    EQUB &0F                        ; 04DF
+    EQUS "<iiiii<"                  ; 04E0
+    EQUB &0F, &C3                   ; 04E7
+    EQUS "iiiii"                    ; 04E9
+    EQUB &C3, &0F                   ; 04EE
+    EQUS "xiixiii"                  ; 04F0
+    EQUB &0F, &C3, &69, &69, &C3, &0F, &0F, &0F; 04F7
+    EQUB &0F                        ; 04FF
+    EQUS "<iiiii<"                  ; 0500
+    EQUB &0F, &C3, &69, &69, &69, &A5, &C3, &69; 0507
+    EQUB &0F                        ; 050F
+    EQUS "xiixiii"                  ; 0510
+    EQUB &0F, &C3, &69, &69, &C3, &C3, &69, &69; 0517
+    EQUB &0F                        ; 051F
+    EQUS "<ii<"                     ; 0520
+    EQUB &0F, &69, &3C, &0F, &C3, &69, &0F, &C3; 0524
+    EQUB &69, &69, &C3, &0F, &78, &1E, &1E, &1E; 052C
+    EQUB &1E, &1E, &1E, &0F, &E1, &87, &87, &87; 0534
+    EQUB &87, &87, &87, &0F         ; 053C
+    EQUS "iiiiii<"                  ; 0540
+    EQUB &0F                        ; 0547
+    EQUS "iiiiii"                   ; 0548
+    EQUB &C3, &0F                   ; 054E
+    EQUS "iiiii<"                   ; 0550
+    EQUB &1E, &0F                   ; 0556
+    EQUS "iiiii"                    ; 0558
+    EQUB &C3, &87, &0F              ; 055D
+    EQUS "iiiixxi"                  ; 0560
+    EQUB &0F, &3C, &3C, &B4, &B4, &F0, &78, &3C; 0567
+    EQUB &0F, &69, &69, &3C, &1E, &3C, &69, &69; 056F
+    EQUB &0F, &69, &69, &C3, &87, &C3, &69, &69; 0577
+    EQUB &0F                        ; 057F
+    EQUS "iii<"                     ; 0580
+    EQUB &1E, &1E, &1E, &0F, &69, &69, &69, &C3; 0584
+    EQUB &87, &87, &87, &0F, &78, &0F, &0F, &1E; 058C
+    EQUB &3C, &69, &78, &0F, &E1, &69, &C3, &87; 0594
+    EQUB &0F, &0F, &E1, &0F, &0F, &0F, &0F, &0F; 059C
+    EQUB &0F, &1E, &1E, &0F, &0F, &0F, &0F, &0F; 05A4
+    EQUB &0F, &87, &87, &0F, &0F, &0F, &1E, &1E; 05AC
+    EQUB &0F, &1E, &1E, &0F, &0F, &0F, &87, &87; 05B4
+    EQUB &0F, &87, &87, &0F, &3C, &69, &0F, &1E; 05BC
+    EQUB &1E, &0F, &1E, &0F, &C3, &69, &C3, &87; 05C4
+    EQUB &87, &0F, &87, &0F, &0F, &1E, &3C, &69; 05CC
+    EQUB &3C, &1E, &0F, &0F, &C3, &87, &0F, &0F; 05D4
+    EQUB &0F, &87, &C3, &0F, &3C, &1E, &0F, &0F; 05DC
+    EQUB &0F, &1E, &3C, &0F, &0F, &87, &C3, &69; 05E4
+    EQUB &C3, &87, &0F, &0F, &0F, &0F, &0F, &0F; 05EC
+    EQUB &0F, &0F, &0F, &0F, &0F, &0F, &0F, &0F; 05F4
+    EQUB &0F, &0F, &0F, &0F, &0F, &0F, &3C, &0F; 05FC
+    EQUB &3C, &69, &3C, &0F, &0F, &0F, &C3, &69; 0604
+    EQUB &E1, &69, &E1, &0F         ; 060C
+    EQUS "iixiiix"                  ; 0610
+    EQUB &0F, &0F, &0F, &C3, &69, &69, &69, &C3; 0617
+    EQUB &0F, &0F, &0F              ; 061F
+    EQUS "<iii<"                    ; 0622
+    EQUB &0F, &0F, &0F, &C3, &69, &0F, &69, &C3; 0627
+    EQUB &0F, &0F, &0F              ; 062F
+    EQUS "<iii<"                    ; 0632
+    EQUB &0F, &69, &69, &E1, &69, &69, &69, &E1; 0637
+    EQUB &0F, &0F, &0F              ; 063F
+    EQUS "<ixi<"                    ; 0642
+    EQUB &0F, &0F, &0F, &C3, &69, &E1, &0F, &C3; 0647
+    EQUB &0F, &1E                   ; 064F
+    EQUS "<<x<<<"                   ; 0651
+    EQUB &0F, &C3, &0F, &0F, &C3, &0F, &0F, &0F; 0657
+    EQUB &0F, &0F, &0F              ; 065F
+    EQUS "<ii<"                     ; 0662
+    EQUB &0F, &3C, &0F, &0F, &E1, &69, &69, &E1; 0666
+    EQUB &69, &C3                   ; 066E
+    EQUS "iixiiii"                  ; 0670
+    EQUB &0F, &0F, &0F, &C3         ; 0677
+    EQUS "iiii"                     ; 067B
+    EQUB &0F, &1E, &0F, &3C, &1E, &1E, &1E, &3C; 067F
+    EQUB &0F, &87, &0F, &87, &87, &87, &87, &C3; 0687
+    EQUB &0F, &1E, &0F, &3C, &1E, &1E, &1E, &1E; 068F
+    EQUB &78, &87, &0F, &87, &87, &87, &87, &87; 0697
+    EQUB &0F                        ; 069F
+    EQUS "iiiixii"                  ; 06A0
+    EQUB &0F, &0F, &0F, &69, &C3, &87, &C3, &69; 06A7
+    EQUB &0F, &3C, &1E, &1E, &1E, &1E, &1E, &3C; 06AF
+    EQUB &0F, &87, &87, &87, &87, &87, &87, &C3; 06B7
+    EQUB &0F, &0F, &0F              ; 06BF
+    EQUS "<xiii"                    ; 06C2
+    EQUB &0F, &0F, &0F, &69, &F0, &B4, &B4, &3C; 06C7
+    EQUB &0F, &0F, &0F              ; 06CF
+    EQUS "xiiii"                    ; 06D2
+    EQUB &0F, &0F, &0F, &C3         ; 06D7
+    EQUS "iiii"                     ; 06DB
+    EQUB &0F, &0F, &0F              ; 06DF
+    EQUS "<iii<"                    ; 06E2
+    EQUB &0F, &0F, &0F, &C3, &69, &69, &69, &C3; 06E7
+    EQUB &0F, &0F, &0F              ; 06EF
+    EQUS "xiixii"                   ; 06F2
+    EQUB &0F, &0F, &C3, &69, &69, &C3, &0F, &0F; 06F8
+    EQUB &0F, &0F                   ; 0700
+    EQUS "<ii<"                     ; 0702
+    EQUB &0F, &0F, &0F, &0F, &E1, &69, &69, &E1; 0706
+    EQUB &69, &78, &0F, &0F         ; 070E
+    EQUS "ixiii"                    ; 0712
+    EQUB &0F, &0F, &0F, &C3, &69, &0F, &0F, &0F; 0717
+    EQUB &0F, &0F, &0F, &3C, &69, &3C, &0F, &78; 071F
+    EQUB &0F, &0F, &0F, &E1, &0F, &C3, &69, &C3; 0727
+    EQUB &0F                        ; 072F
+    EQUS "<<x<<<"                   ; 0730
+    EQUB &1E, &0F, &0F, &0F, &C3, &0F, &0F, &0F; 0736
+    EQUB &C3, &0F, &0F, &0F         ; 073E
+    EQUS "iiii<"                    ; 0742
+    EQUB &0F, &0F, &0F              ; 0747
+    EQUS "iiii"                     ; 074A
+    EQUB &E1, &0F, &0F, &0F         ; 074E
+    EQUS "iii<"                     ; 0752
+    EQUB &1E, &0F, &0F, &0F, &69, &69, &69, &C3; 0756
+    EQUB &87, &0F, &0F, &0F         ; 075E
+    EQUS "iiix<"                    ; 0762
+    EQUB &0F, &0F, &0F, &3C, &B4, &B4, &F0, &69; 0767
+    EQUB &0F, &0F, &0F, &69, &3C, &1E, &3C, &69; 076F
+    EQUB &0F, &0F, &0F, &69, &C3, &87, &C3, &69; 0777
+    EQUB &0F, &0F, &0F              ; 077F
+    EQUS "iii<"                     ; 0782
+    EQUB &0F, &3C, &0F, &0F, &69, &69, &69, &E1; 0786
+    EQUB &69, &C3, &0F, &0F, &78, &0F, &1E, &3C; 078E
+    EQUB &78, &0F, &0F, &0F, &E1, &C3, &87, &0F; 0796
+    EQUB &E1, &0F, &1E, &3C, &1E, &1E, &1E, &1E; 079E
+    EQUB &78, &0F, &87, &87, &87, &87, &87, &87; 07A6
+    EQUB &E1, &0F, &3C, &69, &0F, &0F, &1E, &3C; 07AE
+    EQUB &78, &0F, &C3, &69, &69, &C3, &87, &0F; 07B6
+    EQUB &E1, &0F, &3C, &69, &0F, &1E, &0F, &69; 07BE
+    EQUB &3C, &0F, &C3, &69, &69, &C3, &69, &69; 07C6
+    EQUB &C3, &0F, &0F, &1E, &3C, &69, &78, &0F; 07CE
+    EQUB &0F, &0F, &C3, &C3, &C3, &C3, &E1, &C3; 07D6
+    EQUB &C3, &0F, &78, &69, &78, &0F, &0F, &69; 07DE
+    EQUB &3C, &0F, &E1, &0F, &C3, &69, &69, &69; 07E6
+    EQUB &C3, &0F, &1E              ; 07EE
+    EQUS "<ixii<"                   ; 07F1
+    EQUB &0F, &C3, &0F, &0F, &C3, &69, &69, &C3; 07F7
+    EQUB &0F                        ; 07FF
+ENDSECTION
+    LDY #&80                        ; 2E21: A0 80
+    LDX #&04                        ; 2E23: A2 04
+.L2E25
+    LDA D2561, Y                    ; 2E25: B9 61 25
+.L2E28
+    STA &0800, Y                    ; 2E28: 99 00 08
+    INY                             ; 2E2B: C8
+    BNE L2E25                       ; 2E2C: D0 F7
+    INC L2E25+2                     ; 2E2E: EE 27 2E
+    INC L2E28+2                     ; 2E31: EE 2A 2E
+    DEX                             ; 2E34: CA
+    BPL L2E25                       ; 2E35: 10 EE
+    LDX #&03                        ; 2E37: A2 03
+.L2E39
+    LDA &2A21, Y                    ; 2E39: B9 21 2A
+.L2E3C
+    STA D0400, Y                    ; 2E3C: 99 00 04
+    INY                             ; 2E3F: C8
+    BNE L2E39                       ; 2E40: D0 F7
+    INC L2E39+2                     ; 2E42: EE 3B 2E
+    INC L2E3C+2                     ; 2E45: EE 3E 2E
+    DEX                             ; 2E48: CA
+    BPL L2E39                       ; 2E49: 10 EE
+    LDX #&3F                        ; 2E4B: A2 3F
+.L2E4D
+    LDA &25A1, X                    ; 2E4D: BD A1 25
+    STA D0000, X                    ; 2E50: 95 00
+    DEX                             ; 2E52: CA
+    BPL L2E4D                       ; 2E53: 10 F8
+    TXS                             ; 2E55: 9A
+    LDA #&C0                        ; 2E56: A9 C0
+    STA &66                         ; 2E58: 85 66
+    INX                             ; 2E5A: E8
+    STX &56                         ; 2E5B: 86 56
+    STX &68                         ; 2E5D: 86 68
+    STX &6A                         ; 2E5F: 86 6A
+    STX &59                         ; 2E61: 86 59
+    STX &67                         ; 2E63: 86 67
+    STX &6B                         ; 2E65: 86 6B
+    LDA #&16                        ; 2E67: A9 16
+    JSR OSWRCH                      ; 2E69: 20 EE FF
+    INX                             ; 2E6C: E8
+    TXA                             ; 2E6D: 8A
+    JSR OSWRCH                      ; 2E6E: 20 EE FF
+    LDA #&40                        ; 2E71: A9 40
+    JSR L1100                       ; 2E73: 20 00 11
+    INX                             ; 2E76: E8
+    LDA #&5A                        ; 2E77: A9 5A
+    JSR L1100                       ; 2E79: 20 00 11
+    JSR L1103                       ; 2E7C: 20 03 11
+    LDA #&0C                        ; 2E7F: A9 0C
+    LDX #&04                        ; 2E81: A2 04
+    JSR OSBYTE                      ; 2E83: 20 F4 FF
+    LDA #&C8                        ; 2E86: A9 C8
+    LDX #&02                        ; 2E88: A2 02
+    JSR L2F06                       ; 2E8A: 20 06 2F
+    LDA #&D6                        ; 2E8D: A9 D6
+    LDX #&02                        ; 2E8F: A2 02
+    JSR L2F06                       ; 2E91: 20 06 2F
+    LDA #&E1                        ; 2E94: A9 E1
+    LDX #&80                        ; 2E96: A2 80
+    JSR L2F06                       ; 2E98: 20 06 2F
+    LDY #&03                        ; 2E9B: A0 03
+.L2E9D
+    LDA D2F0B, Y                    ; 2E9D: B9 0B 2F
+    JSR L110D                       ; 2EA0: 20 0D 11
+    DEY                             ; 2EA3: 88
+    BPL L2E9D                       ; 2EA4: 10 F7
+    LDA D1106                       ; 2EA6: AD 06 11
+    STA &52                         ; 2EA9: 85 52
+    LDA D1107                       ; 2EAB: AD 07 11
+    STA &53                         ; 2EAE: 85 53
+    LDA #&1F                        ; 2EB0: A9 1F
+    STA &50                         ; 2EB2: 85 50
+    STA &51                         ; 2EB4: 85 51
+    LDY #&01                        ; 2EB6: A0 01
+    LDA &0211                       ; 2EB8: AD 11 02
+    STA (&52), Y                    ; 2EBB: 91 52
+    DEY                             ; 2EBD: 88
+    LDA RDCHV                       ; 2EBE: AD 10 02
+    STA (&52), Y                    ; 2EC1: 91 52
+    LDA #&8B                        ; 2EC3: A9 8B
+    LDX #&01                        ; 2EC5: A2 01
+    JSR OSBYTE                      ; 2EC7: 20 F4 FF
+    LDA #&E5                        ; 2ECA: A9 E5
+    JSR OSBYTE                      ; 2ECC: 20 F4 FF
+    SEI                             ; 2ECF: 78
+    LDX #&0F                        ; 2ED0: A2 0F
+    LDY #&2F                        ; 2ED2: A0 2F
+    JSR OSCLI                       ; 2ED4: 20 F7 FF
+    LDX #&17                        ; 2ED7: A2 17
+    LDY #&2F                        ; 2ED9: A0 2F
+    JSR OSCLI                       ; 2EDB: 20 F7 FF
+    CLI                             ; 2EDE: 58
+    LDA #&8B                        ; 2EDF: A9 8B
+    LDX #&00                        ; 2EE1: A2 00
+    LDY #&00                        ; 2EE3: A0 00
+    JSR OSBYTE                      ; 2EE5: 20 F4 FF
+.L2EE8
+    JSR OSRDCH                      ; 2EE8: 20 E0 FF
+    CMP #&20                        ; 2EEB: C9 20
+    BNE L2EE8                       ; 2EED: D0 F9
+    LDA #&E5                        ; 2EEF: A9 E5
+    JSR OSBYTE                      ; 2EF1: 20 F4 FF
+    JSR L234D                       ; 2EF4: 20 4D 23
+    LDA D1108                       ; 2EF7: AD 08 11
+    STA BRKV                        ; 2EFA: 8D 02 02
+    LDA D1109                       ; 2EFD: AD 09 11
+    STA &0203                       ; 2F00: 8D 03 02
+    JMP L110A                       ; 2F03: 4C 0A 11
+.L2F06
+    LDY #&00                        ; 2F06: A0 00
+    JMP OSBYTE                      ; 2F08: 4C F4 FF
+.D2F0B
+    EQUB &31, &23, &14, &00         ; 2F0B
+    EQUS "L.WDATA"                  ; 2F0F
+    EQUB &0D                        ; 2F16
+    EQUS "L.LDATA"                  ; 2F17
+    EQUB &0D, &A2, &97, &20, &CA, &39, &E6, &74; 2F1E
+    EQUB &A2, &B7, &20, &86, &21, &10, &0B, &A4; 2F26
+    EQUB &74, &F0, &07, &A2, &B7, &20, &CA, &39; 2F2E
+    EQUB &C6, &74, &A2, &CF, &20, &86, &21, &10; 2F36
+    EQUB &07, &A9, &01, &85         ; 2F3E
+    EQUS "w @+"                     ; 2F42
+    EQUB &A2, &CE, &20, &86, &21, &10, &07, &A9; 2F46
+    EQUB &02, &85                   ; 2F4E
+    EQUS "w @+"                     ; 2F50
+    EQUB &A2, &EE, &20, &86, &21, &10, &07, &A9; 2F54
+    EQUB &03, &85                   ; 2F5C
+    EQUS "w @+"                     ; 2F5E
+    EQUB &A2, &ED, &20, &86, &21, &30, &07, &A2; 2F62
+    EQUB &D8, &20, &86, &21, &10, &07, &A9, &00; 2F6A
+    EQUB &85                        ; 2F72
+    EQUS "w @+"                     ; 2F73
+    EQUB &A5, &75, &45, &73, &D0, &06; 2F77
+    EQUS "EtEv"                     ; 2F7D
+    EQUB &F0, &1E, &A5, &78, &38, &E9, &0A, &C9; 2F81
+    EQUB &0A, &B0, &02, &A9, &0A, &85, &78, &A6; 2F89
+    EQUB &73, &A4, &74, &20, &EF, &34, &A6, &75; 2F91
+    EQUB &A4, &76, &20, &EF         ; 2F99
+    EQUS "4LU9"                     ; 2F9D
+    EQUB &A9, &B9, &85, &78, &A2, &A6, &20, &86; 2FA1
+    EQUB &21, &10, &0D, &A5, &77, &48, &E8, &86; 2FA9
+    EQUS "w p9h"                    ; 2FB1
+    EQUB &85, &77, &60, &A2, &B6, &20, &86, &21; 2FB6
+    EQUB &10, &2B, &A6, &73, &A4, &74, &20, &CE; 2FBE
+    EQUB &34, &A0, &03, &A6, &77, &BD, &42, &23; 2FC6
+    EQUB &59, &FF, &34, &91, &50, &88, &10, &F5; 2FCE
+    EQUB &A5, &71, &A6, &73, &A4, &74, &20, &14; 2FD6
+    EQUB &3A, &A5, &71, &D0, &03, &20, &9C, &39; 2FDE
+    EQUB &A5, &71, &20, &D4, &24, &60, &A5, &52; 2FE6
+    EQUB &29, &F8, &85, &52, &A0, &07, &B1, &52; 2FEE
+    EQUB &99, &C2, &39, &88, &10, &F8, &A0, &7F; 2FF6
+    EQUB &A2, &07                   ; 2FFE
 ENDSECTION
