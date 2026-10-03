@@ -1,4 +1,103 @@
-; $.WARNING: &380 bytes at sector &023.
+; $.WARNING: &380 bytes at sector &023. A Mode 7 page, *LOADed straight
+; into screen memory by MENU (line 295, after MODE 7) and shown for up to
+; ten seconds (`I%=INKEY(1000)`); docs/img/warning.png.
+;
+; Rows 0-15 are the picture: "PIPELINE" in magenta and red block graphics,
+; the credits, and a blue pipe frame around a flashing red "WARNING" and "All
+; Rights Reserved". Rows 18-22 are the warning itself, in plain white text:
+; "Unauthorised commercial exploitation of screens or graphics data produced
+; by the PIPELINE Level Designer or the PIPELINE Graphics Designer is
+; strictly prohibited." The file stops 16 characters into row 22, so the
+; rest of the screen is left as MODE 7 cleared it.
+;
+; MENU then clears rows 18-24 through a text window (its scroller runs
+; there) and puts up the menu, which is this same picture with the options
+; inside the frame in place of the warning (docs/img/menu.png). *LOAD runs
+; nothing, so the catalogued exec address is unused.
+;
+; Written with tools/mode7.py: control codes by name, text as strings,
+; graphics (sixel) characters in hex.
+
+INCLUDE "teletext.6502inc"
+
 SECTION warning, filename="WARNING", org=&7C00, load=&7C00, exec=&7C00
-    INCBIN "../data/warning.bin"
+.screen
+    TT_ROW 0
+    EQUB TT_GFX_BLUE, &FF, &E6, TT_GFX_MAGENTA, &FE, &AF, &EF, &F4, &20, &FF, &20, &FE, &AF, &EF
+    EQUB &F4, &20, &E8, &FF, &AF, &20, &FF, &20, &20, &20, &FF, &20, &FE, &EF, &B4, &20, &FF, &20
+    EQUB &E8, &FF, &AF, TT_GFX_BLUE, &A0, &FF, &B9, &20
+    TT_ROW 1
+    EQUB TT_GFX_BLUE, &FF, &B9, TT_GFX_RED, &FF, &20, &A0, &FF, &20, &FF, &20, &FF, &20, &20, &FF
+    EQUB &20, &FF, &E1, &F0, &20, &FF, &20, &20, &20, &FF, &20, &FF, &A2, &FF, &20, &FF, &20, &FF
+    EQUB &E1, &F0, TT_GFX_BLUE, &20, &FF, &E6, &20
+    TT_ROW 2
+    EQUB TT_GFX_BLUE, &FF, &E6, TT_GFX_MAGENTA, &FF, &E8, &FE, &A7, &20, &FF, &20, &FF, &E8, &FE
+    EQUB &A7, &20, &FF, &B2, &A3, &20, &FF, &20, &20, &20, &FF, &20, &FF, &20, &EA, &B5, &FF, &20
+    EQUB &FF, &B2, &A3, TT_GFX_BLUE, &A0, &FF, &B9, &20
+    TT_ROW 3
+    EQUB TT_GFX_BLUE, &FF, &B9, TT_GFX_MAGENTA, &FF, &20, &20, &20, &20, &FF, &20, &FF, &20, &20
+    EQUB &20, &20, &AA, &EF, &FC, &20, &EF, &FD, &FC, &20, &FF, &20, &FF, &20, &20, &EF, &BF, &20
+    EQUB &AA, &EF, &FC, TT_GFX_BLUE, &A0, &FF, &E6, &20
+    TT_ROW 4
+    EQUB TT_GFX_BLUE, &FF, &E6, TT_ALPHA_CYAN, "(c) Ian Holmes & William Reeve ", TT_GFX_BLUE, &E8
+    EQUB &FF, &B9, &20
+    TT_ROW 5
+    EQUB TT_GFX_BLUE, &FF, &B9, &E8, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &F4
+    EQUB &B0, TT_ALPHA_CYAN, "1988", TT_GFX_BLUE, &E0, &F8, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC
+    EQUB &FC, &FC, &FE, &FF, &FF, &E6, &A0
+    TT_ROW 6
+    EQUB TT_GFX_BLUE, &FF, &E6, &A2, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &E6, &E7
+    EQUB &EF, &F4, &20, &20, &20, &A0, &F8, &BF, &BB, &B9, &A9, &A9, &A9, &A9, &A9, &A9, &A9, &A9
+    EQUB &A9, &A9, &A9, &A9, &A1, &A0
+    TT_ROW 7
+    EQUB TT_GFX_BLUE, &FF, &B9, TT_GFX_RED, TT_GFX_RED, &E6, &A4, &A5, TT_GFX_BLUE, &20, &20, &20
+    EQUB &20, &20, &20, &A9, &A9, &AB, &AD, &20, &20, &AE, &A7, &A6, &A6, TT_GFX_YELLOW, &20, &20
+    EQUB &20, &20, &20, &20, &20, TT_GFX_RED, &A8, &F2, &A4, TT_GFX_YELLOW, TT_GFX_YELLOW
+    EQUB TT_GFX_YELLOW
+    TT_ROW 8
+    EQUB TT_GFX_BLUE, &FF, &E6, TT_GFX_RED, &E0, &A9, &F6, &E0, TT_GFX_BLUE, &E0, &FC, &EF, &EF
+    EQUB &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &6F, &6F
+    EQUB &6D, &74, TT_GFX_RED, &E6, &BD, &F7, TT_GFX_YELLOW, TT_GFX_YELLOW, TT_GFX_YELLOW
+    TT_ROW 9
+    EQUB TT_GFX_BLUE, &FF, &B9, TT_GFX_YELLOW, TT_GFX_YELLOW, &AB, &A7, &A7, TT_GFX_BLUE, &BE, &B9
+    EQUB &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1
+    EQUB &21, &21, &29, &3B, &75, TT_GFX_YELLOW, &F6, &BD, TT_GFX_YELLOW, TT_GFX_YELLOW
+    EQUB TT_GFX_YELLOW
+    TT_ROW 10
+    EQUB TT_GFX_BLUE, &FF, &E6, &AA, &BF, &BF, &BF, &BF, &6A, &F7, &A4, &20, TT_ALPHA_YELLOW
+    EQUB "                ", TT_GFX_BLUE, &20, TT_BLACK_BACKGROUND, &66, &7F, &AA, &BF, &BF, &BF
+    EQUB &BF, &BF
+    TT_ROW 11
+    EQUB TT_GFX_BLUE, &FF, &B9, &22, &22, &A2, &A2, &A2, &6A, &BD, &B1, &20, TT_ALPHA_YELLOW
+    EQUB "   ", TT_FLASH, TT_ALPHA_RED, "WARNING", TT_STEADY, &20, &20, TT_GFX_BLUE, &20, &20
+    EQUB TT_BLACK_BACKGROUND, &39, &7F, &22, &62, &72, &72, &32, &22
+    TT_ROW 12
+    EQUB TT_GFX_BLUE, &FF, &E6, TT_GFX_YELLOW, &22, &2F, &21, TT_GFX_BLUE, &6A, &F7, &A4, &20
+    EQUB TT_ALPHA_YELLOW, "               ", TT_GFX_BLUE, &20, &20, TT_BLACK_BACKGROUND, &66, &7F
+    EQUB TT_GFX_BLUE, &6F, &7F, &7F, &3F, &20
+    TT_ROW 13
+    EQUB TT_GFX_BLUE, &FF, &B9, TT_GFX_RED, &7F, &7F, &7F, TT_GFX_BLUE, &6A, &BD, &B1, &20
+    EQUB TT_ALPHA_YELLOW, "             ", TT_GFX_BLUE, &20, TT_GFX_BLUE, &20, &20
+    EQUB TT_BLACK_BACKGROUND, &39, &7F, &20, TT_GFX_CYAN, &6A, &35, &20, &20
+    TT_ROW 14
+    EQUB TT_GFX_BLUE, &EF, &FE, &FD, &F0, &F0, &F0, &F0, &FE, &F7, &A4, TT_ALPHA_YELLOW
+    EQUB "All Rights Reserved", TT_GFX_BLUE, &66, &7F, &74, &F0, &F0, &F0, &F0, &F0
+    TT_ROW 15
+    EQUB TT_GFX_BLUE, &A2, &AF, &BB, &BB, &BB, &BB, &BB, &BB, &B9, &A1, &20, TT_ALPHA_YELLOW
+    EQUB "               ", TT_GFX_BLUE, &20, &20, TT_BLACK_BACKGROUND, &29, &BB, &BB, &BB, &BB
+    EQUB &BB, &BB, &BB
+    TT_ROW 16
+    EQUB "                                        "
+    TT_ROW 17
+    EQUB "                                        "
+    TT_ROW 18
+    EQUB " Unauthorised commercial exploitation of"
+    TT_ROW 19
+    EQUB " screens or graphics data produced by   "
+    TT_ROW 20
+    EQUB " the PIPELINE Level Designer or the     "
+    TT_ROW 21
+    EQUB " PIPELINE Graphics Designer is strictly "
+    TT_ROW 22
+    EQUB " prohibited.    "
 ENDSECTION
