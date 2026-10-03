@@ -1,5 +1,15 @@
-; $.MENU: the PIPELINE menu, a BASIC program, with the machine code and
-; screen its DIMs hold carried in the same file.
+; $.MENU: the PIPELINE menu, by Ian Holmes ("Originally: GUILDMASTER"),
+; CHAINed by !BOOT. A BASIC program, and past its end, in the same file,
+; what its DIMs hold:
+;
+;   &1900  the program: setup, the loading and warning pages, then the menu,
+;          which starts the game or the designers (through their loader
+;          stubs), redefines the keys, or CHAINs MISSION
+;   &2300  C%: the scroller (a vsync event handler) and its message
+;   &3200  S%: the top 16 rows of the menu screen, then leftovers, among
+;          them a tune program at PAGE+&1C00
+;
+; It leaves the game's ten keys in &50-&59.
 INCLUDE "os.6502inc"
 INCLUDE "basic.6502inc"
 INCLUDE "teletext.6502inc"
@@ -31,19 +41,40 @@ char_definition     = &8B   ; OSWORD &0A's block: the character, then its rows
 
 SECTION menu, filename="MENU", org=&1900, load=&1900, exec=&8023
 .program
+; Lines 10-40 are EQUB records. Line 40's REM is teletext codes, which LIST
+; prints as a blue band reading "Hello, all my friends!" in double height:
+; the quote makes LIST copy the bytes rather than expand them as keywords,
+; and VDU_DELETE wipes the quote. In a BASIC block those bytes would make
+; this file invalid UTF-8, and ENDBASIC ends the program, so these lines
+; have to come before it.
     EQUB basic_line(10, CHR(BASIC_TOKEN_REM) + " PIPELINE menu prog")
     EQUB basic_line(20, CHR(BASIC_TOKEN_REM) + " By Ian Holmes")
     EQUB basic_line(30, CHR(BASIC_TOKEN_REM) + " Originally: GUILDMASTER")
     EQUB basic_line(40, CHR(BASIC_TOKEN_REM) + """" + CHR({VDU_DELETE, TT_ALPHA_BLUE, TT_NEW_BACKGROUND, TT_ALPHA_GREEN, TT_DOUBLE_HEIGHT}) + "Hello," + CHR({TT_ALPHA_YELLOW, TT_FLASH}) + "all my friends!  " + CHR(TT_BLACK_BACKGROUND) + "          " + CHR({TT_ALPHA_BLUE, TT_NEW_BACKGROUND, TT_ALPHA_GREEN, TT_DOUBLE_HEIGHT}) + "Hello," + CHR({TT_ALPHA_YELLOW, TT_FLASH}) + "all my friends!  " + CHR(TT_BLACK_BACKGROUND))
 BASIC
+; Setup. LOMEM=PAGE+&A00 starts the heap exactly where the program ends, so
+; the DIMs land on the scroller and screen this file carries after it (C%
+; and S%, below): DIM doesn't clear memory.
 50LOMEM=PAGE+&A00:DIMC%&EFF,S%&700
+; *SHADOW 1 keeps the screen in main memory on a B+ or Master, where the
+; menu writes it directly; a B says "Bad command", which line 60 steps
+; over. From line 80, any error runs a statement that is itself an error
+; (a line of Little Richard), so the machine hangs instead of dropping into
+; BASIC.
 60ONERRORGOTO80
 70*SHADOW 1
 80ONERRORAWopBabaLuMopALopBamBoom
+; Put every vector in page 2 back to the MOS's defaults (?&FFB6 bytes from
+; the table at !&FFB7), undoing anything hooked in before the disc booted,
+; but keep BRKV's low half pointing at BASIC's error handler.
 90E%=!&202 AND&FFFF
 100FORN%=0TO?&FFB6-1
 110N%?&200=N%?!&FFB7:NEXT
 120!&202=!&202 AND&FFFF0000ORE%
+; Plain BREAK boots the disc (start-up option bit 3) and clears memory
+; (*FX200 2); Escape becomes an ordinary key (*FX229 1). Then keyboard
+; defaults (auto-repeat, function keys, cursor keys giving 136-139, no ADC
+; sampling), flash colours every frame, drive 0, the picture one line up.
 130*FX255 8 247
 140*FX200 2
 150*FX229 1
@@ -57,15 +88,35 @@ BASIC
 225*DIR $
 230*OPT
 240*TV255 1
+; The loading picture (MODE 5, cursor off, colour 3 magenta), for ten
+; seconds or a key.
 250MODE5:VDU23;8202;0;0;0;19,3,5;0;:*L.SCREEN
 260*FX15,1
 270I%=INKEY(1000):MODE7:VDU23;8202;0;0;0;
+; The ten game keys go into &50-&59, as the low bytes of negative INKEY
+; numbers, for the game to read. Then a test for a second processor that
+; can't work: BASIC's indirection uses only the low 16 bits of an address,
+; so ?&FFFF7C00 is ?&7C00, and reads back the 0 just written.
 280RESTORE650:FORN%=&50TO&59:READ?N%:NEXT:?&FFFF7C00=128:?&7C00=0
+; Line 290 holds two invisible raw bytes: VDU 21 just before the quote that
+; ends "...re-load this program.", and VDU 6 after `*/PL "`. LIST shows
+; nothing between them, hiding the cheat: T and W held down here run PL.
+; The `":IFGET` belongs to the star command and DFS ignores it. Were the
+; second-processor test ever true, OSBYTE 151 would write &7F to the system
+; VIA's IER (&FE4E), turning off its interrupts, and the loop would hang.
 290IF?&FFFF7C00>0PRINT''"Please turn off your Second Processor,  press Break, and re-load this program.":A%=151:X%=78:Y%=127:CALL&FFF4:REPEATUNTIL0ELSEIFINKEY-36ANDINKEY-34THEN*/PL "":IFGET
+; The warning page (a Mode 7 screen loaded straight into screen memory),
+; then clear its text below the logo, draw the menu over the rest and start
+; the scroller: line 300 passes the message (C%+&C9) in &75/&76 and the
+; vsync handler (C%+&49) in &77/&78.
 295*L.WARNING
 296*FX15,1
 297I%=INKEY(1000):VDU28;24,39,18:CLS
 300PROCmenu:!&75=(C%+&49)*65536+C%+&C9:CALLC%
+; The menu. Digits 1-6 or the cursor keys move the highlight (L% is the
+; option, 0 for none yet) and RETURN takes it. An option that leaves the
+; menu (all but 2, and 6 when it isn't confirmed) first stops the scroller
+; (*FX13 4 disables the vsync event) and lets Escape work again.
 310REPEAT
 320L%=0:REPEAT
 330REPEATA%=GET:*FX15
@@ -76,6 +127,9 @@ BASIC
 380IFL%<>2ANDL%<>6THENLOMEM=TOP:*FX229
 390ONL%GOSUB910,690,970,980,990,860
 400PROCmenu:UNTIL0
+; PROCline: A% is the key. The highlight is a TT_NEW_BACKGROUND over the
+; space at column 11 of the option's row (window row L%+3); waiting for
+; vsync first keeps the change from tearing.
 410DEFPROCline
 420IFA%>137ANDL%=0ENDPROC
 430IFA%=138A%=L%+49:IFA%=55A%=49
@@ -85,22 +139,38 @@ BASIC
 470IFL%>0PRINTTAB(11,L%+3)" ";
 480L%=A%-48:PRINTTAB(11,L%+3)CHR$157;
 490ENDPROC
+; PROCcheck: refuses key P% (sets it to 0) if one of the N% keys already
+; chosen is P%, or if it has no name in the table (A$).
 500DEFPROCcheck:FORA%=0TON%-1
 510IFA%?&50=256-P%P%=0
 520NEXT:IFA$=""P%=0
 530ENDPROC
+; FNyes: waits for Y or N in either case, shows the answer for 0.8
+; seconds, and returns non-zero for yes.
 540DEFFNyes
 550REPEATN%=GETOR32
 560UNTILN%=110ORN%=121
 570IFN%=121PRINT" Yes."; ELSEPRINT" No.";
 580TIME=0:REPEATUNTILTIME>79
 590=N%-110
+; PROCmenu: clears the text window (rows 6-16, where the redefine page
+; prints), then copies S%'s top 16 rows of the menu screen to HIMEM, the
+; Mode 7 screen.
 600DEFPROCmenu
 610VDU28;16,39,6:CLS:FORN%=0TO&27CSTEP4:N%!HIMEM=N%!S%:NEXT:ENDPROC
+; The default keys as negative INKEY numbers - Z, X, *, ?, P, D, RETURN,
+; T, CTRL, M - and the names of what they do, still Guildmaster's.
 650DATA-98,-67,-73,-105,-56,-51,-74,-36,-2,-102
 660DATA MOVE WEST,MOVE EAST,MOVE NORTH,MOVE SOUTH,PICK UP OBJECT,DROP OBJECT,USE OBJECT,THROW OBJECT,VIEW BACKPACK,VIEW MAP
+; Key names by internal key number (the first is INKEY -1, SHIFT). A blank
+; name is a key that can't be chosen. ESCAPE's place holds "!", never seen,
+; since ESCAPE starts the list again instead.
 670DATA SHIFT,CTRL,,,,,,,,,,,,,,,Q,3,4,5,f4,8,f7,=,^,LEFT CURSOR,,,,,,,f0,W,E,T,7,I,9,0,`,DOWN CURSOR,,,,,,,1,2,D,R,6,U,O,P,[,UP CURSOR,,,,,,,CAPS LOCK,A,X,F,Y,J,K,@,*,RETURN,,,,,,,SHIFT LOCK
 680DATAS,C,G,H,N,L,+,],DELETE,,,,,,,TAB,Z,SPACE,V,B,M,<,>,?,COPY,,,,,,,!,f1,f2,f3,f5,f6,f8,f9,|,RIGHT CURSOR
+; Option 2, redefine keys (a GOSUB): for each action, scan every key until
+; one is down; repeats and unnamed keys are refused. ESCAPE (113) ends the
+; per-key REPEAT with UNTIL TRUE, then loops the outer one with UNTIL
+; FALSE: back to the first key.
 690REPEAT:CLS
 700RESTORE660:FORN%=0TO9
 710READA$:PRINTTAB(8)CHR$131A$": "CHR$130CHR$156;
@@ -118,21 +188,29 @@ BASIC
 830UNTILN%=10:*FX15 1
 840PRINT'CHR$134"Are these keys correct?";
 850UNTILFNyes:RETURN
+; Option 6, quit: CALL !-4 goes through the 6502's reset vector at &FFFC.
 860CLS:FORN%=1TO2
 870PRINTTAB(0,N%)CHR$141CHR$132CHR$157CHR$131"Exiting from Pipeline:  "CHR$156:NEXT
 880PRINT'CHR$134"Are you sure?";
 890IFFNyes=0RETURN
 900CALL!-4
+; Option 1, play: TITLE draws its page in MODE 1 with every colour black,
+; then line 940 reveals it with the palette in line 1000, for three
+; seconds.
 910*FX230 1
 920*FX11
 930MODE1:FORN%=0TO3:VDU19,N%,0;0;:NEXT:VDU23;8202;0;0;0;:*RUN TITLE
 940RESTORE1000:FORN%=0TO3:READA%:VDU19,N%,A%;0;:NEXT:T%=INKEY(300)
 950MODE7:VDU23;8202;0;0;0;
 960*/GAME
+; Options 3 and 4 run the Graphics and Level Designers' loader stubs;
+; option 5 is the mission generator.
 970*/GRAPHIC
 980*/LEVDES
 990CHAIN"MISSION"
 1000DATA 0,1,4,7
+; Nothing leads here: line 1020 runs the tune program carried at
+; PAGE+&1C00 (in S%, below).
 1010REM
 1020PAGE=PAGE+&1C00:RUN
 ENDBASIC
@@ -370,14 +448,14 @@ shift_from = &100 - (SCROLL_RIGHT - SCROLL_LEFT)    ; Y counts up to zero
     EQUB TT_GRAPHICS_BLUE, &FF, &B9, TT_GRAPHICS_MAGENTA, &FF, &20, &20, &20, &20, &FF, &20, &FF
     EQUB &20, &20, &20, &20, &AA, &EF, &FC, &20, &EF, &FD, &FC, &20, &FF, &20, &FF, &20, &20
     EQUB &EF, &BF, &20, &AA, &EF, &FC, TT_GRAPHICS_BLUE, &A0, &FF, &E6, &20
-; row 4
+; row 4: the copyright line
     EQUB TT_GRAPHICS_BLUE, &FF, &E6, TT_ALPHA_CYAN, "(c) Ian Holmes & William Reeve "
     EQUB TT_GRAPHICS_BLUE, &E8, &FF, &B9, &20
-; row 5
+; row 5: 1988, under the pipe
     EQUB TT_GRAPHICS_BLUE, &FF, &B9, &E8, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC
     EQUB &F4, &B0, TT_ALPHA_CYAN, "1988", TT_GRAPHICS_BLUE, &E0, &F8, &FC, &FC, &FC, &FC, &FC
     EQUB &FC, &FC, &FC, &FC, &FC, &FE, &FF, &FF, &E6, &A0
-; rows 6-9: pipework, and pictures at each side
+; rows 6-9: the pipe, and a picture at each side
     EQUB TT_GRAPHICS_BLUE, &FF, &E6, &A2, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &E6
     EQUB &E7, &EF, &F4, &20, &20, &20, &A0, &F8, &BF, &BB, &B9, &A9, &A9, &A9, &A9, &A9, &A9
     EQUB &A9, &A9, &A9, &A9, &A9, &A9, &A1, &A0
@@ -393,7 +471,7 @@ shift_from = &100 - (SCROLL_RIGHT - SCROLL_LEFT)    ; Y counts up to zero
     EQUB TT_GRAPHICS_BLUE, &BE, &B9, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1
     EQUB &A1, &A1, &A1, &A1, &A1, &A1, &21, &21, &29, &3B, &75, TT_GRAPHICS_YELLOW, &F6, &BD
     EQUB TT_GRAPHICS_YELLOW, TT_GRAPHICS_YELLOW, TT_GRAPHICS_YELLOW
-; rows 10-15: the options, yellow numbers and green text
+; rows 10-15: the options, yellow numbers and green text, between the pictures
     EQUB TT_GRAPHICS_BLUE, &FF, &E6, &AA, &BF, &BF, &BF, &BF, &6A, &F7, &A4, &20
     EQUB TT_ALPHA_YELLOW, "1", TT_ALPHA_GREEN, "Start the game", TT_GRAPHICS_BLUE, &20
     EQUB TT_BLACK_BACKGROUND, &66, &7F, &AA, &BF, &BF, &BF, &BF, &BF
@@ -442,9 +520,12 @@ BASIC
 80DATA"O  O  S    OL  L  Q    ON  J  S  Q  O        J  O  O  S  O  L  Q     O  N  J  S    QO           ","",""
 ENDBASIC
 
-; The end of a BASIC assembler listing the tune was loaded over, cut off by
-; the end of the file: the tail of one line and the start of the next six,
-; in the middle of what looks like one of the designers' key handling.
+; The end of the Level Designer's source (BASIC assembler), which the tune
+; was loaded over, cut off by the end of the file: the tail of one line and
+; the start of the next six. It assembles to H.LEVDES's &168A-&16A6, so it
+; gives some of the original label names: sel0 &1126, canc &1637, t2 &54,
+; sure &1323, table &166B, key3 &169E, wind &14A8, help &16AD, and simt...
+; (cut off) &16A7.
     EQUS "2:LDA#37:JSRsel0"
     EQUB basic_line(3900, "CMP#4:BEQcanc:STAt2")
     EQUB basic_line(3910, "JSRsure:LDAt2")

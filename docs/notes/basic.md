@@ -60,7 +60,7 @@ Load &1900, exec &8023, &2000 bytes. Every byte:
 | &3200-&347F | S%: the menu screen's top 16 Mode 7 rows, copied to HIMEM by PROCmenu |
 | &3480-&34FF | unused: a blank row holding a stray zero, and a 0-terminated message "What colour is acidified KMnO4 ? ..." |
 | &3500-&3883 | a separate BASIC program (a three-voice tune), at PAGE+&1C00; line 1020 `PAGE=PAGE+&1C00:RUN` runs it, but no line leads there |
-| &3884-&38FF | the tail of a BASIC assembler listing (lines 3890-3950, cut off by the end of the file): `CMP#4:BEQcanc:STAt2`, `.key3:LDA#62`... |
+| &3884-&38FF | the tail of the Level Designer's BASIC assembler source (lines 3890-3950, cut off by the end of the file): `CMP#4:BEQcanc:STAt2`, `.key3:LDA#62`... |
 
 - `LOMEM=PAGE+&A00` puts the heap exactly at TOP, so `DIM C% &EFF` gives
   C% = &2300 and `DIM S% &700` gives S% = &3200 (checked in jsbeeb:
@@ -211,6 +211,12 @@ identical to IO's.
   elsewhere or before itself.
 - LEVDES/GRAPHIC: the level and graphics file formats above; where the
   fields and `names` come from.
+- H.LEVDES: the source fragment at the end of MENU assembles to its
+  &168A-&16A6 (`LDA#37:JSRsel0`, `CMP#4:BEQcanc:STAt2`, `JSRsure:LDAt2`,
+  `LDY#7:BNEtable`, `.key3:LDA#62`, `JSRwind:LDA#0`, `BEQhelp:.simt...`),
+  so the original names: sel0 &1126, canc &1637, t2 &54, sure &1323,
+  table &166B, key3 &169E, wind &14A8, help &16AD, simt... &16A7 (taking
+  H.LEVDES to run at &1100).
 - `src/teletext.6502inc` (Mode 7 control codes, `mode7_address()`) is
   general; WARNING may want it. `src/basic.6502inc` has the BASIC record
   format and VDU 6/21/127 names.
