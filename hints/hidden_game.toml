@@ -30,6 +30,7 @@ annotations = [
     "hints/hidden_game/main.toml",
     "hints/hidden_game/main2.toml",
     "hints/hidden_game/main3.toml",
+    "hints/hidden_game/main4.toml",
 ]
 
 header = '''

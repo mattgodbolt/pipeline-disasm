@@ -115,14 +115,14 @@ Print ": yes" for A zero (the tune_off and effects_off flags), else ": no".
 Never called.
 '''
 0x114C = '''
-"WELL DONE" in blocks: 11 rows of 32 bits, a bit a character cell.
+"WELL DONE!" in blocks: 11 rows of 32 bits, a bit a character cell.
 '''
 0x1178 = '''
 The bottom half of a block's character cells: a shadow.
 '''
 0x1180 = '''
 After a level: clear 13 character rows across the middle of the view and
-show WELL DONE in big letters, then wait 4 seconds.
+show WELL DONE! in big letters, then wait 4 seconds.
 '''
 0x11E5 = '''
 Wait A fiftieths of a second, by the OS's vsync countdown.

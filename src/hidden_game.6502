@@ -165,6 +165,10 @@ copy_from = &02
 copy_to = &04
 copy_count = &06
 objects = game_start                    ; 8 objects of 4 bytes: x, y, icon, uses and flags
+KEY_SHIFT = -1                          ; negative INKEY numbers
+KEY_T = -36
+KEY_S = -82
+KEY_SPACE = -99
 
 ; Entered from the GAME stub with the ten keys MENU set up in key_codes, as
 ; negative INKEY numbers. Copies the keys where the game wants them, copies
@@ -2540,7 +2544,7 @@ NEXT
     ADC #&31                            ; '1' for level 0
     JMP OSWRCH
 
-; "WELL DONE" in blocks: 11 rows of 32 bits, a bit a character cell.
+; "WELL DONE!" in blocks: 11 rows of 32 bits, a bit a character cell.
 .well_done_bitmap
     EQUB %10001011, %10100001, %00000000, %00000000
     EQUB %10001010, %00100001, %00000000, %00000000
@@ -2559,7 +2563,7 @@ NEXT
     EQUB &F5, &FE, &FB, &FE, &F7, &FD, &FB, &FF
 
 ; After a level: clear 13 character rows across the middle of the view and
-; show WELL DONE in big letters, then wait 4 seconds.
+; show WELL DONE! in big letters, then wait 4 seconds.
 .show_well_done
     LDA view_screen
     STA screen
@@ -2752,7 +2756,7 @@ NEXT
 
 ; The title screen, then a game: three lives.
 .new_game
-    JSR L1423
+    JSR title_screen
     LDX #&03                            ; three lives
     STX lives
     LDA #&00
@@ -2761,11 +2765,11 @@ NEXT
 
 ; A level from the start, and after losing a life.
 .start_level
-    JSR L1515
+    JSR setup_level
 .restart_level
-    JSR L14D4
+    JSR reset_level
     JSR clear_screen
-    JSR L13CA                           ; the level's palette
+    JSR set_level_palette               ; the level's palette
     JSR redraw_view
     LDA tune_off
     BNE game_loop
@@ -2778,7 +2782,7 @@ NEXT
 .game_loop
     LDA time_left
     BEQ time_up                         ; out of time?
-    JSR L15A1                           ; move the player and everything else
+    JSR play_cycle                      ; move the player and everything else
     LDA pipe_move
     BNE check_dead                      ; the clock stops in pipes
     LDA clock_fraction
@@ -2818,11 +2822,11 @@ NEXT
     LDX stage
     CPX #&02                            ; the charge set?
     BNE lose_life
-    JSR L13FC                           ; far enough across...
+    JSR far_from_exit                   ; far enough across...
     BCS level_complete
     INX
     SEC
-    JSR L13FC                           ; ...or down: safe
+    JSR far_from_exit                   ; ...or down: safe
     BCS level_complete
     INC fill_screen                     ; caught in it: flash
     JSR clear_screen
@@ -2841,7 +2845,7 @@ NEXT
     JMP new_game
 .lose_life_again
     LDX #&09
-    JSR L13E0                           ; colour 0 flashes
+    JSR vdu_palette                     ; colour 0 flashes
     JSR L1ADE
     LDA stage                           ; died after setting the charge?
     BNE next_level
@@ -2852,7 +2856,7 @@ NEXT
     JSR flush_buffers
     LDA #&05
     JSR L1F78
-    JSR L13A9                           ; flash
+    JSR flash_palette                   ; flash
     JSR show_well_done
     INC stage                           ; stage 3: done
     LDX #100                            ; 100 points
@@ -2872,7 +2876,7 @@ NEXT
     BCC show_edit_code
     STA furthest_level
 .show_edit_code
-    JSR L13CA
+    JSR set_level_palette
     LDA lives
     CLC
     JSR L1C31                           ; the backpack screen, with the next level's edit code
@@ -2881,46 +2885,58 @@ NEXT
 .mission_complete
     JSR L1B1A
     JMP new_game
-.L13A9
+
+; Flash colour 0 through physical colours 7 down to 0, 8 times, a frame each,
+; then back to the level's palette.
+.flash_palette
     LDA #&08
     LDX #&01
-.L13AD
-    STA work0
-    STX work2
-.L13B1
+
+; The same A times, X frames a colour.
+.flash_palette_times
+    STA work0                           ; flashes
+    STX work2                           ; frames a colour
+.flash_palette_cycle
     LDX #&07
-.L13B3
-    JSR L13E0
+.flash_palette_colour
+    JSR vdu_palette                     ; logical 0 = physical X
     LDA work2
     STA work4
     TXA
-.L13BB
-    JSR wait_vsync
+.flash_palette_wait
+    JSR wait_vsync                      ; wait
     DEC work4
-    BNE L13BB
+    BNE flash_palette_wait
     TAX
     DEX
-    BPL L13B3
+    BPL flash_palette_colour
     DEC work0
-    BNE L13B1
-.L13CA
+    BNE flash_palette_cycle
+
+; Set the palette for the level (or level A from set_palette) from
+; io_palettes.
+; Clobbers: A, X, Y, work0.
+.set_level_palette
     LDA level
-.L13CC
+.set_palette
     ASL A
     ASL A
-    ADC #&03
+    ADC #&03                            ; the level's last colour first
     TAY
     LDA #&03
     STA work0
-.L13D5
-    JSR L13DD
+.set_palette_loop
+    JSR set_palette_entry
     DEY
     DEC work0
-    BNE L13D5
-.L13DD
-    LDX &2590, Y
-.L13E0
-    LDA #&13
+    BNE set_palette_loop
+.set_palette_entry
+    LDX io_palettes, Y                  ; logical << 4 | physical
+
+; VDU 19, X >> 4, X, 0, 0, 0: logical colour X's high nibble is physical
+; colour X's low.
+.vdu_palette
+    LDA #&13                            ; VDU 19
     JSR OSWRCH
     TXA
     LSR A
@@ -2934,34 +2950,47 @@ NEXT
     JSR OSWRCH
     JSR OSWRCH
     JMP OSWRCH
-.L13FC
-    LDA clock_fraction, X
-    SBC to_collect, X
-    BCS L1406
-    EOR #&FF
+
+; Is the player 5 or more cells from the exit, across (X = 2) or down (3)?
+; Returns: carry set if so. Called with the carry set.
+.far_from_exit
+    LDA player_x - 2, X                 ; player_x or player_y...
+    SBC exit_x - 2, X                   ; ...less exit_x or exit_y
+    BCS far_from_exit_distance
+    EOR #&FF                            ; how far
     ADC #&01
-.L1406
-    CMP #&05
+.far_from_exit_distance
+    CMP #5
     RTS
-.L1409
-    JSR L140C
-.L140C
+
+; Space on the title screen: start, returning from title_screen.
+.title_start
+    JSR resync_timer
+
+; Just after a vsync, with interrupts off, restart the system VIA's timer 1
+; (the OS's 100 Hz tick) from its latch, keeping its interrupts clear of the
+; vsync's.
+.resync_timer
     JSR wait_vsync
     SEI
-    LDY #&09
+    LDY #&09                            ; a little more
     JSR L1E20
-    LDA SYSVIA_T1LL
+    LDA SYSVIA_T1LL                     ; timer 1 from its latch
     STA SYSVIA_T1LL
     LDA SYSVIA_T1LH
     STA SYSVIA_T1CH
     CLI
     RTS
-.L1423
-    LDA #&00
+
+; The title screen: Space starts at the chosen level, S steps the level (up to
+; furthest_level), L loads another mission.
+; Returns: with level and started_late set.
+.title_screen
+    LDA #&00                            ; level 1 unless S is pressed
     STA started_late
     STA level
-    JSR L13CA
-    JSR L147D
+    JSR set_level_palette
+    JSR draw_title_screen               ; the title screen's pictures
     JSR print_inline
     EQUB &1F, &13, &10, &11, &03
     EQUS "Start:"
@@ -2970,100 +2999,118 @@ NEXT
     JSR print_score
     LDX #&01
     LDA #&0F
-    JSR OSBYTE
-.L144B
+    JSR OSBYTE                          ; flush the keyboard buffer
+.title_screen_key
     JSR print_inline
     EQUB &1F, &05, &11, &11, &02
     NOP
-    JSR print_level
+    JSR print_level                     ; the level to start on
     JSR OSRDCH
-    BCC L145F
+    BCC title_screen_got_key            ; Escape?
     JSR L1C21
-.L145F
-    AND #&DF
-    BEQ L1409
-    CMP #&53
-    BEQ L146E
-    CMP #&4C
-    BNE L144B
+.title_screen_got_key
+    AND #&DF                            ; upper case, and Space is 0
+    BEQ title_start                     ; Space: start
+    CMP #&53                            ; S...
+    BEQ title_screen_next_level
+    CMP #&4C                            ; L: load a mission
+    BNE title_screen_key
     JMP L21F1
-.L146E
-    LDX level
+.title_screen_next_level
+    LDX level                           ; S: the next level that can be started on
     CPX furthest_level
-    BCC L1476
+    BCC title_screen_set_level
     LDX #&FF
-.L1476
+.title_screen_set_level
     INX
     STX level
     STX started_late
-    BPL L144B
-.L147D
+    BPL title_screen_key                ; always
+
+; Clear the screen for the title or backpack screens: the frame, the heading,
+; the flames and the player.
+.draw_title_screen
     JSR print_inline
     EQUB &06, &04, &1A, &11, &80
     NOP
     JSR L179D
     JMP draw_title_pictures
-.L148C
+
+; Return from the caller's caller.
+.return_from_caller
     PLA
     PLA
     RTS
-.L148F
+
+; Empty the cell under monster X / 4.
+.empty_monster_cell
     JSR L2130
     LDA #&00
-.L1494
-    STA work1
+
+; Set map cell (X, Y) to A and draw it. Off the map, nothing happens.
+; Clobbers: A, X, Y and the drawing variables.
+.set_cell_and_draw
+    STA work1                           ; the type
     TXA
     PHA
     TYA
     PHA
     LDA work1
-    JSR set_cell
-    BCS L148C
+    JSR set_cell                        ; off the map?
+    BCS return_from_caller
     PLA
-    ASL A
+    ASL A                               ; cell y * 4
     ASL A
     TAY
     PLA
     ASL A
-    ASL A
+    ASL A                               ; cell x * 4
     TAX
     LDA work1
-.L14AB
+
+; Draw thing A (as thing_picture) at character position (X, Y): a cell's own
+; picture whole, an icon on the floor.
+.draw_thing_at
     PHA
     STX sprite
     STY sprite_high
     JSR L2135
     PLA
-    JSR thing_picture
-    SEC
-    BEQ L14BB
-.L14BA
-    CLC
-.L14BB
-    TXA
+    JSR thing_picture                   ; its picture
+    SEC                                 ; a cell's picture: whole
+    BEQ draw_picture_at
+.draw_icon_at
+    CLC                                 ; an icon: on the floor
+.draw_picture_at
+    TXA                                 ; sprite and X, Y swapped
     LDX sprite
     STA sprite
     TYA
     LDY sprite_high
     STA sprite_high
     JMP draw_sprite
-.L14C8
-    LDA #&04
+
+; The exit's icon, top left of the backpack screen once the exit is lit.
+.draw_exit_icon
+    LDA #&04                            ; character position 4, 4
     STA sprite
     STA sprite_high
     JSR exit_picture
-    JMP L14BA
-.L14D4
-    LDX #&02
+    JMP draw_icon_at
+
+; Start (or restart) the level: facing up, the direction keys as they were,
+; the clock reset, the exit back in place, the player at the start.
+.reset_level
+    LDX #&02                            ; facing up
     STX facing
     INX
-.L14D9
-    LDA menu_key_left, X
+.reset_level_keys
+    LDA menu_key_left, X                ; the direction keys back as MENU set them
     STA key_left, X
     DEX
-    BPL L14D9
+    BPL reset_level_keys
     INX
-    STX stage
+    STX stage                           ; all zero
     STX pipe_move
     STX player_dead
     STX frame_counter
@@ -3072,27 +3119,33 @@ NEXT
     STX clock_fraction
     LDX exit_x
     LDY exit_y
-    LDA #&0F
+    LDA #&0F                            ; the exit's icon on its cell
     JSR set_cell
     LDA level
     ASL A
     ASL A
     ASL A
     TAY
-    LDA &25A3, Y
-    STA time_left
+    LDA io_level_setup + LEVEL_TIME, Y
+    STA time_left                       ; the clock
     LDX start_x
     LDY start_y
     JSR place_player
-.L150A
+
+; Forget which direction keys were down (and the action is 0 too).
+.clear_keys_down
     LDX #&03
     LDA #&00
-.L150E
-    STA keys_were_down, X
+.clear_keys_down_loop
+    STA keys_were_down, X               ; nothing held
     DEX
-    BPL L150E
+    BPL clear_keys_down_loop
     RTS
-.L1515
+
+; Copy the level's data out of IO into the variables the game plays with: its
+; setup, its map (to map, where it can change), monsters, objects and
+; triggers; the backpack starts empty.
+.setup_level
     LDA level
     ASL A
     ASL A
@@ -3100,16 +3153,16 @@ NEXT
     ADC #&07
     TAY
     LDX #&07
-.L151F
-    LDA &25A0, Y
+.setup_level_setup
+    LDA io_level_setup, Y               ; the 8 setup bytes, from start_x
     STA start_x, X
     DEY
     DEX
-    BPL L151F
+    BPL setup_level_setup
     INY
     TYA
     PHA
-    ADC #&2A
+    ADC #HI(io_maps)                    ; the level's map
     STA work1
     LDY #&00
     STY work0
@@ -3118,207 +3171,227 @@ NEXT
     STY pushes_left
     STY clock_fraction
     STY work2
-    LDA #&58
+    LDA #HI(map)                        ; goes to map
     STA work3
-    LDX #&08
-.L1543
+    LDX #&08                            ; 8 pages
+.setup_level_map
     LDA (work0), Y
     STA (work2), Y
     INY
-    BNE L1543
+    BNE setup_level_map
     INC work1
     INC work3
     DEX
-    BNE L1543
+    BNE setup_level_map
     PLA
-    ASL A
+    ASL A                               ; level * 16
     ADC #&0F
     TAY
     LDX #&0F
-.L1558
-    LDA &2640, Y
+.setup_level_monsters
+    LDA io_level_monsters, Y            ; monsters
     STA monster_x, X
     DEY
     DEX
-    BPL L1558
+    BPL setup_level_monsters
     INY
-    TYA
+    TYA                                 ; level * 32
     ASL A
     ADC #&1F
     TAY
     LDX #&1F
-.L1569
-    LDA &25C0, Y
+.setup_level_objects
+    LDA io_level_objects, Y             ; objects...
     STA objects, X
-    LDA &2680, Y
+    LDA io_level_trigger_flags, Y       ; ...and trigger flags
     STA trigger_flags, X
     DEY
     DEX
-    BPL L1569
+    BPL setup_level_objects
     INY
-    TYA
+    TYA                                 ; level * 64
     ASL A
     ADC #&3F
     TAY
     LDX #&3F
-.L1581
-    LDA &2700, Y
-    STA D236D, X
-    LDA &2800, Y
+.setup_level_triggers
+    LDA io_level_trigger_places, Y      ; triggers' places...
+    STA trigger_places, X
+    LDA io_level_trigger_args_0, Y      ; ...and arguments
     STA trigger_args, X
-    LDA &2900, Y
-    STA &23ED, X
+    LDA io_level_trigger_args_1, Y
+    STA trigger_args + 64, X
     DEY
     DEX
-    BPL L1581
+    BPL setup_level_triggers
     LDY #&03
-.L1599
-    STX backpack, Y
+.setup_level_backpack
+    STX backpack, Y                     ; X = &FF: every slot empty
     DEY
-    BPL L1599
+    BPL setup_level_backpack
     JMP setup_alternate_pictures
-.L15A1
-    JSR L1611
-    LDA player_dead
-    BNE L1607
-    JSR L15C0
+
+; One cycle of play: the player's turn, then four frames of the keys being
+; read and things moving, then the monsters are marked on the map as deadly
+; cells (E) until they next move.
+.play_cycle
+    JSR player_turn
+    LDA player_dead                     ; dead?
+    BNE play_cycle_done
+    JSR think                           ; think...
     LDA #&04
     STA work2
-.L15AF
-    JSR wait_vsync
+.play_cycle_step
+    JSR wait_vsync                      ; ...then four frames
     JSR L1A8F
     JSR move_things
     DEC work2
-    BNE L15AF
-.L15BC
-    LDA #&0E
-    BNE L15EA
-.L15C0
-    JSR L1D38
+    BNE play_cycle_step
+.mark_monsters
+    LDA #&0E                            ; monsters are deadly cells
+    BNE set_monster_cells
+
+; Move a thrown object on a cell, advance the frame counter, decide where each
+; monster goes next, and take the monsters off the map.
+.think
+    JSR L1D38                           ; a thrown object
     LDA frame_counter
     CLC
     ADC #&20
     STA frame_counter
     LDA #&03
     STA work4
-.L15CE
-    LDA work4
+.think_monster
+    LDA work4                           ; each monster's 4 bytes...
     ASL A
     ASL A
     ADC #&03
     TAX
     LDY #&03
-.L15D7
-    LDA monster_x, X
+.think_monster_copy
+    LDA monster_x, X                    ; ...to work0-work3
     STA work0, Y
     DEX
     DEY
-    BPL L15D7
+    BPL think_monster_copy
     INX
-    JSR L213E
+    JSR L213E                           ; where it goes
     DEC work4
-    BPL L15CE
-    LDA #&00
-.L15EA
+    BPL think_monster
+    LDA #&00                            ; and take them off the map
+.set_monster_cells
     STA work5
     LDA #&03
     STA work4
-.L15F0
+.set_monster_cell
     LDA work4
     ASL A
     ASL A
     TAX
-    LDA monster_direction, X
+    LDA monster_direction, X            ; not out?
     CMP #&08
-    BCS L1603
+    BCS set_monster_cell_next
     JSR L2130
     LDA work5
     JSR set_cell
-.L1603
+.set_monster_cell_next
     DEC work4
-    BPL L15F0
-.L1607
+    BPL set_monster_cell
+.play_cycle_done
     RTS
-.L1608
-    LDA #&81
+
+; Is the key with negative INKEY number X pressed? (OSBYTE &81.)
+; Returns: Z set if it is.
+.key_pressed
+    LDA #&81                            ; INKEY
     LDY #&FF
     JSR OSBYTE
-    INX
-.L1610
+    INX                                 ; &FF + 1 = 0 when pressed
+.do_nothing
     RTS
-.L1611
-    BIT ESCAPE_FLAG
-    BPL L1628
-.L1615
-    LDX #&FF
-    JSR L1608
-    BNE L161F
-    INX
+
+; The player's turn: Escape gives up a life (with SHIFT, the game). Then look
+; at what's in front of the player and underneath, try every trigger, and do
+; an action: the one pressed, or the pipe's move while in a pipe.
+.player_turn
+    BIT ESCAPE_FLAG                     ; Escape?
+    BPL player_turn_no_escape
+.give_up
+    LDX #&FF                            ; SHIFT too?
+    JSR key_pressed
+    BNE give_up_life
+    INX                                 ; one life left, about to be lost
     STX lives
-.L161F
+.give_up_life
     INC player_dead
-    LDA #&7E
+    LDA #&7E                            ; (no more moves)
     STA pipe_move
-    JMP OSBYTE
-.L1628
+    JMP OSBYTE                          ; acknowledge Escape
+.player_turn_no_escape
     JSR find_front
     LDX player_x
     LDY player_y
-    JSR cell_at
-    JSR L19C4
+    JSR cell_at                         ; what the player stands on...
+    JSR L19C4                           ; ...as it affects pipes
     LDA #&00
-.L1637
+.player_turn_triggers
     PHA
-    LDY #&00
+    LDY #&00                            ; walking onto triggers
     JSR L1E88
     PLA
     CLC
     ADC #&01
-    CMP #&20
-    BNE L1637
+    CMP #&20                            ; 32 of them
+    BNE player_turn_triggers
     LDX player_x
     LDY player_y
     JSR cell_at
-    JSR L194D
+    JSR L194D                           ; lava, fire, the exit...
     LDA player_dead
-    BNE L1610
-    LDA action
+    BNE do_nothing
+    LDA action                          ; an action already decided?
     CMP #&0B
-    BEQ L1662
-    LDA pipe_move
-    BNE L1662
-    JSR L1A8F
+    BEQ do_action
+    LDA pipe_move                       ; in a pipe, carried on...
+    BNE do_action
+    JSR L1A8F                           ; ...or a key
     LDA action
-.L1662
-    ASL A
+.do_action
+    ASL A                               ; action_table
     TAY
     LDA #&00
     STA action
     LDX D2351, Y
     LDA D2351+1, Y
-.L166E
+
+; Jump to X + 256 * A.
+.jump_to
     STX work0
     STA work1
     JMP (work0)
-.L1675
-    JSR L18A0
+
+; CTRL: the backpack screen. The mission, the lives left, the backpack's
+; contents and the selected object's name, the time, level, score and sound
+; settings; see backpack_keys. Space goes back to the game.
+.backpack_screen
+    JSR L18A0                           ; remember where the view was
     LDA lives
-    JSR L17C1
+    JSR L17C1                           ; the screen, the lives
     LDA #&80
-    JSR L1870
-    JSR L178F
+    JSR L1870                           ; no name yet
+    JSR L178F                           ; the selection box...
     LDA #&55
-    JSR L1785
+    JSR L1785                           ; ...drawn
     JSR print_status
-.L168D
-    BIT ESCAPE_FLAG
-    BMI L1615
-    JSR L16A6
-    LDX #&9D
-    JSR L1608
-    BNE L168D
-.L169B
-    LDA work4
+.backpack_screen_loop
+    BIT ESCAPE_FLAG                     ; Escape: lose a life
+    BMI give_up
+    JSR L16A6                           ; the backpack screen's keys
+    LDX #LO(KEY_SPACE)                  ; Space
+    JSR key_pressed
+    BNE backpack_screen_loop
+.backpack_screen_done
+    LDA work4                           ; the view as it was
     STA view_x
     LDA work5
     STA view_y
@@ -3328,26 +3401,26 @@ NEXT
     LDA backpack, X
     JSR L1870
     LDX menu_key_left
-    JSR L1608
+    JSR key_pressed
     BEQ L1705
     LDX menu_key_right
-    JSR L1608
+    JSR key_pressed
     BEQ L1703
     LDA level
-    CMP &2580
+    CMP io_map_levels
     BCS L16CE
     LDX key_map
-    JSR L1608
+    JSR key_pressed
     BNE L16CE
     PLA
     PLA
     JMP L182B
 .L16CE
     LDX #&AE
-    JSR L1608
+    JSR key_pressed
     BEQ L16FB
     LDX #&DC
-    JSR L1608
+    JSR key_pressed
     BNE L1744
     LDA tune_off
     EOR #&01
@@ -3361,7 +3434,7 @@ NEXT
     LDX #&18
     LDY #&17
     LDA #&00
-    JSR L14AB
+    JSR draw_thing_at
     JSR print_sound_settings
     JMP L1B12
 .L16FB
@@ -3380,7 +3453,7 @@ NEXT
     CLC
     ADC work2
     BMI L1745
-    CMP &2581
+    CMP io_backpack_last
     BEQ L171C
     BCS L174A
 .L171C
@@ -3407,7 +3480,7 @@ NEXT
 .L1744
     RTS
 .L1745
-    LDA &2581
+    LDA io_backpack_last
     BNE L174C
 .L174A
     LDA #&00
@@ -3424,7 +3497,7 @@ NEXT
     LDX work0
     LDA #&55
     JSR L1785
-    LDA &2581
+    LDA io_backpack_last
     ASL A
     STA work3
     ASL A
@@ -3497,7 +3570,7 @@ NEXT
     BNE L17D1
     LDA stage
     BEQ L17F4
-    JSR L14C8
+    JSR draw_exit_icon
 .L17F4
     LDA #&03
     STA work0
@@ -3528,7 +3601,7 @@ NEXT
     RTS
 .L181E
     LDA level
-    CMP &2580
+    CMP io_map_levels
     BCS L181D
     JSR L18A0
     JSR clear_screen
@@ -3552,23 +3625,23 @@ NEXT
     BIT ESCAPE_FLAG
     BMI L186D
     LDX menu_key_left
-    JSR L1608
+    JSR key_pressed
     BNE L1856
     JSR map_view_scroll_left
     JMP L1860
 .L1856
     LDX menu_key_right
-    JSR L1608
+    JSR key_pressed
     BNE L1860
     JSR map_view_scroll_right
 .L1860
     LDX #&9D
-    JSR L1608
+    JSR key_pressed
     BNE L1845
     JSR clear_screen
-    JMP L169B
+    JMP backpack_screen_done
 .L186D
-    JMP L1615
+    JMP give_up
 .L1870
     PHA
     JSR print_inline
@@ -3643,7 +3716,7 @@ NEXT
     ADC #&07
     STA pipe_move
 .L18EE
-    JSR L15C0
+    JSR think
     LDA action
     BNE L1912
     PLA
@@ -3660,11 +3733,11 @@ NEXT
     TAY
     LDX D1917, Y
     LDA D1917+1, Y
-    JSR L166E
+    JSR jump_to
 .L1912
     PLA
     PLA
-    JMP L15BC
+    JMP mark_monsters
 .D1917
     EQUW walk_left
     EQUW walk_right
@@ -3879,11 +3952,11 @@ NEXT
     LDX work2
     LDY work3
     LDA #&00
-    JSR L1494
+    JSR set_cell_and_draw
     PLA
     LDX work4
     LDY work5
-    JSR L1494
+    JSR set_cell_and_draw
     CLC
 .L1A8E
     RTS
@@ -3895,7 +3968,7 @@ NEXT
 .L1A97
     LDY action
     LDX effects_off, Y
-    JSR L1608
+    JSR key_pressed
     BEQ L1A8E
     DEC action
     BNE L1A97
@@ -3904,7 +3977,7 @@ NEXT
     JSR L1ABB
     LDA action
     BNE L1AB1
-    JSR L150A
+    JSR clear_keys_down
 .L1AB1
     LDY #&03
 .L1AB3
@@ -3917,7 +3990,7 @@ NEXT
     ROL work1
     STY work0
     LDX key_left, Y
-    JSR L1608
+    JSR key_pressed
     BNE L1AD5
     LDY work0
     LDA keys_were_down, Y
@@ -3959,7 +4032,7 @@ NEXT
     DEY
     BPL L1AE3
     LDX #&00
-    JSR L13E0
+    JSR vdu_palette
     JSR clear_screen
 .L1B0F
     JSR L1B12
@@ -3969,7 +4042,7 @@ NEXT
     JMP L1E20
 .L1B1A
     LDA #&00
-    JSR L13CC
+    JSR set_palette
     LDA stage
     CMP #&03
     BCC L1B3F
@@ -3982,7 +4055,7 @@ NEXT
     BNE L1B27
     DEC work0
     BNE L1B27
-    JSR L13CC
+    JSR set_palette
     JSR L1B0F
     JSR L1B0F
 .L1B3F
@@ -3997,7 +4070,7 @@ NEXT
     EQUB &09, &61, &6E, &64, &1F, &01, &10
     EQUS "felicitations!"
     NOP
-    LDA &2583
+    LDA io_locked
     BPL L1B76
     LDA started_late
     BEQ L1B79
@@ -4082,11 +4155,11 @@ NEXT
     NOP
 .L1C13
     LDX #&9D
-    JSR L1608
+    JSR key_pressed
     BNE L1C13
 .L1C1A
     LDX #&9D
-    JSR L1608
+    JSR key_pressed
     BEQ L1C1A
 .L1C21
     LDA #&7E
@@ -4107,7 +4180,7 @@ NEXT
     EQUB &1F, &05, &14, &11, &80, &11, &03
     NOP
     LDY level
-    LDA &2583, Y
+    LDA io_locked, Y
     JSR L1C61
     LDA &2587, Y
     JSR L1C61
@@ -4147,7 +4220,7 @@ NEXT
     LDX backpack_slot
     LDA backpack, X
     BMI L1CA5
-    LDX &2581
+    LDX io_backpack_last
 .L1C9D
     LDA backpack, X
     BMI L1CA5
@@ -4168,7 +4241,7 @@ NEXT
     LDX front_x
     LDY front_y
     LDA #&00
-    JMP L1494
+    JMP set_cell_and_draw
 .L1CC2
     LDY front_cell
     BNE L1CA4
@@ -4208,7 +4281,7 @@ NEXT
     STX backpack_slot
     STX work0
     TAX
-    LDY &2582
+    LDY io_throw_distance
     BEQ L1D37
     LDA front_cell
     BNE L1D37
@@ -4274,7 +4347,7 @@ NEXT
     LDX thrown_x
     LDY thrown_y
     LDA #&00
-    JSR L1494
+    JSR set_cell_and_draw
     LDA #&29
     STA L1DF9+1
     LDA #&1E
@@ -4361,7 +4434,7 @@ NEXT
 .L1DF7
     LDY #&80
 .L1DF9
-    JMP L1610
+    JMP do_nothing
 .L1DFC
     JSR L1CE3
     STX backpack_slot
@@ -4400,7 +4473,7 @@ NEXT
     TXA
     ASL A
     TAY
-    LDA D236D, Y
+    LDA trigger_places, Y
     BMI L1E41
     CMP thrown_x
     BNE L1EBA
@@ -4455,7 +4528,7 @@ NEXT
     TXA
     ASL A
     TAY
-    LDA D236D, Y
+    LDA trigger_places, Y
     BMI L1E9F
     CMP player_x
     BNE L1EBA
@@ -4513,7 +4586,7 @@ NEXT
     LDA D2331+1, X
     STA L1EFB+2
 .L1EFB
-    JSR L1610
+    JSR do_nothing
     JMP find_front
 .L1F01
     JSR L2122
@@ -4562,7 +4635,7 @@ NEXT
 .L1F4F
     LDX front_x
     LDY front_y
-    JMP L1494
+    JMP set_cell_and_draw
 .L1F56
     JSR L2122
     JSR L205F
@@ -4634,7 +4707,7 @@ NEXT
     INC player_dead
 .L1FC3
     LDA #&00
-    JSR L1494
+    JSR set_cell_and_draw
     DEC work4
     BPL L1FB0
     RTS
@@ -4671,7 +4744,7 @@ NEXT
     JMP L1F0C
 .L1FFC
     JSR L2122
-    JSR L1494
+    JSR set_cell_and_draw
     JMP L1F76
 .L2005
     JSR L2122
@@ -4706,7 +4779,7 @@ NEXT
     STA objects + 3, X
     LDA #&01
     TAX
-    JSR L13AD
+    JSR flash_palette_times
     PLA
     TAY
     BPL L2056
@@ -4767,7 +4840,7 @@ NEXT
     CMP #&08
     BCC L20AB
     STX work4
-    JSR L148F
+    JSR empty_monster_cell
     JSR L21D9
     LDX work4
 .L20AB
@@ -4798,7 +4871,7 @@ NEXT
     LDX front_x
     LDY front_y
     PLA
-    JMP L1494
+    JMP set_cell_and_draw
 .L20D7
     LDA work5
     BNE L20C5
@@ -4824,7 +4897,7 @@ NEXT
     JSR L1F7A
     LDA #&02
     LDX #&04
-    JSR L13AD
+    JSR flash_palette_times
     JSR clear_screen
     LDA #&00
     LDX #&04
@@ -4926,12 +4999,12 @@ NEXT
     LSR A
     LSR A
     LSR A
-    JSR L1494
+    JSR set_cell_and_draw
     LDA work4
     ASL A
     ASL A
     TAX
-    JSR L148F
+    JSR empty_monster_cell
 .L21AE
     LDA #&08
     PHA
@@ -4976,7 +5049,7 @@ NEXT
     CLD
     RTS
 .L21F1
-    JSR L147D
+    JSR draw_title_screen
     JSR print_inline
     EQUB &1F, &07, &0F, &11, &81, &11, &02
     EQUS "Filename ?"
@@ -4989,7 +5062,7 @@ NEXT
     LDY #&22
     JSR OSWORD
     JSR L222E
-    JMP L1423
+    JMP title_screen
 .L222E
     JSR blank_display
     STA furthest_level
@@ -5094,11 +5167,11 @@ NEXT
     EQUW L1F10
     EQUW L200E
 .D2351
-    EQUW L150A
+    EQUW clear_keys_down
     EQUW L1C8B
     EQUW L1CC2
     EQUW L181E
-    EQUW L1675
+    EQUW backpack_screen
     EQUW L1CF5
     EQUW L1DFC
     EQUW L18A9
@@ -5106,9 +5179,9 @@ NEXT
     EQUW L18A9
     EQUW L18A9
     EQUW L18A9
-    EQUW L150A
+    EQUW clear_keys_down
     EQUB &08, &07, &0A, &09
-.D236D
+.trigger_places
     EQUB &0C
 .D236E
     EQUB &0C, &19, &F0, &C0, &80, &33, &77, &FF
