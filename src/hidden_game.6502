@@ -3967,9 +3967,9 @@ NEXT
     CLC
     RTS
 
-; Trigger action 7: move monster A AND 3 to cell (A, Y) / 4, going direction
-; Y AND 3 with turning preferences X (the trigger's arguments), moving its
-; mark on the map with it.
+; Trigger action 7: put monster A AND 3 in map cell (A DIV 4, Y DIV 4) (its
+; position in characters is A and Y with their low bits clear), going
+; direction Y AND 3 with turning preferences X, and move its fire cell there.
 .trigger_move_monster
     JSR trigger_arguments
     STX work0

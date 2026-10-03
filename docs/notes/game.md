@@ -103,3 +103,104 @@ addresses from those sizes.
 - Cell types seen so far: 0 floor, 7 the "sulphur" to collect, A lava
   (deadly, also what's off the map), E deadly, F an object (looked up in
   the object table by position); monsters are drawn with pictures E and F.
+
+## 2026-10-03 18:44 — How the game plays (from the code)
+
+Corrections first: the "second animation frames" above are really second
+pictures, chosen once per level on a checkerboard (`alternate_cells`, the
+level's last setup byte: two bits per cell type 5, 7, 8 and A, for even and
+odd squares); nothing animates over time except the monsters (pictures E and
+F alternate) and the player (flipped upside down every other step; walking up
+or down also alternates the third and fourth player pictures). The player
+pictures are left, right, then two for up/down.
+
+- The view is 8 x 8 map cells; a map cell is 4 x 4 character cells. The
+  player sits in the middle and the view scrolls a character at a time, four
+  per step, with the hardware (CRTC start address) and the newly exposed
+  row or column drawn from the map. Everything else that moves (monsters, a
+  thrown object) moves a character at a time too, as clipped sprites.
+- Goal: step on every cell 7 ("Collect the Sulphur!": the level's setup says
+  how many), then press P facing the exit (an object cell showing icon 15):
+  the exit turns to fire (cell E), the time left is scored, and the player
+  has 4 clock ticks to get 5 or more cells away across or down. Caught, they
+  lose a life but the level still counts. WELL DONE! and 100 points, then
+  the next level's... no: the finished level's edit code (MISSION asks for it
+  before saving an edited level).
+- Cells: 0 floor; 1-5, 8, 9 walls (8 is also what the exit counts as); 6 a
+  crate, pushable while the player has pushes (a trigger gives them); 7 the
+  thing to collect; A lava and E fire kill; B, C, D pipes: stepping into a
+  C (moving across) or D (moving up/down) carries the player along, hidden,
+  turning at junctions (B) and reversing at dead ends, until they come out
+  onto the floor. F holds an object; off the map is lava.
+- Monsters (4 a level) are flames that wander by a turning preference (four
+  2-bit choices: back, straight, clockwise, anticlockwise), marking their
+  cell as fire. Each has a food cell type (the level's setup): a monster that
+  reaches it turns it into another type and goes out, for 25 points; so does
+  one whose fire cell is changed under it.
+- Objects (8 a level, 15 kinds named in IO): pick up (P), drop (D), throw (T,
+  up to the mission's distance) and use (Return); the backpack holds the
+  mission's backpack size. Each object has a number of uses (bits 0-5; 32
+  and up never run out), bit 6 (vanishes when used up) and bit 7 (does
+  nothing thrown). Using or landing a thrown object tries its four triggers:
+  n, n + 8, n + 16 and n + 24.
+- Triggers (32 a level): a flags byte (bits 0-3 the action; bit 4 can fire
+  again, bit 5 fired already, bit 6 only once everything's collected, bit 7
+  needs an object rather than being walked onto), a place (x, y; negative
+  for anywhere on that axis) and four arguments: three for the action and a
+  condition (bit 7: facing direction bits 4-5; bit 6: facing cell type bits
+  0-3). Actions: 0 set a cell, 1 move a cell, 2 set the cell in front, 3 set
+  the clock and the number to collect, 4 throw an object, 5 blow an object
+  up (in the backpack it kills), 6 set a monster's direction (8 removes it),
+  7 move a monster, 8 teleport, 9 toggle the cell in front between two
+  types, 10 enable and 11 disable triggers, 12 recharge an object, 13 give
+  pushes, 14 push the cell in front, 15 swap the direction keys (left/right,
+  up/down) for the rest of the level.
+- Scoring: a point per cell 7 and per clock tick left when the exit is lit,
+  25 per monster gone, 100 a level. The score is BCD.
+- Codes: after each level, its edit code (the three io_edit_code bytes,
+  scrambled); after the last level of a locked mission played from level 1,
+  an entry code made from the score and a checksum of all the mission's level
+  data, printed in a base-32 alphabet (1-9, A-W): the competition entry.
+- Escape loses a life, SHIFT+Escape the game. Losing all lives: the player
+  burns up in spreading flames.
+- The title tune is played by the sound event handler: each time channel 1
+  or 2's queue empties, the next note of its voice is queued (two voices of
+  32 notes in the printer buffer; the envelopes are poked straight into the
+  OS's envelope store at &08C0). Each time round it transposes or swaps the
+  voices.
+
+## 2026-10-03 18:44 — Memory while playing
+
+| Address | What |
+|---|---|
+| &00-&9B | zero page: monsters &00-&0F, thrown object &10-&14, player and game state, sound blocks &30-&3F, tune &40-&44, scratch &50-&55, level setup copy &56-&5D, keys &66-&6F, drawing &70-&9B (see the game's symbols) |
+| &0100-&011F | trigger flags (this level's, copied from IO) |
+| &0120-&0124 | direction keys held last time; a scratch byte |
+| &0131-&0190 | the sound event handler |
+| &037F-&03DF | the OS's extended vectors, saved while the game uses page &0D |
+| &0400-&07FF | map view patterns; drawing and scrolling code |
+| &0880-&08BF | the tune (in the printer buffer) |
+| &08C0-&08FF | the four envelopes (the OS's envelope store) |
+| &0900-&236C | the game (&0D00-&1CFF is swapped with &6000 while IO loads) |
+| &12A3-&12C2 | this level's 8 objects, over run-once start-up code |
+| &236D-&242C | trigger places and arguments (over the end of the game) |
+| &242D-&57FF | IO, the mission |
+| &5800-&5FFF | the current level's map, copied from IO, changed by play |
+| &6000-&7FFF | the screen: MODE 5, 32 x 32 characters, 8K with wrap-around |
+
+The OS's DFS workspace (&0E00-&10FF), NMI area and extended vectors are
+overwritten by the game; load_mission puts things right for long enough to
+load IO and swaps the game back. TITLE (&6300-&7979) is long gone by then.
+
+## 2026-10-03 18:44 — For the other pieces
+
+- `src/io.6502inc` has IO's layout from MISSION's formulas, the meaning of
+  each field, and names for the cell types (CELL_*). LEVEL1 (a Level
+  Designer file, 320 bytes of puzzle names then one level's &91F bytes: the
+  same eleven fields un-interleaved, then the map) and DEFAULT (the Graphics
+  Designer's file: IO's graphics block then its names block) share these
+  formats; io.6502's PICTURE and MAP macros would turn them into readable
+  source too.
+- OS names H.GAME defines locally that belong in os.6502inc: EXTENDED_VECTORS
+  (&0D9F), NMI_HANDLER (&0D00), VSYNC_COUNTER (&0240), ESCAPE_FLAG (&FF),
+  ERROR_POINTER (&FD).
