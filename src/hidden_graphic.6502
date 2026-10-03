@@ -97,6 +97,15 @@ WINDOW_QUESTION    = 5          ; Escape?, Exists, the palette
 WINDOW_INPUT       = 6          ; file and object names
 WINDOW_ERROR       = 7
 
+; Sprite numbers: &00-&0F and &20-&28 are the large sprites' sheet positions,
+; &10-&1F the small ones; the last small one is the man, who has no name.
+FIRST_SMALL = &10
+LAST_SMALL  = &1F
+THE_MAN     = LAST_SMALL
+AFTER_SMALL = &20
+SMALL_WIDTH = 2                 ; sprite_width, in bytes
+LARGE_WIDTH = 4
+
 ; Sprite numbers beyond the sheet: the two buffers Animate shows frames in.
 SPRITE_FRAME_A = &57
 SPRITE_FRAME_B = &58
@@ -852,12 +861,12 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STX data_ptr
     LDX #HI(graphics)
     STX data_ptr+1
-    LDX #&04
-    CMP #&10
+    LDX #LARGE_WIDTH
+    CMP #FIRST_SMALL
     BCC store
-    CMP #&20
+    CMP #AFTER_SMALL
     BCS store
-    LDX #&02
+    LDX #SMALL_WIDTH
 .store
     STX sprite_width
     RTS
@@ -882,7 +891,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     TYA
     BIT by_slot
     BMI slot
-    CMP #&20                        ; positions &20-&28 follow &00-&0F in the table
+    CMP #AFTER_SMALL                ; positions &20-&28 follow &00-&0F in the table
     BCC mapped
     SBC #&10
 .mapped
@@ -891,7 +900,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 
     ; Large slots &00-&0F are at graphics + slot*&80, &20-&28 from +&A00.
 .slot
-    CMP #&20
+    CMP #&20                        ; slots &20 up
     BCS high_slot
     LSR A
     TAX
@@ -952,11 +961,11 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Clobbers: X
 .sprite_last_byte
 {
-    LDY #&7F
+    LDY #LARGE_WIDTH*32-1
     LDX sprite_width
-    CPX #&02
+    CPX #SMALL_WIDTH
     BNE done
-    LDY #&1F
+    LDY #SMALL_WIDTH*16-1
 .done
     RTS
 }
@@ -1089,7 +1098,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     ; which one is on the screen already.
 .frame
     LDA sprite_width
-    CMP #&04
+    CMP #LARGE_WIDTH
     BEQ large
     LDA grid_frame_top              ; the small frame's top right corner
     CMP #&08
@@ -1110,7 +1119,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR clear_rows
 .large
     LDA sprite_width
-    CMP #&04
+    CMP #LARGE_WIDTH
     BNE draw_frame
     LDA grid_frame_right            ; the large frame's right edge
     CMP #&08
@@ -1347,9 +1356,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     TAY
     LDX #&00
     STX screen_ptr+1
-    CPY #&10
+    CPY #FIRST_SMALL
     BCC large
-    CPY #&20
+    CPY #AFTER_SMALL
     BCC small
     SBC #&10
     CMP #&47
@@ -1669,7 +1678,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDY #&07
     JSR selection_edge
     LDA sprite_width
-    CMP #&02
+    CMP #SMALL_WIDTH
     BEQ small
     TXA                             ; X is 0 here: blank the name box
     LDY #15*CELL-1
@@ -2215,10 +2224,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     DEY
     BPL clear
     LDX sprite_width
-    CPX #&02
+    CPX #SMALL_WIDTH
     BNE redraw
     LDA sprite                      ; the man has no name to clear
-    CMP #&1F
+    CMP #THE_MAN
     BEQ redraw
     JSR name_offset
     LDA #&00
@@ -2600,13 +2609,13 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     DEY
     BPL swap
     LDA sprite_width
-    CMP #&02
+    CMP #SMALL_WIDTH
     BNE done
-    CPX #&1F
+    CPX #THE_MAN
     BEQ done
     PLA
     PHA
-    CMP #&1F
+    CMP #THE_MAN
     BEQ done
 
     ; Swap the names: data_ptr and aux_ptr hold the two names' offsets now.
@@ -3000,7 +3009,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA slot_of_position, X
     CMP #&24                        ; slots &24-&28: no
     BCS none
-    CMP #&20                        ; &20-&23
+    CMP #&20                        ; slots &20-&23
     BCS machine
     CMP #&0E
     BEQ flames
@@ -3100,9 +3109,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Out: A = the index
 .slot_index
 {
-    CMP #&10
+    CMP #FIRST_SMALL
     BCC repeat_key.done
-    CMP #&20
+    CMP #AFTER_SMALL
     BCC repeat_key.done
     SBC #&10
     RTS
@@ -3181,7 +3190,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BEQ left
     INC sprite
     LDA sprite
-    CMP #&10
+    CMP #FIRST_SMALL
     BNE wrap_right
     LDA #&20                        ; after &0F comes &20
 .wrap_right
@@ -3195,7 +3204,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BEQ left_done
     DEC sprite
     LDA sprite
-    CMP #&1F
+    CMP #LAST_SMALL
     BNE wrap_left
     LDA #&0F                        ; before &20 comes &0F
 .wrap_left
@@ -3296,7 +3305,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 
     ; A small sprite's grid is 8x16: keep the cursor in it.
     LDA sprite_width
-    CMP #&02
+    CMP #SMALL_WIDTH
     BNE changed
     LDX cursor_x
     CPX #&08
@@ -3354,9 +3363,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDX #&04
     STX last_column
     LDA sprite
-    CMP #&10
+    CMP #FIRST_SMALL
     BCC sheet_column.large
-    CMP #&20
+    CMP #AFTER_SMALL
     BCS large
     LSR A
     LSR A
@@ -3380,9 +3389,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA #&04
     STA last_column
     LDA sprite
-    CMP #&10
+    CMP #FIRST_SMALL
     BCC large
-    CMP #&20
+    CMP #AFTER_SMALL
     BCS small
     AND #&03
     LDX #&03
@@ -3538,7 +3547,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA gbpb_block+2
     JSR read_block.write
     LDA sprite_width
-    CMP #&02
+    CMP #SMALL_WIDTH
     BNE not_small
     JSR write_name
 .not_small
@@ -3711,7 +3720,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA gbpb_block+2
     JSR read_block
     LDA sprite_width
-    CMP #&02
+    CMP #SMALL_WIDTH
     BNE not_small
     JSR read_name
 .not_small
@@ -3733,7 +3742,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .name_transfer
 {
     LDA sprite
-    CMP #&1F
+    CMP #THE_MAN
     BNE named
     RTS
 .named
@@ -3948,13 +3957,13 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .cmd_obj_name
 {
     LDA sprite_width
-    CMP #&02
+    CMP #SMALL_WIDTH
     BEQ small
 .done
     RTS
 .small
     LDA sprite
-    CMP #&1F
+    CMP #THE_MAN
     BEQ done
     LDA #WINDOW_INPUT
     LDX #LO(text_object_name)
