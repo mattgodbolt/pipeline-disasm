@@ -1,0 +1,19 @@
+# H.GRAPH, the Graphics Designer: &2100 bytes from sectors &145-&165, which
+# the GRAPHIC stub reads to &1AB0 and enters at &2BAE. Traces come from
+# `node tools/graphic_tours.mjs`.
+# The binary is the one built from src/hidden_graphic.6502 (`make` first):
+# the source is annotated by hand now, so this only re-creates a first draft.
+binary = "build/files/H.GRAPH"
+org = 0x1AB0
+section = 'hidden_graphic, filename="H.GRAPH", org=&1AB0'
+# &2B26, &2B2D (which calls &2B18), &3610 and &3633 are routines nothing
+# calls; &2594 is a stray RTS.
+entries = [0x2BAE, 0x2B26, 0x2B2D, 0x2594, 0x3610, 0x3633]
+traces = [
+    "build/trace/graphic_edit.json",
+    "build/trace/graphic_optionsA.json",
+    "build/trace/graphic_optionsB.json",
+    "build/trace/graphic_files.json",
+    "build/trace/graphic_shortcuts.json",
+    "build/trace/graphic_escape.json",
+]
