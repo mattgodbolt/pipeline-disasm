@@ -108,6 +108,10 @@ CELL   = 8
 ROW    = &140
 
 graphics      = &4000           ; the graphics set
+; Where its pieces are in an IO file (see io_segments).
+IO_SLOT_28    = &0000
+IO_NAMES      = &0080
+IO_GRAPHICS   = &25D3
 object_names  = graphics + &E80
 graphics_end  = graphics + &F34
 frame_a       = &3E00
@@ -378,7 +382,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     AND #&07
     ASL A
     TAY
-    LDA #&50
+    LDA #HI(window_store)
     STA save_ptr+1
     LDA window_address, Y
     STA screen_ptr
@@ -386,7 +390,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA window_address+1, Y
     STA screen_ptr+1
     STA aux_ptr+1
-    LDA #&00
+    LDA #LO(window_store)
     STA save_ptr
     LDA window_size, Y
     STA count_x
@@ -409,7 +413,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STY data_ptr+1
     AND #&7F
     PHA
-    LDA #&07
+    LDA #7                          ; the last window
 
     ; Close every window, 7 to 0.
 .close_others
@@ -471,13 +475,13 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .read_char
     LDY #&00
     LDA (data_ptr), Y
-    CMP #&FF
+    CMP #TEXT_END
     BEQ frame
-    CMP #&0D
+    CMP #CR
     BEQ new_line
     CLC
     JSR print_char_advance          ; carry clear: exclusive-OR the glyph on
-    BNE next_char
+    BNE next_char                   ; always: screen_ptr is never zero
 .new_line
     INC line_count
     LDA save_ptr
@@ -509,10 +513,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDX #&07
     LDA border_ptr
     CLC
-    ADC #&40
+    ADC #LO(ROW)
     STA border_ptr
     LDA border_ptr+1
-    ADC #&01
+    ADC #HI(ROW)
     STA border_ptr+1
 .frame_right
     LDA (border_ptr), Y
@@ -551,10 +555,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .next_screen_row
     LDA screen_ptr
     CLC
-    ADC #&40
+    ADC #LO(ROW)
     STA screen_ptr
     LDA screen_ptr+1
-    ADC #&01
+    ADC #HI(ROW)
     STA screen_ptr+1
     RTS
 }
@@ -645,7 +649,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR print_char
     LDA screen_ptr
     CLC
-    ADC #&08
+    ADC #CELL
     STA screen_ptr
     BCC done
     INC screen_ptr+1
@@ -766,23 +770,23 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .not_fkey
     CMP #&20
     BEQ cancel
-    CMP #&0D
+    CMP #CR
     BEQ chosen
     BIT mask
     BPL read_key
-    CMP #&8A
+    CMP #CODE_DOWN
     BEQ down
-    CMP #&8B
+    CMP #CODE_UP
     BNE read_key
     LDA item
     BEQ read_key
     JSR invert_menu_row
     DEC item
     LDA screen_ptr
-    SBC #&40
+    SBC #LO(ROW)
     STA screen_ptr
     LDA screen_ptr+1
-    SBC #&01
+    SBC #HI(ROW)
     STA screen_ptr+1
     BCS highlight
 .down
@@ -844,9 +848,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Clobbers: X
 .sprite_class
 {
-    LDX #&00
+    LDX #LO(graphics)
     STX data_ptr
-    LDX #&40
+    LDX #HI(graphics)
     STX data_ptr+1
     LDX #&04
     CMP #&10
@@ -905,7 +909,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA #&00
     ROR A
     STA data_ptr
-    LDA #&3E
+    LDA #HI(frame_a)
     STA data_ptr+1
     TYA
     RTS
@@ -914,7 +918,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     TAX
     LDA data_ptr+1
     CLC
-    ADC #&0A
+    ADC #HI(&A00)                   ; slots &20 on are at +&A00
     STA data_ptr+1
     TXA
     JMP slot
@@ -925,7 +929,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     PHA
     LDA data_ptr+1
     CLC
-    ADC #&08
+    ADC #HI(&800)                   ; small sprites start at +&800
     STA data_ptr+1
     PLA
     ASL A
@@ -986,9 +990,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     DEY
     BPL keep
 .draw
-    LDA #&50
+    LDA #LO(edit_grid)
     STA screen_ptr
-    LDA #&59
+    LDA #HI(edit_grid)
     STA screen_ptr+1
     LDA sprite_width
     STA count_x
@@ -1039,7 +1043,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     DEX
     BPL block_line
     LDA screen_ptr
-    ADC #&08
+    ADC #CELL
     STA screen_ptr
     BCC next_pixel
     INC screen_ptr+1
@@ -1047,7 +1051,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LSR mask
     BCC pixel
     LDA screen_ptr                  ; back to the grid's left edge
-    SBC #&20
+    SBC #4*CELL                     ; carry is set from the LSR: back to the grid's left edge
     STA screen_ptr
     BCS pixel_done
     DEC screen_ptr+1
@@ -1057,10 +1061,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BEQ next_byte
     LDA screen_ptr
     CLC
-    ADC #&40
+    ADC #LO(ROW)
     STA screen_ptr
     LDA screen_ptr+1
-    ADC #&01
+    ADC #HI(ROW)
     STA screen_ptr+1
 .next_byte
     INC data_ptr
@@ -1086,42 +1090,42 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .frame
     LDA sprite_width
     CMP #&04
-    BEQ check_large
+    BEQ large
     LDA grid_frame_top              ; the small frame's top right corner
     CMP #&08
     BNE to_small
     RTS
 .to_small
-    LDA #&50
+    LDA #LO(SCREEN + 10*CELL)       ; blank the right half...
     STA screen_ptr
-    LDA #&58
+    LDA #HI(SCREEN + 10*CELL)
     STA screen_ptr+1
     LDA #&12
     JSR clear_rows
-    LDA #&48
+    LDA #LO(SCREEN + 9*ROW + CELL)  ; ...and the bottom half
     STA screen_ptr
-    LDA #&63
+    LDA #HI(SCREEN + 9*ROW + CELL)
     STA screen_ptr+1
     LDA #&09
     JSR clear_rows
-.check_large
+.large
     LDA sprite_width
     CMP #&04
-    BNE draw_large
+    BNE draw_frame
     LDA grid_frame_right            ; the large frame's right edge
     CMP #&08
-    BNE draw_large
+    BNE draw_frame
     RTS
 
     ; The top line, the left edge, the bottom line, then the right edge.
-.draw_large
-    LDA #&08
+.draw_frame
+    LDA #LO(SCREEN + CELL)
     STA screen_ptr
-    LDA #&58
+    LDA #HI(SCREEN + CELL)
     STA screen_ptr+1
     LDY #&07
     JSR grid_frame_line
-    LDA #&01
+    LDA #&01                        ; the frame is colour 1 in the cell left of the grid's rightmost pixel
     STA (screen_ptr), Y
     JSR down_a_row
     LDA sprite_width
@@ -1129,7 +1133,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     ASL A
     STA count_y
 .left_column
-    LDA #&01
+    LDA #&01                        ; the left edge
     LDY #&07
 .left_line
     STA (screen_ptr), Y
@@ -1156,13 +1160,13 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .right_column
     LDA screen_ptr
     SEC
-    SBC #&40
+    SBC #LO(ROW)
     STA screen_ptr
     LDA screen_ptr+1
-    SBC #&01
+    SBC #HI(ROW)
     STA screen_ptr+1
     LDY #&07
-    LDA #&08
+    LDA #&08                        ; the right edge: the leftmost pixel of the cell after the grid
 .right_line
     STA (screen_ptr), Y
     DEY
@@ -1185,16 +1189,16 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     ORA temp
     ADC #&08
     TAY
-    LDX #&08
+    LDX #&08                        ; the corner first, then the line
 .loop
     TXA
     STA (screen_ptr), Y
-    LDX #&0F
+    LDX #&0F                        ; colour 1 across the whole byte
     TYA
     SEC
-    SBC #&08
+    SBC #CELL
     TAY
-    CMP #&08
+    CMP #CELL
     BCS loop
     RTS
 }
@@ -1205,10 +1209,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 {
     LDA screen_ptr
     CLC
-    ADC #&40
+    ADC #LO(ROW)
     STA screen_ptr
     LDA screen_ptr+1
-    ADC #&01
+    ADC #HI(ROW)
     STA screen_ptr+1
     RTS
 }
@@ -1233,7 +1237,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 {
     STA count_y
 .row
-    LDY #&47
+    LDY #9*CELL-1
     LDA #&00
 .byte
     STA (screen_ptr), Y
@@ -1357,14 +1361,14 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     ROR A
     ROR A
     ROR A
-    ADC #&A0
+    ADC #LO(large_sheet)
     STA screen_ptr
     LDA screen_ptr+1
-    ADC #&58
+    ADC #HI(large_sheet)
 .add_rows
     DEX
     BMI done
-    ADC #&05
+    ADC #HI(4*ROW)                  ; four character rows a row of sprites
     BCC add_rows
 .done
     STA screen_ptr+1
@@ -1389,25 +1393,25 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BMI small_base
     LDA screen_ptr
     CLC
-    ADC #&80
+    ADC #LO(2*ROW)
     STA screen_ptr
     LDA screen_ptr+1
-    ADC #&02
+    ADC #HI(2*ROW)
     STA screen_ptr+1
     BCC small_rows
 .small_base
     LDA screen_ptr
     CLC
-    ADC #&A8
+    ADC #LO(small_sheet)
     STA screen_ptr
     LDA screen_ptr+1
-    ADC #&71
+    ADC #HI(small_sheet)
     STA screen_ptr+1
     RTS
 .preview
-    LDA #&08
+    LDA #LO(frame_preview)
     STA screen_ptr
-    LDA #&75
+    LDA #HI(frame_preview)
     STA screen_ptr+1
     TYA
     RTS
@@ -1599,7 +1603,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Clobbers: A, X, Y, screen_ptr, data_ptr, count_x, count_y, sprite_width
 .draw_sheet
 {
-    LDA #&28
+    LDA #&28                        ; the last sheet position
 .loop
     PHA
     JSR draw_sheet_sprite
@@ -1654,10 +1658,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BEQ bottom
     LDA screen_ptr
     CLC
-    ADC #&40
+    ADC #LO(ROW)
     STA screen_ptr
     LDA screen_ptr+1
-    ADC #&01
+    ADC #HI(ROW)
     STA screen_ptr+1
     BCC column
 .bottom
@@ -1667,7 +1671,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     CMP #&02
     BEQ small
     TXA                             ; X is 0 here: blank the name box
-    LDY #&77
+    LDY #15*CELL-1
 .clear_name
     STA name_box, Y
     DEY
@@ -1677,15 +1681,15 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     ; An object: its number, 1-16 (the small sprite less &0F), then ":" and
     ; its name.
 .small
-    LDA #&E0
+    LDA #LO(name_box)
     STA screen_ptr
-    LDA #&6F
+    LDA #HI(name_box)
     STA screen_ptr+1
-    LDX #&20
+    LDX #CODES(" ")[0]              ; objects 1-9: no tens
     LDA sprite
     CMP #&19
     BCC tens
-    LDX #&31
+    LDX #CODES("1")[0]
 .tens
     SEC
     TXA
@@ -1698,13 +1702,13 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     SBC #&0A
 .units
     SEC                             ; carry set: store the characters
-    ORA #&30
+    ORA #CODES("0")[0]
     JSR print_char_advance
-    LDA #&3A
+    LDA #CODES(":")[0]
     SEC
     JSR print_char_advance
     JSR name_offset
-    LDX #&0B
+    LDX #12-1
 .name
     LDA object_names, Y
     SEC
@@ -1728,7 +1732,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA (screen_ptr), Y
     TYA
     CLC
-    ADC #&08
+    ADC #CELL
     TAY
     DEX
     BNE loop
@@ -1761,14 +1765,15 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 {
     LDA screen_ptr
     CLC
-    ADC #&40
+    ADC #LO(ROW)
     STA screen_ptr
     LDA screen_ptr+1
-    ADC #&01
+    ADC #HI(ROW)
     STA screen_ptr+1
     RTS
 }
 
+; Unused: as width_times_32.
 .unused_width_times_32
 {
     LDA sprite_width
@@ -1779,6 +1784,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; Unused: as clear_rows.
 .unused_clear_rows
 {
     STA count_y
@@ -1801,7 +1807,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 {
     LDX colour
     LDA colour_byte, X
-    LDY #&0F
+    LDY #2*CELL-1                   ; two cells
 .loop
     STA colour_swatch, Y
     DEY
@@ -1862,16 +1868,16 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR close_all_windows
     LDX #LO(text_error)
     LDY #HI(text_error)
-    LDA #&07
+    LDA #WINDOW_ERROR
     JSR open_window
-    LDA #&0F
+    LDA #&0F                        ; flush the keyboard buffer
     LDX #&00
     LDY #&00
     JSR OSBYTE
 .wait
     JSR OSRDCH                      ; wait for a key, acknowledging any Escape
     BCC restart
-    LDA #&7E
+    LDA #&7E                        ; acknowledge Escape
     JSR OSBYTE
     JMP wait
 .restart
@@ -1973,7 +1979,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR OSWRCH
     JMP layout
 .layout_done
-    LDX #&13                        ; all twenty
+    LDX #20-1                       ; all twenty
     LDA #&00
 .clear_windows
     STA window_open, X
@@ -2004,7 +2010,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BMI redraw
     LDA #&00
     TAY
-    STA screen_ptr
+    STA screen_ptr                  ; A is 0 for the low byte and to clear with
     LDX #HI(graphics)
     STX screen_ptr+1
     LDX #&10                        ; 16 pages, to &4FFF
@@ -2044,7 +2050,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA #&0C
     JSR OSWRCH
 .cls_done
-    LDX #&0B                        ; "Finish Block"
+    LDX #12-1                       ; "Finish Block"
 .mark_end
     LDA finish_block, X
     STA graphics_end, X
@@ -2104,25 +2110,25 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     ORA escape_latch
     BPL loop
     LSR escape_latch
-    LDA #&7E
+    LDA #&7E                        ; acknowledge Escape
     JSR OSBYTE
     JSR close_all_windows
     LDX #LO(text_escape)
     LDY #HI(text_escape)
-    LDA #&05
+    LDA #WINDOW_QUESTION
     JSR menu                        ; Escape? No/Yes
     CMP #&02                        ; Yes
     BNE loop
     LDX #LO(text_insert_disc)
     LDY #HI(text_insert_disc)
-    LDA #&06
+    LDA #WINDOW_INPUT
     JSR open_window
-    LDA #&0F
+    LDA #&0F                        ; flush the keyboard buffer
     JSR OSBYTE
 .wait_key
     JSR OSRDCH                      ; wait for a key, acknowledging any Escape
     PHP
-    LDA #&7E
+    LDA #&7E                        ; acknowledge Escape
     JSR OSBYTE
     PLP
     BCS wait_key
@@ -2215,7 +2221,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BEQ redraw
     JSR name_offset
     LDA #&00
-    LDX #&0B
+    LDX #12-1
 .name
     STA object_names, Y
     INY
@@ -2609,7 +2615,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     PHA
     JSR name_offset.of_a
     STA aux_ptr
-    LDX #&0B
+    LDX #12-1                       ; count the name's bytes in data_ptr+1
     STX data_ptr+1
 .names
     LDY aux_ptr
@@ -2642,7 +2648,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA sprite
     CLC
     JSR redraw_grid
-    LDA #&04
+    LDA #WINDOW_PICK
     JMP close_window
 }
 
@@ -2655,7 +2661,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; abandons the command and goes back to the main loop.
 .pick_second_sprite
 {
-    LDA #&04
+    LDA #WINDOW_PICK
     JSR open_window
     LDX #KEY_RETURN                 ; the Return that chose the command
     JSR wait_key_release
@@ -2668,10 +2674,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA first_address+1
     LDA window_address+2*4          ; the picture goes in the picking window's title line, eight cells in
     CLC
-    ADC #&C0
+    ADC #LO(2*ROW + 8*CELL)
     STA screen_ptr
     LDA window_address+2*4+1
-    ADC #&02
+    ADC #HI(2*ROW + 8*CELL)
     STA screen_ptr+1
     JSR draw_sheet_sprite.at_screen_ptr
     LDA sprite_width
@@ -2698,11 +2704,11 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     PLA
     RTS
 .wrong_type
-    LDA #&07
+    LDA #WINDOW_ERROR
     LDX #LO(text_wrong_types)
     LDY #HI(text_wrong_types)
     JSR open_window
-    LDA #&0F
+    LDA #&0F                        ; flush the keyboard buffer
     LDX #&00
     JSR OSBYTE
 .wait_space
@@ -2711,16 +2717,16 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     CMP #&20                        ; until Space
     BNE wait_space
 .close
-    LDA #&07
+    LDA #WINDOW_ERROR
     JSR close_window
 .abandon
     PLA                             ; drop this sprite and our return address
     PLA
     PLA
 .abandon_menu
-    LDA #&04
+    LDA #WINDOW_PICK
     JSR close_window
-    LDA #&7E
+    LDA #&7E                        ; acknowledge Escape
     JSR OSBYTE
     JMP main_loop.command_done
 }
@@ -2733,9 +2739,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STX error_text
     STY error_text+1
 .show
-    LDA #&7E
+    LDA #&7E                        ; acknowledge Escape
     JSR OSBYTE
-    LDA #&07
+    LDA #WINDOW_ERROR
     LDX error_text
     LDY error_text+1
     JSR open_window
@@ -2781,7 +2787,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Return, Space, Escape or a function key finish.
 .cmd_def_colour
 {
-    LDA #&05
+    LDA #WINDOW_QUESTION
     LDX #LO(empty_text)
     LDY #HI(empty_text)
     JSR open_window
@@ -2803,26 +2809,26 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .read_key
     JSR OSRDCH
     BCC got_key
-    LDA #&7E
+    LDA #&7E                        ; acknowledge Escape
     JSR OSBYTE
 .done
     JMP show_palette.done
 .got_key
     LDY item
-    CMP #&E0
+    CMP #CODE_F0
     BCS done
-    CMP #&0D
+    CMP #CR
     BEQ done
     CMP #&20
     BEQ done
-    CMP #&8A
+    CMP #CODE_DOWN
     BNE not_down
     LDX item
     CPX #&03
     BEQ not_down
     INC item
 .not_down
-    CMP #&8B
+    CMP #CODE_UP
     BNE moved
     LDX item
     BEQ moved
@@ -2833,10 +2839,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR palette_highlight
     PLA
     LDX #&01                        ; right: the next physical colour
-    CMP #&89
+    CMP #CODE_RIGHT
     BEQ change
     LDX #&FF                        ; left: the one before
-    CMP #&88
+    CMP #CODE_LEFT
     BNE read_key
 .change
     STX colour_step
@@ -2918,7 +2924,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDY #HI(text_palette)
     STX data_ptr
     STY data_ptr+1
-    LDA #&05
+    LDA #WINDOW_QUESTION
     JMP print_window_text
 .done
     RTS
@@ -3019,7 +3025,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA frame_a, Y
     DEY
     BNE copy
-    LDA #&04
+    LDA #WINDOW_PICK
     LDX #LO(text_animation)
     LDY #HI(text_animation)
     JSR open_window
@@ -3060,7 +3066,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDX #KEY_SPACE
     JSR key_pressed
     BMI stop
-    LDA #&13
+    LDA #&13                        ; wait for the vsync
     JSR OSBYTE                      ; wait for the vsync
     DEC frame_delay
     BNE wait
@@ -3079,9 +3085,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     PLA                             ; drop the slot
     LDX animate_sprite
     STX sprite
-    LDA #&7E
+    LDA #&7E                        ; acknowledge Escape
     JSR OSBYTE
-    LDA #&04                        ; by_slot bit 7 clear: sheet positions again
+    LDA #WINDOW_PICK                ; by_slot bit 7 clear: sheet positions again
     STA by_slot
     JSR close_window
     JMP redraw_grid
@@ -3160,7 +3166,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA select_mode
     LDX #KEY_CTRL
     JSR key_pressed
-    BMI repeat_key.done
+    BMI repeat_key.done             ; CTRL held: return N set (repeat_key's RTS)
     LDA sprite
     STA old_sprite
     LDA #&00
@@ -3225,7 +3231,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     CPX #&00
     BEQ up_done
     LDA sprite
-    CMP #&0F
+    CMP #&0F                        ; the same two, upwards
     BNE not_f
     LDA #&0A
     BNE store_up
@@ -3263,8 +3269,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 
     ; Wait until the interval timer reaches two centiseconds.
 .wait
-    LDA #&03
-    JSR reset_timer.timer
+    LDA #&03                        ; OSWORD 3: read the interval timer
+    JSR reset_timer.osword
     LDX #&04
     LDA #&00
 .check
@@ -3329,7 +3335,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     DEX
     BPL clear
     LDA #&04
-.timer
+.osword
     LDX #LO(timer_value)
     LDY #HI(timer_value)
     JMP OSWORD
@@ -3446,12 +3452,12 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Clobbers: A, X, Y, and as open_window
 .ask_save_name
 {
-    LDA #&06
+    LDA #WINDOW_INPUT
     LDX #LO(text_save_name)
     LDY #HI(text_save_name)
     JSR open_window
     JSR input_line
-    LDA #&06
+    LDA #WINDOW_INPUT
     JSR close_window
     JSR file_info
     BCS done
@@ -3480,13 +3486,13 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA osfile_block+2, Y
     DEY
     BPL clear
-    LDA #&40                        ; load and start address &4000...
+    LDA #HI(graphics)               ; load and start address &4000...
     STA osfile_block+3
     STA osfile_block+11
     CLC
-    ADC #&0F                        ; ...end &4F34
+    ADC #HI(graphics_end - graphics) ; ...end &4F34
     STA osfile_block+15
-    LDA #&34
+    LDA #LO(graphics_end)
     STA osfile_block+14
     LDA #&00
     JSR osfile_graphics
@@ -3546,7 +3552,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR ask_load_name.found
     LDX #LO(text_exists)
     LDY #HI(text_exists)
-    LDA #&05
+    LDA #WINDOW_QUESTION
     JSR menu
     CMP #&02                        ; Replace
     BNE cancel
@@ -3570,17 +3576,17 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 {
     LDA data_ptr
     SEC
-    SBC #&00
+    SBC #LO(graphics)
     STA gbpb_block+9
     LDA data_ptr+1
-    SBC #&40
+    SBC #HI(graphics)
     STA gbpb_block+10
     BIT io_file
     BMI io
     RTS
 .io
     LDA gbpb_block+10
-    CMP #&0E                        ; slot &28, at the start of IO
+    CMP #HI(&E00)                   ; slot &28, at the start of IO
     BNE io_graphics
     LDA #&00
     STA gbpb_block+10
@@ -3588,10 +3594,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .io_graphics
     LDA gbpb_block+9
     CLC
-    ADC #&D3
+    ADC #LO(IO_GRAPHICS)
     STA gbpb_block+9
     LDA gbpb_block+10
-    ADC #&25
+    ADC #HI(IO_GRAPHICS)
     STA gbpb_block+10
     RTS
 }
@@ -3606,11 +3612,11 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDX #&00
     BIT io_file
     BMI io
-    LDX #&0E
+    LDX #HI(object_names - graphics)
 .io
     TYA
     CLC
-    ADC #&80
+    ADC #LO(IO_NAMES)               ; &E80 in a graphics set, &80 in IO: the same low byte
     BCC store
     INX
 .store
@@ -3731,14 +3737,14 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 .named
     JSR name_file_offset
-    LDA #&0C
+    LDA #12                         ; a name's length
     STA gbpb_block+5
     JSR name_offset
     TYA
     CLC
-    ADC #&80
+    ADC #LO(object_names)
     STA gbpb_block+1
-    LDA #&4E
+    LDA #HI(object_names)
     ADC #&00
     STA gbpb_block+2
     CLC
@@ -3782,12 +3788,12 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Clobbers: A, X, Y, and as open_window
 .ask_load_name
 {
-    LDA #&06
+    LDA #WINDOW_INPUT
     LDX #LO(text_load_name)
     LDY #HI(text_load_name)
     JSR open_window
     JSR input_line
-    LDA #&06
+    LDA #WINDOW_INPUT
     JSR close_window
     JSR file_info
     BCS found
@@ -3801,10 +3807,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 .disc
     LDA osfile_block+3              ; the load address's second byte
-    CMP #&40
+    CMP #HI(graphics)
     BNE not_graphics
     LDA osfile_block+11
-    CMP #&0F                        ; the length's
+    CMP #HI(graphics_end - graphics) ; the length's
     BNE not_graphics
     RTS
 }
@@ -3882,9 +3888,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Where the graphics set is in an IO file (as MISSION builds it): each piece's
 ; address in the set, its offset in the file and its length.
 .io_segments
-    EQUW graphics + &E00, &0000, &80        ; large slot &28
-    EQUW object_names, &0080, 15*12         ; the names
-    EQUW graphics, &25D3, &E00              ; slots &00-&27
+    EQUW graphics + &E00, IO_SLOT_28, &80       ; large slot &28
+    EQUW object_names, IO_NAMES, 15*12          ; the names
+    EQUW graphics, IO_GRAPHICS, &E00            ; slots &00-&27
 
 ; Read the catalogue entry of the file named in input_buffer (OSFILE 5).
 ; Out: carry set if the filing system isn't a disc one (nothing read); else
@@ -3911,9 +3917,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 {
     LDX #&00
     STX osfile_block+6              ; exec address 0: load where we say
-    LDX #&00
+    LDX #LO(graphics)
     STX osfile_block+2
-    LDX #&40
+    LDX #HI(graphics)
     STX osfile_block+3
     BIT disc_fs
     BMI call
@@ -3949,7 +3955,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA sprite
     CMP #&1F
     BEQ done
-    LDA #&06
+    LDA #WINDOW_INPUT
     LDX #LO(text_object_name)
     LDY #HI(text_object_name)
     JSR open_window
@@ -3961,9 +3967,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA object_names, Y
     INY
     INX
-    CPX #&0C
+    CPX #12
     BCC copy
-    LDA #&06
+    LDA #WINDOW_INPUT
     JSR close_window
     LDA sprite
 .show
@@ -3984,7 +3990,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Clobbers: A, X, screen_ptr, aux_ptr
 .input_line
 {
-    LDY #&0C
+    LDY #12
     STY input_limit
     LDY #&00
     LDA #&0F                        ; flush the keyboard buffer
@@ -4004,9 +4010,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .abandon
     JMP pick_second_sprite.abandon_menu
 .got_key
-    CMP #&E0
+    CMP #CODE_F0
     BCS abandon
-    CMP #&0D
+    CMP #CR
     BNE edit
     RTS
 .edit
@@ -4026,7 +4032,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .rub_out
     LDA screen_ptr
     SEC
-    SBC #&08
+    SBC #CELL
     STA screen_ptr
     BCS erase
     DEC screen_ptr+1
@@ -4465,7 +4471,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDX menu_keys, Y
     JSR key_pressed
     BPL next
-    LDA #&7D
+    LDA #&7D                        ; raise an Escape
     JSR OSBYTE
 .next
     PLA
