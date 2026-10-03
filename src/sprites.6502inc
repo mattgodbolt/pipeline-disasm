@@ -1,0 +1,37 @@
+; Sprites written as pictures. A picture is a list of strings, one per row of
+; pixels, each character a logical colour: . 1 2 3. The bytes come out the
+; way PIPELINE stores sprites (and MODE 5 lays out the screen inside a
+; character cell): a column four pixels wide at a time, top to bottom, then
+; the next column to the right.
+
+; The MODE 5 byte for four pixels: pixel n (0 leftmost) keeps its colour's
+; high bit in bit 7-n and its low bit in bit 3-n.
+FUNCTION mode5_byte(pixels)
+    p = FIND(CODES(".123"), CODES(pixels))
+= SUM((p DIV 2) * {128, 64, 32, 16} + (p MOD 2) * {8, 4, 2, 1})
+
+MACRO SPRITE_COLUMNS rows
+    FOR c = 0..LEN(rows[0]) DIV 4 - 1
+        FOR r = 0..LEN(rows) - 1
+            EQUB mode5_byte(rows[r][4*c..4*c+3])
+        NEXT
+    NEXT
+ENDMACRO
+
+; A large sprite: 16x32 pixels, &80 bytes.
+MACRO LARGE_SPRITE rows
+    ASSERT LEN(rows) = 32 AND LEN(rows[0]) = 16, "a large sprite is 16x32"
+    SPRITE_COLUMNS rows
+ENDMACRO
+
+; A small sprite: 8x16 pixels, &20 bytes.
+MACRO SMALL_SPRITE rows
+    ASSERT LEN(rows) = 16 AND LEN(rows[0]) = 8, "a small sprite is 8x16"
+    SPRITE_COLUMNS rows
+ENDMACRO
+
+; An object's name, exactly 12 characters.
+MACRO OBJECT_NAME text
+    ASSERT LEN(text) = 12, "an object name is 12 characters"
+    EQUS text
+ENDMACRO
