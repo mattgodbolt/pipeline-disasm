@@ -85,6 +85,13 @@ startup_options = &028F         ; the keyboard links, read by the OS at reset
 screen          = &3000
 SCREEN_ROW      = 512           ; bytes per character row: 64 columns of 8
 SCREEN_END      = &7000
+FUNCTION screen_address(column, row) = screen + row * SCREEN_ROW + column * 8
+; The message box, character rows 14-17 and columns 2-61; the OS's TAB(10,11)
+; and TAB(34,12) land on its first and third rows.
+MESSAGE_BOX_ROW = 14
+MESSAGE_BOX_ROWS = 4
+MESSAGE_BOX_COLUMNS = 60
+message_box     = screen_address(2, MESSAGE_BOX_ROW)
 
 SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 
@@ -3379,268 +3386,293 @@ SECTION zero_page_init, org=&0000
 .zero_page_spare
     SKIP &40 - (zero_page_spare - menu_tables)
 ENDSECTION
+; The low code: drawing the map, windows, menus and the message box. entry
+; moves it to &0880.
 .low_code_load
 SECTION low_code, org=&0880
 .low_code
 .vector_draw_window
-    JMP draw_window                 ; 0880: 4C 27 0A
+    JMP draw_window
 .vector_close_window
-    JMP close_window                ; 0883: 4C 47 0B
+    JMP close_window
 .vector_menu_select
-    JMP window_menu                 ; 0886: 4C EE 0B
+    JMP window_menu
 .vector_tick_line
-    JMP tick_line                   ; 0889: 4C A8 0B
+    JMP tick_line
 .vector_draw_map
-    JMP draw_map                    ; 088C: 4C 9B 08
+    JMP draw_map
 .vector_invert_cell
-    JMP invert_cell                 ; 088F: 4C 85 0B
+    JMP invert_cell
 .vector_plot_cell
-    JMP plot_cell                   ; 0892: 4C 94 0B
+    JMP plot_cell
 .vector_open_message_box
-    JMP open_message_box            ; 0895: 4C 9F 09
+    JMP open_message_box
 .vector_close_message_box
-    JMP close_message_box           ; 0898: 4C 6F 0B
+    JMP close_message_box
+
+; Draw the whole map, a row of cells (half a character row) at a time.
+; Clobbers: A, X, Y, the low code's zero page.
 .draw_map
-    LDY #&00                        ; 089B: A0 00
-    STY map_ptr                     ; 089D: 84 7E
-    LDA #&28                        ; 089F: A9 28
-    STA map_ptr+1                   ; 08A1: 85 7F
-    STY screen_ptr                  ; 08A3: 84 72
-    LDA #&30                        ; 08A5: A9 30
-    STA screen_ptr+1                ; 08A7: 85 73
-    LDA #&F0                        ; 08A9: A9 F0
-    STA nibble_mask                 ; 08AB: 85 7B
-    STY line_count                  ; 08AD: 84 79
-    DEY                             ; 08AF: 88
+    LDY #0
+    STY map_ptr
+    LDA #HI(level_map)
+    STA map_ptr+1
+    STY screen_ptr
+    LDA #HI(screen)
+    STA screen_ptr+1
+    LDA #&F0                    ; even rows are the top nibbles
+    STA nibble_mask
+    STY line_count              ; the row
+    DEY
 .draw_map_band
-    LDA #&08                        ; 08B0: A9 08
-    STA byte_count                  ; 08B2: 85 78
+    LDA #HI(level_end - level_map)
+    STA byte_count
 .draw_map_cell
-    INY                             ; 08B4: C8
-    LDA (map_ptr), Y                ; 08B5: B1 7E
-    BIT nibble_mask                 ; 08B7: 24 7B
-    BPL draw_map_nibble             ; 08B9: 10 04
-    LSR A                           ; 08BB: 4A
-    LSR A                           ; 08BC: 4A
-    LSR A                           ; 08BD: 4A
-    LSR A                           ; 08BE: 4A
+    INY                         ; Y is always 0 here
+    LDA (map_ptr), Y
+    BIT nibble_mask
+    BPL draw_map_nibble
+    LSR A
+    LSR A
+    LSR A
+    LSR A
 .draw_map_nibble
-    AND #&0F                        ; 08BF: 29 0F
-    ASL A                           ; 08C1: 0A
-    ASL A                           ; 08C2: 0A
-    TAX                             ; 08C3: AA
-    LDY #&03                        ; 08C4: A0 03
+    AND #&0F
+    ASL A
+    ASL A
+    TAX
+    LDY #3
 .draw_map_pattern
-    LDA tile_patterns, X            ; 08C6: BD 60 25
-    STA (screen_ptr), Y             ; 08C9: 91 72
-    INX                             ; 08CB: E8
-    DEY                             ; 08CC: 88
-    BPL draw_map_pattern            ; 08CD: 10 F7
-    LDA screen_ptr                  ; 08CF: A5 72
-    ADC #&08                        ; 08D1: 69 08
-    STA screen_ptr                  ; 08D3: 85 72
-    BCC draw_map_next               ; 08D5: 90 02
-    INC screen_ptr+1                ; 08D7: E6 73
+    LDA tile_patterns, X
+    STA (screen_ptr), Y
+    INX
+    DEY
+    BPL draw_map_pattern
+    LDA screen_ptr
+    ADC #8                      ; next column
+    STA screen_ptr
+    BCC draw_map_next
+    INC screen_ptr+1
 .draw_map_next
-    LDA map_ptr                     ; 08D9: A5 7E
-    CLC                             ; 08DB: 18
-    ADC #&20                        ; 08DC: 69 20
-    STA map_ptr                     ; 08DE: 85 7E
-    BCC draw_map_cell               ; 08E0: 90 D2
-    INC map_ptr+1                   ; 08E2: E6 7F
-    DEC byte_count                  ; 08E4: C6 78
-    BNE draw_map_cell               ; 08E6: D0 CC
-    INC line_count                  ; 08E8: E6 79
-    LDA map_ptr+1                   ; 08EA: A5 7F
-    SBC #&08                        ; 08EC: E9 08
-    STA map_ptr+1                   ; 08EE: 85 7F
-    LDA line_count                  ; 08F0: A5 79
-    AND #&FE                        ; 08F2: 29 FE
-    ADC #&2F                        ; 08F4: 69 2F
-    STA screen_ptr+1                ; 08F6: 85 73
-    LDA line_count                  ; 08F8: A5 79
-    LDX #&0F                        ; 08FA: A2 0F
-    AND #&01                        ; 08FC: 29 01
-    BNE draw_map_next_band          ; 08FE: D0 08
-    LDX #&F0                        ; 0900: A2 F0
-    INC map_ptr                     ; 0902: E6 7E
-    BNE draw_map_next_band          ; 0904: D0 02
-    INC map_ptr+1                   ; 0906: E6 7F
+    LDA map_ptr
+    CLC
+    ADC #MAP_COLUMN_BYTES       ; next x
+    STA map_ptr
+    BCC draw_map_cell
+    INC map_ptr+1
+    DEC byte_count
+    BNE draw_map_cell
+    INC line_count
+    LDA map_ptr+1
+    SBC #HI(level_end - level_map)
+    STA map_ptr+1
+    LDA line_count
+    AND #&FE                    ; two pages a character row
+    ADC #HI(screen) - 1         ; (C is set)
+    STA screen_ptr+1
+    LDA line_count
+    LDX #&0F
+    AND #1
+    BNE draw_map_next_band
+    LDX #&F0
+    INC map_ptr                 ; next byte down the columns
+    BNE draw_map_next_band
+    INC map_ptr+1
 .draw_map_next_band
-    STX nibble_mask                 ; 0908: 86 7B
-    ASL A                           ; 090A: 0A
-    ASL A                           ; 090B: 0A
-    STA screen_ptr                  ; 090C: 85 72
-    BIT line_count                  ; 090E: 24 79
-    BVC draw_map_band               ; 0910: 50 9E
-    RTS                             ; 0912: 60
+    STX nibble_mask
+    ASL A                       ; odd rows four lines down
+    ASL A
+    STA screen_ptr
+    BIT line_count
+    BVC draw_map_band           ; until 64
+    RTS
+
+; Where a cell is on the screen: a column of 8 bytes for each x, and four
+; scan lines for each y.
+; In: X, Y = the cell.
+; Out: screen_ptr.
+; Clobbers: A.
 .cell_address
-    LDA #&00                        ; 0913: A9 00
-    STA screen_ptr+1                ; 0915: 85 73
-    TXA                             ; 0917: 8A
-    ASL A                           ; 0918: 0A
-    ASL A                           ; 0919: 0A
-    ROL screen_ptr+1                ; 091A: 26 73
-    ASL A                           ; 091C: 0A
-    ROL screen_ptr+1                ; 091D: 26 73
-    STA screen_ptr                  ; 091F: 85 72
-    TYA                             ; 0921: 98
-    AND #&FE                        ; 0922: 29 FE
-    ADC #&30                        ; 0924: 69 30
-    ADC screen_ptr+1                ; 0926: 65 73
-    STA screen_ptr+1                ; 0928: 85 73
-    TYA                             ; 092A: 98
-    LSR A                           ; 092B: 4A
-    LDA #&00                        ; 092C: A9 00
-    BCC cell_address_half           ; 092E: 90 02
-    LDA #&04                        ; 0930: A9 04
+    LDA #0
+    STA screen_ptr+1
+    TXA
+    ASL A
+    ASL A
+    ROL screen_ptr+1
+    ASL A
+    ROL screen_ptr+1
+    STA screen_ptr
+    TYA
+    AND #&FE
+    ADC #HI(screen)
+    ADC screen_ptr+1
+    STA screen_ptr+1
+    TYA
+    LSR A
+    LDA #0
+    BCC cell_address_half
+    LDA #4
 .cell_address_half
-    ORA screen_ptr                  ; 0932: 05 72
-    STA screen_ptr                  ; 0934: 85 72
-    RTS                             ; 0936: 60
+    ORA screen_ptr
+    STA screen_ptr
+    RTS
+
+; Out: A = the block at map_ptr, nibble_mask's half.
+; Clobbers: Y.
 .read_map_ptr
-    LDY #&00                        ; 0937: A0 00
-    LDA (map_ptr), Y                ; 0939: B1 7E
-    BIT nibble_mask                 ; 093B: 24 7B
-    BPL read_map_ptr_nibble         ; 093D: 10 04
-    LSR A                           ; 093F: 4A
-    LSR A                           ; 0940: 4A
-    LSR A                           ; 0941: 4A
-    LSR A                           ; 0942: 4A
+    LDY #0
+    LDA (map_ptr), Y
+    BIT nibble_mask
+    BPL read_map_ptr_nibble
+    LSR A
+    LSR A
+    LSR A
+    LSR A
 .read_map_ptr_nibble
-    AND #&0F                        ; 0943: 29 0F
-    RTS                             ; 0945: 60
+    AND #&0F
+    RTS
+
+; Redraw a run of cells along a row.
+; In: A = how many; X, Y = the first.
+; Clobbers: A, X, Y, the low code's zero page.
 .draw_map_run
-    STA byte_count                  ; 0946: 85 78
-    STX saved_x                     ; 0948: 86 7A
-    LDA #&00                        ; 094A: A9 00
-    STA map_ptr+1                   ; 094C: 85 7F
-    TXA                             ; 094E: 8A
-    LDX #&05                        ; 094F: A2 05
+    STA byte_count
+    STX saved_x
+    LDA #0
+    STA map_ptr+1
+    TXA
+    LDX #5                      ; x * MAP_COLUMN_BYTES
 .draw_map_run_column
-    ASL A                           ; 0951: 0A
-    ROL map_ptr+1                   ; 0952: 26 7F
-    DEX                             ; 0954: CA
-    BNE draw_map_run_column         ; 0955: D0 FA
-    STA map_ptr                     ; 0957: 85 7E
-    TYA                             ; 0959: 98
-    LSR A                           ; 095A: 4A
-    LDX #&F0                        ; 095B: A2 F0
-    BCC draw_map_run_mask           ; 095D: 90 02
-    LDX #&0F                        ; 095F: A2 0F
+    ASL A
+    ROL map_ptr+1
+    DEX
+    BNE draw_map_run_column
+    STA map_ptr
+    TYA
+    LSR A
+    LDX #&F0
+    BCC draw_map_run_mask
+    LDX #&0F
 .draw_map_run_mask
-    STX nibble_mask                 ; 0961: 86 7B
-    ORA map_ptr                     ; 0963: 05 7E
-    CLC                             ; 0965: 18
-    STA map_ptr                     ; 0966: 85 7E
-    LDA map_ptr+1                   ; 0968: A5 7F
-    ADC #&28                        ; 096A: 69 28
-    STA map_ptr+1                   ; 096C: 85 7F
-    LDX saved_x                     ; 096E: A6 7A
-    JSR cell_address                ; 0970: 20 13 09
+    STX nibble_mask
+    ORA map_ptr
+    CLC
+    STA map_ptr
+    LDA map_ptr+1
+    ADC #HI(level_map)
+    STA map_ptr+1
+    LDX saved_x
+    JSR cell_address
 .draw_map_run_loop
-    JSR read_map_ptr                ; 0973: 20 37 09
-    ASL A                           ; 0976: 0A
-    ASL A                           ; 0977: 0A
-    TAX                             ; 0978: AA
-    LDY #&03                        ; 0979: A0 03
+    JSR read_map_ptr
+    ASL A
+    ASL A
+    TAX
+    LDY #3
 .draw_map_run_pattern
-    LDA tile_patterns, X            ; 097B: BD 60 25
-    INX                             ; 097E: E8
-    STA (screen_ptr), Y             ; 097F: 91 72
-    DEY                             ; 0981: 88
-    BPL draw_map_run_pattern        ; 0982: 10 F7
-    LDA screen_ptr                  ; 0984: A5 72
-    CLC                             ; 0986: 18
-    ADC #&08                        ; 0987: 69 08
-    STA screen_ptr                  ; 0989: 85 72
-    BCC draw_map_run_next           ; 098B: 90 02
-    INC screen_ptr+1                ; 098D: E6 73
+    LDA tile_patterns, X
+    INX
+    STA (screen_ptr), Y
+    DEY
+    BPL draw_map_run_pattern
+    LDA screen_ptr
+    CLC
+    ADC #8
+    STA screen_ptr
+    BCC draw_map_run_next
+    INC screen_ptr+1
 .draw_map_run_next
-    LDA map_ptr                     ; 098F: A5 7E
-    CLC                             ; 0991: 18
-    ADC #&20                        ; 0992: 69 20
-    STA map_ptr                     ; 0994: 85 7E
-    BCC draw_map_run_count          ; 0996: 90 02
-    INC map_ptr+1                   ; 0998: E6 7F
+    LDA map_ptr
+    CLC
+    ADC #MAP_COLUMN_BYTES
+    STA map_ptr
+    BCC draw_map_run_count
+    INC map_ptr+1
 .draw_map_run_count
-    DEC byte_count                  ; 099A: C6 78
-    BNE draw_map_run_loop           ; 099C: D0 D5
-    RTS                             ; 099E: 60
+    DEC byte_count
+    BNE draw_map_run_loop
+    RTS
+
+; The message box: character rows 14-17, columns 2-61, in colour 1 with a
+; colour 3 line round it; the OS prints into it.
+; Clobbers: A, X, Y, screen_ptr, glyph_ptr.
 .open_message_box
-    LDA #&10                        ; 099F: A9 10
-    STA screen_ptr                  ; 09A1: 85 72
-    LDA #&4C                        ; 09A3: A9 4C
-    STA screen_ptr+1                ; 09A5: 85 73
-    LDX #&04                        ; 09A7: A2 04
+    LDA #LO(message_box)
+    STA screen_ptr
+    LDA #HI(message_box)
+    STA screen_ptr+1
+    LDX #MESSAGE_BOX_ROWS
 .open_message_box_fill
-    LDY #&00                        ; 09A9: A0 00
-    LDA #&0F                        ; 09AB: A9 0F
+    LDY #0
+    LDA #&0F                    ; four pixels of colour 1
 .open_message_box_page
-    STA (screen_ptr), Y             ; 09AD: 91 72
-    DEY                             ; 09AF: 88
-    BNE open_message_box_page       ; 09B0: D0 FB
-    INC screen_ptr+1                ; 09B2: E6 73
-    LDY #&DF                        ; 09B4: A0 DF
+    STA (screen_ptr), Y
+    DEY
+    BNE open_message_box_page
+    INC screen_ptr+1
+    LDY #MESSAGE_BOX_COLUMNS * 8 - 256 - 1
 .open_message_box_rest
-    STA (screen_ptr), Y             ; 09B6: 91 72
-    DEY                             ; 09B8: 88
-    CPY #&FF                        ; 09B9: C0 FF
-    BNE open_message_box_rest       ; 09BB: D0 F9
-    INC screen_ptr+1                ; 09BD: E6 73
-    DEX                             ; 09BF: CA
-    BNE open_message_box_fill       ; 09C0: D0 E7
-    LDX #&F0                        ; 09C2: A2 F0
+    STA (screen_ptr), Y
+    DEY
+    CPY #&FF
+    BNE open_message_box_rest
+    INC screen_ptr+1
+    DEX
+    BNE open_message_box_fill
+    ; Lines along the bottom and the top, each in two halves.
+    LDX #30 * 8
 .open_message_box_edges
-    LDA #&FF                        ; 09C4: A9 FF
-    STA &5410, X                    ; 09C6: 9D 10 54
-    STA &54F8, X                    ; 09C9: 9D F8 54
-    STA &4A17, X                    ; 09CC: 9D 17 4A
-    STA &4AFF, X                    ; 09CF: 9D FF 4A
-    TXA                             ; 09D2: 8A
-    SEC                             ; 09D3: 38
-    SBC #&08                        ; 09D4: E9 08
-    TAX                             ; 09D6: AA
-    BCS open_message_box_edges      ; 09D7: B0 EB
-    LDA #&08                        ; 09D9: A9 08
-    STA screen_ptr                  ; 09DB: 85 72
-    LDX #&52                        ; 09DD: A2 52
-    STX screen_ptr+1                ; 09DF: 86 73
-    INX                             ; 09E1: E8
-    STX glyph_ptr+1                 ; 09E2: 86 75
-    LDA #&F0                        ; 09E4: A9 F0
-    STA glyph_ptr                   ; 09E6: 85 74
-    LDX #&04                        ; 09E8: A2 04
+    LDA #&FF                    ; four pixels of colour 3
+    STA screen_address(2, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS), X
+    STA screen_address(31, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS), X
+    STA screen_address(2, MESSAGE_BOX_ROW - 1) + 7, X
+    STA screen_address(31, MESSAGE_BOX_ROW - 1) + 7, X
+    TXA
+    SEC
+    SBC #8
+    TAX
+    BCS open_message_box_edges
+    ; And the sides, from the bottom row up.
+    LDA #LO(screen_address(1, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS - 1))
+    STA screen_ptr
+    LDX #HI(screen_address(1, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS - 1))
+    STX screen_ptr+1
+    INX
+    STX glyph_ptr+1
+    LDA #LO(screen_address(62, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS - 1))
+    STA glyph_ptr
+    LDX #MESSAGE_BOX_ROWS
 .open_message_box_sides
-    LDY #&07                        ; 09EA: A0 07
+    LDY #7
 .open_message_box_side
-    LDA #&11                        ; 09EC: A9 11
-    ORA (screen_ptr), Y             ; 09EE: 11 72
-    STA (screen_ptr), Y             ; 09F0: 91 72
-    LDA #&88                        ; 09F2: A9 88
-    ORA (glyph_ptr), Y              ; 09F4: 11 74
-    STA (glyph_ptr), Y              ; 09F6: 91 74
-    DEY                             ; 09F8: 88
-    BPL open_message_box_side       ; 09F9: 10 F1
-    DEC screen_ptr+1                ; 09FB: C6 73
-    DEC screen_ptr+1                ; 09FD: C6 73
-    DEC glyph_ptr+1                 ; 09FF: C6 75
-    DEC glyph_ptr+1                 ; 0A01: C6 75
-    DEX                             ; 0A03: CA
-    BNE open_message_box_sides      ; 0A04: D0 E4
-    LDA #&11                        ; 0A06: A9 11
-    ORA &4A0F                       ; 0A08: 0D 0F 4A
-    STA &4A0F                       ; 0A0B: 8D 0F 4A
-    LDA #&11                        ; 0A0E: A9 11
-    ORA &5408                       ; 0A10: 0D 08 54
-    STA &5408                       ; 0A13: 8D 08 54
-    LDA #&88                        ; 0A16: A9 88
-    ORA &4BF7                       ; 0A18: 0D F7 4B
-    STA &4BF7                       ; 0A1B: 8D F7 4B
-    LDA #&88                        ; 0A1E: A9 88
-    ORA &55F0                       ; 0A20: 0D F0 55
-    STA &55F0                       ; 0A23: 8D F0 55
-    RTS                             ; 0A26: 60
+    LDA #&11                    ; the rightmost pixel of the column left of
+    ORA (screen_ptr), Y         ; the box, in colour 3
+    STA (screen_ptr), Y
+    LDA #&88                    ; the leftmost of the column right of it
+    ORA (glyph_ptr), Y
+    STA (glyph_ptr), Y
+    DEY
+    BPL open_message_box_side
+    DEC screen_ptr+1
+    DEC screen_ptr+1
+    DEC glyph_ptr+1
+    DEC glyph_ptr+1
+    DEX
+    BNE open_message_box_sides
+    ; The corners.
+    LDA #&11
+    ORA screen_address(1, MESSAGE_BOX_ROW - 1) + 7
+    STA screen_address(1, MESSAGE_BOX_ROW - 1) + 7
+    LDA #&11
+    ORA screen_address(1, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS)
+    STA screen_address(1, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS)
+    LDA #&88
+    ORA screen_address(62, MESSAGE_BOX_ROW - 1) + 7
+    STA screen_address(62, MESSAGE_BOX_ROW - 1) + 7
+    LDA #&88
+    ORA screen_address(62, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS)
+    STA screen_address(62, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS)
+    RTS
 .draw_window
     STX window_ptr                  ; 0A27: 86 76
     STY window_ptr+1                ; 0A29: 84 77
