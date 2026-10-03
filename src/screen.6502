@@ -1,4 +1,28 @@
-; $.SCREEN: &2800 bytes at sector &03E.
-SECTION screen, filename="SCREEN", org=&5800, load=&5800, exec=&5800
+; $.SCREEN: &2800 bytes at sector &03E. The loading picture - a space
+; station, planets and the "pipeline" logo over the Superior Software and
+; Acornsoft logos - as a MODE 5 screen: the whole of screen memory from &5800
+; to &7FFF, saved as it stood (docs/img/loading-screen.png, or render it with
+; `tools/beebscreen.py 5 data/screen.bin OUT.png --palette 0,1,3,5`).
+;
+; MENU *LOADs it straight into screen memory first thing (line 250: MODE 5,
+; cursor off, VDU 19,3,5 to make colour 3 magenta), so the palette is black,
+; red, yellow, magenta; it stays up for ten seconds or until a key
+; (INKEY(1000)). *LOAD runs nothing, so the catalogued exec address is
+; unused.
+;
+; Layout is the MOS's for MODE 5: 32 character rows of 320 bytes, each row
+; 40 cells of 8 bytes, one byte per pixel line of the cell; a byte is 4
+; pixels, pixel p's colour taking bit 7-p as its high bit and bit 3-p as its
+; low. The picture fills the top 27 character rows; the last five are blank.
+
+SCREEN_MODE5 = &5800
+SCREEN_END = &8000
+MODE5_ROW_BYTES = 320
+
+SECTION screen, filename="SCREEN", org=SCREEN_MODE5, load=&5800, exec=&5800
+.loading_picture
     INCBIN "../data/screen.bin"
+    ASSERT P% = SCREEN_MODE5 + 27 * MODE5_ROW_BYTES
+.blank_rows
+    SKIPTO SCREEN_END
 ENDSECTION
