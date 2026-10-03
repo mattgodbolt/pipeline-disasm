@@ -4396,7 +4396,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDX #KEY_CTRL
     JSR key_pressed
     BPL menus
-    LDA #&17
+    LDA #24-1                       ; from the last of shortcut_keys
     STA temp
 .shortcut
     LDY temp
@@ -4414,7 +4414,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA temp
     RTS
 .menus
-    LDA #&03
+    LDA #&03                        ; from the last menu, the credits
 .menu_key
     PHA
     TAY
