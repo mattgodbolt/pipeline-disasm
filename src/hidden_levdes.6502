@@ -1,436 +1,556 @@
+; H.LEVDES: the PIPELINE Level Designer, by Ian Holmes and William Reeve.
+;
+; Hidden in sectors &16D-&18B; the LEVDES stub reads it to &1100 and jumps
+; to entry (&2E21). Entry moves three pieces of the file to where they run
+; (initial zero page, the low code at &0880 and the font at &0400), loads
+; WDATA (windows and messages) and LDATA (the title screen), and waits for
+; Space. After that &25A1-&2FFF, where those pieces and entry itself were, is
+; the level being edited (src/level.6502inc).
+;
+; The screen is MODE 1 narrowed to 64 columns, so each of the 64x64 map cells
+; is one byte of four pixels by four scan lines and the map fills it. Menus
+; are windows drawn over the map with the program's own font and then
+; repaired from the map when closed; prompts go in a message box drawn the
+; same way and printed into with the OS's text output.
+;
+; Keys: Z X : / move the cursor, Return plots the current block, Delete
+; blanks the cell, 0-9 A-F choose a block, S runs the simulator, f0-f4 are the
+; commands (block menu, Options, Files, Help, About). Leaving goes back to
+; the menu by *RUNning /MRUN.
+
 INCLUDE "os.6502inc"
 INCLUDE "level.6502inc"
-wdata = &7000
-input_buffer = &40
-cursor_x = &50
-cursor_y = &51
-ptr = &52
-work = &54
-cursor_shown = &56
-key_pressed = &57
-keys_acted_on = &58
-brush = &59
-plot_enabled = &5A
-record = &5B
-puzzle = &5C
-kept_window = &5D
-choices = &5E
-arg = &62
-number = &63
-effect_window = &64
-effect_table = &65
-unused_66 = &66
-loading = &67
-simulate_window = &68
-direction = &69
-simulating = &6A
-in_main_loop = &6B
-menu_window = &6C
-screen_ptr = &72
-glyph_ptr = &74
-window_ptr = &76
-byte_count = &78
-line_count = &79
-saved_x = &7A
-nibble_mask = &7B
-run_length = &7C
-map_ptr = &7E
-restore_x = &80
-restore_row = &81
-menu_item = &82
-menu_shown_item = &83
-window_x = &84
-window_y = &85
-window_width = &86
-window_height = &87
-window_flags = &88
+INCLUDE "wdata.6502inc"
+
+FUNCTION asc(s) = CODES(s)[0]  ; a character's code, as BASIC's ASC
+
+; Zero page. The low code's variables are its own; the rest is the editor's.
+input_buffer    = &40           ; OSWORD 0 line input, up to 16 characters
+cursor_x        = &50           ; the map cursor, 0-63 across
+cursor_y        = &51           ; and down
+ptr             = &52           ; a pointer, or two bytes of scratch
+work            = &54           ; another; also a saved position or a count
+cursor_shown    = &56           ; 1 while the cursor's cell is inverted
+key_pressed     = &57           ; what get_key read
+keys_acted_on   = &58           ; how many held keys get_key acted on this pass
+brush           = &59           ; the block Return plots
+plot_enabled    = &5A           ; nonzero lets Return and Delete plot
+record          = &5B           ; the object, monster or puzzle being edited,
+                                ; times 4 (the size of its records)
+puzzle          = &5C           ; the puzzle being edited
+kept_window     = &5D           ; a window to keep on screen while the cursor
+                                ; moves, or negative
+choices         = &5E           ; four two-bit fields, unpacked (priorities,
+                                ; sprites)
+arg             = &62           ; a message number, offset or field in hand
+number          = &63           ; the number being asked for
+effect_window   = &64           ; the effect editor's window
+effect_table    = &65           ; and its handler table
+unused_66       = &66           ; set to &C0 at startup, never read
+loading         = &67           ; nonzero while a level loads, so an error
+                                ; clears what was half loaded
+simulate_window = &68           ; W_SIMULATE+1 while simulating, else 0
+direction       = &69           ; the simulator's direction of travel (0 left,
+                                ; 1 up, 2 right, 3 down)
+simulating      = &6A           ; nonzero while the simulator is moving
+in_main_loop    = &6B           ; nonzero while the main loop waits for a key,
+                                ; when function keys are commands, not aborts
+menu_window     = &6C           ; choose_from_window's window, less 1
+; The low code's.
+screen_ptr      = &72
+glyph_ptr       = &74           ; also a second screen pointer
+window_ptr      = &76           ; into a window definition or message
+byte_count      = &78
+line_count      = &79
+saved_x         = &7A
+nibble_mask     = &7B           ; &F0 or &0F: which half of a map byte
+run_length      = &7C
+map_ptr         = &7E
+restore_x       = &80           ; close_window's area
+restore_row     = &81
+menu_item       = &82           ; window_menu's choice
+menu_shown_item = &83           ; and the item it has highlighted
+window_x        = &84           ; the window being drawn, in glyph columns
+window_y        = &85           ; and half rows
+window_width    = &86
+window_height   = &87           ; also its number of menu items
+window_flags    = &88           ; its y byte with bit 7
 menu_first_item = &89
-error_ptr = &FD
-startup_options = &028F
+
+error_ptr       = &FD           ; the OS's pointer to the last error
+startup_options = &028F         ; the keyboard links, read by the OS at reset
+
+screen          = &3000
+SCREEN_ROW      = 512           ; bytes per character row: 64 columns of 8
+SCREEN_END      = &7000
+
 SECTION hidden_levdes, filename="H.LEVDES", org=&1100
+
+; Entry points at fixed addresses, with two pointers the startup code uses.
 .vector_crtc_write
-    JMP crtc_write                  ; 1100: 4C 8D 13
+    JMP crtc_write
 .vector_cursor_off
-    JMP cursor_off                  ; 1103: 4C 6C 13
+    JMP cursor_off
 .rdchv_filter_operand_address
-    EQUB &4B                        ; 1106
-.D1107
-    EQUB &12                        ; 1107
+    EQUW rdchv_filter+1         ; where entry saves the OS's RDCHV
 .brk_handler_address
-    EQUB &96                        ; 1108
-.D1109
-    EQUB &11                        ; 1109
+    EQUW brk_handler
 .vector_main
-    JMP main                        ; 110A: 4C D0 15
+    JMP main
 .vector_set_palette
-    JMP set_palette_entry           ; 110D: 4C B3 15
+    JMP set_palette_entry
+
+; Clear the screen, &3000-&6FFF.
+; Clobbers: A, X, Y, ptr.
 .clear_screen
-    LDA #&30                        ; 1110: A9 30
-    STA ptr+1                       ; 1112: 85 53
-    LDA #&00                        ; 1114: A9 00
-    TAY                             ; 1116: A8
-    STA ptr                         ; 1117: 85 52
-    LDX #&40                        ; 1119: A2 40
+    LDA #HI(screen)
+    STA ptr+1
+    LDA #0
+    TAY
+    STA ptr
+    LDX #HI(SCREEN_END - screen)
 .clear_screen_loop
-    STA (ptr), Y                    ; 111B: 91 52
-    INY                             ; 111D: C8
-    BNE clear_screen_loop           ; 111E: D0 FB
-    INC ptr+1                       ; 1120: E6 53
-    DEX                             ; 1122: CA
-    BNE clear_screen_loop           ; 1123: D0 F6
-    RTS                             ; 1125: 60
+    STA (ptr), Y
+    INY
+    BNE clear_screen_loop
+    INC ptr+1
+    DEX
+    BNE clear_screen_loop
+    RTS
+
+; Open a window, let the user pick from its menu, close it.
+; choose_from_window starts on the first item; choose_from_window_at on item
+; Y. Window W_SELECT_BLOCK is special: Y and the result are blocks, not menu
+; items, translated through tile_menu_map.
+; In: A = window number, Y = first item.
+; Out: A = the item (or block) chosen.
+; Clobbers: X, Y, ptr; Escape restarts the main loop.
 .choose_from_window
-    LDY #&00                        ; 1126: A0 00
+    LDY #0
 .choose_from_window_at
-    TAX                             ; 1128: AA
-    DEX                             ; 1129: CA
-    STX menu_window                 ; 112A: 86 6C
-    BNE choose_show_window          ; 112C: D0 0A
-    LDA tile_menu_map, Y            ; 112E: B9 BF 21
-    LSR A                           ; 1131: 4A
-    LSR A                           ; 1132: 4A
-    LSR A                           ; 1133: 4A
-    LSR A                           ; 1134: 4A
-    TAY                             ; 1135: A8
-    INX                             ; 1136: E8
-    TXA                             ; 1137: 8A
+    TAX
+    DEX
+    STX menu_window
+    BNE choose_show_window
+    LDA tile_menu_map, Y        ; the block's position in the menu
+    LSR A
+    LSR A
+    LSR A
+    LSR A
+    TAY
+    INX
+    TXA
 .choose_show_window
-    STY ptr                         ; 1138: 84 52
-    JSR open_window                 ; 113A: 20 A8 14
-    LDA ptr                         ; 113D: A5 52
-    JSR menu_select                 ; 113F: 20 52 11
-    PHA                             ; 1142: 48
-    JSR vector_close_window         ; 1143: 20 83 08
-    PLA                             ; 1146: 68
-    LDX menu_window                 ; 1147: A6 6C
-    BNE choose_done                 ; 1149: D0 06
-    TAY                             ; 114B: A8
-    LDA tile_menu_map, Y            ; 114C: B9 BF 21
-    AND #&0F                        ; 114F: 29 0F
+    STY ptr
+    JSR open_window
+    LDA ptr
+    JSR menu_select
+    PHA
+    JSR vector_close_window
+    PLA
+    LDX menu_window
+    BNE choose_done
+    TAY
+    LDA tile_menu_map, Y        ; the menu item's block
+    AND #&0F
 .choose_done
-    RTS                             ; 1151: 60
+    RTS
+
+; Run the menu of the window just opened.
+; In: A = the item to start on.
+; Out: A = the item chosen.
+; Clobbers: X, Y. Escape (the OS's escape condition) is acknowledged, the
+; screen repaired and the main loop restarted.
 .menu_select
-    JSR vector_menu_select          ; 1152: 20 86 08
-    BCC choose_done                 ; 1155: 90 FA
+    JSR vector_menu_select
+    BCC choose_done
 .menu_select_escaped
-    LDA #&7E                        ; 1157: A9 7E
-    JSR OSBYTE                      ; 1159: 20 F4 FF
-    TXA                             ; 115C: 8A
-    BEQ menu_select_escaped         ; 115D: F0 F8
-    JSR escape_reset                ; 115F: 20 65 11
-    JMP restart_main_loop           ; 1162: 4C 02 12
+    LDA #&7E                    ; acknowledge Escape
+    JSR OSBYTE
+    TXA
+    BEQ menu_select_escaped
+    JSR escape_reset
+    JMP restart_main_loop
+
+; After Escape: cursor off, any key allowed, the map redrawn. With Shift
+; held as well, offer to leave the designer.
+; Clobbers: A, X, Y.
 .escape_reset
-    JSR cursor_off                  ; 1165: 20 6C 13
-    JSR allow_any_key               ; 1168: 20 81 13
-    JSR vector_draw_map             ; 116B: 20 8C 08
-    LDX #&FF                        ; 116E: A2 FF
-    JSR test_key                    ; 1170: 20 AE 14
-    BNE choose_done                 ; 1173: D0 DC
+    JSR cursor_off
+    JSR allow_any_key
+    JSR vector_draw_map
+    LDX #&FF                    ; INKEY -1: Shift
+    JSR test_key
+    BNE choose_done
 .confirm_and_exit
-    JSR confirm                     ; 1175: 20 23 13
+    JSR confirm                 ; returns to our caller on N
+; Files menu, Exit: back to the PIPELINE menu by way of /MRUN, once the
+; PIPELINE disc is back in.
 .files_exit
-    JSR vector_open_message_box     ; 1178: 20 95 08
-    LDA #&4B                        ; 117B: A9 4B
-    JSR vector_print_line1          ; 117D: 20 56 23
-    LDA #&0A                        ; 1180: A9 0A
-    JSR vector_print_message        ; 1182: 20 59 23
-    JSR wait_for_key                ; 1185: 20 34 12
-    LDX #&90                        ; 1188: A2 90
-    LDY #&11                        ; 118A: A0 11
-    JSR OSCLI                       ; 118C: 20 F7 FF
-    RTS                             ; 118F: 60
+    JSR vector_open_message_box
+    LDA #M_INSERT_DISC
+    JSR vector_print_line1
+    LDA #M_PRESS_ANY_KEY
+    JSR vector_print_message
+    JSR wait_for_key
+    LDX #LO(mrun_command)
+    LDY #HI(mrun_command)
+    JSR OSCLI
+    RTS
 .mrun_command
-    EQUS "/MRUN"                    ; 1190
-    EQUB &0D                        ; 1195
+    EQUS "/MRUN", 13
+
+; BRKV: report an error in the message box, wait for a key and go back to
+; the main loop. A level half loaded is cleared rather than kept. Typing "i"
+; with the keyboard links set to &CF leaves for BASIC instead, with the error
+; pointer in ptr: the authors' way out.
 .brk_handler
-    LDX #&FF                        ; 1196: A2 FF
-    TXS                             ; 1198: 9A
-    STX in_main_loop                ; 1199: 86 6B
-    LDA loading                     ; 119B: A5 67
-    BEQ brk_handler_report          ; 119D: F0 05
-    JSR new_level                   ; 119F: 20 68 23
-    DEC loading                     ; 11A2: C6 67
+    LDX #&FF
+    TXS
+    STX in_main_loop
+    LDA loading
+    BEQ brk_handler_report
+    JSR new_level
+    DEC loading
 .brk_handler_report
-    LDA error_ptr                   ; 11A4: A5 FD
-    STA work                        ; 11A6: 85 54
-    LDA error_ptr+1                 ; 11A8: A5 FE
-    STA work+1                      ; 11AA: 85 55
-    JSR hide_cursor                 ; 11AC: 20 83 12
-    JSR cursor_off                  ; 11AF: 20 6C 13
-    LDA rdchv_filter+1              ; 11B2: AD 4B 12
-    STA RDCHV                       ; 11B5: 8D 10 02
-    LDA rdchv_filter+2              ; 11B8: AD 4C 12
-    STA RDCHV+1                     ; 11BB: 8D 11 02
-    JSR level_file_done             ; 11BE: 20 04 1E
-    JSR vector_open_message_box     ; 11C1: 20 95 08
-    LDY #&00                        ; 11C4: A0 00
-    LDA (work), Y                   ; 11C6: B1 54
-    CMP #&1B                        ; 11C8: C9 1B
-    BNE brk_handler_numbered        ; 11CA: D0 0D
-    LDA #&0A                        ; 11CC: A9 0A
-    JSR vector_print_message        ; 11CE: 20 59 23
-    LDA #&4C                        ; 11D1: A9 4C
-    JSR vector_print_line1          ; 11D3: 20 56 23
-    JMP brk_handler_message         ; 11D6: 4C ED 11
+    LDA error_ptr
+    STA work
+    LDA error_ptr+1
+    STA work+1
+    JSR hide_cursor
+    JSR cursor_off
+    LDA rdchv_filter+1          ; put the OS's RDCHV back
+    STA RDCHV
+    LDA rdchv_filter+2
+    STA RDCHV+1
+    JSR level_file_done
+    JSR vector_open_message_box
+    LDY #0
+    LDA (work), Y               ; the error number
+    CMP #&1B                    ; Escape: just the message
+    BNE brk_handler_numbered
+    LDA #M_PRESS_ANY_KEY
+    JSR vector_print_message
+    LDA #M_NOTHING
+    JSR vector_print_line1
+    JMP brk_handler_message
 .brk_handler_numbered
-    PHA                             ; 11D9: 48
-    LDA #&09                        ; 11DA: A9 09
-    JSR vector_print_line1          ; 11DC: 20 56 23
-    LDA #&44                        ; 11DF: A9 44
-    JSR vector_print_message        ; 11E1: 20 59 23
-    PLA                             ; 11E4: 68
-    JSR print_decimal               ; 11E5: 20 4C 18
-    LDA #&45                        ; 11E8: A9 45
-    JSR vector_print_message        ; 11EA: 20 59 23
+    PHA
+    LDA #M_ERROR                ; "Error <n> has occurred !"
+    JSR vector_print_line1
+    LDA #M_ERROR_NUMBER_AT
+    JSR vector_print_message
+    PLA
+    JSR print_decimal
+    LDA #M_ERROR_TEXT_AT
+    JSR vector_print_message
 .brk_handler_message
-    LDY #&01                        ; 11ED: A0 01
+    LDY #1
 .brk_handler_message_loop
-    LDA (work), Y                   ; 11EF: B1 54
-    BEQ brk_handler_wait            ; 11F1: F0 06
-    JSR OSWRCH                      ; 11F3: 20 EE FF
-    INY                             ; 11F6: C8
-    BNE brk_handler_message_loop    ; 11F7: D0 F6
+    LDA (work), Y
+    BEQ brk_handler_wait
+    JSR OSWRCH
+    INY
+    BNE brk_handler_message_loop
 .brk_handler_wait
-    JSR wait_for_key                ; 11F9: 20 34 12
-    INC in_main_loop                ; 11FC: E6 6B
-    CMP #&69                        ; 11FE: C9 69
-    BEQ debug_exit_check            ; 1200: F0 06
+    JSR wait_for_key
+    INC in_main_loop
+    CMP #asc("i")
+    BEQ debug_exit_check
 .restart_main_loop
-    JSR vector_draw_map             ; 1202: 20 8C 08
-    JMP main_reset_input            ; 1205: 4C D3 15
+    JSR vector_draw_map
+    JMP main_reset_input
 .debug_exit_check
-    LDA startup_options             ; 1208: AD 8F 02
-    CMP #&CF                        ; 120B: C9 CF
-    BNE restart_main_loop           ; 120D: D0 F3
-    JSR hide_cursor                 ; 120F: 20 83 12
-    JSR cursor_on                   ; 1212: 20 75 13
-    JSR cursor_on                   ; 1215: 20 75 13
-    LDA #&0C                        ; 1218: A9 0C
-    LDX #&02                        ; 121A: A2 02
-    JSR OSBYTE                      ; 121C: 20 F4 FF
-    LDA error_ptr                   ; 121F: A5 FD
-    STA ptr                         ; 1221: 85 52
-    LDA error_ptr+1                 ; 1223: A5 FE
-    STA ptr+1                       ; 1225: 85 53
-    LDX #&2E                        ; 1227: A2 2E
-    LDY #&12                        ; 1229: A0 12
-    JSR OSCLI                       ; 122B: 20 F7 FF
+    LDA startup_options
+    CMP #&CF
+    BNE restart_main_loop
+    JSR hide_cursor
+    JSR cursor_on
+    JSR cursor_on
+    LDA #&0C                    ; *FX12,2: auto-repeat period
+    LDX #2
+    JSR OSBYTE
+    LDA error_ptr
+    STA ptr
+    LDA error_ptr+1
+    STA ptr+1
+    LDX #LO(basic_command)
+    LDY #HI(basic_command)
+    JSR OSCLI
 .basic_command
-    EQUS "BASIC"                    ; 122E
-    EQUB &0D                        ; 1233
+    EQUS "BASIC", 13
+; Wait for a key, ignoring any typed ahead.
+; Out: A = the key.
+; Clobbers: X, Y.
 .wait_for_key
-    JSR flush_input                 ; 1234: 20 42 12
+    JSR flush_input
 .wait_for_key_loop
-    LDA #&7E                        ; 1237: A9 7E
-    JSR OSBYTE                      ; 1239: 20 F4 FF
-    JSR OSRDCH                      ; 123C: 20 E0 FF
-    BCS wait_for_key_loop           ; 123F: B0 F6
-    RTS                             ; 1241: 60
+    LDA #&7E                    ; acknowledge any Escape
+    JSR OSBYTE
+    JSR OSRDCH
+    BCS wait_for_key_loop
+    RTS
+
+; Clobbers: A, X, Y.
 .flush_input
-    LDA #&0F                        ; 1242: A9 0F
-    LDX #&01                        ; 1244: A2 01
-    JMP OSBYTE                      ; 1246: 4C F4 FF
+    LDA #&0F                    ; *FX15,1: flush the input buffer
+    LDX #1
+    JMP OSBYTE
+
+; RDCHV while input_line runs: OSWORD 0 sees only Return, Delete and keys
+; from input_min_char to input_max_char, and a function key abandons the
+; input for its command. entry saves the OS's RDCHV in the JSR here.
 .rdchv_filter_retry
-    PLP                             ; 1249: 28
+    PLP
 .rdchv_filter
-    JSR &FFA6                       ; 124A: 20 A6 FF
-    BCS do_nothing                  ; 124D: B0 19
-    PHP                             ; 124F: 08
-    JSR check_function_key          ; 1250: 20 69 12
-    CMP #&0D                        ; 1253: C9 0D
-    BEQ rdchv_filter_accept         ; 1255: F0 10
-    CMP #&7F                        ; 1257: C9 7F
-    BEQ rdchv_filter_accept         ; 1259: F0 0C
-    CMP input_min_char              ; 125B: CD B4 21
-    BCC rdchv_filter_retry          ; 125E: 90 E9
-    CMP input_max_char              ; 1260: CD B5 21
-    BEQ rdchv_filter_accept         ; 1263: F0 02
-    BCS rdchv_filter_retry          ; 1265: B0 E2
+    JSR &FFA6                   ; the OS's RDCHV, filled in at startup
+    BCS do_nothing
+    PHP
+    JSR check_function_key
+    CMP #13
+    BEQ rdchv_filter_accept
+    CMP #&7F
+    BEQ rdchv_filter_accept
+    CMP input_min_char
+    BCC rdchv_filter_retry
+    CMP input_max_char
+    BEQ rdchv_filter_accept
+    BCS rdchv_filter_retry
 .rdchv_filter_accept
-    PLP                             ; 1267: 28
-.do_nothing
-    RTS                             ; 1268: 60
+    PLP
+.do_nothing                     ; Options menu, OK
+    RTS
+
+; A function key (*FX225,128 makes f0-f5 &80-&85) abandons whatever is going
+; on and runs its command from the main loop.
+; In: A = a key.
+; Out: A preserved, unless it doesn't return.
 .check_function_key
-    PHA                             ; 1269: 48
-    EOR #&80                        ; 126A: 49 80
-    CMP #&06                        ; 126C: C9 06
-    BCC abort_to_command            ; 126E: 90 02
-    PLA                             ; 1270: 68
-    RTS                             ; 1271: 60
+    PHA
+    EOR #&80
+    CMP #6
+    BCC abort_to_command
+    PLA
+    RTS
 .abort_to_command
-    LDX #&FF                        ; 1272: A2 FF
-    TXS                             ; 1274: 9A
-    PHA                             ; 1275: 48
-    JSR vector_draw_map             ; 1276: 20 8C 08
-    JSR allow_any_key               ; 1279: 20 81 13
-    JSR cursor_off                  ; 127C: 20 6C 13
-    PLA                             ; 127F: 68
-    JMP main_dispatch               ; 1280: 4C F3 15
+    LDX #&FF
+    TXS
+    PHA
+    JSR vector_draw_map
+    JSR allow_any_key
+    JSR cursor_off
+    PLA
+    JMP main_dispatch
+
+; The map cursor is the cursor's cell inverted; hide_cursor puts the cell
+; back if it's showing, toggle_cursor flips it, after waiting for the vertical
+; sync so it doesn't flicker.
+; Clobbers: A, X, Y.
 .hide_cursor
-    LDA cursor_shown                ; 1283: A5 56
-    BEQ do_nothing                  ; 1285: F0 E1
+    LDA cursor_shown
+    BEQ do_nothing
 .toggle_cursor
-    LDA cursor_shown                ; 1287: A5 56
-    EOR #&01                        ; 1289: 49 01
-    STA cursor_shown                ; 128B: 85 56
-    LDA #&13                        ; 128D: A9 13
-    JSR OSBYTE                      ; 128F: 20 F4 FF
-    LDX cursor_x                    ; 1292: A6 50
-    LDY cursor_y                    ; 1294: A4 51
-    JMP vector_invert_cell          ; 1296: 4C 8F 08
+    LDA cursor_shown
+    EOR #1
+    STA cursor_shown
+    LDA #&13                    ; wait for vertical sync
+    JSR OSBYTE
+    LDX cursor_x
+    LDY cursor_y
+    JMP vector_invert_cell
+
+; Put a block in the map at the cursor and on the screen.
+; In: A = the block.
+; Clobbers: A, X, Y, ptr, work.
 .plot_at_cursor
-    PHA                             ; 1299: 48
-    JSR hide_cursor                 ; 129A: 20 83 12
-    LDX cursor_x                    ; 129D: A6 50
-    LDY cursor_y                    ; 129F: A4 51
-    PLA                             ; 12A1: 68
-    JMP vector_write_map            ; 12A2: 4C 65 23
+    PHA
+    JSR hide_cursor
+    LDX cursor_x
+    LDY cursor_y
+    PLA
+    JMP vector_write_map
+
+; Ask which object, monster or puzzle, until the answer is 1 to A.
+; In: A = how many there are; X = the question's message.
+; Out: record = (the answer - 1) * 4.
+; Clobbers: A, X, Y, ptr, work.
 .choose_record
-    STX work                        ; 12A5: 86 54
-    STA record                      ; 12A7: 85 5B
+    STX work
+    STA record
 .choose_record_ask
-    JSR vector_open_message_box     ; 12A9: 20 95 08
-    LDX work                        ; 12AC: A6 54
-    JSR input_number                ; 12AE: 20 C4 12
-    DEX                             ; 12B1: CA
-    BPL choose_record_ask           ; 12B2: 10 F5
-    SEC                             ; 12B4: 38
-    SBC #&01                        ; 12B5: E9 01
-    BCC choose_record_ask           ; 12B7: 90 F0
-    CMP record                      ; 12B9: C5 5B
-    BCS choose_record_ask           ; 12BB: B0 EC
-    ASL A                           ; 12BD: 0A
-    ASL A                           ; 12BE: 0A
-    STA record                      ; 12BF: 85 5B
-    JMP vector_close_message_box    ; 12C1: 4C 98 08
+    JSR vector_open_message_box
+    LDX work
+    JSR input_number
+    DEX
+    BPL choose_record_ask
+    SEC
+    SBC #1
+    BCC choose_record_ask
+    CMP record
+    BCS choose_record_ask
+    ASL A
+    ASL A
+    STA record
+    JMP vector_close_message_box
+
+; Read a number of up to three digits in the message box.
+; In: X = the prompt's message.
+; Out: X = 0 and A = the number; X = 1 if nothing was typed; X = 3 if it was
+; over 255. (X = 2 would be a number 256 digits long.)
+; Clobbers: Y, ptr, the input buffer.
 .input_number
-    LDA #&30                        ; 12C4: A9 30
-    STA input_min_char              ; 12C6: 8D B4 21
-    LDA #&39                        ; 12C9: A9 39
-    STA input_max_char              ; 12CB: 8D B5 21
-    LDA #&03                        ; 12CE: A9 03
-    JSR input_line                  ; 12D0: 20 42 13
-    LDA #&00                        ; 12D3: A9 00
-    TAY                             ; 12D5: A8
+    LDA #asc("0")
+    STA input_min_char
+    LDA #asc("9")
+    STA input_max_char
+    LDA #3
+    JSR input_line
+    LDA #0
+    TAY
 .input_number_digit
-    PHA                             ; 12D6: 48
-    LDA input_buffer, Y             ; 12D7: B9 40 00
-    SEC                             ; 12DA: 38
-    SBC #&30                        ; 12DB: E9 30
-    BCC input_number_not_digit      ; 12DD: 90 1E
-    STA input_buffer, Y             ; 12DF: 99 40 00
-    PLA                             ; 12E2: 68
-    ASL A                           ; 12E3: 0A
-    BCS input_number_overflow       ; 12E4: B0 3A
-    STA ptr                         ; 12E6: 85 52
-    ASL A                           ; 12E8: 0A
-    BCS input_number_overflow       ; 12E9: B0 35
-    ASL A                           ; 12EB: 0A
-    BCS input_number_overflow       ; 12EC: B0 32
-    ADC ptr                         ; 12EE: 65 52
-    BCS input_number_overflow       ; 12F0: B0 2E
-    ADC input_buffer, Y             ; 12F2: 79 40 00
-    BCS input_number_overflow       ; 12F5: B0 29
-    INY                             ; 12F7: C8
-    BNE input_number_digit          ; 12F8: D0 DC
-    LDX #&02                        ; 12FA: A2 02
-    RTS                             ; 12FC: 60
+    PHA
+    LDA input_buffer, Y
+    SEC
+    SBC #asc("0")
+    BCC input_number_not_digit  ; the Return
+    STA input_buffer, Y
+    PLA
+    ASL A                       ; times 10, watching for overflow
+    BCS input_number_overflow
+    STA ptr
+    ASL A
+    BCS input_number_overflow
+    ASL A
+    BCS input_number_overflow
+    ADC ptr
+    BCS input_number_overflow
+    ADC input_buffer, Y
+    BCS input_number_overflow
+    INY
+    BNE input_number_digit
+    LDX #2
+    RTS
 .input_number_not_digit
-    LDX #&00                        ; 12FD: A2 00
-    TYA                             ; 12FF: 98
-    BNE menu_ok_return              ; 1300: D0 1C
-    PLA                             ; 1302: 68
-    INX                             ; 1303: E8
-    RTS                             ; 1304: 60
+    LDX #0
+    TYA
+    BNE menu_ok_return          ; just pull the number and return
+    PLA
+    INX
+    RTS
+
+; Place monster window, OK: keep the monster's position, with its number and
+; direction in the bottom bits.
 .place_monster_ok
-    LDY record                      ; 1305: A4 5B
-    LDA cursor_x                    ; 1307: A5 50
-    ASL A                           ; 1309: 0A
-    ASL A                           ; 130A: 0A
-    ORA arg                         ; 130B: 05 62
-    STA level_puzzle_effects, Y     ; 130D: 99 80 27
-    LDA cursor_y                    ; 1310: A5 51
-    ASL A                           ; 1312: 0A
-    ASL A                           ; 1313: 0A
-    ORA work+1                      ; 1314: 05 55
-    STA level_puzzle_effects+2, Y   ; 1316: 99 82 27
+    LDY record
+    LDA cursor_x
+    ASL A
+    ASL A
+    ORA arg                     ; monster number
+    STA level_puzzle_effects, Y
+    LDA cursor_y
+    ASL A
+    ASL A
+    ORA work+1                  ; direction
+    STA level_puzzle_effects+2, Y
+; The OK item of an editing window: close it and return from the routine
+; that runs the window's menu, dropping the choice it pushed first if it did.
 .menu_ok_drop_choice
-    PLA                             ; 1319: 68
+    PLA
 .menu_ok
-    JSR vector_close_window         ; 131A: 20 83 08
-    PLA                             ; 131D: 68
+    JSR vector_close_window
+    PLA
 .menu_ok_return
-    PLA                             ; 131E: 68
-    RTS                             ; 131F: 60
+    PLA
+    RTS
+
 .input_number_overflow
-    LDX #&03                        ; 1320: A2 03
-    RTS                             ; 1322: 60
+    LDX #3
+    RTS
+
+; "SURE ? Press Y or N". Returns on Y; on N returns from the caller instead.
+; Clobbers: A, X, Y.
 .confirm
-    LDA #&26                        ; 1323: A9 26
-    JSR open_window                 ; 1325: 20 A8 14
+    LDA #W_SURE
+    JSR open_window
 .confirm_loop
-    JSR wait_for_key                ; 1328: 20 34 12
-    ORA #&20                        ; 132B: 09 20
-    CMP #&6E                        ; 132D: C9 6E
-    BEQ menu_ok                     ; 132F: F0 E9
-    CMP #&79                        ; 1331: C9 79
-    BNE confirm_loop                ; 1333: D0 F3
-    JMP vector_close_window         ; 1335: 4C 83 08
+    JSR wait_for_key
+    ORA #&20                    ; lower case
+    CMP #asc("n")
+    BEQ menu_ok
+    CMP #asc("y")
+    BNE confirm_loop
+    JMP vector_close_window
+
+; Read a line of text, or of characters input_min_char to input_max_char
+; (input_line), into input_buffer, after a prompt on the message box's
+; second line. Escape is an error.
+; In: A = the most characters; X = the prompt's message.
+; Out: ptr = the number of characters; input_buffer, Return-terminated and
+; padded with spaces.
+; Clobbers: A, X, Y.
 .input_text
-    LDY #&20                        ; 1338: A0 20
-    STY input_min_char              ; 133A: 8C B4 21
-    LDY #&7E                        ; 133D: A0 7E
-    STY input_max_char              ; 133F: 8C B5 21
+    LDY #&20
+    STY input_min_char
+    LDY #&7E
+    STY input_max_char
 .input_line
-    STA input_max_length            ; 1342: 8D B3 21
-    TXA                             ; 1345: 8A
-    JSR vector_print_line2          ; 1346: 20 53 23
-    JSR cursor_on                   ; 1349: 20 75 13
-    LDA #&20                        ; 134C: A9 20
-    JSR OSWRCH                      ; 134E: 20 EE FF
-    LDY #&0F                        ; 1351: A0 0F
+    STA input_max_length
+    TXA
+    JSR vector_print_line2
+    JSR cursor_on
+    LDA #asc(" ")
+    JSR OSWRCH
+    LDY #15
 .input_line_clear
-    STA input_buffer, Y             ; 1353: 99 40 00
-    DEY                             ; 1356: 88
-    BNE input_line_clear            ; 1357: D0 FA
-    LDX #&B1                        ; 1359: A2 B1
-    LDY #&21                        ; 135B: A0 21
-    LDA #&00                        ; 135D: A9 00
-    JSR OSWORD                      ; 135F: 20 F1 FF
-    STY ptr                         ; 1362: 84 52
-    JSR allow_any_key               ; 1364: 20 81 13
-    BCC cursor_off                  ; 1367: 90 03
-    JMP escape_pressed              ; 1369: 4C 94 13
+    STA input_buffer, Y
+    DEY
+    BNE input_line_clear
+    LDX #LO(input_block)
+    LDY #HI(input_block)
+    LDA #0                      ; OSWORD 0: read a line
+    JSR OSWORD
+    STY ptr
+    JSR allow_any_key
+    BCC cursor_off
+    JMP escape_pressed
+
+; The text cursor: off, with the cursor keys giving codes rather than
+; editing (*FX4,2: they act as f11-f15, &8B-&8F); or on and editing.
+; Clobbers: A, X, Y.
 .cursor_off
-    LDA #&20                        ; 136C: A9 20
-    JSR crtc_set_cursor_start       ; 136E: 20 8B 13
-    LDX #&02                        ; 1371: A2 02
-    BNE set_cursor_key_mode         ; 1373: D0 07
+    LDA #&20                    ; cursor start register: no cursor
+    JSR crtc_set_cursor_start
+    LDX #2
+    BNE set_cursor_key_mode
 .cursor_on
-    LDA #&67                        ; 1375: A9 67
-    JSR crtc_set_cursor_start       ; 1377: 20 8B 13
-    LDX #&00                        ; 137A: A2 00
+    LDA #&67                    ; blinking, from line 7
+    JSR crtc_set_cursor_start
+    LDX #0
 .set_cursor_key_mode
-    LDA #&04                        ; 137C: A9 04
-    JMP OSBYTE                      ; 137E: 4C F4 FF
+    LDA #4
+    JMP OSBYTE
+
+; Clobbers: X.
 .allow_any_key
-    LDX #&00                        ; 1381: A2 00
-    STX input_min_char              ; 1383: 8E B4 21
-    DEX                             ; 1386: CA
-    STX input_max_char              ; 1387: 8E B5 21
-    RTS                             ; 138A: 60
+    LDX #0
+    STX input_min_char
+    DEX
+    STX input_max_char
+    RTS
+
+; In: A = the value for CRTC register 10 (cursor start), or X for the register.
 .crtc_set_cursor_start
-    LDX #&0A                        ; 138B: A2 0A
+    LDX #10
 .crtc_write
-    STX CRTC_ADDR                   ; 138D: 8E 00 FE
-    STA CRTC_DATA                   ; 1390: 8D 01 FE
-    RTS                             ; 1393: 60
+    STX CRTC_ADDR
+    STA CRTC_DATA
+    RTS
+
 .escape_pressed
-    JSR escape_reset                ; 1394: 20 65 11
-    BRK                             ; 1397: 00
-    EQUB &1B                        ; 1398
-    EQUS "Escape key pressed"       ; 1399
-    EQUB &00                        ; 13AB
+    JSR escape_reset
+    BRK
+    EQUB &1B
+    EQUS "Escape key pressed", 0
 .get_key_simulating
     ASL A                           ; 13AC: 0A
     BCC get_key_step                ; 13AD: 90 02
