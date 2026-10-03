@@ -15,15 +15,6 @@ INCLUDE "osconst.6502inc"
 INCLUDE "basic.6502inc"
 INCLUDE "teletext.6502inc"
 
-; OS call numbers osconst.6502inc doesn't have yet.
-OSWORD_READ_CHAR_DEFINITION = &0A   ; YX: the character, then its 8 rows of pixels, top first
-EVENT_VSYNC                 = 4
-
-; The Mode 7 screen, which the scroller writes directly.
-MODE7_SCREEN = &7C00
-FUNCTION mode7_address(column, row) = MODE7_SCREEN + row * TT_COLUMNS + column
-SOLID_BLOCK  = &FF   ; a graphics character with all six sixels lit
-
 ; Where the scroller draws: eight rows at the bottom of the screen. Columns
 ; 0 and 1 hold its colour codes; 38 and 39 stay blank.
 SCROLL_TOP   = 17

@@ -16,11 +16,13 @@ OSBYTE_ESCAPE_EFFECTS   = &E6   ; *FX230: X=1 an escape condition does nothing e
 
 ; OSWORD calls.
 OSWORD_READ_LINE = &00          ; YX: buffer address (2), max length, lowest and highest character
+OSWORD_READ_CHAR_DEFINITION = &0A   ; YX: the character, then its 8 rows of pixels, top first
 
 ; Buffer numbers for OSBYTE &8A and friends.
 BUFFER_KEYBOARD = 0
 
 ; Event numbers.
+EVENT_VSYNC = 4
 EVENT_ESCAPE = 6
 
 ; Internal key numbers (the keyboard matrix), and the byte INKEY wants to

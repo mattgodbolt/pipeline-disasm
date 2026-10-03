@@ -53,6 +53,13 @@ with baron pinned by commit; bumping the pin is its own commit.
 - `src/teletext.6502inc`: Mode 7 control codes and `TT_ROW`.
 - `tools/mode7.py` (Mode 7 binary to `TT_ROW` source), `tools/beebscreen.py`
   (MODE 1/5 screen memory to PNG), `tools/plcrypt.py` (PL's encryption).
+- `tools/basic.py` lists a tokenised BASIC program as text a baron `BASIC`
+  block takes back; `src/basic.6502inc` has `basic_line()` for lines that
+  must be EQUB records.
+- `src/mission.6502` is NOT valid UTF-8: two REMs hold raw teletext bytes
+  (&81-&86). Editors that decode as UTF-8 (including Claude's Edit tool)
+  silently replace them and break the build; edit it with byte-safe tools
+  (sed, or Python reading and writing bytes).
 - `src/forceabs.6502inc`: macros for absolute addressing of zero page.
 
 ## The pieces
@@ -60,8 +67,8 @@ with baron pinned by commit; bumping the pin is its own commit.
 | Piece | Source | What it is |
 |---|---|---|
 | `!BOOT` | boot.6502 | `*EXEC` text: credits, `*FX200,3`, CHAIN"MENU" |
-| MENU | menu.6502 | BASIC menu (`Originally: GUILDMASTER`) at &1900, with a Mode 7 scroller and menu screen pre-loaded into its DIM'd heap |
-| MISSION | mission.6502 | BASIC "MISSION GENERATOR": builds IO from the editors' data |
+| MENU | menu.6502 | BASIC menu (`Originally: GUILDMASTER`) at &1900; its DIM'd heap holds the scroller (C% &2300) and menu screen (S% &3200) |
+| MISSION | mission.6502 | BASIC "MISSION GENERATOR": builds IO from DEFAULT/graphics and level files; hides an unscrambler in a REM |
 | GAME, GRAPHIC, LEVDES | game/graphic/levdes.6502 | &D9-byte stubs at &0900, one source (hidden_loader.6502inc), reading the hidden runs with OSWORD &7F |
 | H.GAME | hidden_game.6502 | the game, run at &3000; loads IO |
 | H.GRAPH | hidden_graphic.6502 | the Graphics Designer, at &1AB0 entered at &2BAE; uses DEFAULT, exits via /MRUN |
@@ -83,6 +90,8 @@ with baron pinned by commit; bumping the pin is its own commit.
 - `INCBIN` takes a whole file; to convert part of a binary, split the binary.
 - `BASIC`...`ENDBASIC` tokenises BBC BASIC inline; worth trying for MENU and
   MISSION, checking the tokenisation matches byte for byte.
+- The symbol dump also holds FUNCTION and macro parameters under `@...`
+  scopes; anything feeding jsbeeb should drop names starting with `@`.
 - Named scopes (`.game { ... }`) give dotted symbol paths in the dump; use them
   so labels from overlapping programs (GAME, LEVDES, GRAPHIC and IO overlap in
   memory) stay distinguishable.

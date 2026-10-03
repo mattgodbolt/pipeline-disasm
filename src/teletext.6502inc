@@ -42,6 +42,11 @@ TT_HOLD_GRAPHICS     = &9E   ; control cells repeat the last sixel, not a space
 TT_RELEASE_GRAPHICS  = &9F
 
 TT_COLUMNS = 40
+
+; The Mode 7 screen, for code that writes it directly.
+MODE7_SCREEN = &7C00
+FUNCTION mode7_address(column, row) = MODE7_SCREEN + row * TT_COLUMNS + column
+SOLID_BLOCK  = &FF   ; a graphics character with all six sixels lit
 TT_ROWS = 25
 
 ; Start of a screen row: checks it starts where row n of a screen whose

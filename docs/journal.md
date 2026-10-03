@@ -153,3 +153,48 @@ Details in `docs/notes/loaders.md`. The headlines:
   bytes (so PL's encrypted image could be generated from its source inside
   the build), and character literals. Neither blocks anything; noted, not
   filed.
+
+## 2026-10-03 19:40 — Built a flux image; merged MENU and MISSION (agent branch)
+
+- The build now also writes `build/pipeline.hfe`: the .ssd's sectors laid
+  out with jsbeeb's track builder, with deleted data marks on the sectors
+  `src/disc.toml` flags (the three hidden runs). `tools/disccmp.mjs` reads it
+  and the original capture (now committed as `original/E447ED5E.hfe`) the
+  way a controller would and compares every sector's ID, data and mark: 40
+  tracks, 400 sectors, 97 deleted, identical. The game boots from it in
+  jsbeeb. A test that it notices a missing mark: it does.
+- MENU and MISSION are source (details in `docs/notes/basic.md`). Baron's
+  BASIC tokeniser matched the originals on every line; the only trouble is
+  raw bytes. `ENDBASIC` always writes the `&0D &FF` end, so an EQUB'd line
+  can only come before the BASIC block, and lines with raw control codes
+  stay inside it as raw bytes. MISSION's two REMs with teletext bytes
+  &81-&86 make `src/mission.6502` invalid UTF-8; the Edit tool mangles it.
+- MENU's heap: `LOMEM=PAGE+&A00` is exactly TOP (&2300), so C% is &2300
+  and S% &3200, and DIM leaves the file's contents in place. C% is a vsync
+  event handler scrolling a message as 16x8 blocks of sixels, reading
+  character shapes with OSWORD &0A. Its EVNTV entry is 4 bytes early, landing
+  mid-instruction on `04 4C` and `F4 FF`: undocumented NMOS NOPs, run every
+  frame (on a 65C02, &04 would be TSB).
+- The PL trigger is hidden from LIST by VDU 21 inside a string and VDU 6
+  after `*/PL "`. The second-processor check can't fire on BASIC 2
+  (`?&FFFF7C00` is `?&7C00`). The game's keys, Guildmaster's names
+  notwithstanding, default to Z X * ? P D RETURN T CTRL M.
+- The tail of MENU's S% holds a three-voice tune as a BASIC program at
+  PAGE+&1C00 (line 1020 runs it, nothing reaches line 1020), and a fragment
+  of BASIC assembler that assembles to the Level Designer at &168A-&16A6,
+  giving some original label names: sel0 &1126, canc &1637, sure &1323,
+  wind &14A8, table &166B, key3 &169E, help &16AD, t2 &54.
+- MISSION hides an unscrambler in line 60's REM. Missions can be saved
+  locked; the shipped IO is. Level codes (six hex digits, unscrambled by
+  swapping adjacent bits and rotating) are 677636, 878702, 218652, 114226
+  for levels 1-4; 677636 matches PL's.
+- IO's layout as MISSION writes it: &242D-&57FF; +&0000 names (&134: the
+  tail of a graphics file, 15 object names of 12 characters), +&0134 the
+  mission name (two VDU 31 halves), +&0152 five feature bytes (time,
+  mapping, backpack, throw distance, lock), +&0157 four levels' fields
+  interleaved field by field (11 fields, &11F per level) then four &800
+  maps, +&25D3 graphics (&E00). LEVEL1 is one level (320 bytes of puzzle
+  names, the fields, the map); DEFAULT is graphics plus names.
+- Shared: `OSWORD_READ_CHAR_DEFINITION` and `EVENT_VSYNC` into
+  `osconst.6502inc`; `MODE7_SCREEN`, `mode7_address()` and `SOLID_BLOCK`
+  into `teletext.6502inc`.
