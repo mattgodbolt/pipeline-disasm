@@ -21,6 +21,8 @@
 INCLUDE "teletext.6502inc"
 
 SECTION warning, filename="WARNING", org=&7C00, load=&7C00, exec=&7C00
+.warning
+{
 .screen
     TT_ROW 0
     EQUB TT_GFX_BLUE, &FF, &E6, TT_GFX_MAGENTA, &FE, &AF, &EF, &F4, &20, &FF, &20, &FE, &AF, &EF
@@ -100,4 +102,5 @@ SECTION warning, filename="WARNING", org=&7C00, load=&7C00, exec=&7C00
     EQUB " PIPELINE Graphics Designer is strictly "
     TT_ROW 22
     EQUB " prohibited.    "
+}
 ENDSECTION

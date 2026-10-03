@@ -20,9 +20,12 @@ SCREEN_END = &8000
 MODE5_ROW_BYTES = 320
 
 SECTION screen, filename="SCREEN", org=SCREEN_MODE5, load=&5800, exec=&5800
-.loading_picture
+.loading_screen
+{
+.picture
     INCBIN "../data/screen.bin"
     ASSERT P% = SCREEN_MODE5 + 27 * MODE5_ROW_BYTES
 .blank_rows
     SKIPTO SCREEN_END
+}
 ENDSECTION
