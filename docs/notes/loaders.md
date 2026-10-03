@@ -40,8 +40,10 @@ How it loads (all OSWORD &7F, i.e. raw 8271 commands via DFS, drive 0 only):
    write &12 := 2*track again so later seeks start from the right place.
 4. `JMP` to the entry.
 
-The protection, seen on the flux captures (both E447ED5E, the target, and
-the FSD0391 reconstruction): every sector of the three hidden runs, and only
+The protection, seen on the flux captures (E447ED5E, the target, and
+`Pipeline_FSD0391_1.hfe` in the local HFE archive cache; read with
+jsbeeb's `loadHfe`, whose sectors carry `isDeleted`): every sector of the
+three hidden runs, and only
 those, is written with a **deleted data address mark**. The .ssd can't
 represent that, which is why original/README.md's "the capture decodes
 cleanly ... any protection is in the software" is only half right. So the
@@ -168,3 +170,24 @@ into the load area.
 - `tools/beebscreen.py` renders MODE 1/5 screen memory to PNG (with
   `--title` to unpack TITLE's format first). The SCREEN render with palette
   0,1,3,5 matches the jsbeeb screenshot in `docs/img/loading-screen.png`.
+
+## 2026-10-03 18:35 — SCREEN, and what's left for main
+
+- SCREEN is the whole of MODE 5 screen memory (&5800-&7FFF) saved as it
+  stood; MENU line 250 *LOADs it after `MODE 5`, cursor off and
+  `VDU 19,3,5` (palette black, red, yellow, magenta), for `INKEY(1000)`. The
+  picture fills the top 27 character rows; the last five are zero, now a
+  `SKIPTO` rather than part of `data/screen.bin`.
+- Still binary, on purpose: `data/screen.bin` (a picture),
+  `data/title_picture.bin` (a packed picture), `data/pl_encrypted.bin`
+  (PL's stored bytes, regenerable from source with tools/plcrypt.py).
+- For main:
+  - `src/loaders.6502inc` (OSBYTE/OSWORD numbers, CPU vectors, INKEY key
+    numbers, `ascii()`) and the OSWORD &7F / 8271 names at the top of
+    `src/hidden_loader.6502inc` belong in `src/os.6502inc`;
+    `src/teletext.6502inc` could be shared as it is (MENU's Mode 7 screen).
+  - `make test` should run `python3 tools/plcrypt.py check build/files`, so
+    PL's encrypted bytes and its decrypted source can't drift apart.
+  - `original/README.md` says any protection is in the software; the hidden
+    runs' deleted data marks say otherwise.
+  - CLAUDE.md's table: PL is "Ian's cheat" (W+T at boot), not just "&400".
