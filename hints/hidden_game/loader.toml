@@ -1,0 +1,196 @@
+# The loader at &3000, the sound event handler (&0131) and the sound data
+# (&0880).
+
+[labels]
+0x3000 = "loader"
+0x3005 = "copy_keys_loop"
+0x3068 = "message_to_crackers"
+0x3098 = "cursor_off_vdu"
+0x30A2 = "key_order"
+0x30AC = "copy_block"
+0x30B4 = "copy_block_params"
+0x30C8 = "copy_block_data"
+0x30CC = "copy_block_loop"
+0x30D7 = "copy_block_count"
+0x30DC = "copy_block_next"
+0x30E4 = "copy_block_return"
+0x30E7 = "loader_unused"
+
+0x014E = "restart_tune"
+0x017F = "event_handler_return"
+0x0185 = "event_handler_unused"
+
+0x0880 = "tune"
+0x08A0 = "tune_voice_2"
+0x08C0 = "envelope_1"
+0x08D0 = "envelope_2"
+0x08E0 = "envelope_3"
+0x08F0 = "envelope_4"
+
+0x31E0 = "sound_data_padding"
+0x50AD = "leftover"
+
+[comments]
+0x3000 = '''
+Entered from the GAME stub with the ten keys MENU set up in key_codes, as
+negative INKEY numbers. Copies the keys where the game wants them, copies
+the game into place, sets up the screen and the sound event, and starts the
+game. The stack is reset because the event handler lives in the stack page.
+'''
+0x3012 = '''
+Each copy_block call is followed by its source, destination and length.
+'''
+0x303F = '''
+MODE 5, then VDU 23,0,10,32;0;0;0 (CRTC register 10: no cursor), sent from
+the end of cursor_off_vdu backwards.
+'''
+0x3054 = '''
+The sound event: the OS calls EVNTV when a sound channel's queue empties
+(enabled when the tune starts), and the handler feeds the tune.
+'''
+0x3060 = '''
+Addressable latch bit 5 clear (with bit 4 set by MODE 5): the screen wraps
+round at 8K, so the game's screen is &6000-&7FFF with hardware scrolling.
+'''
+0x3068 = '''
+Never printed: a note for whoever looks.
+'''
+0x30A2 = '''
+For each of the action keys in the order the game tests them (action_keys),
+which of MENU's ten it is.
+'''
+0x30AC = '''
+Copy a block of memory, then return past the six bytes that follow the JSR:
+the source, the destination and the length.
+Clobbers: A, X, Y, copy_return, copy_from, copy_to, copy_count.
+'''
+0x30E7 = '''
+Never used.
+'''
+0x0131 = '''
+EVNTV handler for the "output buffer empty" event (the only one enabled):
+X is the buffer, 4-7 for sound channels 0-3. Plays the tune's next note on
+the channel that ran out, and when the first voice reaches its end, starts
+the tune again with the next variation. Preserves A, X and Y.
+'''
+0x014E = '''
+Both voices back to the start, each with a silent note to get the event
+going again; then step the variation: every other time round, transpose
+by 20 semitones' worth (&14), and every other time that, swap the voices.
+'''
+0x0185 = '''
+Copied but never used.
+'''
+0x0880 = '''
+The tune: two voices of 32 notes, each a byte with the pitch step in the
+high nibble and the duration in the low. See play_tune_note.
+'''
+0x08C0 = '''
+Envelopes 1-4, as the OS keeps them (ENVELOPE's parameters after its
+number, padded to 16 bytes): T, PI1-3, PN1-3, AA, AD, AS, AR, ALA, ALD.
+1 and 2 are the tune's voices, 3 and 4 sound effects.
+'''
+0x31E0 = '''
+Not copied.
+'''
+0x50AD = '''
+Past the end of what the loader copies: leftovers, never used.
+'''
+
+[remarks]
+0x3000 = "the event handler lives in the stack page"
+0x3008 = "MENU's key"
+0x300A = "as MENU left it"
+0x300C = "in the order the game tests its actions"
+0x30AC = "the JSR's return address, less 1"
+0x30B4 = "the parameters into copy_from, copy_to, copy_count"
+0x30C0 = "step the return address past them"
+0x30E4 = "return past the parameters"
+0x0136 = "X - 4: the sound channel that's run dry"
+0x013C = "play its next note"
+0x013F = "has the first voice finished?"
+0x0145 = "the first voice is part way through"
+0x0148 = "or the second, when only it is playing"
+0x0150 = "channel 1"
+0x0152 = "in step with the other voice (SOUND &101)"
+0x0155 = "both voices to their first note"
+0x0159 = "silent"
+0x015D = "for no time"
+0x0164 = "channel 2"
+
+[operands]
+0x3008 = "menu_keys"
+0x3055 = "#LO(event_handler)"
+0x305A = "#HI(event_handler)"
+0x3065 = "game_start"
+0x30AD = "copy_return"
+0x30B0 = "copy_return + 1"
+0x30B4 = "copy_return"
+0x30B6 = "copy_from - 1"
+0x30BE = "copy_count"
+0x30C2 = "copy_return"
+0x30C6 = "copy_return + 1"
+0x30C8 = "copy_return"
+0x30CC = "copy_from"
+0x30CE = "copy_to"
+0x30D3 = "copy_from + 1"
+0x30D5 = "copy_to + 1"
+0x30DA = "copy_count + 1"
+0x30DE = "copy_count + 1"
+0x30E4 = "copy_return"
+
+[[source]]
+start = 0x3015
+length = 6
+text = '''
+    EQUW EXTENDED_VECTORS, saved_extended_vectors, &100 - LO(EXTENDED_VECTORS)'''
+
+[[source]]
+start = 0x301E
+length = 6
+text = '''
+    EQUW event_handler_load, event_handler, event_handler_end - event_handler'''
+
+[[source]]
+start = 0x3027
+length = 6
+text = '''
+    EQUW sound_data_load, sound_data, sound_data_end - sound_data'''
+
+[[source]]
+start = 0x3030
+length = 6
+text = '''
+    EQUW low_code_load, low_code, low_code_end - low_code'''
+
+[[source]]
+start = 0x3039
+length = 6
+text = '''
+    EQUW main_code_load, main_code, main_code_end - main_code'''
+
+[[source]]
+start = 0x3098
+length = 10
+text = '''
+    EQUB 0, 0, 0, 0, 0, 0, 32, 10, 0, 23'''
+
+[[source]]
+start = 0x30A2
+length = 10
+text = '''
+    EQUB 4, 5, 9, 8, 7, 6, 0, 1, 2, 3     ; P, D, M, CTRL, T, Return, Z, X, :, /'''
+
+[[source]]
+start = 0x08C0
+length = 64
+text = '''
+    EQUB 4, 1, -1, 1, 1, 2, 1, 70, 10, -12, -15, 70, 100, 0, 0, 0
+    EQUB 5, 1, -1, 0, 1, 1, 0, 100, -10, 0, -12, 100, 0, 0, 0, 0
+    EQUB &84, 0, 8, -8, 3, 1, 1, 126, -5, -10, -20, 126, 0, 0, 0, 0
+    EQUB 3, 0, 0, 0, 1, 1, 1, 100, -6, 0, -8, 126, 0, 0, 0, 0'''
+
+[rows]
+"0x0880-0x08BF" = 16
+"0x31E0-0x31FF" = 16
+"0x50AD-0x50FF" = 16

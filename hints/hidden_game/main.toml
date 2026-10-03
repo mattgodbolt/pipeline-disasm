@@ -1,0 +1,269 @@
+# The game: &0900-&0BFF: the tune player, the player's picture, redrawing the
+# whole view, and moving the monsters and a thrown object.
+
+[labels]
+0x0900 = "play_tune"
+0x090E = "play_voice"
+0x0947 = "play_voice_last_note"
+0x094F = "play_voice_note"
+0x0956 = "sound_tune_block"
+0x095F = "skip_picture_columns"
+0x0963 = "advance_picture"
+0x096C = "play_voice_done"
+0x096D = "next_player_frame"
+0x0975 = "alternate_pictures"
+0x0979 = "crtc_values"
+0x0982 = "tile_addresses"
+0x09A2 = "alternate_offsets"
+0x09A4 = "alternate_offsets_even"
+0x09AC = "alternate_offsets_odd"
+0x09B4 = "erase_monster"
+0x09C3 = "draw_monster"
+0x09CE = "draw_player"
+0x09DE = "draw_player_picture"
+0x09F6 = "draw_player_screen"
+0x09FC = "rub_out_below_player"
+0x0A09 = "rub_out_row"
+0x0A15 = "rub_out_right_of_player"
+0x0A24 = "rub_out_right_wrapped"
+0x0A26 = "rub_out_left_of_player"
+0x0A2C = "rub_out_column"
+0x0A35 = "rub_out_trail"
+0x0A41 = "rub_out_trail_draw"
+0x0A45 = "rub_out_trail_cell"
+0x0A47 = "rub_out_trail_copy"
+0x0A5E = "rub_out_trail_next"
+0x0A66 = "rub_out_above_player"
+0x0A6E = "draw_player_at"
+0x0A7F = "draw_player_cells"
+0x0A87 = "draw_player_cell"
+0x0A8D = "draw_player_copy"
+0x0A9F = "draw_player_down"
+0x0AA7 = "draw_player_next"
+0x0ABB = "draw_player_wrap"
+0x0AC6 = "draw_player_column"
+0x0AD0 = "return_0AD0"
+0x0AD1 = "draw_player_flipped"
+0x0AD3 = "draw_player_flipped_copy"
+0x0AE0 = "redraw_view"
+0x0AF2 = "redraw_view_stripes"
+0x0AFC = "redraw_view_step"
+0x0B62 = "monster_position"
+0x0B6B = "move_things_done"
+0x0B6C = "move_things"
+0x0B85 = "thrown_left"
+0x0B8A = "thrown_right"
+0x0B8F = "thrown_up"
+0x0B91 = "draw_thrown"
+0x0BA0 = "move_monsters"
+0x0BA4 = "move_monster"
+0x0BB9 = "move_monster_direction"
+0x0BD1 = "monster_left"
+0x0BD6 = "monster_right"
+0x0BDB = "monster_up"
+0x0BDD = "monster_moved"
+0x0BE8 = "next_monster"
+0x0BED = "monster_stuck"
+0x12A3 = "game_start"
+
+[comments]
+0x0900 = '''
+Called by the event handler when a sound channel's queue runs dry: play the
+next note of whichever tune voice belongs to that channel. tune_swap and
+tune_together pick which voices play: voice 1 on channel 1 unless voice 2 is
+playing alone, voice 2 on channel 2 unless voice 1 is.
+Clobbers: A, X, Y, the tune block.
+'''
+0x090E = '''
+A is the channel a voice plays on (1 or 2), or 0 if it isn't playing.
+A note's high nibble is a step of a semitone; the voice on channel 1 is an
+octave above the other, and each voice's last note is pitched higher still.
+The voice's channel is also its envelope.
+'''
+0x0956 = '''
+SOUND with the block at tune_channel.
+'''
+0x095F = '''
+Add A to picture: halved for an icon (Y is picture_size and is incremented
+twice here and in the caller, so it stays negative for a 4x4 picture).
+'''
+0x096D = '''
+The player's picture alternates as they walk.
+'''
+0x0975 = '''
+The second pictures of alternate_cell_types, as picture numbers counted from
+io_tiles. The CRTC values overlap the last: setup_crtc reads from
+crtc_values - 1 with X from 9 down to 1.
+'''
+0x0979 = '''
+CRTC registers 1-9: 32 characters across and 32 rows of 8 lines, the screen
+centred.
+'''
+0x0982 = '''
+The address of each cell type's picture.
+'''
+0x09A2 = '''
+What to add to a cell type's picture address on squares that show its
+second picture, set up by setup_alternate_pictures: a zero word for cell
+types that have none, then a word for each alternate_cell_types on even
+squares, then on odd.
+'''
+0x09B4 = '''
+Monster A: rub it out with the floor picture, or draw it, with a picture
+whose low byte the caller has put in sprite (the monsters' two frames are
+cell types E and F's pictures).
+'''
+0x09CE = '''
+Draw the player in the middle of the view: their picture for the way they
+face; walking up or down alternates two pictures, drawn upside down on every
+other step.
+Clobbers: A, X, Y, picture, player_screen, draw_step.
+'''
+0x09FC = '''
+Rub out the edge of the player's picture that scrolling left behind, as the
+view moves a character towards one side, then draw the player again in the
+middle. Inside a pipe the player isn't drawn, and only the first few steps'
+trails are rubbed out.
+'''
+0x0A6E = '''
+Draw the player's picture at player_screen: 4 x 4 character cells, a column
+at a time. draw_step nonzero draws it flipped top to bottom by copying each
+column's bytes backwards with a self-modified LDA abs,X.
+'''
+0x0AE0 = '''
+Redraw the whole view from the map: fill the screen with stripes, then draw
+it in from both sides a column and a row at a time, waiting for a vsync each
+step, as a level starts.
+Clobbers: A, X, Y and the drawing variables.
+'''
+0x0B62 = '''
+Monster A's position: X, Y = its x and y in character cells.
+'''
+0x0B6C = '''
+Move everything that moves by itself one character cell: a thrown object,
+then each monster that's out, in the direction it's going (8 and up: not
+out; 4-7: stuck, drawn without moving).
+Clobbers: A, X, Y, monster_index and the drawing variables.
+'''
+
+[remarks]
+0x0900 = "voice 1 on channel 1..."
+0x0906 = "...unless voice 2 plays alone"
+0x0909 = "voice 2 on channel 2..."
+0x090D = "...unless voice 1 plays alone"
+0x0910 = "the channel that ran dry?"
+0x0915 = "the voice's next note"
+0x0919 = "(tune_channel as scratch)"
+0x091D = "voice 2's notes are 32 on"
+0x0925 = "the channel..."
+0x0927 = "...and the same envelope"
+0x0934 = "a note: pitch step, duration"
+0x093A = "4 to a semitone"
+0x093E = "the tune's lowest note"
+0x0945 = "voice 1 an octave up"
+0x0947 = "the voice's last note..."
+0x094D = "...a little under an octave up"
+0x0952 = "in 20ths of a second"
+0x095F = "an icon's columns are half as big"
+0x09D0 = "every other step..."
+0x09D6 = "left 0, right 1: &5400, &5480"
+0x09DA = "up and down: &5500 or &5580..."
+0x09DC = "...alternating, flipped too"
+0x09E6 = "the view's 14th character across..."
+0x09EE = "...and down: the middle"
+0x0A00 = "the player's bottom row..."
+0x0A0B = "...across"
+0x0A15 = "the player's right column..."
+0x0A2E = "...down"
+0x0A35 = "inside a pipe..."
+0x0A3C = "...rub out only the first few"
+0x0A47 = "floor"
+0x0A6E = "the last byte of a column, for flipping"
+0x0A72 = "self-modified: flipped pictures copy from here"
+0x0A7A = "inside a pipe: not drawn"
+0x0A87 = "flipped?"
+0x0A9F = "down a character row"
+0x0AAB = "flipped: the next column's last byte"
+0x0AB0 = "the next column across..."
+0x0ABB = "...back up to the top"
+0x0AD3 = "self-modified: the picture"
+0x0AE0 = "steps in from the edges"
+0x0AEF = "&7F, &3F, &1F...: stripes"
+0x0AFC = "from the left, then the right"
+0x0AFF = "the column, 0-31"
+0x0B10 = "the view's left edge is half a cell in"
+0x0B23 = "a column"
+0x0B2C = "and a row, from the top, then the bottom"
+0x0B4B = "a row"
+0x0B4E = "one step a frame"
+0x0B51 = "the other side"
+0x0B5B = "28 steps meet in the middle"
+0x0B6C = "nothing moves while the player dies"
+0x0B70 = "something thrown?"
+0x0B80 = "4: down"
+0x0B85 = "1: left"
+0x0B8A = "2: right"
+0x0B8F = "3: up"
+0x0B9D = "drawn on the floor"
+0x0BA9 = "its direction"
+0x0BAC = "4 and up: it doesn't move"
+0x0BB4 = "rub it out"
+0x0BC4 = "8 and up: not out"
+0x0BCC = "3: down"
+0x0BD1 = "0: left"
+0x0BD6 = "1: right"
+0x0BDB = "2: up"
+0x0BDD = "the monsters' frame"
+0x0BE5 = "draw it"
+0x0BED = "stuck: draw it where it is"
+
+[operands]
+0x0917 = "tune_position - 1"
+0x0915 = "tune_position - 1"
+0x0956 = "#LO(tune_channel)"
+0x0958 = "#HI(tune_channel)"
+0x095A = "#7"
+0x09B7 = "#HI(io_tiles)"
+0x09BB = "#LO(io_tiles)"
+0x09C6 = "#HI(io_tiles + &E * 128)"
+0x09E0 = "#HI(io_player)"
+0x09E6 = "#LO(14 * 8)"
+0x09EE = "#HI(14 * &100 + 14 * 8)"
+0x0A47 = "io_tiles"
+0x0A72 = "draw_player_flipped_copy + 1"
+0x0A77 = "draw_player_flipped_copy + 2"
+0x0AA3 = "#HI(SCREEN)"
+0x0AC0 = "#HI(SCREEN)"
+0x0AEB = "#HI(SCREEN)"
+0x0B07 = "#HI(SCREEN)"
+0x0B33 = "#HI(SCREEN)"
+
+[[source]]
+start = 0x0975
+length = 4
+text = '''
+    EQUB &1B, &19, &1A, &18                 ; A, 7, 8, 5: pictures 27, 25, 26, 24'''
+
+[[source]]
+start = 0x0979
+length = 9
+text = '''
+    EQUB 32, 45, 36, 38, 0, 32, 34, 1, 7'''
+
+[[source]]
+start = 0x0982
+length = 32
+text = '''
+FOR n = 0..15
+    EQUW io_tiles + n * 128
+NEXT'''
+
+[[source]]
+start = 0x09A2
+length = 18
+text = '''
+    EQUW 0
+.alternate_offsets_even
+    EQUW 0, 0, 0, 0
+.alternate_offsets_odd
+    EQUW 0, 0, 0, 0'''

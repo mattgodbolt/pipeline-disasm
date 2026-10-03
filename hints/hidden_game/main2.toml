@@ -1,0 +1,328 @@
+# &0BFB-&0FE1: drawing a 4x4 picture anywhere in the view, clipped; the map
+# view; the CRTC; reading and writing map cells; the tune's start and stop;
+# directions.
+
+[labels]
+0x0BFB = "draw_sprite_clipped"
+0x0C12 = "draw_sprite_column"
+0x0C16 = "draw_sprite_cell"
+0x0C18 = "draw_sprite_copy"
+0x0C27 = "draw_sprite_next_row"
+0x0C32 = "draw_sprite_count_rows"
+0x0C45 = "draw_sprite_next_column"
+0x0C50 = "draw_sprite_back_to_top"
+0x0C60 = "sprite_in_icon_border"
+0x0C69 = "in_icon_border"
+0x0C72 = "in_icon_border_done"
+0x0C73 = "draw_icon_on_floor"
+0x0C7B = "draw_icon_right_half"
+0x0C86 = "draw_icon_left_half"
+0x0CA2 = "draw_sprite"
+0x0CBB = "restore_floor_picture"
+0x0CBF = "restore_floor_loop"
+0x0CCE = "clip_sprite_x"
+0x0CE0 = "clip_sprite_x_screen"
+0x0CEF = "clip_sprite_x_done"
+0x0CF0 = "clip_sprite_out_of_view"
+0x0CF3 = "clip_sprite_y"
+0x0CFE = "clip_sprite_left"
+0x0D00 = "clip_sprite_left_cells"
+0x0D0F = "clip_sprite_right"
+0x0D1B = "clip_sprite_x_wrapped"
+0x0D25 = "clip_sprite_x_far_left"
+0x0D2D = "clip_sprite_y_on_map"
+0x0D39 = "clip_sprite_y_screen"
+0x0D42 = "clip_sprite_y_wrap"
+0x0D49 = "clip_sprite_top"
+0x0D5D = "clip_sprite_bottom"
+0x0D66 = "clip_sprite_bottom_cells"
+0x0D6C = "clip_sprite_y_wrapped"
+0x0D76 = "clip_sprite_y_far_up"
+0x0D7E = "blank_display"
+0x0D82 = "set_crtc_register"
+0x0D89 = "draw_map_view"
+0x0D8B = "draw_map_view_loop"
+0x0D95 = "map_view_return"
+0x0D96 = "map_view_scroll_left"
+0x0D9E = "map_view_draw_left"
+0x0DA0 = "map_view_scroll_right"
+0x0DAA = "draw_map_view_column"
+0x0DC0 = "draw_map_view_address"
+0x0DD2 = "draw_map_view_byte"
+0x0DED = "draw_map_view_next"
+0x0DF2 = "set_screen_start"
+0x0E02 = "wait_vsync"
+0x0E0A = "draw_map_view_cell"
+0x0E27 = "draw_map_view_pattern"
+0x0E2C = "draw_map_view_copy"
+0x0E36 = "cell_at"
+0x0E47 = "cell_at_exit"
+0x0E4A = "cell_at_checked"
+0x0E52 = "cell_off_map"
+0x0E55 = "read_map_cell"
+0x0E66 = "read_map_cell_nibble"
+0x0E69 = "set_cell_return"
+0x0E6A = "place_player"
+0x0E92 = "clear_player_cell"
+0x0E98 = "set_cell"
+0x0EAC = "set_cell_write"
+0x0EC0 = "set_cell_high_nibble"
+0x0ECA = "set_cell_store"
+0x0ECE = "set_cell_done"
+0x0ECF = "start_tune"
+0x0ED3 = "start_tune_reset"
+0x0EF7 = "flush_buffers"
+0x0EFE = "direction_dx"
+0x0F07 = "direction_dy"
+0x0F10 = "turns"
+0x0F20 = "find_front"
+0x0F32 = "look_at_front"
+0x0F36 = "look_at"
+0x0F40 = "draw_title_pictures"
+0x0F46 = "draw_title_flame"
+0x0F6A = "title_flames"
+0x0F76 = "setup_alternate_pictures"
+0x0F7E = "setup_alternate_clear"
+0x0F86 = "setup_alternate_cell"
+0x0F9E = "setup_alternate_bits"
+0x0FA5 = "setup_alternate_store"
+0x0FB8 = "setup_alternate_even"
+0x0FC6 = "setup_alternate_next"
+0x0FCD = "print_object_name"
+0x0FD7 = "print_names_text"
+
+[comments]
+0x0BFB = '''
+Copy the part of the 4x4 picture at sprite that clip_sprite_x and _y found
+to be in the view to sprite_screen, a column of character cells at a time.
+Clobbers: A, Y, sprite, sprite_screen, sprite_column, sprite_row.
+'''
+0x0C60 = '''
+Never called.
+'''
+0x0C69 = '''
+Is position A (1-4, counting in from the far edge) of a map cell outside an
+icon? An icon, picture_size 1, covers only the middle two of four.
+Returns: Z set if it's outside.
+'''
+0x0C73 = '''
+Draw the icon at sprite in the middle of a floor picture at character
+position (X, Y): copy it into the middle of the floor's own picture, draw
+that, then (by an RTS to a pushed address) put the floor's middle back.
+'''
+0x0CA2 = '''
+Draw a 4x4 picture at character position (X, Y) on the map (4 to a map
+cell), whatever of it is in the view: sprite is the picture, and with the
+carry clear it's an icon on a floor picture instead (draw_icon_on_floor).
+Clobbers: A, X, Y and the sprite variables.
+'''
+0x0CBB = '''
+Put back the middle two columns of the floor picture, which are all the
+same as its last column's last character cell.
+'''
+0x0CCE = '''
+Which of a picture's 4 columns at character x = X are in the view (32
+columns from view_x, which wraps round to &E2-&FF as the view goes past the
+map's left edge)? Sets sprite_skip_x, sprite_columns and sprite_screen, or
+if none are, returns from the caller (draw_sprite) instead.
+'''
+0x0CF0 = '''
+Out of view: drop the return address and return from draw_sprite.
+'''
+0x0CF3 = '''
+The same for rows, from character y = Y and view_y: sets sprite_skip_y,
+sprite_rows and the high byte of sprite_screen.
+'''
+0x0D7E = '''
+CRTC register 1, characters displayed per row, to 0: the display goes blank.
+'''
+0x0D82 = '''
+CRTC register X = A.
+'''
+0x0D89 = '''
+The map view (the M key): the whole 64 x 64 map at a byte (4 pixels) by 4
+lines a cell, so 32 of its 64 columns at a time, scrolled by moving the
+screen start a character (and a map column) at a time; screen_start is the
+leftmost column shown. Draw all 32 columns.
+'''
+0x0D96 = '''
+Scroll the map view one column, drawing the column that comes into view.
+'''
+0x0DAA = '''
+Draw map view column A (0-31 across the screen; map column A plus
+screen_start), top to bottom: two map cells to a character cell.
+Clobbers: A, X, Y, work0-work3, sprite.
+'''
+0x0DF2 = '''
+Wait for the vsync, then point the CRTC at screen_start.
+Clobbers: A, X.
+'''
+0x0E02 = '''
+Wait for the vertical sync (OSBYTE &13). Preserves A.
+'''
+0x0E0A = '''
+Draw one map cell in the map view: A's bits 2-5 are its type, 4 times;
+Y the last of its 4 lines. The player's cell shows the player instead.
+'''
+0x0E36 = '''
+What's in map cell (X, Y), as the player meets it: off the map is lava (A),
+and the exit, while it shows its icon (F), is a wall (8).
+Returns: A = the cell type, Z set if it's empty floor (0).
+Clobbers: X, Y, cell_x, cell_y, map_pointer.
+'''
+0x0E4A = '''
+As cell_at but without the exit. Returns with the carry set off the map.
+'''
+0x0E55 = '''
+Read map cell (X, Y), on the map.
+'''
+0x0E6A = '''
+Put the player in the view at its top left cell (X, Y) + (4, 4), the view
+showing half a cell beyond: the start of a level, or a teleport.
+'''
+0x0E92 = '''
+Empty the player's cell.
+'''
+0x0E98 = '''
+Set map cell (X, Y) to type A, if it's on the map. The exit can't be
+emptied.
+Clobbers: A, X, Y, work0, cell_x, cell_y, map_pointer.
+'''
+0x0ECF = '''
+Start the tune: everything back to the beginning, the sound event on, and a
+silent note on channels 1 and 2 together, whose ending starts the event
+handler off.
+'''
+0x0EF7 = '''
+Flush all the buffers, which stops the tune (and loses any keys pressed).
+'''
+0x0EFE = '''
+How a step in each direction moves: left, right, up, down, then up-left,
+up-right, down-left, down-right, and 8, nowhere.
+'''
+0x0F20 = '''
+Look at the cell in front of the player.
+Returns: front_x, front_y, front_cell (and A, Z as cell_at).
+'''
+0x0F40 = '''
+The title screen's pictures: six flames (a monster's picture) and the
+player.
+'''
+0x0F6A = '''
+x, y in character cells.
+'''
+0x0F76 = '''
+Work out alternate_offsets for this level from alternate_cells: for each of
+the 4 cell types with a second picture, two bits say whether it's used on
+odd and on even squares.
+'''
+0x0FCD = '''
+Print object A's name.
+'''
+0x0FD7 = '''
+Print X + 1 characters from io_object_names + Y.
+'''
+
+[remarks]
+0x0BFF = "past the columns cut off..."
+0x0C09 = "...and the rows"
+0x0C1F = "down a character row"
+0x0C36 = "past the rows cut off at the bottom"
+0x0C50 = "back to the top"
+0x0C7B = "the icon's right column..."
+0x0C86 = "...and left, into the floor's middle"
+0x0C8F = "draw the floor picture"
+0x0C9B = "returning to restore_floor_picture"
+0x0CA4 = "4 x 4 cells, none cut off"
+0x0CBF = "the floor's last character cell"
+0x0CD2 = "the view hangs off the map's left edge?"
+0x0CD6 = "starts left of the view?"
+0x0CDA = "the view's last column but 3"
+0x0CDC = "ends right of the view?"
+0x0CE0 = "wholly in view"
+0x0D00 = "wholly out of view"
+0x0D04 = "the columns cut off"
+0x0D82 = "register"
+0x0D85 = "value"
+0x0D96 = "already at the left?"
+0x0DA2 = "already at the right?"
+0x0DA8 = "the rightmost column"
+0x0DB1 = "show from here"
+0x0DB6 = "work0 = SCREEN + 8 * column"
+0x0DC4 = "work2 = map + 32 * map column"
+0x0DCE = "32 character rows"
+0x0DD5 = "the even row's cell..."
+0x0DDC = "...and the odd's"
+0x0DE5 = "the next character row, wrapping"
+0x0E0D = "the player's cell?"
+0x0E20 = "the player, facing their way"
+0x0E27 = "self-modified: the pattern"
+0x0E41 = "the exit's icon"
+0x0E43 = "a wall"
+0x0E4A = "off the map?"
+0x0E52 = "lava"
+0x0E62 = "even rows in the high nibble"
+0x0E77 = "half a cell in"
+0x0E7A = "the player is 4 cells in"
+0x0EA8 = "don't empty the exit"
+0x0EDA = "enable event 0, output buffer empty"
+0x0EDF = "channel 1, in step with one other"
+0x0EEA = "OSWORD 7, SOUND"
+0x0EEE = "channel 2"
+0x0F48 = "a flame"
+0x0F5E = "the player"
+0x0F7E = "no second pictures"
+0x0F84 = "two bits a cell type, from the top"
+0x0F8C = "the difference in pictures..."
+0x0F94 = "...times 128"
+0x0F9C = "this cell type's two bits"
+0x0FAA = "bit 0: odd squares"
+0x0FB8 = "bit 1: even squares"
+0x0FCD = "12 characters a name"
+
+[operands]
+0x0C23 = "#HI(SCREEN)"
+0x0C57 = "#HI(SCREEN)"
+0x0C7D = "io_tiles + 2 * 32 + 8"
+0x0C88 = "io_tiles + 1 * 32 + 8"
+0x0C8F = "#LO(io_tiles)"
+0x0C93 = "#HI(io_tiles)"
+0x0C9C = "#HI(restore_floor_picture - 1)"
+0x0C9F = "#LO(restore_floor_picture - 1)"
+0x0CBF = "io_tiles + 3 * 32 + 3 * 8"
+0x0CC2 = "io_tiles + 1 * 32"
+0x0D44 = "#HI(SCREEN)"
+0x0DB6 = "#HI(SCREEN) DIV 8"
+0x0DCA = "#HI(map)"
+0x0DE9 = "#HI(SCREEN)"
+0x0E24 = "#map_view_player - map_view_patterns"
+0x0E27 = "draw_map_view_copy + 1"
+0x0F48 = "#HI(io_tiles + &E * 128)"
+0x0F4C = "title_flames"
+0x0F50 = "title_flames + 1"
+0x0F5E = "#HI(io_player + 2 * 128)"
+0x0FB5 = "alternate_offsets_odd + 1"
+0x0FC3 = "alternate_offsets_even + 1"
+0x0FD7 = "io_object_names"
+
+[[source]]
+start = 0x0F6A
+length = 12
+text = '''
+    EQUB 6, 24, 16, 8, 16, 19, 10, 21, 26, 24, 21, 22'''
+
+[[source]]
+start = 0x0EFE
+length = 34
+text = '''
+    EQUB -1, 1, 0, 0, -1, 1, -1, 1, 0
+.direction_dy
+    EQUB 0, 0, -1, 1, -1, -1, 1, 1, 0
+
+; Directions turned: indexed by the direction plus 0 for its opposite, 4 for
+; itself, 8 turned clockwise and 12 anticlockwise.
+.turns
+    EQUB 1, 0, 3, 2         ; opposite
+    EQUB 0, 1, 2, 3         ; the same
+    EQUB 2, 3, 1, 0         ; clockwise
+    EQUB 3, 2, 0, 1         ; anticlockwise'''

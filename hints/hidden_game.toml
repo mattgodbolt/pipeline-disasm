@@ -1,37 +1,90 @@
-# H.GAME: loaded at &3000 by the GAME stub, which copies most of it down
-# into low memory and jumps there. Disassemble with tools/dis6502seg.py.
+# H.GAME, the game: loaded at &3000 by the GAME stub, it copies most of itself
+# down into low memory and jumps there. src/hidden_game.6502 is generated from
+# this file and the files under hints/hidden_game/, which carry the names and
+# comments:
+#
+#   python3 tools/dis6502seg.py hints/hidden_game.toml > src/hidden_game.6502
+#
+# Traces only confirm what the static trace finds (they found nothing more),
+# so they're optional; tools/play.mjs makes them, e.g.
+#   node tools/play.mjs 'game; trace build/trace/play1.json; wait 6;
+#     bkey SPACE 5; wait 8; random 30'
 binary = "data/hidden_game.bin"
 org = 0x3000
 section = 'hidden_game, filename="H.GAME", org=&3000'
-# 0x0C60, 0x0CBB and 0x1E29 are code nothing calls (left over).
-entries = [0x3000, 0x0131, 0x0C60, 0x0CBB, 0x1E29]
+scope = "game"
+clean = true
+include = ["io.6502inc"]
+include_os = true
+# The event handler is reached through EVNTV; 0x0C60 and 0x1E29 are code
+# nothing calls (0x1E29 an older version of 0x1E88), and 0x0CBB is reached by
+# an RTS to a pushed address.
+entries = [0x3000, 0x0131, 0x0C60, 0x0CBB, 0x1E29, 0x113B]
 traces = ["build/trace/attract.json", "build/trace/play1.json", "build/trace/play2.json", "build/trace/play3.json"]
 # IO is loaded over the loader once it has run.
 trace_only = ["0x3000-0x30FF"]
+annotations = [
+    "hints/hidden_game/variables.toml",
+    "hints/hidden_game/loader.toml",
+    "hints/hidden_game/low.toml",
+    "hints/hidden_game/main.toml",
+    "hints/hidden_game/main2.toml",
+]
+
+header = '''
+H.GAME: PIPELINE itself (William Reeve & Ian Holmes, Superior Software 1988).
+
+The GAME stub reads this from the hidden sectors &122-&142 to &3000 and jumps
+to it. It's built to be loaded at &3000 but to run lower down: the loader at
+the start copies the rest into the stack page, page 8, &0400-&07FF and
+&0900-&23AC, sets up the screen and the sound event, and jumps to the game,
+which then loads the mission file IO over the loader (see io.6502inc).
+
+Generated from hints/hidden_game.toml and hints/hidden_game/*.toml by
+tools/dis6502seg.py; edit those and regenerate.
+'''
 
 [[segment]]
 name = "event_handler"
 load = 0x3100
 run = 0x0131
 length = 0x60
+end = "event_handler_end"
+comment = '''
+The sound event handler, run in the stack page (the stack never gets this
+deep).
+'''
 
 [[segment]]
-name = "page8"
+name = "sound_data"
 load = 0x3160
 run = 0x0880
 length = 0x80
+end = "sound_data_end"
+comment = '''
+The title tune, in the printer buffer, and the four sound envelopes, written
+straight into the OS's envelope store rather than with OSWORD 8.
+'''
 
 [[segment]]
-name = "low"
+name = "low_code"
 load = 0x3200
 run = 0x0400
 length = 0x400
+end = "low_code_end"
+comment = '''
+Map view patterns and the code that scrolls the playing area.
+'''
 
 [[segment]]
-name = "main"
+name = "main_code"
 load = 0x3600
 run = 0x0900
 length = 0x1AAD
+end = "main_code_end"
+comment = '''
+The game.
+'''
 
 # Print the text after the JSR, up to a NOP that is then executed.
 [[inline]]

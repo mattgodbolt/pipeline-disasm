@@ -1421,7 +1421,8 @@ SECTION io, filename="IO", org=io_start, load=io_start, exec=0
     }
     ASSERT object_icons = io_object_icons
 
-; The player, facing left, right, up and down.
+; The player, facing left and right, then two pictures for walking up or
+; down (drawn upside down every other step too).
 .player
     ; left
     PICTURE 4, 4, {
@@ -1493,7 +1494,7 @@ SECTION io, filename="IO", org=io_start, load=io_start, exec=0
         "....11......11......11......11..",
         "....11......11......11......11.."
     }
-    ; up
+    ; up or down
     PICTURE 4, 4, {
         "....11......11......11......11..",
         "....11......11......11......11..",
@@ -1528,7 +1529,7 @@ SECTION io, filename="IO", org=io_start, load=io_start, exec=0
         "....11......11......11......11..",
         "....11......11......11......11.."
     }
-    ; down
+    ; up or down, the other step
     PICTURE 4, 4, {
         "....11......11......11......11..",
         "....11......11......11......11..",

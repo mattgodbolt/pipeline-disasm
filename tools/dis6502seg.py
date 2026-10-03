@@ -32,6 +32,7 @@ data, symbols; addresses are run-time addresses) plus:
     run = 0x0131             # where they're copied to and run
     length = 0x60
     comment = '''...'''      # optional, above its SECTION
+    end = "event_handler_end"  # optional: a label just past its last byte
 
     [[inline]]               # a routine that reads data placed after its JSR
     routine = 0x103E         # and returns past it: the bytes after each JSR
@@ -51,14 +52,20 @@ data, symbols; addresses are run-time addresses) plus:
     [symbols]                # names for addresses outside the file (zero
     0x70 = "map_x"           # page...), defined at the top of the scope;
     0x71 = { name = "map_y", note = "comment" }
+    [constants]              # more definitions, name = expression text, for
+    copy_from = "&02"        # [operands] to use (a second name for an address)
     [external]               # names for outside addresses defined elsewhere
     0x257F = "io_time_rate"  # (an INCLUDE): used, not defined
+    [symbol_comments]        # block comment above a [symbols] definition
     [comments]               # block comment above the line at an address
     [remarks]                # comment at the end of the line at an address
     [operands]               # operand text for the instruction at an address
     0x0C9D = "#HI(restore - 1)"
     [rows]                   # data ranges laid out N bytes to a line
     "0x0880-0x08BF" = 32
+
+    annotations = ["hints/x/a.toml"]  # more files of any of the above, merged
+                             # in: tables combined, arrays of tables appended
 
 Relocated code is assumed to run after the loader has finished, so it never
 refers to the unrelocated parts of the file: an operand from relocated code
@@ -73,7 +80,7 @@ import tomllib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from dis6502 import ENDS_FLOW, SHRINKS, Disassembler, hexn  # noqa: E402
+from dis6502 import ENDS_FLOW, MODES, SHRINKS, Disassembler, hexn  # noqa: E402
 
 REMARK_COLUMN = 40
 
@@ -92,8 +99,9 @@ def ranges(spec):
 
 
 class Piece:
-    def __init__(self, load, run, data, name=None, comment=None):
+    def __init__(self, load, run, data, name=None, comment=None, end=None):
         self.load, self.run, self.data, self.name, self.comment = load, run, data, name, comment
+        self.end_label = end
 
     @property
     def end(self):
@@ -117,10 +125,15 @@ class SegmentedDisassembler(Disassembler):
                 self.pieces.append(Piece(at, at, whole[at - self.org : seg["load"] - self.org]))
             lo = seg["load"] - self.org
             self.pieces.append(Piece(seg["load"], seg["run"], whole[lo : lo + seg["length"]],
-                                     seg["name"], seg.get("comment")))
+                                     seg["name"], seg.get("comment"), seg.get("end")))
             at = seg["load"] + seg["length"]
         if at < self.end:
             self.pieces.append(Piece(at, at, whole[at - self.org :]))
+        # A relocated piece is named by its section's name where it runs,
+        # unless the hints give it another.
+        for p in self.pieces:
+            if p.name:
+                self.labels.setdefault(p.run, p.name)
         self.trace_only = [(lo, hi) for lo, hi, _ in ranges({r: None for r in hints.get("trace_only", [])})]
         self.inline = {i["routine"]: i for i in hints.get("inline", [])}
 
@@ -164,6 +177,7 @@ class SegmentedDisassembler(Disassembler):
                 self.forced[lo] = "table"
                 self.forced[hi] = "table"
         self.used_symbols = set()
+        self.used_annotations = set()
         self.context = None
         self.clean = hints.get("clean", False)
 
@@ -268,9 +282,10 @@ class SegmentedDisassembler(Disassembler):
         self.context = addr
         try:
             if addr in self.operands:
+                self.used_annotations.add(("operands", addr))
                 mnemonic, mode, operand, size = self.code[addr]
                 text = self.operands[addr]
-                if mode in SHRINKS and operand < 0x100:
+                if mode in SHRINKS and operand < 0x100 and (mnemonic, SHRINKS[mode]) in MODES:
                     suffix = {"abs": "", "abx": ", X", "aby": ", Y"}[mode]
                     return f"{mnemonic}_ABS {text}{suffix}"
                 return {
@@ -338,6 +353,7 @@ class SegmentedDisassembler(Disassembler):
                 or addr in self.comments or addr in self.remarks or addr in self.replacements)
 
     def line(self, text, addr, raw=None):
+        self.used_annotations.add(("remarks", addr))
         if addr in self.remarks:
             return f"    {text:<{REMARK_COLUMN - 4}}; {self.remarks[addr]}"
         if self.clean:
@@ -346,6 +362,7 @@ class SegmentedDisassembler(Disassembler):
         return f"    {text:<32}; {tail}"
 
     def comment(self, out, addr):
+        self.used_annotations.add(("comments", addr))
         if addr in self.comments:
             if out and out[-1] != "":
                 out.append("")
@@ -397,7 +414,11 @@ class SegmentedDisassembler(Disassembler):
                     out += [f"; {t}".rstrip() for t in p.comment.strip("\n").splitlines()]
                 out.append(f".{p.name}_load")
                 out.append(f"SECTION {p.name}, org={hexn(p.run)}")
+                if self.labels[p.run] != p.name:
+                    out.append(f".{p.name}")
             uses_abs |= self.emit_piece(p, out)
+            if p.end_label:
+                out.append(f".{p.end_label}")
             if p.name:
                 out.append("ENDSECTION")
         return out, uses_abs
@@ -410,6 +431,13 @@ class SegmentedDisassembler(Disassembler):
         self.collect_refs()
         self.refs |= set(self.labels)
         body, uses_abs = self.emit()
+        for kind in ("comments", "remarks", "operands"):
+            for addr in sorted(getattr(self, kind)):
+                if (kind, addr) not in self.used_annotations:
+                    print(f"warning: [{kind}] {addr:#06x} isn't the start of a line", file=sys.stderr)
+        for addr in sorted(self.labels):
+            if not self.inside(addr):
+                print(f"warning: [labels] {addr:#06x} is outside the file", file=sys.stderr)
         head = []
         if "header" in self.hints:
             head += [f"; {t}".rstrip() for t in self.hints["header"].strip("\n").splitlines()]
@@ -427,27 +455,61 @@ class SegmentedDisassembler(Disassembler):
         defs = []
         # Every [symbols] name is defined, used or not: some are only used in
         # [operands] expressions, and the rest document the variables.
+        groups = {addr_key(k): v for k, v in self.hints.get("symbol_comments", {}).items()}
         for op in sorted(self.local):
+            if op in groups:
+                if defs:
+                    defs.append("")
+                defs += [f"; {t}".rstrip() for t in groups[op].strip("\n").splitlines()]
             text = f"{self.local[op]} = {hexn(op)}"
             if self.notes.get(op):
                 text = f"{text:<{REMARK_COLUMN}}; {self.notes[op]}"
+            defs.append(text)
+        consts = self.hints.get("constants", {})
+        if consts:
+            defs.append("")
+        for name, value in consts.items():
+            if isinstance(value, dict):
+                text = f"{name} = {value['value']}"
+                if value.get("note"):
+                    text = f"{text:<{REMARK_COLUMN}}; {value['note']}"
+            else:
+                text = f"{name} = {value}"
             defs.append(text)
         if scope:
             lines = head + [f".{scope}", "{"]
             if "symbols_comment" in self.hints:
                 lines += [f"; {t}".rstrip() for t in self.hints["symbols_comment"].strip("\n").splitlines()]
-            lines += defs + body + ["}", "ENDSECTION", ""]
+            lines += defs + [""] + body + ["}", "ENDSECTION", ""]
         else:
             lines = head + defs + body + ["ENDSECTION", ""]
         return "\n".join(lines)
 
 
+def load_hints(path: Path, root: Path) -> dict:
+    with open(path, "rb") as f:
+        hints = tomllib.load(f)
+    for extra in hints.get("annotations", []):
+        with open(root / extra, "rb") as f:
+            more = tomllib.load(f)
+        for key, value in more.items():
+            if isinstance(value, dict):
+                clash = set(hints.get(key, {})) & set(value)
+                if clash:
+                    raise SystemExit(f"{extra}: [{key}] {sorted(clash)} already given")
+                hints.setdefault(key, {}).update(value)
+            elif isinstance(value, list):
+                hints.setdefault(key, []).extend(value)
+            else:
+                raise SystemExit(f"{extra}: {key} belongs in the main hints file")
+    return hints
+
+
 def main():
     if len(sys.argv) != 2:
         raise SystemExit(__doc__)
-    with open(sys.argv[1], "rb") as f:
-        hints = tomllib.load(f)
     root = Path(__file__).resolve().parent.parent
+    hints = load_hints(Path(sys.argv[1]), root)
     sys.stdout.write(SegmentedDisassembler(hints, root).run())
 
 
