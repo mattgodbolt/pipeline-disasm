@@ -102,3 +102,50 @@ Times are US Central.
 - On tape (filing system below 4, from OSARGS 0) it loads DEFAULT as the
   next file (name ""), and the sprite operations say "Not available with
   this filing system".
+
+## 2026-10-03 18:41 — How H.GRAPH works (for the journal)
+
+- Confirmed: the shipped IO carries DEFAULT's sprites and names byte for
+  byte (IO+&25D3 = DEFAULT &000-&DFF, IO+0 = DEFAULT &E00-&E7F, IO+&80 =
+  the names). So IO's graphics could be written with src/sprites.6502inc's
+  LARGE_SPRITE / SMALL_SPRITE / OBJECT_NAME pictures too.
+- Start-up (`start`, &2BAE): on first entry (BRKV still pointing into ROM)
+  it takes BRKV and EVNTV, saving the old values in IND1V/IND2V to restore
+  on exit, and enables the Escape event; then MODE 5, the palette, cursor
+  off, `*OPT 1,0` on disc, the screen furniture from a VDU list, the logo,
+  and (first time only, flag `graphics_loaded`) clears &4000-&4FFF and
+  loads DEFAULT. Errors go to `error_handler`, which shows the message in a
+  window and re-enters `start`, so work survives an error.
+- `main_loop` resets the stack from `stack_pointer` each pass, which is why
+  commands can bail out with a plain JMP. Pacing: `select_sprite` waits for
+  the interval timer to reach 2 cs each pass. Commands dispatch through a
+  self-modified JSR from `command_table` (number = menu * 8 + item, or a
+  CTRL shortcut's place + 1).
+- Pop-up windows: eight fixed windows (`window_address`, `window_size`),
+  each saving what it covers at &5000; opening one closes the others.
+  Window text is a flag byte (&FF = menu: the lines after the title are
+  picked with the cursor keys), lines ending CR, and &FF. The font is 4x8
+  pixels, exclusive-ORed on, so the menu highlight is an EOR with &0F.
+- Escape: the event handler sets the Escape flag, and a latch when SHIFT is
+  held; Escape -> "Escape? No/Yes"; Yes -> "Please insert Pipeline disc and
+  press SPACE", restore vectors, `*/MRUN`. On a non-disc filing system it
+  does `*FX200,3` and `JMP (&FFFC)` instead. While picking a second sprite
+  or animating, f0-f3 raise an Escape (OSBYTE &7D) to cancel.
+- Sprite numbers in the code are sheet positions, mapped to storage slots
+  through `slot_of_position`, except while `by_slot` bit 7 is set (Animate
+  works in slots). Numbers &57/&58 are two frame buffers at &3E00/&3E80;
+  &3F80 is the undo copy taken whenever a sprite is selected (Undo swaps
+  with it, so it is also redo).
+- Sheet position 0 is the background tile: plotting in it copies the 4x8
+  pixel cell changed through the whole sprite (`repeat_background`).
+- Odd bits: `clear_rows` has no RTS and returns through `divide_by_5`;
+  `sheet_row`'s `LDA #&80 : RTS` doubles as select_sprite's exit;
+  `SBC row_down_step-1,X` reads the table from an RTS byte (`column_rewind`
+  likewise); `open_file.update` and `read_block.write` are BIT-skip entry
+  points; the Escape menu's flag byte is also the end of the error message
+  buffer. Dead code: copies of three helpers at &2B18-&2B3F, an orphan RTS
+  at &2594, a "read PTR" stub at &3610, a "Not implemented" error at &3633,
+  and unused texts ("E S C A P E" error, "ActiCol"). &3ADC-&3BAF is
+  leftover memory, not program.
+- Zero page used: &50-&65 (pointers and loop counters), &70-&7E (editor
+  state), plus the OS's &FD (error pointer) and &FF (Escape flag).
