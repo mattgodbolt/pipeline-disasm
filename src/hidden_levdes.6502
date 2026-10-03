@@ -909,183 +909,218 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     LDX cursor_x
     LDY cursor_y
     RTS
+; VDU 19: set a logical colour's physical colour.
+; In: A = logical colour * 16 + physical colour (the OS ignores the top
+; nibble of the physical colour).
+; Clobbers: A, X.
 .set_palette_entry
-    TAX                             ; 15B3: AA
-    LDA #&13                        ; 15B4: A9 13
-    JSR OSWRCH                      ; 15B6: 20 EE FF
-    TXA                             ; 15B9: 8A
-    LSR A                           ; 15BA: 4A
-    LSR A                           ; 15BB: 4A
-    LSR A                           ; 15BC: 4A
-    LSR A                           ; 15BD: 4A
-    JSR OSWRCH                      ; 15BE: 20 EE FF
-    TXA                             ; 15C1: 8A
-    JSR OSWRCH                      ; 15C2: 20 EE FF
-    LDA #&00                        ; 15C5: A9 00
-    JSR OSWRCH                      ; 15C7: 20 EE FF
-    JSR OSWRCH                      ; 15CA: 20 EE FF
-    JMP OSWRCH                      ; 15CD: 4C EE FF
+    TAX
+    LDA #19
+    JSR OSWRCH
+    TXA
+    LSR A
+    LSR A
+    LSR A
+    LSR A
+    JSR OSWRCH
+    TXA
+    JSR OSWRCH
+    LDA #0
+    JSR OSWRCH
+    JSR OSWRCH
+    JMP OSWRCH
+
+; The editor proper, after the title: a blank level, then commands for ever.
 .main
-    JSR new_level                   ; 15D0: 20 68 23
+    JSR new_level
 .main_reset_input
-    JSR allow_any_key               ; 15D3: 20 81 13
-    LDA #&4A                        ; 15D6: A9 4A
-    STA RDCHV                       ; 15D8: 8D 10 02
-    LDA #&12                        ; 15DB: A9 12
-    STA RDCHV+1                     ; 15DD: 8D 11 02
+    JSR allow_any_key
+    LDA #LO(rdchv_filter)
+    STA RDCHV
+    LDA #HI(rdchv_filter)
+    STA RDCHV+1
 .main_loop
-    DEC in_main_loop                ; 15E0: C6 6B
-    LDA #&01                        ; 15E2: A9 01
-    LDX simulate_window             ; 15E4: A6 68
-    DEX                             ; 15E6: CA
-    JSR get_key                     ; 15E7: 20 BD 13
-    INC in_main_loop                ; 15EA: E6 6B
-    PHA                             ; 15EC: 48
-    JSR hex_key                     ; 15ED: 20 F9 15
-    PLA                             ; 15F0: 68
-    EOR #&80                        ; 15F1: 49 80
+    DEC in_main_loop
+    LDA #1                      ; plotting allowed
+    LDX simulate_window         ; keep the Simulate window up if simulating
+    DEX
+    JSR get_key
+    INC in_main_loop
+    PHA
+    JSR hex_key
+    PLA
+    EOR #&80                    ; function keys f0-f4 are commands 0-4
 .main_dispatch
-    JSR do_command                  ; 15F3: 20 38 16
-    JMP main_loop                   ; 15F6: 4C E0 15
+    JSR do_command
+    JMP main_loop
+
+; In the main loop, 0-9 and A-F choose the brush directly, and the cursor up
+; and down keys open the block menu, going on to move its bar.
+; In: A = the key.
+; Clobbers: A, X, Y.
 .hex_key
-    CMP #&30                        ; 15F9: C9 30
-    BCC hex_key_done                ; 15FB: 90 3A
-    CMP #&47                        ; 15FD: C9 47
-    BCS hex_key_cursor              ; 15FF: B0 17
-    CMP #&3A                        ; 1601: C9 3A
-    BCC hex_key_tile                ; 1603: 90 06
-    SBC #&41                        ; 1605: E9 41
-    BCC hex_key_cursor              ; 1607: 90 0F
-    ADC #&39                        ; 1609: 69 39
+    CMP #asc("0")
+    BCC hex_key_done
+    CMP #asc("F") + 1
+    BCS hex_key_cursor
+    CMP #asc("9") + 1
+    BCC hex_key_tile
+    SBC #asc("A")
+    BCC hex_key_cursor
+    ADC #asc("9")               ; A-F follow 0-9 (the carry adds one)
 .hex_key_tile
-    TAY                             ; 160B: A8
-    LDA find_puzzle_found, Y        ; 160C: B9 8F 21
-    AND #&0F                        ; 160F: 29 0F
-    STA brush                       ; 1611: 85 59
+    TAY
+    LDA tile_menu_map - asc("0"), Y
+    AND #&0F
+    STA brush
 .beep
-    LDA #&07                        ; 1613: A9 07
-    JMP OSWRCH                      ; 1615: 4C EE FF
+    LDA #7
+    JMP OSWRCH
 .hex_key_cursor
-    CMP #&8E                        ; 1618: C9 8E
-    BEQ hex_key_cursor_flush        ; 161A: F0 04
-    CMP #&8F                        ; 161C: C9 8F
-    BNE hex_key_done                ; 161E: D0 17
+    CMP #&8E                    ; cursor down
+    BEQ hex_key_cursor_flush
+    CMP #&8F                    ; cursor up
+    BNE hex_key_done
 .hex_key_cursor_flush
-    TAY                             ; 1620: A8
-    LDX #&00                        ; 1621: A2 00
-    LDA #&8A                        ; 1623: A9 8A
-    JSR OSBYTE                      ; 1625: 20 F4 FF
+    TAY
+    LDX #0
+    LDA #&8A                    ; put the key back for the menu to read
+    JSR OSBYTE
+; f0: choose the brush from the block menu.
 .select_brush
-    LDA #&00                        ; 1628: A9 00
-    STA simulate_window             ; 162A: 85 68
-    STA simulating                  ; 162C: 85 6A
-    LDA #&01                        ; 162E: A9 01
-    LDY brush                       ; 1630: A4 59
-    JSR choose_from_window_at       ; 1632: 20 28 11
-    STA brush                       ; 1635: 85 59
+    LDA #0
+    STA simulate_window
+    STA simulating
+    LDA #W_SELECT_BLOCK
+    LDY brush
+    JSR choose_from_window_at
+    STA brush
 .hex_key_done
-    RTS                             ; 1637: 60
+    RTS
+
+; Run a command: 0 the block menu, 1 Options, 2 Files, 3 Help, 4 About.
+; Commands stop the simulator; anything else leaves it alone.
+; In: A = the command.
+; Clobbers: A, X, Y, and whatever the command does.
 .do_command
-    TAY                             ; 1638: A8
-    BEQ select_brush                ; 1639: F0 ED
-    LDA simulate_window             ; 163B: A5 68
-    PHA                             ; 163D: 48
-    LDA simulating                  ; 163E: A5 6A
-    LDX #&00                        ; 1640: A2 00
-    STX simulate_window             ; 1642: 86 68
-    STX simulating                  ; 1644: 86 6A
-    TAX                             ; 1646: AA
-    PLA                             ; 1647: 68
-    DEY                             ; 1648: 88
-    BEQ options_menu                ; 1649: F0 19
-    DEY                             ; 164B: 88
-    BEQ files_menu                  ; 164C: F0 3C
-    DEY                             ; 164E: 88
-    BEQ help_menu                   ; 164F: F0 4D
-    DEY                             ; 1651: 88
-    BEQ show_about                  ; 1652: F0 05
-    STX simulating                  ; 1654: 86 6A
-    STA simulate_window             ; 1656: 85 68
-    RTS                             ; 1658: 60
+    TAY
+    BEQ select_brush
+    LDA simulate_window
+    PHA
+    LDA simulating
+    LDX #0
+    STX simulate_window
+    STX simulating
+    TAX
+    PLA
+    DEY
+    BEQ options_menu
+    DEY
+    BEQ files_menu
+    DEY
+    BEQ help_menu
+    DEY
+    BEQ show_about
+    STX simulating
+    STA simulate_window
+    RTS
+
+; f4: the credits.
 .show_about
-    LDA #&3F                        ; 1659: A9 3F
-    JSR open_window                 ; 165B: 20 A8 14
-    JSR wait_for_key                ; 165E: 20 34 12
-    JMP vector_close_window         ; 1661: 4C 83 08
+    LDA #W_ABOUT
+    JSR open_window
+    JSR wait_for_key
+    JMP vector_close_window
+
+; f1: the Options menu.
 .options_menu
-    LDA #&02                        ; 1664: A9 02
-    JSR choose_from_window          ; 1666: 20 26 11
-    LDY #&01                        ; 1669: A0 01
+    LDA #W_OPTIONS
+    JSR choose_from_window
+    LDY #handlers(options_handlers_ptr)
+; Jump to the handler for a menu item.
+; In: A = the item; Y = the handler table's number (handlers()).
 .jump_to_handler
-    PHA                             ; 166B: 48
-    TYA                             ; 166C: 98
-    ASL A                           ; 166D: 0A
-    TAY                             ; 166E: A8
-    LDA &10000 + menu_tables - 2, Y ; 166F: B9 FE FF
-    STA ptr                         ; 1672: 85 52
-    LDA &10000 + menu_tables - 1, Y ; 1674: B9 FF FF
-    STA ptr+1                       ; 1677: 85 53
-    PLA                             ; 1679: 68
-    ASL A                           ; 167A: 0A
-    TAY                             ; 167B: A8
-    LDA (ptr), Y                    ; 167C: B1 52
-    STA jump_to_handler_jmp+1       ; 167E: 8D 88 16
-    INY                             ; 1681: C8
-    LDA (ptr), Y                    ; 1682: B1 52
-    STA jump_to_handler_jmp+2       ; 1684: 8D 89 16
+    PHA
+    TYA
+    ASL A
+    TAY
+    ; The table numbers start at 1 and the pointers at zero page's start, so
+    ; this indexes from &FFFE and wraps round into zero page.
+    LDA &10000 + menu_tables - 2, Y
+    STA ptr
+    LDA &10000 + menu_tables - 1, Y
+    STA ptr+1
+    PLA
+    ASL A
+    TAY
+    LDA (ptr), Y
+    STA jump_to_handler_jmp+1
+    INY
+    LDA (ptr), Y
+    STA jump_to_handler_jmp+2
 .jump_to_handler_jmp
-    JMP &FFA6                       ; 1687: 4C A6 FF
+    JMP &FFA6                   ; the handler, filled in above
+
+; f2: the Files menu, after checking the user is sure.
 .files_menu
-    LDA #&25                        ; 168A: A9 25
-    JSR choose_from_window          ; 168C: 20 26 11
-    CMP #&04                        ; 168F: C9 04
-    BEQ hex_key_done                ; 1691: F0 A4
-    STA work                        ; 1693: 85 54
-    JSR confirm                     ; 1695: 20 23 13
-    LDA work                        ; 1698: A5 54
-    LDY #&07                        ; 169A: A0 07
-    BNE jump_to_handler             ; 169C: D0 CD
+    LDA #W_FILES
+    JSR choose_from_window
+    CMP #4                      ; OK, after the four handled items
+    BEQ hex_key_done
+    STA work
+    JSR confirm
+    LDA work
+    LDY #handlers(files_handlers_ptr)
+    BNE jump_to_handler
+
+; f3: the Help menu, which shows whether the simulator is on and stays up
+; until OK.
 .help_menu
-    LDA #&3E                        ; 169E: A9 3E
-    JSR open_window                 ; 16A0: 20 A8 14
-    LDA #&00                        ; 16A3: A9 00
-    BEQ help_menu_show              ; 16A5: F0 06
+    LDA #W_HELP
+    JSR open_window
+    LDA #0
+    BEQ help_menu_show
+; Help menu, Simulate: switch it and go round again.
 .help_simulate
-    SEC                             ; 16A7: 38
-    JSR switch_simulate             ; 16A8: 20 BE 16
-    LDA #&01                        ; 16AB: A9 01
+    SEC                         ; leave the Simulate window to the main loop
+    JSR switch_simulate
+    LDA #1
 .help_menu_show
-    PHA                             ; 16AD: 48
-    LDA simulate_window             ; 16AE: A5 68
-    LDY #&02                        ; 16B0: A0 02
-    JSR vector_tick_line            ; 16B2: 20 89 08
-    PLA                             ; 16B5: 68
-    TAY                             ; 16B6: A8
-    JSR menu_select                 ; 16B7: 20 52 11
-    LDY #&10                        ; 16BA: A0 10
-    BNE jump_to_handler             ; 16BC: D0 AD
+    PHA
+    LDA simulate_window
+    LDY #2
+    JSR vector_tick_line
+    PLA
+    TAY
+    JSR menu_select
+    LDY #handlers(help_handlers_ptr)
+    BNE jump_to_handler
+
+; Switch the simulator on or off. With C clear (the S key) the Simulate
+; window is kept on screen while it's on.
+; Clobbers: A, X, Y.
 .switch_simulate
-    LDA simulate_window             ; 16BE: A5 68
-    EOR #&44                        ; 16C0: 49 44
-    STA simulate_window             ; 16C2: 85 68
-    BNE switch_simulate_on          ; 16C4: D0 12
-    STA simulating                  ; 16C6: 85 6A
-    BCS switch_simulate_done        ; 16C8: B0 0D
-    LDA kept_window                 ; 16CA: A5 5D
-    CMP #&43                        ; 16CC: C9 43
-    BNE switch_simulate_done        ; 16CE: D0 07
-    JSR vector_close_window         ; 16D0: 20 83 08
-    LDA #&FF                        ; 16D3: A9 FF
-    STA kept_window                 ; 16D5: 85 5D
+    LDA simulate_window
+    EOR #W_SIMULATE + 1
+    STA simulate_window
+    BNE switch_simulate_on
+    STA simulating
+    BCS switch_simulate_done
+    LDA kept_window
+    CMP #W_SIMULATE
+    BNE switch_simulate_done
+    JSR vector_close_window
+    LDA #&FF
+    STA kept_window
 .switch_simulate_done
-    RTS                             ; 16D7: 60
+    RTS
 .switch_simulate_on
-    BCS switch_simulate_done        ; 16D8: B0 FD
-    LDA kept_window                 ; 16DA: A5 5D
-    BPL switch_simulate_done        ; 16DC: 10 F9
-    LDA #&43                        ; 16DE: A9 43
-    STA kept_window                 ; 16E0: 85 5D
-    JMP open_window                 ; 16E2: 4C A8 14
+    BCS switch_simulate_done
+    LDA kept_window
+    BPL switch_simulate_done
+    LDA #W_SIMULATE
+    STA kept_window
+    JMP open_window
 .option_start
     LDY #&00                        ; 16E5: A0 00
     BEQ edit_marker                 ; 16E7: F0 02
