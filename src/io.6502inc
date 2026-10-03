@@ -88,6 +88,6 @@ io_graphics      = io_maps + IO_LEVELS * IO_MAP_SIZE
 io_tiles         = io_graphics            ; 16 pictures, one per map cell type
 io_object_icons  = io_graphics + 16 * 128 ; 16 icons of 32 bytes
 io_player        = io_graphics + 20 * 128 ; 4 pictures, facing each way
-io_animation     = io_graphics + 24 * 128 ; the other frames of 4 animated cells
+io_alternates    = io_graphics + 24 * 128 ; second pictures for cell types 5, 7, 8, A
 
 ASSERT io_graphics + IO_GRAPHICS_SIZE = IO_END

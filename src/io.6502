@@ -137,145 +137,503 @@ SECTION io, filename="IO", org=io_start, load=io_start, exec=0
     EQUB &00, &14, &26, &31                  ; level 4
     ASSERT palettes = io_palettes
 
-; Start x, y; things to collect; time; exit x, y; the cell monsters eat
-; (low nibble) and leave (high); which cells animate.
+; Each level's setup: start (the view's top left cell; the player starts 4
+; cells further in each way), how many cell 7s to collect, the clock, the
+; exit's cell, monsters' food (low nibble: the cell type they eat; high:
+; what it becomes), and the second-picture bits for cell types A, 7, 8, 5.
 .level_setup
-    EQUB &3A, &1F, &7C, &FA, &1F, &1C, &7A, &07  ; level 1
-    EQUB &32, &13, &54, &FA, &3F, &3F, &7A, &05  ; level 2
-    EQUB &1C, &3B, &FA, &F0, &20, &2B, &AA, &77  ; level 3
-    EQUB &23, &21, &55, &B4, &0E, &0A, &7A, &F4  ; level 4
+    EQUB &3A, &1F, 124, 250, &1F, &1C, &7A, %00000111  ; level 1
+    EQUB &32, &13, 84, 250, &3F, &3F, &7A, %00000101  ; level 2
+    EQUB &1C, &3B, 250, 240, &20, &2B, &AA, %01110111  ; level 3
+    EQUB &23, &21, 85, 180, &0E, &0A, &7A, %11110100  ; level 4
     ASSERT level_setup = io_level_setup
 
-; Objects: x, y, icon, and uses left in the low bits with flags above.
+; Objects: cell x, y, icon (and name), and its uses (bits 0-5; 32 and over
+; never run out) and flags (bit 6: it vanishes when used up; bit 7: it does
+; nothing when thrown). Object n has triggers n, n + 8, n + 16 and n + 24.
 .level_objects
     ; level 1
-    EQUB &20, &1E, &00, &82            ; Remote C.D.1
-    EQUB &39, &0F, &03, &A2            ; Blueprints
-    EQUB &18, &1E, &08, &C1            ; Space Burger
-    EQUB &1F, &2F, &0D, &81            ; Detonator
-    EQUB &0C, &30, &05, &41            ; Spanner
-    EQUB &26, &2E, &04, &0A            ; Mallet
-    EQUB &36, &24, &02, &83            ; Remote C.D.3
-    EQUB &1E, &26, &0E, &E1            ; Explosives
+    EQUB 32, 30,  0, &82      ; 0: Remote C.D.1; uses: 2, no triggers thrown
+    EQUB 57, 15,  3, &A2      ; 1: Blueprints; uses: any, no triggers thrown
+    EQUB 24, 30,  8, &C1      ; 2: Space Burger; uses: 1, vanishes, no triggers thrown
+    EQUB 31, 47, 13, &81      ; 3: Detonator; uses: 1, no triggers thrown
+    EQUB 12, 48,  5, &41      ; 4: Spanner; uses: 1, vanishes
+    EQUB 38, 46,  4, &0A      ; 5: Mallet; uses: 10
+    EQUB 54, 36,  2, &83      ; 6: Remote C.D.3; uses: 3, no triggers thrown
+    EQUB 30, 38, 14, &E1      ; 7: Explosives; uses: any, vanishes, no triggers thrown
     ; level 2
-    EQUB &23, &25, &0E, &41            ; Explosives
-    EQUB &16, &3D, &00, &81            ; Remote C.D.1
-    EQUB &11, &3B, &03, &C1            ; Blueprints
-    EQUB &16, &16, &01, &C1            ; Remote C.D.2
-    EQUB &2A, &26, &02, &81            ; Remote C.D.3
-    EQUB &2C, &14, &0E, &41            ; Explosives
-    EQUB &0F, &30, &0A, &81            ; Fire Blanket
-    EQUB &0A, &00, &0C, &88            ; Extinguisher
+    EQUB 35, 37, 14, &41      ; 0: Explosives; uses: 1, vanishes
+    EQUB 22, 61,  0, &81      ; 1: Remote C.D.1; uses: 1, no triggers thrown
+    EQUB 17, 59,  3, &C1      ; 2: Blueprints; uses: 1, vanishes, no triggers thrown
+    EQUB 22, 22,  1, &C1      ; 3: Remote C.D.2; uses: 1, vanishes, no triggers thrown
+    EQUB 42, 38,  2, &81      ; 4: Remote C.D.3; uses: 1, no triggers thrown
+    EQUB 44, 20, 14, &41      ; 5: Explosives; uses: 1, vanishes
+    EQUB 15, 48, 10, &81      ; 6: Fire Blanket; uses: 1, no triggers thrown
+    EQUB 10,  0, 12, &88      ; 7: Extinguisher; uses: 8, no triggers thrown
     ; level 3
-    EQUB &20, &2F, &00, &A0            ; Remote C.D.1
-    EQUB &2B, &16, &03, &83            ; Blueprints
-    EQUB &0D, &12, &01, &A0            ; Remote C.D.2
-    EQUB &2B, &25, &05, &A0            ; Spanner
-    EQUB &13, &1E, &07, &41            ; Magnet
-    EQUB &29, &08, &09, &A0            ; Jovian Wine
-    EQUB &1B, &3C, &02, &A0            ; Remote C.D.3
-    EQUB &00, &3F, &04, &04            ; Mallet
+    EQUB 32, 47,  0, &A0      ; 0: Remote C.D.1; uses: any, no triggers thrown
+    EQUB 43, 22,  3, &83      ; 1: Blueprints; uses: 3, no triggers thrown
+    EQUB 13, 18,  1, &A0      ; 2: Remote C.D.2; uses: any, no triggers thrown
+    EQUB 43, 37,  5, &A0      ; 3: Spanner; uses: any, no triggers thrown
+    EQUB 19, 30,  7, &41      ; 4: Magnet; uses: 1, vanishes
+    EQUB 41,  8,  9, &A0      ; 5: Jovian Wine; uses: any, no triggers thrown
+    EQUB 27, 60,  2, &A0      ; 6: Remote C.D.3; uses: any, no triggers thrown
+    EQUB  0, 63,  4, &04      ; 7: Mallet; uses: 4
     ; level 4
-    EQUB &25, &27, &02, &A1            ; Remote C.D.3
-    EQUB &1B, &20, &01, &A0            ; Remote C.D.2
-    EQUB &21, &37, &00, &A0            ; Remote C.D.1
-    EQUB &37, &38, &06, &87            ; Screwdriver
-    EQUB &02, &2C, &09, &49            ; Jovian Wine
-    EQUB &2D, &0D, &04, &03            ; Mallet
-    EQUB &0A, &25, &0E, &41            ; Explosives
-    EQUB &0B, &3F, &0B, &A6            ; Laser Gun
+    EQUB 37, 39,  2, &A1      ; 0: Remote C.D.3; uses: any, no triggers thrown
+    EQUB 27, 32,  1, &A0      ; 1: Remote C.D.2; uses: any, no triggers thrown
+    EQUB 33, 55,  0, &A0      ; 2: Remote C.D.1; uses: any, no triggers thrown
+    EQUB 55, 56,  6, &87      ; 3: Screwdriver; uses: 7, no triggers thrown
+    EQUB  2, 44,  9, &49      ; 4: Jovian Wine; uses: 9, vanishes
+    EQUB 45, 13,  4, &03      ; 5: Mallet; uses: 3
+    EQUB 10, 37, 14, &41      ; 6: Explosives; uses: 1, vanishes
+    EQUB 11, 63, 11, &A6      ; 7: Laser Gun; uses: any, no triggers thrown
     ASSERT level_objects = io_level_objects
 
-; Monsters: x, y in character cells (4 to a map cell), direction (8 and
-; over: not yet out), and which ways it prefers to turn.
+; Monsters: x, y in character cells (4 to a map cell), direction (0-3 left,
+; right, up, down; 4-7 stuck; 8 and up not out), and four 2-bit choices of
+; which way to try next, from the bottom: back, on, clockwise, anticlockwise.
 .level_monsters
-    EQUB &B4, &80, &02, &39            ; level 1
-    EQUB &20, &7C, &01, &27            
-    EQUB &04, &14, &02, &39            
-    EQUB &3C, &0C, &03, &39            
-    EQUB &54, &78, &00, &27            ; level 2
-    EQUB &4C, &A4, &01, &B1            
-    EQUB &38, &F4, &03, &27            
-    EQUB &70, &50, &03, &39            
-    EQUB &64, &1C, &01, &55            ; level 3
-    EQUB &1C, &3C, &02, &27            
-    EQUB &44, &28, &02, &36            
-    EQUB &04, &E0, &01, &39            
-    EQUB &94, &D8, &02, &36            ; level 4
-    EQUB &8C, &44, &03, &2D            
-    EQUB &28, &4C, &02, &3D            
-    EQUB &30, &98, &02, &36            
+    ; level 1
+    EQUB &B4, &80, 2, %00111001   ; cell 45, 32, up; tries on, cw, acw, back
+    EQUB &20, &7C, 1, %00100111   ; cell 8, 31, right; tries acw, on, cw, back
+    EQUB &04, &14, 2, %00111001   ; cell 1, 5, up; tries on, cw, acw, back
+    EQUB &3C, &0C, 3, %00111001   ; cell 15, 3, down; tries on, cw, acw, back
+    ; level 2
+    EQUB &54, &78, 0, %00100111   ; cell 21, 30, left; tries acw, on, cw, back
+    EQUB &4C, &A4, 1, %10110001   ; cell 19, 41, right; tries on, back, acw, cw
+    EQUB &38, &F4, 3, %00100111   ; cell 14, 61, down; tries acw, on, cw, back
+    EQUB &70, &50, 3, %00111001   ; cell 28, 20, down; tries on, cw, acw, back
+    ; level 3
+    EQUB &64, &1C, 1, %01010101   ; cell 25, 7, right; tries on, on, on, on
+    EQUB &1C, &3C, 2, %00100111   ; cell 7, 15, up; tries acw, on, cw, back
+    EQUB &44, &28, 2, %00110110   ; cell 17, 10, up; tries cw, on, acw, back
+    EQUB &04, &E0, 1, %00111001   ; cell 1, 56, right; tries on, cw, acw, back
+    ; level 4
+    EQUB &94, &D8, 2, %00110110   ; cell 37, 54, up; tries cw, on, acw, back
+    EQUB &8C, &44, 3, %00101101   ; cell 35, 17, down; tries on, acw, cw, back
+    EQUB &28, &4C, 2, %00111101   ; cell 10, 19, up; tries on, acw, acw, back
+    EQUB &30, &98, 2, %00110110   ; cell 12, 38, up; tries cw, on, acw, back
     ASSERT level_monsters = io_level_monsters
 
-; Triggers: what each of a level's 32 triggers does (low nibble) and when.
+; Triggers' flags: bits 0-3 the action; bit 4: it can fire again; bit 5:
+; disabled (as it is once fired, unless bit 4); bit 6: only once everything's collected; bit 7:
+; it needs an object used or thrown, rather than the player walking on.
 .level_trigger_flags
-    EQUB &91, &98, &9D, &85, &80, &92, &AF, &1A, &18, &13, &80, &00, &80, &18, &1A, &3E  ; level 1
-    EQUB &1B, &00, &04, &18, &01, &38, &80, &00, &81, &07, &00, &00, &00, &00, &80, &00
-    EQUB &85, &80, &82, &80, &80, &85, &96, &9C, &01, &00, &00, &1B, &03, &01, &17, &17  ; level 2
-    EQUB &1A, &3E, &1B, &01, &01, &1A, &3E, &1B, &32, &1A, &1B, &1B, &17, &1A, &1B, &1B
-    EQUB &80, &98, &80, &81, &AE, &83, &C2, &92, &1B, &07, &00, &1B, &1A, &8D, &00, &1F  ; level 3
-    EQUB &1A, &02, &1B, &34, &1A, &1B, &32, &00, &07, &00, &07, &07, &19, &02, &1B, &32
-    EQUB &82, &82, &82, &99, &93, &92, &85, &97, &82, &4A, &23, &6A, &20, &23, &00, &00  ; level 4
-    EQUB &32, &0A, &0B, &03, &00, &47, &00, &0D, &82, &82, &82, &2D, &92, &0A, &20, &01
+    ; level 1
+    EQUB &91    ; 0: move a cell, with an object, again
+    EQUB &98    ; 1: teleport, with an object, again
+    EQUB &9D    ; 2: give pushes, with an object, again
+    EQUB &85    ; 3: blow up an object, with an object
+    EQUB &80    ; 4: set a cell, with an object
+    EQUB &92    ; 5: set the cell in front, with an object, again
+    EQUB &AF    ; 6: swap the keys, with an object, disabled
+    EQUB &1A    ; 7: enable triggers, walked on, again
+    EQUB &18    ; 8: teleport, walked on, again
+    EQUB &13    ; 9: set the clock, walked on, again
+    EQUB &80    ; 10: set a cell, with an object
+    EQUB &00    ; 11: set a cell, walked on
+    EQUB &80    ; 12: set a cell, with an object
+    EQUB &18    ; 13: teleport, walked on, again
+    EQUB &1A    ; 14: enable triggers, walked on, again
+    EQUB &3E    ; 15: push the cell in front, walked on, disabled, again
+    EQUB &1B    ; 16: disable triggers, walked on, again
+    EQUB &00    ; 17: set a cell, walked on
+    EQUB &04    ; 18: throw an object, walked on
+    EQUB &18    ; 19: teleport, walked on, again
+    EQUB &01    ; 20: move a cell, walked on
+    EQUB &38    ; 21: teleport, walked on, disabled, again
+    EQUB &80    ; 22: set a cell, with an object
+    EQUB &00    ; 23: set a cell, walked on
+    EQUB &81    ; 24: move a cell, with an object
+    EQUB &07    ; 25: move a monster, walked on
+    EQUB &00    ; 26: set a cell, walked on
+    EQUB &00    ; 27: set a cell, walked on
+    EQUB &00    ; 28: set a cell, walked on
+    EQUB &00    ; 29: set a cell, walked on
+    EQUB &80    ; 30: set a cell, with an object
+    EQUB &00    ; 31: set a cell, walked on
+    ; level 2
+    EQUB &85    ; 0: blow up an object, with an object
+    EQUB &80    ; 1: set a cell, with an object
+    EQUB &82    ; 2: set the cell in front, with an object
+    EQUB &80    ; 3: set a cell, with an object
+    EQUB &80    ; 4: set a cell, with an object
+    EQUB &85    ; 5: blow up an object, with an object
+    EQUB &96    ; 6: set a monster's way, with an object, again
+    EQUB &9C    ; 7: recharge an object, with an object, again
+    EQUB &01    ; 8: move a cell, walked on
+    EQUB &00    ; 9: set a cell, walked on
+    EQUB &00    ; 10: set a cell, walked on
+    EQUB &1B    ; 11: disable triggers, walked on, again
+    EQUB &03    ; 12: set the clock, walked on
+    EQUB &01    ; 13: move a cell, walked on
+    EQUB &17    ; 14: move a monster, walked on, again
+    EQUB &17    ; 15: move a monster, walked on, again
+    EQUB &1A    ; 16: enable triggers, walked on, again
+    EQUB &3E    ; 17: push the cell in front, walked on, disabled, again
+    EQUB &1B    ; 18: disable triggers, walked on, again
+    EQUB &01    ; 19: move a cell, walked on
+    EQUB &01    ; 20: move a cell, walked on
+    EQUB &1A    ; 21: enable triggers, walked on, again
+    EQUB &3E    ; 22: push the cell in front, walked on, disabled, again
+    EQUB &1B    ; 23: disable triggers, walked on, again
+    EQUB &32    ; 24: set the cell in front, walked on, disabled, again
+    EQUB &1A    ; 25: enable triggers, walked on, again
+    EQUB &1B    ; 26: disable triggers, walked on, again
+    EQUB &1B    ; 27: disable triggers, walked on, again
+    EQUB &17    ; 28: move a monster, walked on, again
+    EQUB &1A    ; 29: enable triggers, walked on, again
+    EQUB &1B    ; 30: disable triggers, walked on, again
+    EQUB &1B    ; 31: disable triggers, walked on, again
+    ; level 3
+    EQUB &80    ; 0: set a cell, with an object
+    EQUB &98    ; 1: teleport, with an object, again
+    EQUB &80    ; 2: set a cell, with an object
+    EQUB &81    ; 3: move a cell, with an object
+    EQUB &AE    ; 4: push the cell in front, with an object, disabled
+    EQUB &83    ; 5: set the clock, with an object
+    EQUB &C2    ; 6: set the cell in front, with an object, all collected
+    EQUB &92    ; 7: set the cell in front, with an object, again
+    EQUB &1B    ; 8: disable triggers, walked on, again
+    EQUB &07    ; 9: move a monster, walked on
+    EQUB &00    ; 10: set a cell, walked on
+    EQUB &1B    ; 11: disable triggers, walked on, again
+    EQUB &1A    ; 12: enable triggers, walked on, again
+    EQUB &8D    ; 13: give pushes, with an object
+    EQUB &00    ; 14: set a cell, walked on
+    EQUB &1F    ; 15: swap the keys, walked on, again
+    EQUB &1A    ; 16: enable triggers, walked on, again
+    EQUB &02    ; 17: set the cell in front, walked on
+    EQUB &1B    ; 18: disable triggers, walked on, again
+    EQUB &34    ; 19: throw an object, walked on, disabled, again
+    EQUB &1A    ; 20: enable triggers, walked on, again
+    EQUB &1B    ; 21: disable triggers, walked on, again
+    EQUB &32    ; 22: set the cell in front, walked on, disabled, again
+    EQUB &00    ; 23: set a cell, walked on
+    EQUB &07    ; 24: move a monster, walked on
+    EQUB &00    ; 25: set a cell, walked on
+    EQUB &07    ; 26: move a monster, walked on
+    EQUB &07    ; 27: move a monster, walked on
+    EQUB &19    ; 28: toggle the cell in front, walked on, again
+    EQUB &02    ; 29: set the cell in front, walked on
+    EQUB &1B    ; 30: disable triggers, walked on, again
+    EQUB &32    ; 31: set the cell in front, walked on, disabled, again
+    ; level 4
+    EQUB &82    ; 0: set the cell in front, with an object
+    EQUB &82    ; 1: set the cell in front, with an object
+    EQUB &82    ; 2: set the cell in front, with an object
+    EQUB &99    ; 3: toggle the cell in front, with an object, again
+    EQUB &93    ; 4: set the clock, with an object, again
+    EQUB &92    ; 5: set the cell in front, with an object, again
+    EQUB &85    ; 6: blow up an object, with an object
+    EQUB &97    ; 7: move a monster, with an object, again
+    EQUB &82    ; 8: set the cell in front, with an object
+    EQUB &4A    ; 9: enable triggers, walked on, all collected
+    EQUB &23    ; 10: set the clock, walked on, disabled
+    EQUB &6A    ; 11: enable triggers, walked on, all collected, disabled
+    EQUB &20    ; 12: set a cell, walked on, disabled
+    EQUB &23    ; 13: set the clock, walked on, disabled
+    EQUB &00    ; 14: set a cell, walked on
+    EQUB &00    ; 15: set a cell, walked on
+    EQUB &32    ; 16: set the cell in front, walked on, disabled, again
+    EQUB &0A    ; 17: enable triggers, walked on
+    EQUB &0B    ; 18: disable triggers, walked on
+    EQUB &03    ; 19: set the clock, walked on
+    EQUB &00    ; 20: set a cell, walked on
+    EQUB &47    ; 21: move a monster, walked on, all collected
+    EQUB &00    ; 22: set a cell, walked on
+    EQUB &0D    ; 23: give pushes, walked on
+    EQUB &82    ; 24: set the cell in front, with an object
+    EQUB &82    ; 25: set the cell in front, with an object
+    EQUB &82    ; 26: set the cell in front, with an object
+    EQUB &2D    ; 27: give pushes, walked on, disabled
+    EQUB &92    ; 28: set the cell in front, with an object, again
+    EQUB &0A    ; 29: enable triggers, walked on
+    EQUB &20    ; 30: set a cell, walked on, disabled
+    EQUB &01    ; 31: move a cell, walked on
     ASSERT level_trigger_flags = io_level_trigger_flags
 
-; Where each trigger is: x, y (negative: anywhere on that axis).
+; Where each trigger is: cell x, y (negative: anywhere on that axis).
 .level_trigger_places
-    EQUB &1F, &20, &80, &80, &80, &80, &1F, &AF, &06, &2E, &80, &80, &80, &80, &26, &09  ; level 1
-    EQUB &16, &3D, &1E, &21, &06, &2E, &1F, &30, &06, &2E, &98, &3D, &01, &3B, &80, &80
-    EQUB &1F, &1E, &1F, &30, &0B, &2E, &13, &3D, &33, &02, &80, &80, &03, &10, &13, &35
-    EQUB &18, &34, &31, &19, &29, &04, &2B, &05, &2D, &05, &2F, &04, &28, &09, &3B, &00
-    EQUB &13, &3F, &1A, &2B, &14, &27, &3D, &27, &16, &20, &32, &1F, &BD, &BF, &BF, &BD  ; level 2
-    EQUB &15, &2B, &24, &2A, &1E, &2E, &36, &17, &29, &1D, &32, &1D, &0D, &07, &1D, &1D
-    EQUB &1D, &1D, &A0, &A0, &1D, &1D, &3A, &0F, &38, &07, &25, &1F, &A0, &A0, &25, &1F
-    EQUB &A0, &A0, &04, &39, &07, &13, &2A, &13, &28, &28, &28, &28, &28, &28, &36, &17
-    EQUB &25, &33, &80, &80, &2E, &18, &2B, &25, &80, &80, &80, &80, &20, &29, &80, &80  ; level 3
-    EQUB &20, &0E, &1D, &0E, &1D, &0E, &20, &12, &20, &14, &A0, &AC, &20, &11, &2F, &19
-    EQUB &20, &09, &85, &2F, &20, &09, &A0, &8A, &36, &36, &36, &36, &80, &80, &0B, &0E
-    EQUB &3B, &29, &23, &0E, &3D, &27, &3F, &27, &32, &14, &30, &3D, &20, &3F, &A0, &AC
-    EQUB &2F, &31, &25, &32, &20, &13, &80, &80, &80, &80, &87, &9A, &80, &80, &3A, &88  ; level 4
-    EQUB &01, &03, &9D, &8C, &9D, &8C, &80, &80, &80, &80, &80, &80, &1C, &20, &1B, &18
-    EQUB &80, &80, &14, &15, &16, &0C, &05, &16, &0A, &12, &0E, &09, &3F, &1C, &3F, &19
-    EQUB &3D, &28, &2F, &34, &3B, &26, &27, &A5, &80, &80, &3F, &1C, &96, &AB, &32, &29
+    ; level 1
+    EQUB &1F, &20    ; 0: 31, 32
+    EQUB &80, &80    ; 1: any, any
+    EQUB &80, &80    ; 2: any, any
+    EQUB &1F, &AF    ; 3: 31, any
+    EQUB &06, &2E    ; 4: 6, 46
+    EQUB &80, &80    ; 5: any, any
+    EQUB &80, &80    ; 6: any, any
+    EQUB &26, &09    ; 7: 38, 9
+    EQUB &16, &3D    ; 8: 22, 61
+    EQUB &1E, &21    ; 9: 30, 33
+    EQUB &06, &2E    ; 10: 6, 46
+    EQUB &1F, &30    ; 11: 31, 48
+    EQUB &06, &2E    ; 12: 6, 46
+    EQUB &98, &3D    ; 13: any, 61
+    EQUB &01, &3B    ; 14: 1, 59
+    EQUB &80, &80    ; 15: any, any
+    EQUB &1F, &1E    ; 16: 31, 30
+    EQUB &1F, &30    ; 17: 31, 48
+    EQUB &0B, &2E    ; 18: 11, 46
+    EQUB &13, &3D    ; 19: 19, 61
+    EQUB &33, &02    ; 20: 51, 2
+    EQUB &80, &80    ; 21: any, any
+    EQUB &03, &10    ; 22: 3, 16
+    EQUB &13, &35    ; 23: 19, 53
+    EQUB &18, &34    ; 24: 24, 52
+    EQUB &31, &19    ; 25: 49, 25
+    EQUB &29, &04    ; 26: 41, 4
+    EQUB &2B, &05    ; 27: 43, 5
+    EQUB &2D, &05    ; 28: 45, 5
+    EQUB &2F, &04    ; 29: 47, 4
+    EQUB &28, &09    ; 30: 40, 9
+    EQUB &3B, &00    ; 31: 59, 0
+    ; level 2
+    EQUB &13, &3F    ; 0: 19, 63
+    EQUB &1A, &2B    ; 1: 26, 43
+    EQUB &14, &27    ; 2: 20, 39
+    EQUB &3D, &27    ; 3: 61, 39
+    EQUB &16, &20    ; 4: 22, 32
+    EQUB &32, &1F    ; 5: 50, 31
+    EQUB &BD, &BF    ; 6: any, any
+    EQUB &BF, &BD    ; 7: any, any
+    EQUB &15, &2B    ; 8: 21, 43
+    EQUB &24, &2A    ; 9: 36, 42
+    EQUB &1E, &2E    ; 10: 30, 46
+    EQUB &36, &17    ; 11: 54, 23
+    EQUB &29, &1D    ; 12: 41, 29
+    EQUB &32, &1D    ; 13: 50, 29
+    EQUB &0D, &07    ; 14: 13, 7
+    EQUB &1D, &1D    ; 15: 29, 29
+    EQUB &1D, &1D    ; 16: 29, 29
+    EQUB &A0, &A0    ; 17: any, any
+    EQUB &1D, &1D    ; 18: 29, 29
+    EQUB &3A, &0F    ; 19: 58, 15
+    EQUB &38, &07    ; 20: 56, 7
+    EQUB &25, &1F    ; 21: 37, 31
+    EQUB &A0, &A0    ; 22: any, any
+    EQUB &25, &1F    ; 23: 37, 31
+    EQUB &A0, &A0    ; 24: any, any
+    EQUB &04, &39    ; 25: 4, 57
+    EQUB &07, &13    ; 26: 7, 19
+    EQUB &2A, &13    ; 27: 42, 19
+    EQUB &28, &28    ; 28: 40, 40
+    EQUB &28, &28    ; 29: 40, 40
+    EQUB &28, &28    ; 30: 40, 40
+    EQUB &36, &17    ; 31: 54, 23
+    ; level 3
+    EQUB &25, &33    ; 0: 37, 51
+    EQUB &80, &80    ; 1: any, any
+    EQUB &2E, &18    ; 2: 46, 24
+    EQUB &2B, &25    ; 3: 43, 37
+    EQUB &80, &80    ; 4: any, any
+    EQUB &80, &80    ; 5: any, any
+    EQUB &20, &29    ; 6: 32, 41
+    EQUB &80, &80    ; 7: any, any
+    EQUB &20, &0E    ; 8: 32, 14
+    EQUB &1D, &0E    ; 9: 29, 14
+    EQUB &1D, &0E    ; 10: 29, 14
+    EQUB &20, &12    ; 11: 32, 18
+    EQUB &20, &14    ; 12: 32, 20
+    EQUB &A0, &AC    ; 13: any, any
+    EQUB &20, &11    ; 14: 32, 17
+    EQUB &2F, &19    ; 15: 47, 25
+    EQUB &20, &09    ; 16: 32, 9
+    EQUB &85, &2F    ; 17: any, 47
+    EQUB &20, &09    ; 18: 32, 9
+    EQUB &A0, &8A    ; 19: any, any
+    EQUB &36, &36    ; 20: 54, 54
+    EQUB &36, &36    ; 21: 54, 54
+    EQUB &80, &80    ; 22: any, any
+    EQUB &0B, &0E    ; 23: 11, 14
+    EQUB &3B, &29    ; 24: 59, 41
+    EQUB &23, &0E    ; 25: 35, 14
+    EQUB &3D, &27    ; 26: 61, 39
+    EQUB &3F, &27    ; 27: 63, 39
+    EQUB &32, &14    ; 28: 50, 20
+    EQUB &30, &3D    ; 29: 48, 61
+    EQUB &20, &3F    ; 30: 32, 63
+    EQUB &A0, &AC    ; 31: any, any
+    ; level 4
+    EQUB &2F, &31    ; 0: 47, 49
+    EQUB &25, &32    ; 1: 37, 50
+    EQUB &20, &13    ; 2: 32, 19
+    EQUB &80, &80    ; 3: any, any
+    EQUB &80, &80    ; 4: any, any
+    EQUB &87, &9A    ; 5: any, any
+    EQUB &80, &80    ; 6: any, any
+    EQUB &3A, &88    ; 7: 58, any
+    EQUB &01, &03    ; 8: 1, 3
+    EQUB &9D, &8C    ; 9: any, any
+    EQUB &9D, &8C    ; 10: any, any
+    EQUB &80, &80    ; 11: any, any
+    EQUB &80, &80    ; 12: any, any
+    EQUB &80, &80    ; 13: any, any
+    EQUB &1C, &20    ; 14: 28, 32
+    EQUB &1B, &18    ; 15: 27, 24
+    EQUB &80, &80    ; 16: any, any
+    EQUB &14, &15    ; 17: 20, 21
+    EQUB &16, &0C    ; 18: 22, 12
+    EQUB &05, &16    ; 19: 5, 22
+    EQUB &0A, &12    ; 20: 10, 18
+    EQUB &0E, &09    ; 21: 14, 9
+    EQUB &3F, &1C    ; 22: 63, 28
+    EQUB &3F, &19    ; 23: 63, 25
+    EQUB &3D, &28    ; 24: 61, 40
+    EQUB &2F, &34    ; 25: 47, 52
+    EQUB &3B, &26    ; 26: 59, 38
+    EQUB &27, &A5    ; 27: 39, any
+    EQUB &80, &80    ; 28: any, any
+    EQUB &3F, &1C    ; 29: 63, 28
+    EQUB &96, &AB    ; 30: any, any
+    EQUB &32, &29    ; 31: 50, 41
     ASSERT level_trigger_places = io_level_trigger_places
 
-; Each trigger's arguments, 4 bytes: three for its action and a condition.
+; Each trigger's arguments: A, X and Y for its action, and a condition: bit 7,
+; the player (or a thrown object) must face direction bits 4-5; bit 6, the
+; cell faced (or landed against) must be type bits 0-3. Triggers 0-15's are
+; one field, 16-31's the next.
 .level_trigger_args_0
-    EQUB &01, &1F, &21, &F9, &00, &1B, &1A, &00, &0F, &00, &00, &00, &07, &00, &1C, &48  ; level 1, triggers 0-15
-    EQUB &0C, &07, &30, &CD, &00, &00, &00, &46, &15, &15, &15, &00, &15, &15, &15, &A0
-    EQUB &00, &2B, &1B, &90, &01, &FA, &00, &80, &0C, &07, &30, &CD, &08, &1F, &31, &A0
-    EQUB &0C, &09, &30, &CD, &00, &1B, &1A, &EA, &0F, &0F, &0F, &00, &02, &00, &00, &5E
-    EQUB &00, &18, &00, &2F, &00, &1A, &2A, &E9, &0A, &A0, &A0, &FF, &00, &3E, &27, &D9  ; level 2, triggers 0-15
-    EQUB &0C, &15, &20, &C9, &05, &A0, &14, &F8, &03, &00, &00, &3E, &06, &3F, &01, &39
-    EQUB &03, &14, &28, &D6, &0C, &23, &28, &80, &0D, &21, &2F, &A0, &06, &06, &06, &2F
-    EQUB &01, &BB, &15, &06, &07, &2F, &1F, &BF, &38, &39, &15, &96, &80, &36, &52, &80
-    EQUB &00, &26, &33, &D9, &FF, &1C, &0A, &09, &00, &2E, &17, &EA, &00, &2B, &24, &E2  ; level 3, triggers 0-15
-    EQUB &00, &2A, &0F, &45, &01, &E6, &00, &06, &00, &1C, &3B, &F9, &00, &14, &20, &45
-    EQUB &13, &16, &1F, &00, &2C, &01, &4A, &80, &0A, &20, &0B, &8A, &1F, &1F, &1F, &A1
-    EQUB &1F, &1F, &1F, &B9, &17, &C8, &00, &29, &0A, &1D, &0E, &B0, &0A, &0B, &08, &1A
-    EQUB &00, &00, &00, &C9, &0F, &00, &00, &F9, &0C, &00, &00, &D9, &0C, &0D, &00, &00  ; level 4, triggers 0-15
-    EQUB &01, &50, &00, &40, &00, &00, &00, &46, &06, &00, &18, &00, &E8, &55, &07, &FA
-    EQUB &00, &0A, &0B, &D9, &0A, &0B, &1E, &0F, &00, &FA, &27, &0F, &0C, &0D, &0C, &00
-    EQUB &00, &16, &0C, &00, &00, &FA, &A0, &00, &07, &1B, &1F, &C0, &0D, &1B, &17, &EA
+    ; level 1
+    EQUB &01, &1F, &21, &F9    ; 0; facing down and at cell 9
+    EQUB &00, &1B, &1A, &00    ; 1
+    EQUB &0F, &00, &00, &00    ; 2
+    EQUB &07, &00, &1C, &48    ; 3; at cell 8
+    EQUB &0C, &07, &30, &CD    ; 4; facing left and at cell D
+    EQUB &00, &00, &00, &46    ; 5; at cell 6
+    EQUB &15, &15, &15, &00    ; 6
+    EQUB &15, &15, &15, &A0    ; 7; facing up
+    EQUB &00, &2B, &1B, &90    ; 8; facing right
+    EQUB &01, &FA, &00, &80    ; 9; facing left
+    EQUB &0C, &07, &30, &CD    ; 10; facing left and at cell D
+    EQUB &08, &1F, &31, &A0    ; 11; facing up
+    EQUB &0C, &09, &30, &CD    ; 12; facing left and at cell D
+    EQUB &00, &1B, &1A, &EA    ; 13; facing up and at cell A
+    EQUB &0F, &0F, &0F, &00    ; 14
+    EQUB &02, &00, &00, &5E    ; 15; at cell E
+    ; level 2
+    EQUB &00, &18, &00, &2F    ; 0
+    EQUB &00, &1A, &2A, &E9    ; 1; facing up and at cell 9
+    EQUB &0A, &A0, &A0, &FF    ; 2; facing down and at cell F
+    EQUB &00, &3E, &27, &D9    ; 3; facing right and at cell 9
+    EQUB &0C, &15, &20, &C9    ; 4; facing left and at cell 9
+    EQUB &05, &A0, &14, &F8    ; 5; facing down and at cell 8
+    EQUB &03, &00, &00, &3E    ; 6
+    EQUB &06, &3F, &01, &39    ; 7
+    EQUB &03, &14, &28, &D6    ; 8; facing right and at cell 6
+    EQUB &0C, &23, &28, &80    ; 9; facing left
+    EQUB &0D, &21, &2F, &A0    ; 10; facing up
+    EQUB &06, &06, &06, &2F    ; 11
+    EQUB &01, &BB, &15, &06    ; 12
+    EQUB &07, &2F, &1F, &BF    ; 13; facing down
+    EQUB &38, &39, &15, &96    ; 14; facing right
+    EQUB &80, &36, &52, &80    ; 15; facing left
+    ; level 3
+    EQUB &00, &26, &33, &D9    ; 0; facing right and at cell 9
+    EQUB &FF, &1C, &0A, &09    ; 1
+    EQUB &00, &2E, &17, &EA    ; 2; facing up and at cell A
+    EQUB &00, &2B, &24, &E2    ; 3; facing up and at cell 2
+    EQUB &00, &2A, &0F, &45    ; 4; at cell 5
+    EQUB &01, &E6, &00, &06    ; 5
+    EQUB &00, &1C, &3B, &F9    ; 6; facing down and at cell 9
+    EQUB &00, &14, &20, &45    ; 7; at cell 5
+    EQUB &13, &16, &1F, &00    ; 8
+    EQUB &2C, &01, &4A, &80    ; 9; facing left
+    EQUB &0A, &20, &0B, &8A    ; 10; facing left
+    EQUB &1F, &1F, &1F, &A1    ; 11; facing up
+    EQUB &1F, &1F, &1F, &B9    ; 12; facing down
+    EQUB &17, &C8, &00, &29    ; 13
+    EQUB &0A, &1D, &0E, &B0    ; 14; facing down
+    EQUB &0A, &0B, &08, &1A    ; 15
+    ; level 4
+    EQUB &00, &00, &00, &C9    ; 0; facing left and at cell 9
+    EQUB &0F, &00, &00, &F9    ; 1; facing down and at cell 9
+    EQUB &0C, &00, &00, &D9    ; 2; facing right and at cell 9
+    EQUB &0C, &0D, &00, &00    ; 3
+    EQUB &01, &50, &00, &40    ; 4; at cell 0
+    EQUB &00, &00, &00, &46    ; 5; at cell 6
+    EQUB &06, &00, &18, &00    ; 6
+    EQUB &E8, &55, &07, &FA    ; 7; facing down and at cell A
+    EQUB &00, &0A, &0B, &D9    ; 8; facing right and at cell 9
+    EQUB &0A, &0B, &1E, &0F    ; 9
+    EQUB &00, &FA, &27, &0F    ; 10
+    EQUB &0C, &0D, &0C, &00    ; 11
+    EQUB &00, &16, &0C, &00    ; 12
+    EQUB &00, &FA, &A0, &00    ; 13
+    EQUB &07, &1B, &1F, &C0    ; 14; facing left and at cell 0
+    EQUB &0D, &1B, &17, &EA    ; 15; facing up and at cell A
     ASSERT level_trigger_args_0 = io_level_trigger_args_0
 
 .level_trigger_args_1
-    EQUB &0F, &15, &0F, &00, &08, &1F, &2F, &E0, &04, &09, &39, &8D, &00, &22, &06, &90  ; level 1, triggers 16-31
-    EQUB &01, &31, &00, &A0, &00, &25, &03, &4E, &00, &04, &10, &D9, &0C, &13, &2F, &B0
-    EQUB &00, &18, &35, &F9, &A8, &B1, &25, &A0, &0A, &29, &00, &90, &0A, &2B, &00, &90
-    EQUB &0A, &2D, &00, &90, &0A, &2F, &00, &90, &00, &28, &0A, &F9, &09, &3D, &02, &90
-    EQUB &11, &11, &11, &80, &04, &A0, &A0, &66, &11, &11, &11, &90, &01, &37, &11, &A0  ; level 2, triggers 16-31
-    EQUB &07, &39, &09, &A0, &16, &16, &16, &A0, &08, &A0, &A0, &6D, &16, &16, &16, &B0
-    EQUB &0D, &A0, &A0, &60, &18, &18, &18, &B0, &18, &18, &18, &A0, &16, &16, &16, &A0
-    EQUB &A8, &39, &B1, &B0, &06, &06, &06, &B0, &06, &06, &06, &A0, &16, &18, &11, &20
-    EQUB &13, &04, &13, &A0, &0D, &0D, &FF, &FC, &13, &04, &13, &B0, &04, &1C, &3F, &70  ; level 3, triggers 16-31
-    EQUB &16, &16, &16, &B7, &16, &16, &16, &A7, &0A, &FF, &FF, &47, &0D, &0C, &0E, &CD
-    EQUB &EF, &B1, &FA, &9A, &0A, &20, &11, &D0, &F7, &B1, &FA, &D0, &FF, &B1, &FA, &9A
-    EQUB &0E, &00, &0E, &98, &0B, &16, &1F, &5C, &1F, &16, &1F, &3F, &06, &2E, &27, &60
-    EQUB &00, &00, &00, &48, &10, &10, &10, &BD, &10, &10, &10, &80, &01, &0F, &00, &A0  ; level 4, triggers 16-31
-    EQUB &0D, &09, &12, &90, &1C, &27, &1D, &FE, &0C, &3F, &1D, &ED, &36, &00, &00, &A0
-    EQUB &00, &00, &00, &E9, &00, &00, &00, &C9, &00, &00, &00, &D9, &00, &00, &00, &00
-    EQUB &00, &00, &00, &4E, &1B, &1B, &1B, &ED, &00, &1C, &0C, &38, &00, &31, &2A, &DD
+    ; level 1
+    EQUB &0F, &15, &0F, &00    ; 16
+    EQUB &08, &1F, &2F, &E0    ; 17; facing up and at cell 0
+    EQUB &04, &09, &39, &8D    ; 18; facing left
+    EQUB &00, &22, &06, &90    ; 19; facing right
+    EQUB &01, &31, &00, &A0    ; 20; facing up
+    EQUB &00, &25, &03, &4E    ; 21; at cell E
+    EQUB &00, &04, &10, &D9    ; 22; facing right and at cell 9
+    EQUB &0C, &13, &2F, &B0    ; 23; facing down
+    EQUB &00, &18, &35, &F9    ; 24; facing down and at cell 9
+    EQUB &A8, &B1, &25, &A0    ; 25; facing up
+    EQUB &0A, &29, &00, &90    ; 26; facing right
+    EQUB &0A, &2B, &00, &90    ; 27; facing right
+    EQUB &0A, &2D, &00, &90    ; 28; facing right
+    EQUB &0A, &2F, &00, &90    ; 29; facing right
+    EQUB &00, &28, &0A, &F9    ; 30; facing down and at cell 9
+    EQUB &09, &3D, &02, &90    ; 31; facing right
+    ; level 2
+    EQUB &11, &11, &11, &80    ; 16; facing left
+    EQUB &04, &A0, &A0, &66    ; 17; at cell 6
+    EQUB &11, &11, &11, &90    ; 18; facing right
+    EQUB &01, &37, &11, &A0    ; 19; facing up
+    EQUB &07, &39, &09, &A0    ; 20; facing up
+    EQUB &16, &16, &16, &A0    ; 21; facing up
+    EQUB &08, &A0, &A0, &6D    ; 22; at cell D
+    EQUB &16, &16, &16, &B0    ; 23; facing down
+    EQUB &0D, &A0, &A0, &60    ; 24; at cell 0
+    EQUB &18, &18, &18, &B0    ; 25; facing down
+    EQUB &18, &18, &18, &A0    ; 26; facing up
+    EQUB &16, &16, &16, &A0    ; 27; facing up
+    EQUB &A8, &39, &B1, &B0    ; 28; facing down
+    EQUB &06, &06, &06, &B0    ; 29; facing down
+    EQUB &06, &06, &06, &A0    ; 30; facing up
+    EQUB &16, &18, &11, &20    ; 31
+    ; level 3
+    EQUB &13, &04, &13, &A0    ; 16; facing up
+    EQUB &0D, &0D, &FF, &FC    ; 17; facing down and at cell C
+    EQUB &13, &04, &13, &B0    ; 18; facing down
+    EQUB &04, &1C, &3F, &70    ; 19; at cell 0
+    EQUB &16, &16, &16, &B7    ; 20; facing down
+    EQUB &16, &16, &16, &A7    ; 21; facing up
+    EQUB &0A, &FF, &FF, &47    ; 22; at cell 7
+    EQUB &0D, &0C, &0E, &CD    ; 23; facing left and at cell D
+    EQUB &EF, &B1, &FA, &9A    ; 24; facing right
+    EQUB &0A, &20, &11, &D0    ; 25; facing right and at cell 0
+    EQUB &F7, &B1, &FA, &D0    ; 26; facing right and at cell 0
+    EQUB &FF, &B1, &FA, &9A    ; 27; facing right
+    EQUB &0E, &00, &0E, &98    ; 28; facing right
+    EQUB &0B, &16, &1F, &5C    ; 29; at cell C
+    EQUB &1F, &16, &1F, &3F    ; 30
+    EQUB &06, &2E, &27, &60    ; 31; at cell 0
+    ; level 4
+    EQUB &00, &00, &00, &48    ; 16; at cell 8
+    EQUB &10, &10, &10, &BD    ; 17; facing down
+    EQUB &10, &10, &10, &80    ; 18; facing left
+    EQUB &01, &0F, &00, &A0    ; 19; facing up
+    EQUB &0D, &09, &12, &90    ; 20; facing right
+    EQUB &1C, &27, &1D, &FE    ; 21; facing down and at cell E
+    EQUB &0C, &3F, &1D, &ED    ; 22; facing up and at cell D
+    EQUB &36, &00, &00, &A0    ; 23; facing up
+    EQUB &00, &00, &00, &E9    ; 24; facing up and at cell 9
+    EQUB &00, &00, &00, &C9    ; 25; facing left and at cell 9
+    EQUB &00, &00, &00, &D9    ; 26; facing right and at cell 9
+    EQUB &00, &00, &00, &00    ; 27
+    EQUB &00, &00, &00, &4E    ; 28; at cell E
+    EQUB &1B, &1B, &1B, &ED    ; 29; facing up and at cell D
+    EQUB &00, &1C, &0C, &38    ; 30
+    EQUB &00, &31, &2A, &DD    ; 31; facing right and at cell D
     ASSERT level_trigger_args_1 = io_level_trigger_args_1
 
 .maps
@@ -1566,8 +1924,9 @@ SECTION io, filename="IO", org=io_start, load=io_start, exec=0
     }
     ASSERT player = io_player
 
-; The second frames of cells 5, 7, 8 and A, which animate.
-.animation
+; Second pictures for cell types 5, 7, 8 and A, shown on the squares each
+; level's setup picks.
+.alternates
     ; cell 5
     PICTURE 4, 4, {
         "112211221122112211221122..221122",
@@ -1708,7 +2067,7 @@ SECTION io, filename="IO", org=io_start, load=io_start, exec=0
         "....22222222......222222........",
         "............22..22.............."
     }
-    ASSERT animation = io_animation
+    ASSERT alternates = io_alternates
     ASSERT P% = IO_END
 }
 ENDSECTION
