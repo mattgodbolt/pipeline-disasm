@@ -149,3 +149,15 @@ Times are US Central.
   leftover memory, not program.
 - Zero page used: &50-&65 (pointers and loop counters), &70-&7E (editor
   state), plus the OS's &FD (error pointer) and &FF (Escape flag).
+
+## 2026-10-03 18:55 — Corrections
+
+- Animate's second frame is turned upside down (flip_vertically), not
+  mirrored, where it isn't the partner sprite: &20 and &21 each alternate
+  with themselves upside down, &22/&23 with each other upside down, and the
+  flames &0E/&0F simply alternate.
+- The Escape latch is set by SHIFT-Escape (INKEY -1), not CTRL.
+- Baron's symbol dump lists every FOR iteration and FUNCTION frame under
+  `@` keys; the picture macros in sprites.6502inc add thousands of them, so
+  anything reading build/symbols.json for jsbeeb should drop keys with `@`
+  (as baron's guide advises).
