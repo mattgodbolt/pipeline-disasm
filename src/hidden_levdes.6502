@@ -1121,434 +1121,510 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     LDA #W_SIMULATE
     STA kept_window
     JMP open_window
+; Options menu, Start and Finish: Define lets the user put the start or
+; finish with the cursor; Display just moves the cursor there. The start is
+; kept 4 less than where it's put in each direction. The position is marked
+; in the map with a junction block.
 .option_start
-    LDY #&00                        ; 16E5: A0 00
-    BEQ edit_marker                 ; 16E7: F0 02
+    LDY #level_start_x - level_start_x
+    BEQ edit_marker
 .option_finish
-    LDY #&04                        ; 16E9: A0 04
+    LDY #level_finish_x - level_start_x
 .edit_marker
-    STY record                      ; 16EB: 84 5B
-    LDA #&35                        ; 16ED: A9 35
-    JSR choose_from_window          ; 16EF: 20 26 11
-    CMP #&02                        ; 16F2: C9 02
-    BEQ switch_simulate_done        ; 16F4: F0 E1
-    PHA                             ; 16F6: 48
-    LDY record                      ; 16F7: A4 5B
-    TYA                             ; 16F9: 98
-    EOR #&04                        ; 16FA: 49 04
-    CLC                             ; 16FC: 18
-    ADC level_start_x, Y            ; 16FD: 79 E8 26
-    STA cursor_x                    ; 1700: 85 50
-    STA work                        ; 1702: 85 54
-    TYA                             ; 1704: 98
-    EOR #&04                        ; 1705: 49 04
-    CLC                             ; 1707: 18
-    ADC level_start_y, Y            ; 1708: 79 E9 26
-    STA cursor_y                    ; 170B: 85 51
-    STA work+1                      ; 170D: 85 55
-    PLA                             ; 170F: 68
-    BNE switch_simulate_done        ; 1710: D0 C5
+    STY record
+    LDA #W_DEFINE_DISPLAY
+    JSR choose_from_window
+    CMP #2                      ; OK
+    BEQ switch_simulate_done
+    PHA
+    LDY record
+    TYA
+    EOR #4                      ; 4 for the start, 0 for the finish
+    CLC
+    ADC level_start_x, Y
+    STA cursor_x
+    STA work
+    TYA
+    EOR #4
+    CLC
+    ADC level_start_y, Y
+    STA cursor_y
+    STA work+1
+    PLA
+    BNE switch_simulate_done    ; Display
 .edit_marker_define
-    LDX #&03                        ; 1712: A2 03
-    JSR get_key_no_plot             ; 1714: 20 BB 13
-    CMP #&20                        ; 1717: C9 20
-    BEQ switch_simulate_done        ; 1719: F0 BC
-    CMP #&0D                        ; 171B: C9 0D
-    BNE edit_marker_define          ; 171D: D0 F3
-    LDY record                      ; 171F: A4 5B
-    TYA                             ; 1721: 98
-    SEC                             ; 1722: 38
-    SBC #&04                        ; 1723: E9 04
-    CLC                             ; 1725: 18
-    ADC cursor_x                    ; 1726: 65 50
-    STA level_start_x, Y            ; 1728: 99 E8 26
-    TYA                             ; 172B: 98
-    SEC                             ; 172C: 38
-    SBC #&04                        ; 172D: E9 04
-    CLC                             ; 172F: 18
-    ADC cursor_y                    ; 1730: 65 51
-    STA level_start_y, Y            ; 1732: 99 E9 26
-    LDA #&0F                        ; 1735: A9 0F
+    LDX #W_OPTIONS_LOCATION
+    JSR get_key_no_plot
+    CMP #asc(" ")
+    BEQ switch_simulate_done
+    CMP #13
+    BNE edit_marker_define
+    LDY record
+    TYA
+    SEC
+    SBC #4                      ; -4 for the start, 0 for the finish
+    CLC
+    ADC cursor_x
+    STA level_start_x, Y
+    TYA
+    SEC
+    SBC #4
+    CLC
+    ADC cursor_y
+    STA level_start_y, Y
+    LDA #TILE_JUNCTION
+; Mark a position in the map: put block A at the cursor, and blank the old
+; position if it has the same block.
+; In: A = the block; work = the old position.
+; Clobbers: A, X, Y, ptr.
 .plot_marker
-    PHA                             ; 1737: 48
-    LDX work                        ; 1738: A6 54
-    LDY work+1                      ; 173A: A4 55
-    JSR vector_read_map             ; 173C: 20 62 23
-    STA ptr                         ; 173F: 85 52
-    PLA                             ; 1741: 68
-    PHA                             ; 1742: 48
-    EOR ptr                         ; 1743: 45 52
-    BNE plot_marker_new             ; 1745: D0 07
-    LDX work                        ; 1747: A6 54
-    LDY work+1                      ; 1749: A4 55
-    JSR vector_write_map            ; 174B: 20 65 23
+    PHA
+    LDX work
+    LDY work+1
+    JSR vector_read_map
+    STA ptr
+    PLA
+    PHA
+    EOR ptr
+    BNE plot_marker_new
+    LDX work
+    LDY work+1
+    JSR vector_write_map        ; A is 0, a blank
 .plot_marker_new
-    LDX cursor_x                    ; 174E: A6 50
-    LDY cursor_y                    ; 1750: A4 51
-    PLA                             ; 1752: 68
-    JMP vector_write_map            ; 1753: 4C 65 23
+    LDX cursor_x
+    LDY cursor_y
+    PLA
+    JMP vector_write_map
+
+; Options menu, Object: which one, then its window until OK.
 .option_object
-    LDX #&04                        ; 1756: A2 04
-    LDA #&08                        ; 1758: A9 08
-    JSR choose_record               ; 175A: 20 A5 12
-    JSR show_object_window          ; 175D: 20 A3 17
-    LDA #&00                        ; 1760: A9 00
+    LDX #M_WHICH_OBJECT
+    LDA #OBJECTS
+    JSR choose_record
+    JSR show_object_window
+    LDA #0
 .option_object_loop
-    JSR menu_select                 ; 1762: 20 52 11
-    PHA                             ; 1765: 48
-    LDY #&02                        ; 1766: A0 02
-    JSR jump_to_handler             ; 1768: 20 6B 16
-    PLA                             ; 176B: 68
-    BPL option_object_loop          ; 176C: 10 F4
+    JSR menu_select
+    PHA
+    LDY #handlers(object_handlers_ptr)
+    JSR jump_to_handler
+    PLA
+    BPL option_object_loop
+
+; Object window, Position: put it with the cursor, marked in the map with a
+; junction.
 .object_position
-    JSR vector_close_window         ; 176E: 20 83 08
-    LDY record                      ; 1771: A4 5B
-    LDA level_objects, Y            ; 1773: B9 F0 26
-    AND #&3F                        ; 1776: 29 3F
-    STA cursor_x                    ; 1778: 85 50
-    STA work                        ; 177A: 85 54
-    LDA level_objects+1, Y          ; 177C: B9 F1 26
-    AND #&3F                        ; 177F: 29 3F
-    STA cursor_y                    ; 1781: 85 51
-    STA work+1                      ; 1783: 85 55
+    JSR vector_close_window
+    LDY record
+    LDA level_objects, Y
+    AND #&3F
+    STA cursor_x
+    STA work
+    LDA level_objects+1, Y
+    AND #&3F
+    STA cursor_y
+    STA work+1
 .object_position_define
-    LDX #&1E                        ; 1785: A2 1E
-    JSR get_key_no_plot             ; 1787: 20 BB 13
-    CMP #&20                        ; 178A: C9 20
-    BEQ show_object_window          ; 178C: F0 15
-    CMP #&0D                        ; 178E: C9 0D
-    BNE object_position_define      ; 1790: D0 F3
-    LDY record                      ; 1792: A4 5B
-    LDA cursor_x                    ; 1794: A5 50
-    STA level_objects, Y            ; 1796: 99 F0 26
-    LDA cursor_y                    ; 1799: A5 51
-    STA level_objects+1, Y          ; 179B: 99 F1 26
-    LDA #&0F                        ; 179E: A9 0F
-    JSR plot_marker                 ; 17A0: 20 37 17
+    LDX #W_OBJECT_LOCATION
+    JSR get_key_no_plot
+    CMP #asc(" ")
+    BEQ show_object_window
+    CMP #13
+    BNE object_position_define
+    LDY record
+    LDA cursor_x                ; which also makes it exist
+    STA level_objects, Y
+    LDA cursor_y
+    STA level_objects+1, Y
+    LDA #TILE_JUNCTION
+    JSR plot_marker
+; Open the object window with ticks showing the object's flags.
 .show_object_window
-    LDA #&05                        ; 17A3: A9 05
-    JSR show_record_window          ; 17A5: 20 D1 18
+    LDA #W_OBJECT
+    JSR show_record_window
 .show_object_ticks
-    LDY record                      ; 17A8: A4 5B
-    LDA level_objects, Y            ; 17AA: B9 F0 26
-    ORA level_objects+1, Y          ; 17AD: 19 F1 26
-    AND #&C0                        ; 17B0: 29 C0
-    BEQ show_object_exists          ; 17B2: F0 02
-    LDA #&01                        ; 17B4: A9 01
+    LDY record
+    LDA level_objects, Y
+    ORA level_objects+1, Y
+    AND #&C0
+    BEQ show_object_exists
+    LDA #1
 .show_object_exists
-    EOR #&01                        ; 17B6: 49 01
-    LDY #&02                        ; 17B8: A0 02
-    JSR vector_tick_line            ; 17BA: 20 89 08
-    LDY record                      ; 17BD: A4 5B
-    LDA level_objects+3, Y          ; 17BF: B9 F3 26
-    AND #&20                        ; 17C2: 29 20
-    EOR #&20                        ; 17C4: 49 20
-    LDY #&05                        ; 17C6: A0 05
-    JSR vector_tick_line            ; 17C8: 20 89 08
-    LDY record                      ; 17CB: A4 5B
-    LDA level_objects+3, Y          ; 17CD: B9 F3 26
-    PHA                             ; 17D0: 48
-    AND #&40                        ; 17D1: 29 40
-    LDY #&06                        ; 17D3: A0 06
-    JSR vector_tick_line            ; 17D5: 20 89 08
-    PLA                             ; 17D8: 68
-    AND #&80                        ; 17D9: 29 80
-    EOR #&80                        ; 17DB: 49 80
-    LDY #&07                        ; 17DD: A0 07
-    JMP vector_tick_line            ; 17DF: 4C 89 08
+    EOR #1
+    LDY #2                      ; Exists ?
+    JSR vector_tick_line
+    LDY record
+    LDA level_objects+3, Y
+    AND #&20
+    EOR #&20
+    LDY #5                      ; Charges:
+    JSR vector_tick_line
+    LDY record
+    LDA level_objects+3, Y
+    PHA
+    AND #&40
+    LDY #6                      ; Vanish:
+    JSR vector_tick_line
+    PLA
+    AND #&80
+    EOR #&80
+    LDY #7                      ; Throw:
+    JMP vector_tick_line
+
+; Object window, Charge: how many charges, 0-31 (which gives it charges).
 .object_charge
-    LDY #&1F                        ; 17E2: A0 1F
-    TYA                             ; 17E4: 98
-    LDX record                      ; 17E5: A6 5B
-    AND level_objects+3, X          ; 17E7: 3D F3 26
-    TAX                             ; 17EA: AA
-    LDA #&08                        ; 17EB: A9 08
-    SEC                             ; 17ED: 38
-    JSR ask_number_limited          ; 17EE: 20 52 1A
-    STA ptr                         ; 17F1: 85 52
-    LDY record                      ; 17F3: A4 5B
-    LDA level_objects+3, Y          ; 17F5: B9 F3 26
-    AND #&C0                        ; 17F8: 29 C0
-    ORA ptr                         ; 17FA: 05 52
-    STA level_objects+3, Y          ; 17FC: 99 F3 26
-    JMP show_object_window          ; 17FF: 4C A3 17
+    LDY #31
+    TYA
+    LDX record
+    AND level_objects+3, X
+    TAX
+    LDA #M_CHARGES
+    SEC                         ; 0 allowed
+    JSR ask_number_limited
+    STA ptr
+    LDY record
+    LDA level_objects+3, Y
+    AND #&C0
+    ORA ptr
+    STA level_objects+3, Y
+    JMP show_object_window
+
+; Object window, Sprite no.: 1-15, kept as 0-14.
 .object_sprite
-    LDY record                      ; 1802: A4 5B
-    LDX level_objects+2, Y          ; 1804: BE F2 26
-    INX                             ; 1807: E8
-    LDA #&07                        ; 1808: A9 07
-    LDY #&0F                        ; 180A: A0 0F
-    CLC                             ; 180C: 18
-    JSR ask_number_limited          ; 180D: 20 52 1A
-    SEC                             ; 1810: 38
-    SBC #&01                        ; 1811: E9 01
-    LDY record                      ; 1813: A4 5B
-    STA level_objects+2, Y          ; 1815: 99 F2 26
-    BPL show_object_window          ; 1818: 10 89
+    LDY record
+    LDX level_objects+2, Y
+    INX
+    LDA #M_OLD_SPRITE
+    LDY #15
+    CLC                         ; 0 not allowed
+    JSR ask_number_limited
+    SEC
+    SBC #1
+    LDY record
+    STA level_objects+2, Y
+    BPL show_object_window
+
+; Object window, Charges:, Vanish: and Throw:, which flip a flag.
 .object_charges_toggle
-    LDA #&20                        ; 181A: A9 20
-    BNE object_toggle_flag          ; 181C: D0 06
+    LDA #&20
+    BNE object_toggle_flag
 .object_vanish_toggle
-    LDA #&40                        ; 181E: A9 40
-    BNE object_toggle_flag          ; 1820: D0 02
+    LDA #&40
+    BNE object_toggle_flag
 .object_throw_toggle
-    LDA #&80                        ; 1822: A9 80
+    LDA #&80
 .object_toggle_flag
-    LDY record                      ; 1824: A4 5B
-    EOR level_objects+3, Y          ; 1826: 59 F3 26
-    STA level_objects+3, Y          ; 1829: 99 F3 26
-    JMP show_object_ticks           ; 182C: 4C A8 17
+    LDY record
+    EOR level_objects+3, Y
+    STA level_objects+3, Y
+    JMP show_object_ticks
+
+; Object window, Exists ?: flip OBJECT_ABSENT in both coordinates.
 .object_exists_toggle
-    LDY record                      ; 182F: A4 5B
-    LDA level_objects, Y            ; 1831: B9 F0 26
-    AND #&BF                        ; 1834: 29 BF
-    EOR #&80                        ; 1836: 49 80
-    STA level_objects, Y            ; 1838: 99 F0 26
-    AND #&80                        ; 183B: 29 80
-    STA ptr                         ; 183D: 85 52
-    LDA level_objects+1, Y          ; 183F: B9 F1 26
-    AND #&3F                        ; 1842: 29 3F
-    ORA ptr                         ; 1844: 05 52
-    STA level_objects+1, Y          ; 1846: 99 F1 26
-    JMP show_object_ticks           ; 1849: 4C A8 17
+    LDY record
+    LDA level_objects, Y
+    AND #&BF
+    EOR #OBJECT_ABSENT
+    STA level_objects, Y
+    AND #OBJECT_ABSENT
+    STA ptr
+    LDA level_objects+1, Y
+    AND #&3F
+    ORA ptr
+    STA level_objects+1, Y
+    JMP show_object_ticks
+; Print A in decimal without leading zeros (they go out as VDU 0, which does
+; nothing).
+; Clobbers: A, X, Y, ptr.
 .print_decimal
-    STA ptr                         ; 184C: 85 52
-    LDY #&00                        ; 184E: A0 00
-    LDA #&64                        ; 1850: A9 64
-    JSR print_digit                 ; 1852: 20 5C 18
-    LDA #&0A                        ; 1855: A9 0A
-    JSR print_digit                 ; 1857: 20 5C 18
-    LDA #&01                        ; 185A: A9 01
+    STA ptr
+    LDY #0                      ; nonzero once a digit has been printed
+    LDA #100
+    JSR print_digit
+    LDA #10
+    JSR print_digit
+    LDA #1
 .print_digit
-    STA ptr+1                       ; 185C: 85 53
-    LDA ptr                         ; 185E: A5 52
-    LDX #&FF                        ; 1860: A2 FF
+    STA ptr+1
+    LDA ptr
+    LDX #&FF
 .print_digit_count
-    INX                             ; 1862: E8
-    STA ptr                         ; 1863: 85 52
-    SEC                             ; 1865: 38
-    SBC ptr+1                       ; 1866: E5 53
-    BCS print_digit_count           ; 1868: B0 F8
-    TXA                             ; 186A: 8A
-    BNE print_digit_out             ; 186B: D0 0B
-    DEY                             ; 186D: 88
-    INY                             ; 186E: C8
-    BNE print_digit_out             ; 186F: D0 07
-    DEC ptr+1                       ; 1871: C6 53
-    BEQ print_digit_out             ; 1873: F0 03
-    LDA #&D0                        ; 1875: A9 D0
-    DEY                             ; 1877: 88
+    INX
+    STA ptr
+    SEC
+    SBC ptr+1
+    BCS print_digit_count
+    TXA
+    BNE print_digit_out
+    DEY
+    INY
+    BNE print_digit_out
+    DEC ptr+1
+    BEQ print_digit_out         ; always print the units
+    LDA #-asc("0")              ; a leading zero: VDU 0
+    DEY
 .print_digit_out
-    INY                             ; 1878: C8
-    ADC #&30                        ; 1879: 69 30
-    JMP OSWRCH                      ; 187B: 4C EE FF
+    INY
+    ADC #asc("0")
+    JMP OSWRCH
+
+; Options menu, M.Monster: which one, then its window until OK.
 .option_monster
-    LDX #&0B                        ; 187E: A2 0B
-    LDA #&04                        ; 1880: A9 04
-    JSR choose_record               ; 1882: 20 A5 12
-    JSR show_monster_window         ; 1885: 20 CF 18
-    LDA #&00                        ; 1888: A9 00
+    LDX #M_WHICH_MONSTER
+    LDA #MONSTERS
+    JSR choose_record
+    JSR show_monster_window
+    LDA #0
 .option_monster_loop
-    JSR menu_select                 ; 188A: 20 52 11
-    PHA                             ; 188D: 48
-    LDY #&03                        ; 188E: A0 03
-    JSR jump_to_handler             ; 1890: 20 6B 16
-    PLA                             ; 1893: 68
-    BPL option_monster_loop         ; 1894: 10 F4
+    JSR menu_select
+    PHA
+    LDY #handlers(monster_handlers_ptr)
+    JSR jump_to_handler
+    PLA
+    BPL option_monster_loop
+
+; Monster window, Position: put it with the cursor, marked in the map with a
+; barricade.
 .monster_position
-    JSR vector_close_window         ; 1896: 20 83 08
-    LDY record                      ; 1899: A4 5B
-    LDA level_monsters, Y           ; 189B: B9 10 27
-    LSR A                           ; 189E: 4A
-    LSR A                           ; 189F: 4A
-    STA work                        ; 18A0: 85 54
-    STA cursor_x                    ; 18A2: 85 50
-    LDA level_monsters+1, Y         ; 18A4: B9 11 27
-    LSR A                           ; 18A7: 4A
-    LSR A                           ; 18A8: 4A
-    STA work+1                      ; 18A9: 85 55
-    STA cursor_y                    ; 18AB: 85 51
+    JSR vector_close_window
+    LDY record
+    LDA level_monsters, Y
+    LSR A
+    LSR A
+    STA work
+    STA cursor_x
+    LDA level_monsters+1, Y
+    LSR A
+    LSR A
+    STA work+1
+    STA cursor_y
 .monster_position_define
-    LDX #&1F                        ; 18AD: A2 1F
-    JSR get_key_no_plot             ; 18AF: 20 BB 13
-    CMP #&20                        ; 18B2: C9 20
-    BEQ show_monster_window         ; 18B4: F0 19
-    CMP #&0D                        ; 18B6: C9 0D
-    BNE monster_position_define     ; 18B8: D0 F3
-    LDY record                      ; 18BA: A4 5B
-    LDA cursor_x                    ; 18BC: A5 50
-    ASL A                           ; 18BE: 0A
-    ASL A                           ; 18BF: 0A
-    STA level_monsters, Y           ; 18C0: 99 10 27
-    LDA cursor_y                    ; 18C3: A5 51
-    ASL A                           ; 18C5: 0A
-    ASL A                           ; 18C6: 0A
-    STA level_monsters+1, Y         ; 18C7: 99 11 27
-    LDA #&0E                        ; 18CA: A9 0E
-    JSR plot_marker                 ; 18CC: 20 37 17
+    LDX #W_MONSTER_LOCATION
+    JSR get_key_no_plot
+    CMP #asc(" ")
+    BEQ show_monster_window
+    CMP #13
+    BNE monster_position_define
+    LDY record
+    LDA cursor_x
+    ASL A
+    ASL A
+    STA level_monsters, Y
+    LDA cursor_y
+    ASL A
+    ASL A
+    STA level_monsters+1, Y
+    LDA #TILE_BARRICADE
+    JSR plot_marker
 .show_monster_window
-    LDA #&0C                        ; 18CF: A9 0C
+    LDA #W_MONSTER
+; Open an object's, monster's or puzzle's window with its number in the
+; title.
+; In: A = the window.
+; Clobbers: A, X, Y.
 .show_record_window
-    JSR open_window                 ; 18D1: 20 A8 14
-    LDA #&06                        ; 18D4: A9 06
-    JSR vector_print_message        ; 18D6: 20 59 23
-    LDA record                      ; 18D9: A5 5B
-    LSR A                           ; 18DB: 4A
-    LSR A                           ; 18DC: 4A
-    ADC #&31                        ; 18DD: 69 31
-    JSR OSWRCH                      ; 18DF: 20 EE FF
-    JMP vector_text_colours         ; 18E2: 4C 4D 23
+    JSR open_window
+    LDA #M_RECORD_NUMBER
+    JSR vector_print_message
+    LDA record
+    LSR A
+    LSR A
+    ADC #asc("1")
+    JSR OSWRCH
+    JMP vector_text_colours
+
+; Monster window, Direction.
 .monster_direction
-    LDY record                      ; 18E5: A4 5B
-    LDX level_monsters+2, Y         ; 18E7: BE 12 27
-    JSR choose_direction            ; 18EA: 20 F2 18
-    STA level_monsters+2, Y         ; 18ED: 99 12 27
-    BPL show_monster_window         ; 18F0: 10 DD
+    LDY record
+    LDX level_monsters+2, Y
+    JSR choose_direction
+    STA level_monsters+2, Y
+    BPL show_monster_window
+
+; Choose a direction from the north, south, east, west, dead menu.
+; In: X = the current direction code (0 west, 1 east, 2 north, 3 south, 8 or
+; anything over 4 dead).
+; Out: A = the code chosen; Y = record.
+; Clobbers: X, ptr.
 .choose_direction
-    CPX #&05                        ; 18F2: E0 05
-    BCC choose_direction_menu       ; 18F4: 90 02
-    LDX #&04                        ; 18F6: A2 04
+    CPX #5
+    BCC choose_direction_menu
+    LDX #4
 .choose_direction_menu
-    LDY direction_items, X          ; 18F8: BC 0C 19
-    LDA #&0D                        ; 18FB: A9 0D
-    JSR choose_from_window_at       ; 18FD: 20 28 11
-    TAY                             ; 1900: A8
-    LDA direction_codes, Y          ; 1901: B9 07 19
-    LDY record                      ; 1904: A4 5B
-    RTS                             ; 1906: 60
+    LDY direction_items, X
+    LDA #W_DIRECTION
+    JSR choose_from_window_at
+    TAY
+    LDA direction_codes, Y
+    LDY record
+    RTS
+; The code for each item of the direction menu, and the item for each code.
 .direction_codes
-    EQUB &02, &03, &01, &00, &08    ; 1907
+    EQUB 2, 3, 1, 0, 8          ; north, south, east, west, dead
 .direction_items
-    EQUB &03, &02, &00, &01, &04    ; 190C
+    EQUB 3, 2, 0, 1, 4          ; west, east, north, south, dead
+
+; Monster window, Pattern.
 .monster_pattern
-    LDY record                      ; 1911: A4 5B
-    LDA level_monsters+3, Y         ; 1913: B9 13 27
-    JSR choose_pattern              ; 1916: 20 1F 19
-    STA level_monsters+3, Y         ; 1919: 99 13 27
-    JMP show_monster_window         ; 191C: 4C CF 18
+    LDY record
+    LDA level_monsters+3, Y
+    JSR choose_pattern
+    STA level_monsters+3, Y
+    JMP show_monster_window
+
+; Choose a monster's pattern: one of four presets, or Special, four choices
+; of which way to turn made one by one.
+; In: A = the current pattern.
+; Out: A = the new one; Y = record.
+; Clobbers: X, ptr, choices.
 .choose_pattern
-    STA ptr+1                       ; 191F: 85 53
-    LDY #&00                        ; 1921: A0 00
+    STA ptr+1
+    LDY #0
 .choose_pattern_find
-    CMP pattern_presets, Y          ; 1923: D9 97 19
-    BEQ choose_pattern_menu         ; 1926: F0 05
-    INY                             ; 1928: C8
-    CPY #&04                        ; 1929: C0 04
-    BCC choose_pattern_find         ; 192B: 90 F6
+    CMP pattern_presets, Y
+    BEQ choose_pattern_menu
+    INY
+    CPY #pattern_presets_end - pattern_presets
+    BCC choose_pattern_find
 .choose_pattern_menu
-    LDA #&46                        ; 192D: A9 46
-    JSR choose_from_window_at       ; 192F: 20 28 11
-    CMP #&04                        ; 1932: C9 04
-    BEQ choose_pattern_special      ; 1934: F0 07
-    TAY                             ; 1936: A8
-    LDA pattern_presets, Y          ; 1937: B9 97 19
-    LDY record                      ; 193A: A4 5B
-    RTS                             ; 193C: 60
+    LDA #W_PATTERNS
+    JSR choose_from_window_at
+    CMP #pattern_presets_end - pattern_presets      ; Special
+    BEQ choose_pattern_special
+    TAY
+    LDA pattern_presets, Y
+    LDY record
+    RTS
 .choose_pattern_special
-    LDA ptr+1                       ; 193D: A5 53
-    JSR unpack_priorities           ; 193F: 20 CB 19
-    PHA                             ; 1942: 48
+    LDA ptr+1
+    JSR unpack_priorities
+    PHA
 .choose_pattern_special_loop
-    LDA #&0E                        ; 1943: A9 0E
-    JSR open_window                 ; 1945: 20 A8 14
-    LDA #&10                        ; 1948: A9 10
-    JSR vector_print_message        ; 194A: 20 59 23
-    LDX #&03                        ; 194D: A2 03
+    LDA #W_PRIORITIES
+    JSR open_window
+    LDA #M_PATTERN_AT           ; the four choices as letters in the title
+    JSR vector_print_message
+    LDX #3
 .choose_pattern_print
-    LDY choices, X                  ; 194F: B4 5E
-    LDA priority_letters, Y         ; 1951: B9 93 19
-    JSR OSWRCH                      ; 1954: 20 EE FF
-    DEX                             ; 1957: CA
-    BPL choose_pattern_print        ; 1958: 10 F5
-    PLA                             ; 195A: 68
-    JSR menu_select                 ; 195B: 20 52 11
-    CMP #&04                        ; 195E: C9 04
-    BEQ choose_pattern_done         ; 1960: F0 1F
-    PHA                             ; 1962: 48
-    EOR #&03                        ; 1963: 49 03
-    TAX                             ; 1965: AA
-    LDA choices, X                  ; 1966: B5 5E
-    JSR choose_relative_direction   ; 1968: 20 76 19
-    TAY                             ; 196B: A8
-    PLA                             ; 196C: 68
-    PHA                             ; 196D: 48
-    EOR #&03                        ; 196E: 49 03
-    TAX                             ; 1970: AA
-    TYA                             ; 1971: 98
-    STA choices, X                  ; 1972: 95 5E
-    BPL choose_pattern_special_loop ; 1974: 10 CD
+    LDY choices, X
+    LDA priority_letters, Y
+    JSR OSWRCH
+    DEX
+    BPL choose_pattern_print
+    PLA
+    JSR menu_select
+    CMP #4                      ; OK
+    BEQ choose_pattern_done
+    PHA
+    EOR #3                      ; the first priority is the last field
+    TAX
+    LDA choices, X
+    JSR choose_relative_direction
+    TAY
+    PLA
+    PHA
+    EOR #3
+    TAX
+    TYA
+    STA choices, X
+    BPL choose_pattern_special_loop
+
+; Choose forwards, backwards, left or right.
+; In: A = the current one as a pattern field (0 backwards, 1 forwards, 2
+; right, 3 left).
+; Out: A = the one chosen, likewise.
+; Clobbers: X, Y, ptr.
 .choose_relative_direction
-    EOR #&01                        ; 1976: 49 01
-    TAY                             ; 1978: A8
-    LDA #&0F                        ; 1979: A9 0F
-    JSR choose_from_window_at       ; 197B: 20 28 11
-    EOR #&01                        ; 197E: 49 01
-    RTS                             ; 1980: 60
+    EOR #1                      ; field to menu item and back
+    TAY
+    LDA #W_RELATIVE_DIRECTION
+    JSR choose_from_window_at
+    EOR #1
+    RTS
+
 .choose_pattern_done
-    JSR vector_close_window         ; 1981: 20 83 08
-    LDY record                      ; 1984: A4 5B
+    JSR vector_close_window
+    LDY record
+; Pack choices into a byte, choices+0 in the top two bits.
+; Out: A = the byte.
+; Clobbers: X.
 .pack_priorities
-    LDA #&00                        ; 1986: A9 00
-    TAX                             ; 1988: AA
+    LDA #0
+    TAX
 .pack_priorities_loop
-    ASL A                           ; 1989: 0A
-    ASL A                           ; 198A: 0A
-    ORA choices, X                  ; 198B: 15 5E
-    INX                             ; 198D: E8
-    CPX #&04                        ; 198E: E0 04
-    BCC pack_priorities_loop        ; 1990: 90 F7
-    RTS                             ; 1992: 60
+    ASL A
+    ASL A
+    ORA choices, X
+    INX
+    CPX #4
+    BCC pack_priorities_loop
+    RTS
+
 .priority_letters
-    EQUS "BFRL"                     ; 1993
+    EQUS "BFRL"                 ; backwards, forwards, right, left
+; Back and forth, follow edges, left wall, right wall: the first choice in
+; the bottom two bits.
 .pattern_presets
-    EQUB &B1, &39, &27, &36         ; 1997
+    EQUB %10110001              ; forwards, backwards, left, right
+    EQUB %00111001              ; forwards, right, left, backwards
+    EQUB %00100111              ; left, forwards, right, backwards
+    EQUB %00110110              ; right, forwards, left, backwards
+.pattern_presets_end
+
+; Monster window, Killed by and Result: the block that kills monsters and
+; the block a dead one leaves, for every monster in the level.
 .monster_killed_by
-    LDA level_monster_rules         ; 199B: AD EE 26
-    AND #&0F                        ; 199E: 29 0F
-    TAY                             ; 19A0: A8
-    LDA #&01                        ; 19A1: A9 01
-    JSR choose_from_window_at       ; 19A3: 20 28 11
-    LDX #&F0                        ; 19A6: A2 F0
-    BMI monster_rules_store         ; 19A8: 30 13
+    LDA level_monster_rules
+    AND #&0F
+    TAY
+    LDA #W_SELECT_BLOCK
+    JSR choose_from_window_at
+    LDX #&F0
+    BMI monster_rules_store
 .monster_result
-    LDA level_monster_rules         ; 19AA: AD EE 26
-    LSR A                           ; 19AD: 4A
-    LSR A                           ; 19AE: 4A
-    LSR A                           ; 19AF: 4A
-    LSR A                           ; 19B0: 4A
-    TAY                             ; 19B1: A8
-    LDA #&01                        ; 19B2: A9 01
-    JSR choose_from_window_at       ; 19B4: 20 28 11
-    LDX #&0F                        ; 19B7: A2 0F
-    ASL A                           ; 19B9: 0A
-    ASL A                           ; 19BA: 0A
-    ASL A                           ; 19BB: 0A
-    ASL A                           ; 19BC: 0A
+    LDA level_monster_rules
+    LSR A
+    LSR A
+    LSR A
+    LSR A
+    TAY
+    LDA #W_SELECT_BLOCK
+    JSR choose_from_window_at
+    LDX #&0F
+    ASL A
+    ASL A
+    ASL A
+    ASL A
 .monster_rules_store
-    STA ptr                         ; 19BD: 85 52
-    TXA                             ; 19BF: 8A
-    AND level_monster_rules         ; 19C0: 2D EE 26
-    ORA ptr                         ; 19C3: 05 52
-    STA level_monster_rules         ; 19C5: 8D EE 26
-    JMP show_monster_window         ; 19C8: 4C CF 18
+    STA ptr
+    TXA
+    AND level_monster_rules
+    ORA ptr
+    STA level_monster_rules
+    JMP show_monster_window
+
+; Unpack a byte into choices, its top two bits into choices+0.
+; In: A = the byte.
+; Clobbers: A, X.
 .unpack_priorities
-    LDX #&03                        ; 19CB: A2 03
+    LDX #3
 .unpack_priorities_loop
-    PHA                             ; 19CD: 48
-    AND #&03                        ; 19CE: 29 03
-    STA choices, X                  ; 19D0: 95 5E
-    PLA                             ; 19D2: 68
-    LSR A                           ; 19D3: 4A
-    LSR A                           ; 19D4: 4A
-    DEX                             ; 19D5: CA
-    BPL unpack_priorities_loop      ; 19D6: 10 F5
-    RTS                             ; 19D8: 60
+    PHA
+    AND #3
+    STA choices, X
+    PLA
+    LSR A
+    LSR A
+    DEX
+    BPL unpack_priorities_loop
+    RTS
+
 .count_collectable
-    INC work                        ; 19D9: E6 54
-    BNE count_collectable_done      ; 19DB: D0 02
-    INC work+1                      ; 19DD: E6 55
+    INC work
+    BNE count_collectable_done
+    INC work+1
 .count_collectable_done
-    RTS                             ; 19DF: 60
+    RTS
 .option_collects
     LDY #&00                        ; 19E0: A0 00
     STY ptr                         ; 19E2: 84 52
