@@ -1,0 +1,18 @@
+; OS call numbers and other MOS constants used by the boot chain and the
+; small loaders (MRUN, PL, TITLE, WARNING...). Kept here rather than in
+; os.6502inc only because that file changes on main; they belong there.
+
+; Where the MOS keeps the address of its table of default vector contents
+; (laid out like page 2 from USERV, ?&FFB6 bytes long).
+MOS_DEFAULT_VECTORS_PTR = &FFB7
+
+; OSBYTE calls.
+OSBYTE_DISABLE_EVENT = &0D      ; X = event number
+OSBYTE_ENABLE_EVENT = &0E       ; X = event number
+OSBYTE_INSERT_BUFFER = &8A      ; X = buffer, Y = character
+
+; Buffer numbers for OSBYTE &8A and friends.
+BUFFER_KEYBOARD = 0
+
+; Event numbers.
+EVENT_ESCAPE = 6

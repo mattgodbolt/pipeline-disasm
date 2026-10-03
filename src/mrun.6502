@@ -1,4 +1,92 @@
-; $.MRUN: &80 bytes at sector &100.
+; $.MRUN: &80 bytes at sector &100, loaded and run at &0780 (page 7, BASIC's
+; string buffer, free while the editors run). The Graphics Designer and the
+; Level Designer leave through `*/MRUN` to get back to the menu.
+;
+; It undoes the editors' hooks - RDCHV (the Level Designer's) and EVNTV with
+; the Escape event (the Graphics Designer's) - then types `*E.!BOOT` into the
+; keyboard buffer and starts BASIC, which reads that as its first command:
+; the boot file runs again, so the menu comes back exactly as at power-on.
+;
+; What's left of the file past the text is whatever was in memory when it
+; was saved. The disc's slack past the file is in src/disc.toml.
+
+INCLUDE "os.6502inc"
+INCLUDE "loaders.6502inc"
+
+; Zero page: BASIC's, unused until BASIC starts, which is the last thing
+; this does. &50 serves twice, in turn.
+default_vectors = &50       ; (2) the MOS's table of default vector contents
+typed_index = &50           ; next character of boot_command to type
+
 SECTION mrun, filename="MRUN", org=&0780, load=&780, exec=&780
-    INCBIN "../data/mrun.bin"
+.mrun
+{
+; Entry from *RUN; never returns.
+.start
+    ; Twice over, and X is set again before it's used: a leftover.
+    LDX #6
+    LDX #6
+
+    ; Put RDCHV and EVNTV back to the MOS defaults, from the ROM's table.
+    LDA MOS_DEFAULT_VECTORS_PTR
+    STA default_vectors
+    LDA MOS_DEFAULT_VECTORS_PTR+1
+    STA default_vectors+1
+    LDY #RDCHV - USERV
+    LDA (default_vectors), Y
+    STA RDCHV
+    INY
+    LDA (default_vectors), Y
+    STA RDCHV+1
+    LDY #EVNTV - USERV
+    LDA (default_vectors), Y
+    STA EVNTV
+    INY
+    LDA (default_vectors), Y
+    STA EVNTV+1
+    LDA #OSBYTE_DISABLE_EVENT
+    LDX #EVENT_ESCAPE
+    JSR OSBYTE
+
+    ; Type boot_command, up to and including its CR.
+    LDY #0
+    STY typed_index
+.type_next
+    LDA boot_command, Y
+    PHA
+    TAY
+    LDX #BUFFER_KEYBOARD
+    LDA #OSBYTE_INSERT_BUFFER
+    JSR OSBYTE
+    PLA
+    INC typed_index
+    LDY typed_index
+    CMP #13
+    BNE type_next
+
+    ; *BASIC enters BASIC as the current language, which finds the typing.
+    LDX #LO(start_basic)
+    LDY #HI(start_basic)
+    JMP OSCLI
+
+; Typed into the keyboard buffer for BASIC to read. BASIC's line input
+; echoes the control codes as it reads them, so CTRL-V CTRL-G clears to a
+; MODE 7 screen before the boot file starts, but only stores printable
+; characters: the command BASIC runs is "*E.!BOOT  ".
+.boot_command
+    EQUS "*E.!BOOT"
+    EQUB 22, 7                  ; VDU 22,7: MODE 7
+    EQUS "  ", 13
+
+.start_basic
+    EQUS "*BASIC", 13
+
+; Uninitialised to the end of the file, which was saved as half a page:
+; zeros, then stale memory.
+.unused
+    SKIP 13
+    EQUB &B8, &A7, &EE, &A5, &A6, &A6, &8D, &A6
+    EQUB &CA, &AC, &41, &A5, &19, &A5, &4A, &2E
+    ASSERT P% - start = &80
+}
 ENDSECTION

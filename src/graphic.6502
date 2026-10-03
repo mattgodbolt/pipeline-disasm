@@ -1,7 +1,7 @@
 ; $.GRAPHIC: &D9 bytes at sector &112. The stub loader for the Graphics
 ; Designer (MENU option 3, `*/GRAPHIC`): reads H.GRAPH from its hidden sectors
-; and enters it. All of the code is in loader.6502inc, shared with GAME and
-; LEVDES.
+; and enters it. All of the code is in hidden_loader.6502inc, shared with GAME
+; and LEVDES.
 
 INCLUDE "os.6502inc"
 
@@ -15,6 +15,6 @@ hidden_entry = &2BAE
 SECTION graphic, filename="GRAPHIC", org=&0900, load=&900, exec=&900
 .graphic_loader
 {
-    INCLUDE "loader.6502inc"
+    INCLUDE "hidden_loader.6502inc"
 }
 ENDSECTION

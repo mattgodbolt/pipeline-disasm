@@ -6,7 +6,7 @@ SCREEN. Times are US Central.
 ## 2026-10-03 17:54 — The stub loaders and the protection
 
 GAME, GRAPHIC and LEVDES are one program assembled three times
-(`src/loader.6502inc`, INCLUDEd by `src/game.6502`, `graphic.6502`,
+(`src/hidden_loader.6502inc`, INCLUDEd by `src/game.6502`, `graphic.6502`,
 `levdes.6502` inside a named scope each: `game_loader`, `graphic_loader`,
 `levdes_loader`). The three differ in exactly six bytes, all from four
 numbers per stub:
@@ -74,3 +74,26 @@ track 4's ID says 4. Untested beyond reading the code.
 Zero page used: &70 (`sectors_this_read`), &72 (`sectors_left`). Nothing else
 outside the stub's own &0900-&09D8 is written, apart from what the 8271 reads
 into the load area.
+
+## 2026-10-03 18:05 — !BOOT and MRUN
+
+- `!BOOT` is now one `EQUS "...", CR` per line. `?&224=?(&24+!&FFB7)` puts
+  back the low byte of NETV from the MOS's default vector table (&FFB7 holds
+  that table's address; &24 is NETV's offset). Nothing on the disc touches
+  NETV (searched every binary for &0224), so it's presumably undoing a ROM or
+  an earlier program; MENU later restores every vector except BRKV the same
+  way.
+- MRUN (&0780) is how the editors get back to the menu: it restores RDCHV
+  (which the Level Designer hooks, at &15D4 in H.LEVDES) and EVNTV (the
+  Graphics Designer's, &2BC3 in H.GRAPH) from the default table, disables the
+  Escape event (the Graphics Designer enables it), then pushes
+  `*E.!BOOT`, CTRL-V CTRL-G, two spaces, CR into the keyboard buffer with
+  OSBYTE &8A and does `*BASIC`. BASIC's line input echoes the control codes
+  (so MODE 7 happens as it's "typed") and runs `*E.!BOOT`, so the whole boot
+  file runs again. Checked in jsbeeb: `*/MRUN` from BASIC lands back on the
+  loading picture and menu. The first instruction is `LDX #6` twice, harmless.
+  The file's last 29 bytes are 13 zeros then 16 bytes of stale memory, kept
+  as data; the slack past it is in disc.toml.
+- Shared constants for these pieces are in `src/loaders.6502inc` (OSBYTE and
+  event numbers, the default-vector-table pointer); they belong in
+  `src/os.6502inc` once that can change on main.
