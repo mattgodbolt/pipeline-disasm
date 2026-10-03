@@ -2331,422 +2331,491 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     EQUD level                  ; start of the data to save
     EQUD level_end              ; and its end
 .osfile_template_end
+; Puzzle window, Effects: what the puzzle does, by type. Each effect keeps
+; its details in the puzzle's first three effect bytes (the fourth is the
+; conditions); see each editor below. Most run a window of their own until
+; its OK.
+
+; Place monster: +0 x * 4 + monster number, +1 pattern, +2 y * 4 +
+; direction (north, south, east or west, as compass_codes).
 .effect_place_monster
-    JSR vector_close_window         ; 1E60: 20 83 08
-    LDY record                      ; 1E63: A4 5B
-    LDA level_puzzle_effects, Y     ; 1E65: B9 80 27
-    PHA                             ; 1E68: 48
-    LSR A                           ; 1E69: 4A
-    LSR A                           ; 1E6A: 4A
-    STA cursor_x                    ; 1E6B: 85 50
-    PLA                             ; 1E6D: 68
-    AND #&03                        ; 1E6E: 29 03
-    STA arg                         ; 1E70: 85 62
-    LDA level_puzzle_effects+2, Y   ; 1E72: B9 82 27
-    PHA                             ; 1E75: 48
-    LSR A                           ; 1E76: 4A
-    LSR A                           ; 1E77: 4A
-    STA cursor_y                    ; 1E78: 85 51
-    PLA                             ; 1E7A: 68
-    AND #&03                        ; 1E7B: 29 03
-    STA work+1                      ; 1E7D: 85 55
-    LDA #&3B                        ; 1E7F: A9 3B
-    LDY #&0F                        ; 1E81: A0 0F
-    BNE effect_editor               ; 1E83: D0 1C
+    JSR vector_close_window
+    LDY record
+    LDA level_puzzle_effects, Y
+    PHA
+    LSR A
+    LSR A
+    STA cursor_x
+    PLA
+    AND #3
+    STA arg                     ; monster number
+    LDA level_puzzle_effects+2, Y
+    PHA
+    LSR A
+    LSR A
+    STA cursor_y
+    PLA
+    AND #3
+    STA work+1                  ; direction
+    LDA #W_PLACE_MONSTER
+    LDY #handlers(place_monster_handlers_ptr)
+    BNE effect_editor
+; Move monster: +0 direction (as choose_direction), +1 monster number * 4
+; (4 for all of them).
 .effect_move_monster
-    LDA #&39                        ; 1E85: A9 39
-    LDY #&0E                        ; 1E87: A0 0E
-    BNE effect_editor               ; 1E89: D0 16
+    LDA #W_MOVE_MONSTER
+    LDY #handlers(move_monster_handlers_ptr)
+    BNE effect_editor
+; Charge object: +0 object number, +2 charges.
 .effect_charge_object
-    LDA #&34                        ; 1E8B: A9 34
-    LDY #&0D                        ; 1E8D: A0 0D
-    BNE effect_editor               ; 1E8F: D0 10
+    LDA #W_CHARGE_OBJECT
+    LDY #handlers(charge_handlers_ptr)
+    BNE effect_editor
+; Throw object: +0 object number, +2 distance.
 .effect_throw_object
-    LDA #&31                        ; 1E91: A9 31
-    LDY #&0C                        ; 1E93: A0 0C
-    BNE effect_editor               ; 1E95: D0 0A
+    LDA #W_THROW_OBJECT
+    LDY #handlers(throw_handlers_ptr)
+    BNE effect_editor
+; Move block: +0 direction (compass_codes, eight ways), +1 x, +2 y.
 .effect_move_block
-    LDA #&30                        ; 1E97: A9 30
-    LDY #&0B                        ; 1E99: A0 0B
-    BNE effect_editor               ; 1E9B: D0 04
+    LDA #W_MOVE_BLOCK
+    LDY #handlers(move_block_handlers_ptr)
+    BNE effect_editor
+; Place block: +0 block, +1 x, +2 y.
 .effect_place_block
-    LDA #&2B                        ; 1E9D: A9 2B
-    LDY #&09                        ; 1E9F: A0 09
+    LDA #W_PLACE_BLOCK
+    LDY #handlers(place_block_handlers_ptr)
+; Run an effect's window: its menu goes to its handler table, until the
+; handler for OK pops out of here.
+; In: A = the window; Y = the handler table's number.
 .effect_editor
-    STA effect_window               ; 1EA1: 85 64
-    STY effect_table                ; 1EA3: 84 65
-    JSR vector_close_window         ; 1EA5: 20 83 08
-    LDA #&00                        ; 1EA8: A9 00
-    PHA                             ; 1EAA: 48
+    STA effect_window
+    STY effect_table
+    JSR vector_close_window
+    LDA #0
+    PHA
 .effect_editor_loop
-    LDA effect_window               ; 1EAB: A5 64
-    JSR open_window                 ; 1EAD: 20 A8 14
-    PLA                             ; 1EB0: 68
-    JSR menu_select                 ; 1EB1: 20 52 11
-    PHA                             ; 1EB4: 48
-    LDY effect_table                ; 1EB5: A4 65
-    JSR jump_to_handler             ; 1EB7: 20 6B 16
-    JMP effect_editor_loop          ; 1EBA: 4C AB 1E
+    LDA effect_window
+    JSR open_window
+    PLA
+    JSR menu_select
+    PHA
+    LDY effect_table
+    JSR jump_to_handler
+    JMP effect_editor_loop
+
 .puzzle_effects
-    LDY puzzle                      ; 1EBD: A4 5C
-    LDA level_puzzle_types, Y       ; 1EBF: B9 20 27
-    AND #&0F                        ; 1EC2: 29 0F
-    LDY #&08                        ; 1EC4: A0 08
-    JMP jump_to_handler             ; 1EC6: 4C 6B 16
+    LDY puzzle
+    LDA level_puzzle_types, Y
+    AND #&0F
+    LDY #handlers(effect_handlers_ptr)
+    JMP jump_to_handler
+
+; Disorientate: nothing to set, just a window saying what it does.
 .effect_disorientate
-    JSR beep                        ; 1EC9: 20 13 16
-    LDA #&2A                        ; 1ECC: A9 2A
-    JSR open_window                 ; 1ECE: 20 A8 14
-    JSR wait_for_key                ; 1ED1: 20 34 12
-    JMP vector_close_window         ; 1ED4: 4C 83 08
+    JSR beep
+    LDA #W_DISORIENTATE
+    JSR open_window
+    JSR wait_for_key
+    JMP vector_close_window
+
+; Place and move block windows, Block position: +1 x, +2 y.
 .effect_block_position
-    LDA #&00                        ; 1ED7: A9 00
-    BEQ effect_position             ; 1ED9: F0 02
+    LDA #0
+    BEQ effect_position
+; Teleport: +1 and +2 where to, kept 4 less as the start is.
 .effect_teleport
-    LDA #&04                        ; 1EDB: A9 04
+    LDA #4
 .effect_position
-    STA arg                         ; 1EDD: 85 62
-    JSR vector_close_window         ; 1EDF: 20 83 08
-    LDY record                      ; 1EE2: A4 5B
-    LDA level_puzzle_effects+1, Y   ; 1EE4: B9 81 27
-    CLC                             ; 1EE7: 18
-    ADC arg                         ; 1EE8: 65 62
-    AND #&3F                        ; 1EEA: 29 3F
-    STA cursor_x                    ; 1EEC: 85 50
-    LDA level_puzzle_effects+2, Y   ; 1EEE: B9 82 27
-    CLC                             ; 1EF1: 18
-    ADC arg                         ; 1EF2: 65 62
-    AND #&3F                        ; 1EF4: 29 3F
-    STA cursor_y                    ; 1EF6: 85 51
+    STA arg
+    JSR vector_close_window
+    LDY record
+    LDA level_puzzle_effects+1, Y
+    CLC
+    ADC arg
+    AND #&3F
+    STA cursor_x
+    LDA level_puzzle_effects+2, Y
+    CLC
+    ADC arg
+    AND #&3F
+    STA cursor_y
 .effect_position_define
-    LDX #&24                        ; 1EF8: A2 24
-    JSR get_key_no_plot             ; 1EFA: 20 BB 13
-    CMP #&20                        ; 1EFD: C9 20
-    BEQ effect_position_done        ; 1EFF: F0 16
-    CMP #&0D                        ; 1F01: C9 0D
-    BNE effect_position_define      ; 1F03: D0 F3
-    LDY record                      ; 1F05: A4 5B
-    LDA cursor_x                    ; 1F07: A5 50
-    SEC                             ; 1F09: 38
-    SBC arg                         ; 1F0A: E5 62
-    STA level_puzzle_effects+1, Y   ; 1F0C: 99 81 27
-    LDA cursor_y                    ; 1F0F: A5 51
-    SEC                             ; 1F11: 38
-    SBC arg                         ; 1F12: E5 62
-    STA level_puzzle_effects+2, Y   ; 1F14: 99 82 27
+    LDX #W_PUZZLE_LOCATION
+    JSR get_key_no_plot
+    CMP #asc(" ")
+    BEQ effect_position_done
+    CMP #13
+    BNE effect_position_define
+    LDY record
+    LDA cursor_x
+    SEC
+    SBC arg
+    STA level_puzzle_effects+1, Y
+    LDA cursor_y
+    SEC
+    SBC arg
+    STA level_puzzle_effects+2, Y
 .effect_position_done
-    RTS                             ; 1F17: 60
+    RTS
+
+; Next block, and the place block window's Block type: +0 block.
 .effect_block_type
-    LDX record                      ; 1F18: A6 5B
-    LDY level_puzzle_effects, X     ; 1F1A: BC 80 27
-    LDA #&01                        ; 1F1D: A9 01
-    JSR choose_from_window_at       ; 1F1F: 20 28 11
-    LDY record                      ; 1F22: A4 5B
-    STA level_puzzle_effects, Y     ; 1F24: 99 80 27
-    RTS                             ; 1F27: 60
+    LDX record
+    LDY level_puzzle_effects, X
+    LDA #W_SELECT_BLOCK
+    JSR choose_from_window_at
+    LDY record
+    STA level_puzzle_effects, Y
+    RTS
+
+; Set levels: +0 bit 7 set to leave the time alone, bit 0 set to leave the
+; collectables needed alone; +1 the new time, +2 the new number needed.
 .effect_set_levels
-    LDA #&2C                        ; 1F28: A9 2C
-    JSR open_window                 ; 1F2A: 20 A8 14
-    LDA #&00                        ; 1F2D: A9 00
-    PHA                             ; 1F2F: 48
+    LDA #W_SET_LEVELS
+    JSR open_window
+    LDA #0
+    PHA
 .effect_set_levels_loop
-    LDY record                      ; 1F30: A4 5B
-    LDA level_puzzle_effects, Y     ; 1F32: B9 80 27
-    PHA                             ; 1F35: 48
-    AND #&80                        ; 1F36: 29 80
-    EOR #&80                        ; 1F38: 49 80
-    LDY #&02                        ; 1F3A: A0 02
-    JSR vector_tick_line            ; 1F3C: 20 89 08
-    PLA                             ; 1F3F: 68
-    AND #&01                        ; 1F40: 29 01
-    EOR #&01                        ; 1F42: 49 01
-    LDY #&04                        ; 1F44: A0 04
-    JSR vector_tick_line            ; 1F46: 20 89 08
-    PLA                             ; 1F49: 68
-    JSR menu_select                 ; 1F4A: 20 52 11
-    PHA                             ; 1F4D: 48
-    LDY #&0A                        ; 1F4E: A0 0A
-    JSR jump_to_handler             ; 1F50: 20 6B 16
-    JMP effect_set_levels_loop      ; 1F53: 4C 30 1F
+    LDY record
+    LDA level_puzzle_effects, Y
+    PHA
+    AND #&80
+    EOR #&80
+    LDY #2                      ; time Change:
+    JSR vector_tick_line
+    PLA
+    AND #1
+    EOR #1
+    LDY #4                      ; collectables Change:
+    JSR vector_tick_line
+    PLA
+    JSR menu_select
+    PHA
+    LDY #handlers(set_levels_handlers_ptr)
+    JSR jump_to_handler
+    JMP effect_set_levels_loop
 .levels_change_time
-    LDA #&80                        ; 1F56: A9 80
-    BMI levels_toggle_flag          ; 1F58: 30 02
+    LDA #&80
+    BMI levels_toggle_flag
 .levels_change_collects
-    LDA #&01                        ; 1F5A: A9 01
+    LDA #1
 .levels_toggle_flag
-    LDY record                      ; 1F5C: A4 5B
-    EOR level_puzzle_effects, Y     ; 1F5E: 59 80 27
-    STA level_puzzle_effects, Y     ; 1F61: 99 80 27
-    RTS                             ; 1F64: 60
+    LDY record
+    EOR level_puzzle_effects, Y
+    STA level_puzzle_effects, Y
+    RTS
+; Giving a new value also turns its change on.
 .levels_time
-    LDY record                      ; 1F65: A4 5B
-    LDX level_puzzle_effects+1, Y   ; 1F67: BE 81 27
-    LDA #&2D                        ; 1F6A: A9 2D
-    JSR ask_number                  ; 1F6C: 20 4F 1A
-    LDY record                      ; 1F6F: A4 5B
-    STA level_puzzle_effects+1, Y   ; 1F71: 99 81 27
-    LDA #&01                        ; 1F74: A9 01
-    BPL levels_clear_flag           ; 1F76: 10 11
+    LDY record
+    LDX level_puzzle_effects+1, Y
+    LDA #M_REVISED_TIME
+    JSR ask_number
+    LDY record
+    STA level_puzzle_effects+1, Y
+    LDA #1
+    BPL levels_clear_flag
 .levels_collects
-    LDY record                      ; 1F78: A4 5B
-    LDX level_puzzle_effects+2, Y   ; 1F7A: BE 82 27
-    LDA #&2E                        ; 1F7D: A9 2E
-    JSR ask_number                  ; 1F7F: 20 4F 1A
-    LDY record                      ; 1F82: A4 5B
-    STA level_puzzle_effects+2, Y   ; 1F84: 99 82 27
-    LDA #&80                        ; 1F87: A9 80
+    LDY record
+    LDX level_puzzle_effects+2, Y
+    LDA #M_COLLECTABLES_REQUIRED
+    JSR ask_number
+    LDY record
+    STA level_puzzle_effects+2, Y
+    LDA #&80
 .levels_clear_flag
-    AND level_puzzle_effects, Y     ; 1F89: 39 80 27
-    STA level_puzzle_effects, Y     ; 1F8C: 99 80 27
-    RTS                             ; 1F8F: 60
+    AND level_puzzle_effects, Y
+    STA level_puzzle_effects, Y
+    RTS
+
+; Swap next block: +0 block A, +1 block B.
 .effect_swap_next
-    LDA #&00                        ; 1F90: A9 00
-    PHA                             ; 1F92: 48
+    LDA #0
+    PHA
 .effect_swap_next_loop
-    LDA #&2F                        ; 1F93: A9 2F
-    JSR open_window                 ; 1F95: 20 A8 14
-    PLA                             ; 1F98: 68
-    JSR menu_select                 ; 1F99: 20 52 11
-    CMP #&02                        ; 1F9C: C9 02
-    BEQ effect_swap_next_done       ; 1F9E: F0 1A
-    PHA                             ; 1FA0: 48
-    ADC record                      ; 1FA1: 65 5B
-    TAX                             ; 1FA3: AA
-    LDY level_puzzle_effects, X     ; 1FA4: BC 80 27
-    LDA #&01                        ; 1FA7: A9 01
-    JSR choose_from_window_at       ; 1FA9: 20 28 11
-    TAX                             ; 1FAC: AA
-    PLA                             ; 1FAD: 68
-    PHA                             ; 1FAE: 48
-    CLC                             ; 1FAF: 18
-    ADC record                      ; 1FB0: 65 5B
-    TAY                             ; 1FB2: A8
-    TXA                             ; 1FB3: 8A
-    STA level_puzzle_effects, Y     ; 1FB4: 99 80 27
-    JMP effect_swap_next_loop       ; 1FB7: 4C 93 1F
+    LDA #W_SWAP_NEXT
+    JSR open_window
+    PLA
+    JSR menu_select
+    CMP #2                      ; OK
+    BEQ effect_swap_next_done
+    PHA
+    ADC record
+    TAX
+    LDY level_puzzle_effects, X
+    LDA #W_SELECT_BLOCK
+    JSR choose_from_window_at
+    TAX
+    PLA
+    PHA
+    CLC
+    ADC record
+    TAY
+    TXA
+    STA level_puzzle_effects, Y
+    JMP effect_swap_next_loop
 .effect_swap_next_done
-    JMP vector_close_window         ; 1FBA: 4C 83 08
+    JMP vector_close_window
+
+; Move block window, Direction: +0, one of eight.
 .effect_block_direction
-    LDY record                      ; 1FBD: A4 5B
-    LDA level_puzzle_effects, Y     ; 1FBF: B9 80 27
-    AND #&07                        ; 1FC2: 29 07
-    LDX #&08                        ; 1FC4: A2 08
-    JSR choose_compass_direction    ; 1FC6: 20 CF 1F
-    LDY record                      ; 1FC9: A4 5B
-    STA level_puzzle_effects, Y     ; 1FCB: 99 80 27
-    RTS                             ; 1FCE: 60
+    LDY record
+    LDA level_puzzle_effects, Y
+    AND #7
+    LDX #8
+    JSR choose_compass_direction
+    LDY record
+    STA level_puzzle_effects, Y
+    RTS
+
+; Choose from the compass window, four directions or eight.
+; In: A = the current direction code; X = 4 or 8.
+; Out: A = the code chosen.
+; Clobbers: X, Y, ptr.
 .choose_compass_direction
-    PHA                             ; 1FCF: 48
-    TXA                             ; 1FD0: 8A
-    JSR set_direction_menu_size     ; 1FD1: 20 BA 1C
-    PLA                             ; 1FD4: 68
-    LDY #&07                        ; 1FD5: A0 07
+    PHA
+    TXA
+    JSR set_direction_menu_size
+    PLA
+    LDY #compass_codes_end - compass_codes - 1
 .choose_compass_find
-    CMP compass_codes, Y            ; 1FD7: D9 E9 1F
-    BEQ choose_compass_menu         ; 1FDA: F0 03
-    DEY                             ; 1FDC: 88
-    BNE choose_compass_find         ; 1FDD: D0 F8
+    CMP compass_codes, Y
+    BEQ choose_compass_menu
+    DEY
+    BNE choose_compass_find
 .choose_compass_menu
-    LDA #&23                        ; 1FDF: A9 23
-    JSR choose_from_window_at       ; 1FE1: 20 28 11
-    TAY                             ; 1FE4: A8
-    LDA compass_codes, Y            ; 1FE5: B9 E9 1F
-    RTS                             ; 1FE8: 60
+    LDA #W_COMPASS
+    JSR choose_from_window_at
+    TAY
+    LDA compass_codes, Y
+    RTS
+; The direction code for each item: north, south, east, west, north-west,
+; north-east, south-west, south-east.
 .compass_codes
-    EQUB &02, &03, &01, &00, &04, &05, &06, &07; 1FE9
+    EQUB 2, 3, 1, 0, 4, 5, 6, 7
+.compass_codes_end
+
+; Detonate object: +0 object number, +2 the same times 4.
 .effect_detonate_object
-    JSR choose_object_number        ; 1FF1: 20 FA 1F
-    ASL A                           ; 1FF4: 0A
-    ASL A                           ; 1FF5: 0A
-    STA level_puzzle_effects+2, Y   ; 1FF6: 99 82 27
-    RTS                             ; 1FF9: 60
+    JSR choose_object_number
+    ASL A
+    ASL A
+    STA level_puzzle_effects+2, Y
+    RTS
+
+; Throw and charge object windows, Object no.: +0, asked 1-8, kept 0-7.
+; Out: A = it; Y = record.
 .choose_object_number
-    CLC                             ; 1FFA: 18
-    LDA #&32                        ; 1FFB: A9 32
-    LDY record                      ; 1FFD: A4 5B
-    LDX level_puzzle_effects, Y     ; 1FFF: BE 80 27
-    INX                             ; 2002: E8
-    LDY #&08                        ; 2003: A0 08
-    JSR ask_number_limited          ; 2005: 20 52 1A
-    SEC                             ; 2008: 38
-    SBC #&01                        ; 2009: E9 01
-    LDY record                      ; 200B: A4 5B
-    STA level_puzzle_effects, Y     ; 200D: 99 80 27
-    RTS                             ; 2010: 60
+    CLC
+    LDA #M_OBJECT_NUMBER
+    LDY record
+    LDX level_puzzle_effects, Y
+    INX
+    LDY #OBJECTS
+    JSR ask_number_limited
+    SEC
+    SBC #1
+    LDY record
+    STA level_puzzle_effects, Y
+    RTS
+
+; Throw object window, Distance: +2, 1-63.
 .throw_distance
-    LDA #&33                        ; 2011: A9 33
-    LDX #&01                        ; 2013: A2 01
-    LDY #&3F                        ; 2015: A0 3F
-    CLC                             ; 2017: 18
-    BNE effect_ask_amount           ; 2018: D0 07
+    LDA #M_DISTANCE
+    LDX #1                      ; the first value offered
+    LDY #63                     ; the most (and a mask for the old value)
+    CLC
+    BNE effect_ask_amount
+; Charge object window, No.of charges: +2, 0-31.
 .charge_count
-    LDA #&08                        ; 201A: A9 08
-    LDX #&00                        ; 201C: A2 00
-    LDY #&1F                        ; 201E: A0 1F
-    SEC                             ; 2020: 38
+    LDA #M_CHARGES
+    LDX #0
+    LDY #31
+    SEC
 .effect_ask_amount
-    PHA                             ; 2021: 48
-    STX ptr                         ; 2022: 86 52
-    LDX record                      ; 2024: A6 5B
-    TYA                             ; 2026: 98
-    AND level_puzzle_effects+2, X   ; 2027: 3D 82 27
-    BNE effect_ask_amount_current   ; 202A: D0 02
-    LDA ptr                         ; 202C: A5 52
+    PHA
+    STX ptr
+    LDX record
+    TYA
+    AND level_puzzle_effects+2, X
+    BNE effect_ask_amount_current
+    LDA ptr
 .effect_ask_amount_current
-    TAX                             ; 202E: AA
-    PLA                             ; 202F: 68
-    JSR ask_number_limited          ; 2030: 20 52 1A
-    LDY record                      ; 2033: A4 5B
-    STA level_puzzle_effects+2, Y   ; 2035: 99 82 27
-    RTS                             ; 2038: 60
+    TAX
+    PLA
+    JSR ask_number_limited
+    LDY record
+    STA level_puzzle_effects+2, Y
+    RTS
+
+; Turn on and turn off puzzle: +0, +1, +2 puzzles A, B and C, asked 1-32 and
+; kept 0-31. "Single:" is ticked when they're all the same, and choosing it
+; makes them so.
 .effect_turn_puzzle
-    LDA #&00                        ; 2039: A9 00
+    LDA #0
 .effect_turn_puzzle_loop
-    PHA                             ; 203B: 48
-    LDA #&36                        ; 203C: A9 36
-    JSR open_window                 ; 203E: 20 A8 14
-    LDX #&00                        ; 2041: A2 00
-    LDY record                      ; 2043: A4 5B
-    LDA level_puzzle_effects, Y     ; 2045: B9 80 27
-    CMP level_puzzle_effects+1, Y   ; 2048: D9 81 27
-    BNE effect_turn_puzzle_tick     ; 204B: D0 06
-    CMP level_puzzle_effects+2, Y   ; 204D: D9 82 27
-    BNE effect_turn_puzzle_tick     ; 2050: D0 01
-    INX                             ; 2052: E8
+    PHA
+    LDA #W_SELECT_PUZZLES
+    JSR open_window
+    LDX #0
+    LDY record
+    LDA level_puzzle_effects, Y
+    CMP level_puzzle_effects+1, Y
+    BNE effect_turn_puzzle_tick
+    CMP level_puzzle_effects+2, Y
+    BNE effect_turn_puzzle_tick
+    INX
 .effect_turn_puzzle_tick
-    STX ptr                         ; 2053: 86 52
-    TXA                             ; 2055: 8A
-    LDY #&04                        ; 2056: A0 04
-    JSR vector_tick_line            ; 2058: 20 89 08
-    PLA                             ; 205B: 68
-    JSR menu_select                 ; 205C: 20 52 11
-    CMP #&04                        ; 205F: C9 04
-    BCC effect_turn_puzzle_single   ; 2061: 90 03
-    JMP vector_close_window         ; 2063: 4C 83 08
+    STX ptr
+    TXA
+    LDY #4                      ; Single:
+    JSR vector_tick_line
+    PLA
+    JSR menu_select
+    CMP #4                      ; OK
+    BCC effect_turn_puzzle_single
+    JMP vector_close_window
 .effect_turn_puzzle_single
-    CMP #&03                        ; 2066: C9 03
-    BCC effect_turn_puzzle_choose   ; 2068: 90 13
-    LDX ptr                         ; 206A: A6 52
-    BNE effect_turn_puzzle_loop     ; 206C: D0 CD
-    LDY record                      ; 206E: A4 5B
-    LDA level_puzzle_effects, Y     ; 2070: B9 80 27
-    STA level_puzzle_effects+1, Y   ; 2073: 99 81 27
-    STA level_puzzle_effects+2, Y   ; 2076: 99 82 27
-    LDA #&03                        ; 2079: A9 03
-    BNE effect_turn_puzzle_loop     ; 207B: D0 BE
+    CMP #3
+    BCC effect_turn_puzzle_choose
+    LDX ptr
+    BNE effect_turn_puzzle_loop
+    LDY record
+    LDA level_puzzle_effects, Y
+    STA level_puzzle_effects+1, Y
+    STA level_puzzle_effects+2, Y
+    LDA #3
+    BNE effect_turn_puzzle_loop
 .effect_turn_puzzle_choose
-    PHA                             ; 207D: 48
-    ADC record                      ; 207E: 65 5B
-    STA keys_acted_on               ; 2080: 85 58
-    TAY                             ; 2082: A8
-    LDX level_puzzle_effects, Y     ; 2083: BE 80 27
-    INX                             ; 2086: E8
-    LDY #&20                        ; 2087: A0 20
-    LDA #&37                        ; 2089: A9 37
-    CLC                             ; 208B: 18
-    JSR ask_number_limited          ; 208C: 20 52 1A
-    SEC                             ; 208F: 38
-    SBC #&01                        ; 2090: E9 01
-    LDY keys_acted_on               ; 2092: A4 58
-    STA level_puzzle_effects, Y     ; 2094: 99 80 27
-    PLA                             ; 2097: 68
-    BPL effect_turn_puzzle_loop     ; 2098: 10 A1
+    PHA
+    ADC record
+    STA keys_acted_on           ; borrowed: which byte
+    TAY
+    LDX level_puzzle_effects, Y
+    INX
+    LDY #PUZZLES
+    LDA #M_OLD_PUZZLE_NUMBER
+    CLC
+    JSR ask_number_limited
+    SEC
+    SBC #1
+    LDY keys_acted_on
+    STA level_puzzle_effects, Y
+    PLA
+    BPL effect_turn_puzzle_loop
+
+; Push crates: +0 how many.
 .effect_push_crates
-    LDY record                      ; 209A: A4 5B
-    LDX level_puzzle_effects, Y     ; 209C: BE 80 27
-    LDA #&38                        ; 209F: A9 38
-    JSR ask_number                  ; 20A1: 20 4F 1A
-    LDY record                      ; 20A4: A4 5B
-    STA level_puzzle_effects, Y     ; 20A6: 99 80 27
-    RTS                             ; 20A9: 60
+    LDY record
+    LDX level_puzzle_effects, Y
+    LDA #M_NUMBER_OF_CRATES
+    JSR ask_number
+    LDY record
+    STA level_puzzle_effects, Y
+    RTS
+
+; Move monster window, Monster no.
 .move_monster_number
-    LDY record                      ; 20AA: A4 5B
-    LDA level_puzzle_effects+1, Y   ; 20AC: B9 81 27
-    LSR A                           ; 20AF: 4A
-    LSR A                           ; 20B0: 4A
-    TAY                             ; 20B1: A8
-    LDA #&4A                        ; 20B2: A9 4A
-    JSR choose_from_window_at       ; 20B4: 20 28 11
-    ASL A                           ; 20B7: 0A
-    ASL A                           ; 20B8: 0A
-    LDY record                      ; 20B9: A4 5B
-    STA level_puzzle_effects+1, Y   ; 20BB: 99 81 27
-    RTS                             ; 20BE: 60
+    LDY record
+    LDA level_puzzle_effects+1, Y
+    LSR A
+    LSR A
+    TAY
+    LDA #W_MONSTER_NUMBER
+    JSR choose_from_window_at
+    ASL A
+    ASL A
+    LDY record
+    STA level_puzzle_effects+1, Y
+    RTS
+
+; Move monster window, Direction.
 .move_monster_direction
-    LDY record                      ; 20BF: A4 5B
-    LDX level_puzzle_effects, Y     ; 20C1: BE 80 27
-    JSR choose_direction            ; 20C4: 20 F2 18
-    STA level_puzzle_effects, Y     ; 20C7: 99 80 27
-    RTS                             ; 20CA: 60
+    LDY record
+    LDX level_puzzle_effects, Y
+    JSR choose_direction
+    STA level_puzzle_effects, Y
+    RTS
+
+; Move next block: +0 a pattern field (0 backwards, 1 forwards, 2 right,
+; 3 left) times 4.
 .effect_move_next_block
-    LDY record                      ; 20CB: A4 5B
-    LDA level_puzzle_effects, Y     ; 20CD: B9 80 27
-    LSR A                           ; 20D0: 4A
-    LSR A                           ; 20D1: 4A
-    JSR choose_relative_direction   ; 20D2: 20 76 19
-    ASL A                           ; 20D5: 0A
-    ASL A                           ; 20D6: 0A
-    LDY record                      ; 20D7: A4 5B
-    STA level_puzzle_effects, Y     ; 20D9: 99 80 27
-    RTS                             ; 20DC: 60
+    LDY record
+    LDA level_puzzle_effects, Y
+    LSR A
+    LSR A
+    JSR choose_relative_direction
+    ASL A
+    ASL A
+    LDY record
+    STA level_puzzle_effects, Y
+    RTS
+
+; Place monster window: Monster no., Position, Direction and Pattern work
+; on copies until OK (place_monster_ok) puts them back.
 .place_monster_number
-    LDA #&3A                        ; 20DD: A9 3A
-    LDY #&04                        ; 20DF: A0 04
-    LDX arg                         ; 20E1: A6 62
-    INX                             ; 20E3: E8
-    CLC                             ; 20E4: 18
-    JSR ask_number_limited          ; 20E5: 20 52 1A
-    SEC                             ; 20E8: 38
-    SBC #&01                        ; 20E9: E9 01
-    STA arg                         ; 20EB: 85 62
-    RTS                             ; 20ED: 60
+    LDA #M_MONSTER_NUMBER
+    LDY #MONSTERS
+    LDX arg
+    INX
+    CLC
+    JSR ask_number_limited
+    SEC
+    SBC #1
+    STA arg
+    RTS
 .place_monster_position
-    JSR vector_close_window         ; 20EE: 20 83 08
-    LDA cursor_x                    ; 20F1: A5 50
-    PHA                             ; 20F3: 48
-    LDA cursor_y                    ; 20F4: A5 51
-    PHA                             ; 20F6: 48
+    JSR vector_close_window
+    LDA cursor_x
+    PHA
+    LDA cursor_y
+    PHA
 .place_monster_position_loop
-    LDX #&1F                        ; 20F7: A2 1F
-    JSR get_key_no_plot             ; 20F9: 20 BB 13
-    CMP #&0D                        ; 20FC: C9 0D
-    BEQ place_monster_position_keep ; 20FE: F0 0B
-    CMP #&20                        ; 2100: C9 20
-    BNE place_monster_position_loop ; 2102: D0 F3
-    PLA                             ; 2104: 68
-    STA cursor_y                    ; 2105: 85 51
-    PLA                             ; 2107: 68
-    STA cursor_x                    ; 2108: 85 50
-    RTS                             ; 210A: 60
+    LDX #W_MONSTER_LOCATION
+    JSR get_key_no_plot
+    CMP #13
+    BEQ place_monster_position_keep
+    CMP #asc(" ")
+    BNE place_monster_position_loop
+    PLA
+    STA cursor_y
+    PLA
+    STA cursor_x
+    RTS
 .place_monster_position_keep
-    PLA                             ; 210B: 68
-    PLA                             ; 210C: 68
-    RTS                             ; 210D: 60
+    PLA
+    PLA
+    RTS
 .place_monster_direction
-    LDX #&04                        ; 210E: A2 04
-    LDA work+1                      ; 2110: A5 55
-    JSR choose_compass_direction    ; 2112: 20 CF 1F
-    STA work+1                      ; 2115: 85 55
-    RTS                             ; 2117: 60
+    LDX #4
+    LDA work+1
+    JSR choose_compass_direction
+    STA work+1
+    RTS
 .place_monster_pattern
-    LDY record                      ; 2118: A4 5B
-    LDA level_puzzle_effects+1, Y   ; 211A: B9 81 27
-    JSR choose_pattern              ; 211D: 20 1F 19
-    STA level_puzzle_effects+1, Y   ; 2120: 99 81 27
-    RTS                             ; 2123: 60
+    LDY record
+    LDA level_puzzle_effects+1, Y
+    JSR choose_pattern
+    STA level_puzzle_effects+1, Y
+    RTS
+
 .find_puzzle_next
-    DEC record                      ; 2124: C6 5B
-    BPL find_puzzle_compare         ; 2126: 10 24
-    JMP vector_close_message_box    ; 2128: 4C 98 08
+    DEC record
+    BPL find_puzzle_compare
+    JMP vector_close_message_box
+
+; Pad the input buffer with spaces to NAME_LENGTH, from the end of the text.
+; In: ptr = the number of characters.
+; Clobbers: A, Y.
 .pad_input
-    LDY ptr                         ; 212B: A4 52
-    LDA #&20                        ; 212D: A9 20
+    LDY ptr
+    LDA #asc(" ")
 .pad_input_loop
-    STA input_buffer, Y             ; 212F: 99 40 00
-    INY                             ; 2132: C8
-    CPY #&0B                        ; 2133: C0 0B
-    BCC pad_input_loop              ; 2135: 90 F8
-    RTS                             ; 2137: 60
+    STA input_buffer, Y
+    INY
+    CPY #NAME_LENGTH + 1
+    BCC pad_input_loop
+    RTS
 .help_find_puzzle
     JSR vector_close_window         ; 2138: 20 83 08
     JSR vector_open_message_box     ; 213B: 20 95 08
