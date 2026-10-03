@@ -1569,13 +1569,13 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 
 .priority_letters
     EQUS "BFRL"                 ; backwards, forwards, right, left
-; Back and forth, follow edges, left wall, right wall: the first choice in
+; The named patterns, in the order of their menu; the first choice is in
 ; the bottom two bits.
 .pattern_presets
-    EQUB %10110001              ; forwards, backwards, left, right
-    EQUB %00111001              ; forwards, right, left, backwards
-    EQUB %00100111              ; left, forwards, right, backwards
-    EQUB %00110110              ; right, forwards, left, backwards
+    EQUB PATTERN_BACK_AND_FORTH ; forwards, backwards, left, right
+    EQUB PATTERN_FOLLOW_EDGES   ; forwards, right, left, backwards
+    EQUB PATTERN_LEFT_WALL      ; left, forwards, right, backwards
+    EQUB PATTERN_RIGHT_WALL     ; right, forwards, left, backwards
 .pattern_presets_end
 
 ; Monster window, Killed by and Result: the block that kills monsters and
@@ -3142,7 +3142,7 @@ FUNCTION key_block(item, tile) = item * 16 + tile
 ; A new level's code, palette, start, collectables, time, finish, monster
 ; rules and sprites.
 .default_header
-    EQUB &90, &1C, &D4          ; editing code 123456
+    EDITING_CODE "123456"
     EQUB &00, &14, &23, &31     ; black, blue, yellow, red
     EQUB 28, 28                 ; start (32, 32)
     EQUB 0                      ; collectables needed
@@ -3152,7 +3152,7 @@ FUNCTION key_block(item, tile) = item * 16 + tile
     EQUB 0                      ; sprites
 ; Each monster: at (32, 32), dead, back and forth.
 .default_monster
-    EQUB 32 * 4, 32 * 4, 8, %10110001
+    MONSTER 32, 32, 8, PATTERN_BACK_AND_FORTH
 
 ; Print a message on the message box's second line (print_line2), its first
 ; (print_line1), or wherever the text cursor is (print_message). The OS
