@@ -75,3 +75,37 @@ earlier ones rather than rewriting them. Times are US Central.
 - Then the MENU (`docs/img/menu.png`): 1 Start the game, 2 Redefine keys,
   3 Edit graphics, 4 Edit levels, 5 Edit missions, 6 Quit PIPELINE, over a
   Mode 7 double-height scroller. "Edit missions" will be MISSION (BASIC).
+
+## 2026-10-03 18:20 — MENU, and who loads what
+
+- Listed MENU in jsbeeb (`--boot no`, `PAGE=&1900`, `LOAD "MENU"`, `LIST`).
+  "PIPELINE menu prog / By Ian Holmes / Originally: GUILDMASTER", and the
+  redefine-keys option still names Guildmaster's actions (MOVE NORTH, PICK
+  UP OBJECT, VIEW BACKPACK...) though only the key codes are used. Line 40
+  is a REM full of VDU codes that prints "Hello, all my friends!" over the
+  listing; line 80 is `ON ERROR AWopBabaLuMopALopBamBoom`.
+- `LOMEM=PAGE+&A00:DIM C% &EFF, S% &700`: the 8K MENU file carries
+  pre-initialised data for those DIMs: C% is machine code (`CALL C%` after
+  `!&75=(C%+&49)*65536+C%+&C9`, presumably the Mode 7 scroller) and S% is the
+  menu's Mode 7 screen, copied to HIMEM by PROCmenu.
+- It restores the OS's default BRKV low half from the ROM's vector table
+  (`!&FFB7`), refuses to run with a second processor, and sets up keys in
+  &50-&59 (INKEY codes, defaults in DATA).
+- `IF INKEY-36 AND INKEY-34 THEN */PL`: PL only runs with two keys held
+  at boot.
+- Options: 1 `*FX230 1`, MODE 1, `*RUN TITLE`, palette, MODE 7, `*/GAME`;
+  2 redefine keys in BASIC; 3 `*/GRAPHIC`; 4 `*/LEVDES`; 5 `CHAIN"MISSION"`;
+  6 `CALL !-4` (a reset).
+- Strings in the binaries say who uses the data files: H.GAME names
+  `:0.$.IO`; H.GRAPH names DEFAULT and `/MRUN`; H.LEVDES names `/MRUN`,
+  `L.WDATA` and `L.LDATA`; MRUN is `*E.!BOOT` and `*BASIC` (back to the
+  menu). MISSION is the "MISSION GENERATOR", and its
+  `l0addr=&5800-numlev*size-grfs-attrs-miss-names` says IO is the game's
+  data packed to end at &5800.
+- The GAME stub (disassembled as a tool test) reads the hidden run track by
+  track with OSWORD &7F into &3000 and jumps there; it carries a BRK error
+  block, "Sector read fault!".
+- `tools/dis6502.py` (tracing disassembler to baron source) round-trips every
+  piece on the disc, even data disassembled as code. Nothing on the disc
+  uses absolute addressing for zero page, so no baron feature is needed for
+  that.
