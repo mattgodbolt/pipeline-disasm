@@ -91,7 +91,7 @@ Load &1900, exec &8023, &2000 bytes. Every byte:
   (BASIC's); `*FX255 8 247` sets start-up option bit 3 so plain BREAK
   boots the disc; `*FX200 2` clears memory on BREAK; `*FX229 1` makes
   Escape a key; `*FX4 1` cursor keys give 136-139; `*FX9 1`/`*FX10 1`
-  flash colours every frame; `*TV255 1`; MODE 5 and `*L.SCREEN` (the
+  flash colours every frame; `*TV255 1` (up a line, no interlace); MODE 5 and `*L.SCREEN` (the
   loading picture), 10 s; then the second-processor check, `*L.WARNING`,
   10 s, and the menu.
 - Line 60-80: `ON ERROR GOTO 80` around `*SHADOW 1` (a B+/Master keeps the

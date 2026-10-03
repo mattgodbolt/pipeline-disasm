@@ -74,7 +74,8 @@ BASIC
 ; Plain BREAK boots the disc (start-up option bit 3) and clears memory
 ; (*FX200 2); Escape becomes an ordinary key (*FX229 1). Then keyboard
 ; defaults (auto-repeat, function keys, cursor keys giving 136-139, no ADC
-; sampling), flash colours every frame, drive 0, the picture one line up.
+; sampling), flash colours every frame, drive 0, and *TV255 1: the picture
+; one line up, interlace off.
 130*FX255 8 247
 140*FX200 2
 150*FX229 1
