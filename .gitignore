@@ -2,3 +2,5 @@ build/
 baron-bin/
 node_modules/
 __pycache__/
+.claude/worktrees/
+.claude/settings.local.json

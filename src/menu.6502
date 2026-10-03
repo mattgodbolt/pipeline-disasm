@@ -11,13 +11,18 @@
 ;
 ; It leaves the game's ten keys in &50-&59.
 INCLUDE "os.6502inc"
+INCLUDE "osconst.6502inc"
 INCLUDE "basic.6502inc"
 INCLUDE "teletext.6502inc"
 
-; OS call numbers the scroller uses.
-OSBYTE_ENABLE_EVENT   = &0E
-OSWORD_READ_CHARACTER = &0A   ; a character's 8 rows of pixels, top first
-EVENT_VSYNC           = 4
+; OS call numbers osconst.6502inc doesn't have yet.
+OSWORD_READ_CHAR_DEFINITION = &0A   ; YX: the character, then its 8 rows of pixels, top first
+EVENT_VSYNC                 = 4
+
+; The Mode 7 screen, which the scroller writes directly.
+MODE7_SCREEN = &7C00
+FUNCTION mode7_address(column, row) = MODE7_SCREEN + row * TT_COLUMNS + column
+SOLID_BLOCK  = &FF   ; a graphics character with all six sixels lit
 
 ; Where the scroller draws: eight rows at the bottom of the screen. Columns
 ; 0 and 1 hold its colour codes; 38 and 39 stay blank.
@@ -251,11 +256,11 @@ ENDBASIC
     LDA #HI(mode7_address(SCROLL_RIGHT, SCROLL_TOP + SCROLL_ROWS - 1))
     STA scroll_cell_ptrs + 2 * (SCROLL_ROWS - 1) + 1
     LDX #2 * (SCROLL_ROWS - 1)
-    LDY #MODE7_COLUMNS - SCROLL_RIGHT   ; from the row above's right cell to this row's first
+    LDY #TT_COLUMNS - SCROLL_RIGHT   ; from the row above's right cell to this row's first
 .each_row
     LDA scroll_cell_ptrs, X
     SEC
-    SBC #MODE7_COLUMNS
+    SBC #TT_COLUMNS
     STA scroll_row_temp
     STA scroll_cell_ptrs - 2, X
     LDA scroll_cell_ptrs + 1, X
@@ -265,7 +270,7 @@ ENDBASIC
     LDA #TT_SEPARATED
     STA (scroll_row_temp), Y
     INY
-    LDA #TT_GRAPHICS_CYAN
+    LDA #TT_GFX_CYAN
     STA (scroll_row_temp), Y
     DEY
     DEX
@@ -331,7 +336,7 @@ shift_from = &100 - (SCROLL_RIGHT - SCROLL_LEFT)    ; Y counts up to zero
     STA char_definition
     LDX #LO(char_definition)
     LDY #HI(char_definition)
-    LDA #OSWORD_READ_CHARACTER
+    LDA #OSWORD_READ_CHAR_DEFINITION
     JSR OSWORD
 
     LDX #0                          ; (unused: X comes from Y below)
@@ -340,7 +345,7 @@ shift_from = &100 - (SCROLL_RIGHT - SCROLL_LEFT)    ; Y counts up to zero
     LDA char_definition + 1, Y
     AND scroll_column_mask
     BEQ unlit                       ; zero shows as a blank cell
-    LDA #TT_SOLID_BLOCK
+    LDA #SOLID_BLOCK
 .unlit
     PHA
     TYA
@@ -435,65 +440,82 @@ shift_from = &100 - (SCROLL_RIGHT - SCROLL_LEFT)    ; Y counts up to zero
 ; to the TT_BLACK_BACKGROUND after the option's text.
 
 .menu_screen
+{
     ASSERT menu_screen = scroller + &EFF + 1
+.screen
 ; rows 0-3: the PIPELINE logo, magenta and red, inside the blue pipe
-    EQUB TT_GRAPHICS_BLUE, &FF, &E6, TT_GRAPHICS_MAGENTA, &FE, &AF, &EF, &F4, &20, &FF, &20, &FE
-    EQUB &AF, &EF, &F4, &20, &E8, &FF, &AF, &20, &FF, &20, &20, &20, &FF, &20, &FE, &EF, &B4
-    EQUB &20, &FF, &20, &E8, &FF, &AF, TT_GRAPHICS_BLUE, &A0, &FF, &B9, &20
-    EQUB TT_GRAPHICS_BLUE, &FF, &B9, TT_GRAPHICS_RED, &FF, &20, &A0, &FF, &20, &FF, &20, &FF
-    EQUB &20, &20, &FF, &20, &FF, &E1, &F0, &20, &FF, &20, &20, &20, &FF, &20, &FF, &A2, &FF
-    EQUB &20, &FF, &20, &FF, &E1, &F0, TT_GRAPHICS_BLUE, &20, &FF, &E6, &20
-    EQUB TT_GRAPHICS_BLUE, &FF, &E6, TT_GRAPHICS_MAGENTA, &FF, &E8, &FE, &A7, &20, &FF, &20, &FF
-    EQUB &E8, &FE, &A7, &20, &FF, &B2, &A3, &20, &FF, &20, &20, &20, &FF, &20, &FF, &20, &EA
-    EQUB &B5, &FF, &20, &FF, &B2, &A3, TT_GRAPHICS_BLUE, &A0, &FF, &B9, &20
-    EQUB TT_GRAPHICS_BLUE, &FF, &B9, TT_GRAPHICS_MAGENTA, &FF, &20, &20, &20, &20, &FF, &20, &FF
-    EQUB &20, &20, &20, &20, &AA, &EF, &FC, &20, &EF, &FD, &FC, &20, &FF, &20, &FF, &20, &20
-    EQUB &EF, &BF, &20, &AA, &EF, &FC, TT_GRAPHICS_BLUE, &A0, &FF, &E6, &20
+    TT_ROW 0
+    EQUB TT_GFX_BLUE, &FF, &E6, TT_GFX_MAGENTA, &FE, &AF, &EF, &F4, &20, &FF, &20, &FE, &AF, &EF
+    EQUB &F4, &20, &E8, &FF, &AF, &20, &FF, &20, &20, &20, &FF, &20, &FE, &EF, &B4, &20, &FF, &20
+    EQUB &E8, &FF, &AF, TT_GFX_BLUE, &A0, &FF, &B9, &20
+    TT_ROW 1
+    EQUB TT_GFX_BLUE, &FF, &B9, TT_GFX_RED, &FF, &20, &A0, &FF, &20, &FF, &20, &FF, &20, &20, &FF
+    EQUB &20, &FF, &E1, &F0, &20, &FF, &20, &20, &20, &FF, &20, &FF, &A2, &FF, &20, &FF, &20, &FF
+    EQUB &E1, &F0, TT_GFX_BLUE, &20, &FF, &E6, &20
+    TT_ROW 2
+    EQUB TT_GFX_BLUE, &FF, &E6, TT_GFX_MAGENTA, &FF, &E8, &FE, &A7, &20, &FF, &20, &FF, &E8, &FE
+    EQUB &A7, &20, &FF, &B2, &A3, &20, &FF, &20, &20, &20, &FF, &20, &FF, &20, &EA, &B5, &FF, &20
+    EQUB &FF, &B2, &A3, TT_GFX_BLUE, &A0, &FF, &B9, &20
+    TT_ROW 3
+    EQUB TT_GFX_BLUE, &FF, &B9, TT_GFX_MAGENTA, &FF, &20, &20, &20, &20, &FF, &20, &FF, &20, &20
+    EQUB &20, &20, &AA, &EF, &FC, &20, &EF, &FD, &FC, &20, &FF, &20, &FF, &20, &20, &EF, &BF, &20
+    EQUB &AA, &EF, &FC, TT_GFX_BLUE, &A0, &FF, &E6, &20
 ; row 4: the copyright line
-    EQUB TT_GRAPHICS_BLUE, &FF, &E6, TT_ALPHA_CYAN, "(c) Ian Holmes & William Reeve "
-    EQUB TT_GRAPHICS_BLUE, &E8, &FF, &B9, &20
+    TT_ROW 4
+    EQUB TT_GFX_BLUE, &FF, &E6, TT_ALPHA_CYAN, "(c) Ian Holmes & William Reeve ", TT_GFX_BLUE, &E8
+    EQUB &FF, &B9, &20
 ; row 5: 1988, under the pipe
-    EQUB TT_GRAPHICS_BLUE, &FF, &B9, &E8, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC
-    EQUB &F4, &B0, TT_ALPHA_CYAN, "1988", TT_GRAPHICS_BLUE, &E0, &F8, &FC, &FC, &FC, &FC, &FC
-    EQUB &FC, &FC, &FC, &FC, &FC, &FE, &FF, &FF, &E6, &A0
-; rows 6-9: the pipe, and a picture at each side
-    EQUB TT_GRAPHICS_BLUE, &FF, &E6, &A2, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &E6
-    EQUB &E7, &EF, &F4, &20, &20, &20, &A0, &F8, &BF, &BB, &B9, &A9, &A9, &A9, &A9, &A9, &A9
-    EQUB &A9, &A9, &A9, &A9, &A9, &A9, &A1, &A0
-    EQUB TT_GRAPHICS_BLUE, &FF, &B9, TT_GRAPHICS_RED, TT_GRAPHICS_RED, &E6, &A4, &A5
-    EQUB TT_GRAPHICS_BLUE, &20, &20, &20, &20, &20, &20, &A9, &A9, &AB, &AD, &20, &20, &AE, &A7
-    EQUB &A6, &A6, TT_GRAPHICS_YELLOW, &20, &20, &20, &20, &20, &20, &20, TT_GRAPHICS_RED, &A8
-    EQUB &F2, &A4, TT_GRAPHICS_YELLOW, TT_GRAPHICS_YELLOW, TT_GRAPHICS_YELLOW
-    EQUB TT_GRAPHICS_BLUE, &FF, &E6, TT_GRAPHICS_RED, &E0, &A9, &F6, &E0, TT_GRAPHICS_BLUE, &E0
-    EQUB &FC, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF
-    EQUB &EF, &EF, &6F, &6F, &6D, &74, TT_GRAPHICS_RED, &E6, &BD, &F7, TT_GRAPHICS_YELLOW
-    EQUB TT_GRAPHICS_YELLOW, TT_GRAPHICS_YELLOW
-    EQUB TT_GRAPHICS_BLUE, &FF, &B9, TT_GRAPHICS_YELLOW, TT_GRAPHICS_YELLOW, &AB, &A7, &A7
-    EQUB TT_GRAPHICS_BLUE, &BE, &B9, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1
-    EQUB &A1, &A1, &A1, &A1, &A1, &A1, &21, &21, &29, &3B, &75, TT_GRAPHICS_YELLOW, &F6, &BD
-    EQUB TT_GRAPHICS_YELLOW, TT_GRAPHICS_YELLOW, TT_GRAPHICS_YELLOW
+    TT_ROW 5
+    EQUB TT_GFX_BLUE, &FF, &B9, &E8, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &F4
+    EQUB &B0, TT_ALPHA_CYAN, "1988", TT_GFX_BLUE, &E0, &F8, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC
+    EQUB &FC, &FC, &FE, &FF, &FF, &E6, &A0
+; rows 6-9: the pipe, and a picture at each side (WARNING's rows 0-9 are the same)
+    TT_ROW 6
+    EQUB TT_GFX_BLUE, &FF, &E6, &A2, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &E6, &E7
+    EQUB &EF, &F4, &20, &20, &20, &A0, &F8, &BF, &BB, &B9, &A9, &A9, &A9, &A9, &A9, &A9, &A9, &A9
+    EQUB &A9, &A9, &A9, &A9, &A1, &A0
+    TT_ROW 7
+    EQUB TT_GFX_BLUE, &FF, &B9, TT_GFX_RED, TT_GFX_RED, &E6, &A4, &A5, TT_GFX_BLUE, &20, &20, &20
+    EQUB &20, &20, &20, &A9, &A9, &AB, &AD, &20, &20, &AE, &A7, &A6, &A6, TT_GFX_YELLOW, &20, &20
+    EQUB &20, &20, &20, &20, &20, TT_GFX_RED, &A8, &F2, &A4, TT_GFX_YELLOW, TT_GFX_YELLOW
+    EQUB TT_GFX_YELLOW
+    TT_ROW 8
+    EQUB TT_GFX_BLUE, &FF, &E6, TT_GFX_RED, &E0, &A9, &F6, &E0, TT_GFX_BLUE, &E0, &FC, &EF, &EF
+    EQUB &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &6F, &6F
+    EQUB &6D, &74, TT_GFX_RED, &E6, &BD, &F7, TT_GFX_YELLOW, TT_GFX_YELLOW, TT_GFX_YELLOW
+    TT_ROW 9
+    EQUB TT_GFX_BLUE, &FF, &B9, TT_GFX_YELLOW, TT_GFX_YELLOW, &AB, &A7, &A7, TT_GFX_BLUE, &BE, &B9
+    EQUB &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1
+    EQUB &21, &21, &29, &3B, &75, TT_GFX_YELLOW, &F6, &BD, TT_GFX_YELLOW, TT_GFX_YELLOW
+    EQUB TT_GFX_YELLOW
 ; rows 10-15: the options, yellow numbers and green text, between the pictures
-    EQUB TT_GRAPHICS_BLUE, &FF, &E6, &AA, &BF, &BF, &BF, &BF, &6A, &F7, &A4, &20
-    EQUB TT_ALPHA_YELLOW, "1", TT_ALPHA_GREEN, "Start the game", TT_GRAPHICS_BLUE, &20
-    EQUB TT_BLACK_BACKGROUND, &66, &7F, &AA, &BF, &BF, &BF, &BF, &BF
-    EQUB TT_GRAPHICS_BLUE, &FF, &B9, &22, &22, &A2, &A2, &A2, &6A, &BD, &B1, &20
-    EQUB TT_ALPHA_YELLOW, "2", TT_ALPHA_GREEN, "Redefine keys", TT_GRAPHICS_BLUE, &20, &20
-    EQUB TT_BLACK_BACKGROUND, &39, &7F, &22, &62, &72, &72, &32, &22
-    EQUB TT_GRAPHICS_BLUE, &FF, &E6, TT_GRAPHICS_YELLOW, &22, &2F, &21, TT_GRAPHICS_BLUE, &6A
-    EQUB &F7, &A4, &20, TT_ALPHA_YELLOW, "3", TT_ALPHA_GREEN, "Edit graphics", TT_GRAPHICS_BLUE
-    EQUB &20, &20, TT_BLACK_BACKGROUND, &66, &7F, TT_GRAPHICS_BLUE, &6F, &7F, &7F, &3F, &20
-    EQUB TT_GRAPHICS_BLUE, &FF, &B9, TT_GRAPHICS_RED, &7F, &7F, &7F, TT_GRAPHICS_BLUE, &6A, &BD
-    EQUB &B1, &20, TT_ALPHA_YELLOW, "4", TT_ALPHA_GREEN, "Edit levels", TT_GRAPHICS_BLUE, &20
-    EQUB TT_GRAPHICS_BLUE, &20, &20, TT_BLACK_BACKGROUND, &39, &7F, &20, TT_GRAPHICS_CYAN, &6A
-    EQUB &35, &20, &20
-    EQUB TT_GRAPHICS_BLUE, &EF, &FE, &FD, &F0, &F0, &F0, &F0, &FE, &F7, &A4, &20
-    EQUB TT_ALPHA_YELLOW, "5", TT_ALPHA_GREEN, "Edit missions", TT_GRAPHICS_BLUE, &20, &20
-    EQUB TT_BLACK_BACKGROUND, &66, &7F, &74, &F0, &F0, &F0, &F0, &F0
-    EQUB TT_GRAPHICS_BLUE, &A2, &AF, &BB, &BB, &BB, &BB, &BB, &BB, &B9, &A1, &20
-    EQUB TT_ALPHA_YELLOW, "6", TT_ALPHA_GREEN, "Quit PIPELINE", TT_GRAPHICS_BLUE, &20, &20
-    EQUB TT_BLACK_BACKGROUND, &29, &BB, &BB, &BB, &BB, &BB, &BB, &BB
+    TT_ROW 10
+    EQUB TT_GFX_BLUE, &FF, &E6, &AA, &BF, &BF, &BF, &BF, &6A, &F7, &A4, &20, TT_ALPHA_YELLOW, "1"
+    EQUB TT_ALPHA_GREEN, "Start the game", TT_GFX_BLUE, &20, TT_BLACK_BACKGROUND, &66, &7F, &AA
+    EQUB &BF, &BF, &BF, &BF, &BF
+    TT_ROW 11
+    EQUB TT_GFX_BLUE, &FF, &B9, &22, &22, &A2, &A2, &A2, &6A, &BD, &B1, &20, TT_ALPHA_YELLOW, "2"
+    EQUB TT_ALPHA_GREEN, "Redefine keys", TT_GFX_BLUE, &20, &20, TT_BLACK_BACKGROUND, &39, &7F
+    EQUB &22, &62, &72, &72, &32, &22
+    TT_ROW 12
+    EQUB TT_GFX_BLUE, &FF, &E6, TT_GFX_YELLOW, &22, &2F, &21, TT_GFX_BLUE, &6A, &F7, &A4, &20
+    EQUB TT_ALPHA_YELLOW, "3", TT_ALPHA_GREEN, "Edit graphics", TT_GFX_BLUE, &20, &20
+    EQUB TT_BLACK_BACKGROUND, &66, &7F, TT_GFX_BLUE, &6F, &7F, &7F, &3F, &20
+    TT_ROW 13
+    EQUB TT_GFX_BLUE, &FF, &B9, TT_GFX_RED, &7F, &7F, &7F, TT_GFX_BLUE, &6A, &BD, &B1, &20
+    EQUB TT_ALPHA_YELLOW, "4", TT_ALPHA_GREEN, "Edit levels", TT_GFX_BLUE, &20, TT_GFX_BLUE, &20
+    EQUB &20, TT_BLACK_BACKGROUND, &39, &7F, &20, TT_GFX_CYAN, &6A, &35, &20, &20
+    TT_ROW 14
+    EQUB TT_GFX_BLUE, &EF, &FE, &FD, &F0, &F0, &F0, &F0, &FE, &F7, &A4, &20, TT_ALPHA_YELLOW, "5"
+    EQUB TT_ALPHA_GREEN, "Edit missions", TT_GFX_BLUE, &20, &20, TT_BLACK_BACKGROUND, &66, &7F
+    EQUB &74, &F0, &F0, &F0, &F0, &F0
+    TT_ROW 15
+    EQUB TT_GFX_BLUE, &A2, &AF, &BB, &BB, &BB, &BB, &BB, &BB, &B9, &A1, &20, TT_ALPHA_YELLOW, "6"
+    EQUB TT_ALPHA_GREEN, "Quit PIPELINE", TT_GFX_BLUE, &20, &20, TT_BLACK_BACKGROUND, &29, &BB
+    EQUB &BB, &BB, &BB, &BB, &BB, &BB
+}
 .menu_screen_end
-    ASSERT menu_screen_end - menu_screen = 16 * MODE7_COLUMNS   ; FOR N%=0 TO &27C STEP 4
+    ASSERT menu_screen_end - menu_screen = 16 * TT_COLUMNS   ; FOR N%=0 TO &27C STEP 4
 
 ; The rest of S% is never read by MENU's own code: it's what was in memory
 ; when the file was saved. First a blank row, holding the zero that ended

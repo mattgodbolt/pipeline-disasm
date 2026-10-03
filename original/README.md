@@ -13,9 +13,15 @@ It was decoded from a flux capture in the bbcdiscs archive that jsbeeb uses:
 | CRC32 | `8C94E3FE` |
 | SHA-256 | `e77711f674083c873b96543a7af8e28968261e8a90f00ff1340fa9508535825c` |
 
-The capture decodes cleanly: no CRC errors, no odd sectors, nothing a sector
-image can't hold. Any copy protection is in the software, not in the
-formatting.
+The capture decodes cleanly: no CRC errors and no odd sectors. But one thing
+on it can't be held by a sector image: every sector of the three hidden runs
+(&122-&142, &145-&165, &16D-&18B), and only those, was written with a
+*deleted* data address mark. It's the same on every capture in the archive.
+That's half the copy protection: the 8271 reports result &20 for a deleted
+sector, which DFS treats as a disc fault, so `*BACKUP` stops at track 29. The
+stub loaders read with "read data and deleted data" through OSWORD &7F and
+ignore the result, so the game runs from this .ssd regardless; the marks
+themselves are lost from it. See `src/hidden_loader.6502inc`.
 
 ## Other copies considered
 

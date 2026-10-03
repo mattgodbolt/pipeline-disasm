@@ -1,4 +1,21 @@
-; $.GRAPHIC: &D9 bytes at sector &112.
+; $.GRAPHIC: &D9 bytes at sector &112. The stub loader for the Graphics
+; Designer (MENU option 3, `*/GRAPHIC`): reads H.GRAPH from its hidden sectors
+; and enters it. All of the code is in hidden_loader.6502inc, shared with GAME
+; and LEVDES.
+
+INCLUDE "os.6502inc"
+INCLUDE "osconst.6502inc"
+
+; H.GRAPH, as src/disc.toml places it: track 32 sector 5 to track 35 sector 7.
+; It loads part way into a page and is entered well inside itself.
+hidden_first_sector = &145
+hidden_length = &2100
+hidden_load = &1AB0
+hidden_entry = &2BAE
+
 SECTION graphic, filename="GRAPHIC", org=&0900, load=&900, exec=&900
-    INCBIN "../data/graphic.bin"
+.graphic_loader
+{
+    INCLUDE "hidden_loader.6502inc"
+}
 ENDSECTION

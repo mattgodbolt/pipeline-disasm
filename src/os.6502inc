@@ -1,6 +1,16 @@
 ; The BBC Micro's operating system entry points, vectors and memory-mapped
-; hardware, shared by every piece. tools/dis6502.py names operands from this
-; file, so add here rather than defining an OS address locally.
+; hardware: addresses only, shared by every piece. tools/dis6502.py names
+; operands from this file, so add here rather than defining an OS address
+; locally. Call numbers and other constants are in osconst.6502inc.
+
+; The 6502's own vectors, in the MOS ROM.
+CPU_NMI_VECTOR   = &FFFA
+CPU_RESET_VECTOR = &FFFC
+CPU_IRQ_VECTOR   = &FFFE
+
+; Where the MOS keeps the address of its table of default vector contents
+; (laid out like page 2 from USERV, ?&FFB6 bytes long).
+MOS_DEFAULT_VECTORS_PTR = &FFB7
 
 ; MOS entry points.
 OSRDRM = &FFB9
@@ -23,6 +33,12 @@ OSWRCH = &FFEE
 OSWORD = &FFF1
 OSBYTE = &FFF4
 OSCLI  = &FFF7
+
+; MOS zero page. tools/dis6502.py doesn't name zero-page operands from this
+; file: a game that takes the machine over reuses these bytes for itself.
+
+; The internal key number (bit 7 set) of the key last pressed, while it's held.
+MOS_KEY_PRESSED = &EC
 
 ; Vectors in page 2.
 USERV = &0200

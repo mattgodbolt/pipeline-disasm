@@ -1,4 +1,496 @@
-; $.PL: &2FC bytes at sector &101.
+; $.PL: &2FC bytes at sector &101, loaded and run at &0400. "Ian's cheat!":
+; a hidden developer's tool, encrypted, that MENU runs only if W and T are
+; held as it starts (line 290: IF INKEY-36 AND INKEY-34 THEN */PL ...).
+;
+; What it does, once it has decrypted itself:
+;
+; 1. MODE 7, cursor off, paged mode on, and nothing on the screen. It waits
+;    for the keys to be let go, then silently reads a filename (up to 12
+;    characters) and a six-digit code.
+; 2. *LOADs the file - a level file as the Level Designer saves it, like
+;    LEVEL1, at &25A1 - and checks the code against the three bytes the file
+;    keeps at &26E1. A wrong code resets the machine.
+; 3. Lists the file's 32 puzzles: number, ten-character name, what the puzzle
+;    does (one of 16 actions) and whether it starts on or off. LEVEL1's code
+;    is 677636.
+; 4. After a key, fills the screen with a fake BASIC "Bad program" error
+;    until I, N, O and S are held down together; then beeps, *LOADs GAME and
+;    pokes the game for a cheat before jumping into it at &3000.
+;
+; Step 4 can't work on this disc: GAME is now the &D9-byte stub loader at
+; &0900, not the game, so the jump finds no game at &3000 and the machine
+; resets. PL must date from before the game was hidden in uncatalogued
+; sectors. (Seen in jsbeeb: the listing works; the end resets.)
+;
+; Against prying: everything after the decryptor is encrypted, with keys
+; taken from the decryptor's own bytes; BRKV is pointed at the reset code,
+; so any error resets the machine, as does a wrong code; BREAK clears
+; memory; and the decrypted code has checks that only fail if it's been
+; tampered with.
+;
+; On disc the encrypted part is data/pl_encrypted.bin. The program it
+; decrypts to is below as source, in a section of its own (saved as
+; build/files/PLDEC, which isn't on the disc); `tools/plcrypt.py check
+; build/files` confirms one encrypts to the other, and `encrypt` rebuilds
+; the data from the source.
+
+INCLUDE "os.6502inc"
+INCLUDE "osconst.6502inc"
+INCLUDE "teletext.6502inc"
+
+OPCODE_BMI = &30
+OPCODE_NOP = &EA
+
+; Zero page. BASIC's, but BASIC is never coming back.
+crypt_ptr = &70             ; (2) the decryptor's page pointer
+
 SECTION pl, filename="PL", org=&0400, load=&400, exec=&400
-    INCBIN "../data/pl.bin"
+.pl
+{
+; Entry from *RUN.
+.start
+    SEI
+.read_reset_high
+    LDX #1
+    LDA CPU_RESET_VECTOR, X     ; high byte of the reset entry
+    PHA
+    ; 4 is both *FX4 and the first page to decrypt.
+    LDA #OSBYTE_CURSOR_EDITING
+    STA crypt_ptr+1
+    JSR OSBYTE                  ; *FX4,1: no cursor editing, so no copying off the screen
+    LDX #2
+    ; BRKV := the reset entry, so any error (BRK) resets the machine.
+    PLA
+    STA BRKV+1
+    LDA CPU_NMI_VECTOR, X       ; X=2: the reset entry's low byte
+    STA BRKV
+    LDA #OSBYTE_BREAK_EFFECT
+    JSR OSBYTE                  ; *FX200 with X=2: BREAK clears memory
+
+    ; Decrypt from `encrypted` to the end of page 6, a byte at a time:
+    ; plain = key EOR previous plain byte EOR stored. Page 4 starts at
+    ; `encrypted`, pages 5 and 6 at their second byte (their first is stored
+    ; plain). tools/plcrypt.py does the same offline.
+    LDA #0
+    STA crypt_ptr
+    LDY #LO(encrypted)
+    LDX #2                      ; pages to go after this one, and which key
+.decrypt_byte
+    LDA key_bytes, X
+    DEY
+    EOR (crypt_ptr), Y
+    INY
+    EOR (crypt_ptr), Y
+    STA (crypt_ptr), Y
+    INY
+    BNE decrypt_byte
+    INY
+    INC crypt_ptr+1
+    DEX
+    BPL decrypt_byte
+    ; X is now &FF. This BMI's offset is the first byte decrypted: as stored
+    ; it would branch back into the code above; decrypted it skips one byte
+    ; into the cheat (pl_cheat.start, below).
+    EQUB OPCODE_BMI
+
+; Stored encrypted; decrypts to the pl_cheat section below.
+.encrypted
+    INCBIN "../data/pl_encrypted.bin"
+}
+ENDSECTION
+
+; The keys, one per page (page 4 uses key_bytes+2): the operand of LDX #1,
+; the LDA abs,X opcode and the low byte of its operand. Patch the decryptor
+; and the decryption goes wrong.
+key_bytes = pl.read_reset_high + 1
+
+
+; ---------------------------------------------------------------------------
+; What `encrypted` decrypts to, starting with the BMI it completes. Not on
+; the disc: saved as PLDEC so tools/plcrypt.py can check the two agree.
+
+; The level file the cheat reads, as the Level Designer lays it out at
+; &25A1 (LEVEL1 on this disc). Outside PL, so addresses.
+puzzle_names = &25A1        ; 32 x 8 characters: the first 8 of each name
+puzzle_name_ends = &26A1    ; 32 x 2 characters: the last 2
+level_code = &26E1          ; 3 bytes: the six-digit code, encoded (see check_code_byte)
+puzzle_flags = &2720        ; 32 bytes: bits 0-3 the action, bit 5 set if it starts off
+PUZZLE_COUNT = 32
+PUZZLE_ACTION = &0F
+PUZZLE_OFF = &20
+
+; The game as it was when PL was written, a plain file loaded at &3000, and
+; the places the cheat pokes. What they do is the game's business
+; (src/hidden_game.6502); as instructions in H.GAME they are:
+GAME_START = &3000
+game_ldx_3 = &3FC6          ; LDX #3 : STX &2E - the cheat makes it LDX #31
+game_beq = &4874            ; BEQ +3 over a JMP &1C13 - the cheat makes it BEQ +0
+game_sta_61 = &4F31         ; STA &61 - the cheat makes it two NOPs
+game_var_61 = &61           ; and sets &61 to 3 itself
+CHEAT_LDX_VALUE = 31
+
+; Zero page, once decrypted. BASIC's, and the MOS's line input buffer for the
+; code goes right at the bottom.
+typed_digits = &00          ; (7) the code as typed, then CR
+digit_pair = &70            ; packing two digits into one byte
+entry_index = &70           ; the puzzle being listed
+key_index = &70             ; which of the unlock keys is being tested
+format_index = &71          ; next character of format_chars to print
+swapped = &72               ; check_code_byte's working
+checks_left = &73           ; check_code_byte's count, a guard against patching
+code_bcd = &80              ; (3) the code typed, as BCD
+
+DIGIT_0 = ascii("0")
+ACTION_WIDTH = 15           ; the action column, padded with spaces
+
+; The format characters are stored inverted, so they aren't text to anyone
+; reading the decrypted bytes either.
+FUNCTION inverted(x) = FLATTEN(x) EOR &FF
+
+SECTION pl_decrypted, filename="PLDEC", org=pl.encrypted - 1
+.pl_cheat
+{
+    BMI start                   ; X=&FF: always
+    EQUB 0                      ; skipped
+
+; Entered with X = &FF, from the decryptor.
+.start
+    LDY #screen_setup_end - screen_setup - 1
+.send_screen_setup
+    LDA screen_setup, Y
+    JSR OSWRCH
+    DEY
+    BPL send_screen_setup
+    CLI
+    ; Let go of W and T (and RETURN) first, or they'd be typed.
+.wait_keys_up
+    LDA MOS_KEY_PRESSED
+    BMI wait_keys_up
+    SEI
+    INX                         ; 0
+    LDA #OSBYTE_AUTO_REPEAT_DELAY
+    JSR OSBYTE                  ; *FX11,0: no auto-repeat
+    LDA #OSBYTE_FLUSH_BUFFERS
+    LDX #0
+    JSR OSBYTE
+
+    ; Two lines from the keyboard, with no prompt: a filename, into the end
+    ; of load_command, and the code, as digits only.
+    LDX #LO(read_filename_block)
+    LDY #HI(read_filename_block)
+    LDA #OSWORD_READ_LINE
+    JSR OSWORD
+    LDX #LO(read_code_block)
+    LDY #HI(read_code_block)
+    LDA #OSWORD_READ_LINE
+    JSR OSWORD
+
+    ; Pack the six digits into three BCD bytes, first pair first.
+    LDX #4
+    LDY #2
+.pack_digits
+    LDA typed_digits, X
+    SEC
+    SBC #DIGIT_0
+    ASL A
+    ASL A
+    ASL A
+    ASL A
+    STA digit_pair
+    LDA typed_digits+1, X
+    SEC
+    SBC #DIGIT_0
+    ORA digit_pair
+    STA code_bcd, Y
+    DEY
+    DEX
+    DEX
+    BPL pack_digits
+
+    ; *L.<filename>
+    LDX #LO(load_command)
+    LDY #HI(load_command)
+    JSR OSCLI
+
+    LDA #0
+    STA entry_index
+; One line of the listing per puzzle, checking the code again every time.
+.list_entry
+    LDX #2
+    LDA #OSBYTE_BREAK_EFFECT
+    LDY #0
+    STX checks_left
+    JSR OSBYTE                  ; *FX200,2 again: BREAK clears memory
+
+    ; Each code byte must match the file's once its bit pairs are swapped
+    ; and it's rotated right a bit. checks_left goes 2, 1, 0, &FF and back
+    ; to 0 only if all three compares ran.
+.check_code_byte
+    DEC checks_left
+    LDA code_bcd, X
+    PHA
+    AND #%01010101
+    ASL A
+    STA swapped
+    PLA
+    AND #%10101010
+    LSR A
+    ORA swapped
+    PHA
+    LSR A
+    PLA
+    ROR A
+    CMP level_code, X
+    BEQ code_byte_ok
+.reset_machine
+    JMP (CPU_RESET_VECTOR)
+.code_byte_ok
+    DEX
+    BPL check_code_byte
+    INC checks_left
+    BNE reset_machine
+
+    ; The puzzle number, 1-32, in yellow, right-aligned in two columns.
+    LDX #0
+    STX format_index
+    JSR print_format_char       ; yellow
+    LDY entry_index
+    INY
+    TYA
+    PHP
+    SEC
+.count_tens
+    INX
+    SBC #10
+    BCS count_tens
+    ADC #DIGIT_0 + 10
+    PHA
+    LDA tens_digits - 1, X
+    JSR OSWRCH
+    PLA
+    JSR OSWRCH
+    JSR print_format_char       ; "."
+    JSR print_format_char       ; green
+
+    ; The name: 8 characters from one table, 2 from another.
+    LDA entry_index
+    ASL A
+    ASL A
+    ASL A
+    TAY
+    ; Never taken: a pushed P always has B and I set (we're under SEI). A
+    ; decoy check.
+    PLA
+    AND #%10010110
+    BEQ reset_machine
+    LDX #8
+.print_name
+    LDA puzzle_names, Y
+    JSR OSWRCH
+    INY
+    DEX
+    BNE print_name
+    LDX #2
+    LDA entry_index
+    ASL A
+    TAY
+.print_name_end
+    LDA puzzle_name_ends, Y
+    JSR OSWRCH
+    INY
+    DEX
+    BNE print_name_end
+
+    ; The action, in cyan: count past (action + 1) zeros in action_names.
+    JSR print_format_char       ; cyan
+    LDY entry_index
+    LDA puzzle_flags, Y
+    PHA
+    AND #PUZZLE_ACTION
+    TAX
+    LDY #0
+.find_action
+    LDA action_names, Y
+    BEQ passed_zero
+    INY
+    BNE find_action
+.passed_zero
+    INY
+    DEX
+    BPL find_action
+    LDX #ACTION_WIDTH
+.print_action
+    LDA action_names, Y
+    BEQ pad_action
+    JSR OSWRCH
+    INY
+    DEX
+    BNE print_action
+    BEQ print_on_off            ; always
+.pad_action
+    LDA #ascii(" ")
+.pad_action_loop
+    JSR OSWRCH
+    DEX
+    BNE pad_action_loop
+
+    ; "On" or "Off", in magenta.
+.print_on_off
+    JSR print_format_char       ; magenta
+    JSR print_format_char       ; "O"
+    PLA
+    AND #PUZZLE_OFF
+    BNE print_off
+    LDA #ascii("n")
+    BNE print_last_letter       ; always
+.print_off
+    LDA #ascii("f")
+    JSR OSWRCH
+.print_last_letter
+    JSR OSWRCH
+    JSR print_format_char       ; newline
+
+    INC entry_index
+    LDA entry_index
+    CMP #PUZZLE_COUNT
+    BEQ listed
+    JMP list_entry
+
+.listed
+    LDX #3
+.finish_listing
+    JSR print_format_char       ; paged mode off, beep, ">"
+    DEX
+    BNE finish_listing
+    CLI
+    JSR OSRDCH
+    SEI
+
+    ; Pretend BASIC has fallen over until all four unlock keys are held.
+    ; The fake error's place in format_chars is also its length.
+.fake_error
+    LDX #fake_error_text - format_chars
+    STX format_index
+.print_fake_error
+    JSR print_format_char
+    DEX
+    BNE print_fake_error
+    LDA #unlock_keys_end - unlock_keys - 1
+    STA key_index
+.test_unlock_key
+    LDY key_index
+    LDX unlock_keys, Y
+    LDY #&FF
+    LDA #OSBYTE_INKEY
+    JSR OSBYTE
+    INX
+    BNE fake_error              ; not held
+    DEC key_index
+    BPL test_unlock_key
+
+    ; Unlocked: X=0 and Y=&FF from the last INKEY.
+    LDA #BEL
+    CLI
+    JSR OSWRCH
+    LSR A                       ; 3
+    STA game_var_61, X
+    INY                         ; 0
+    LDA #OSBYTE_ESCAPE_KEY
+    JSR OSBYTE                  ; *FX229,0
+    LDA #OSBYTE_ESCAPE_EFFECTS
+    LDX #1
+    LDY #0
+    JSR OSBYTE                  ; *FX230,1, as MENU does before the game
+    LDX #LO(load_game)
+    LDY #HI(load_game)
+    JSR OSCLI
+    ; Poke the cheat into the game. The addresses are dressed up with index
+    ; registers so they don't show in the code as written.
+    LDA #OPCODE_NOP
+    STA game_sta_61 + 1
+    LDX #CHEAT_LDX_VALUE
+    STA game_sta_61 - CHEAT_LDX_VALUE, X
+    LDY #0
+    TXA
+    STY game_beq + 1
+    STA game_ldx_3 + 1, Y
+    JMP GAME_START
+
+; Print the next character of format_chars and step on to the one after.
+; Clobbers A, Y.
+.print_format_char
+    LDY format_index
+    LDA format_chars, Y
+    EOR #&FF
+    JSR OSASCI
+    INC format_index
+    RTS
+
+; VDU codes, sent from the end backwards: MODE 7; cursor off (6845 register
+; 10, the cursor start line, := &20); paged mode on.
+.screen_setup
+    EQUB REVERSE({22, 7, 23, 0, 10, &20, 0, 0, 0, 0, 0, 0, 14})
+.screen_setup_end
+
+; OSWORD 0 for the filename: up to 12 characters, any printable.
+.read_filename_block
+    EQUW filename
+    EQUB filename_end - filename, ascii(" "), &FF
+
+; The filename is read over the placeholder, so OSCLI sees *L.<filename>.
+.load_command
+    EQUS "L."
+.filename
+    EQUS "Ian's cheat!"
+.filename_end
+    EQUB CR
+
+; OSWORD 0 for the code: up to six digits, into zero page.
+.read_code_block
+    EQUW typed_digits
+    EQUB 6, ascii("0"), ascii("9")
+
+; Characters print_format_char hands out in turn, stored inverted. The
+; tens digits in the middle are read directly, not inverted, and never
+; reached in turn.
+.format_chars
+    EQUB inverted({TT_ALPHA_YELLOW, CODES("."), TT_ALPHA_GREEN})
+    EQUB inverted({TT_ALPHA_CYAN, TT_ALPHA_MAGENTA, CODES("O"), CR})
+    EQUB inverted({15, BEL, CODES(">")})    ; VDU 15: paged mode off
+; Indexed from 1 (tens + 1): " " for 1-9, then "1", "2", "3".
+.tens_digits
+    EQUS " 123"
+.fake_error_text
+    EQUB inverted({CODES("Bad program"), CR, CODES(">"), CR})
+.fake_error_text_end
+    ASSERT fake_error_text_end - fake_error_text = fake_error_text - format_chars
+
+.load_game
+    EQUS "L.GAME", CR
+
+; INKEY tests for the keys that unlock the cheat, last first.
+.unlock_keys
+    EQUB INKEY_TEST(KEY_S), INKEY_TEST(KEY_O), INKEY_TEST(KEY_N), INKEY_TEST(KEY_I)
+.unlock_keys_end
+
+; The 16 actions a puzzle can do, each after a zero.
+.action_names
+    EQUB 0
+    EQUS "Place block", 0
+    EQUS "Move block", 0
+    EQUS "Next block", 0
+    EQUS "Set levels", 0
+    EQUS "Throw object", 0
+    EQUS "Detonate object", 0
+    EQUS "Move monster", 0
+    EQUS "Place monster", 0
+    EQUS "Teleport", 0
+    EQUS "Swap next block", 0
+    EQUS "Turn on puzzle", 0
+    EQUS "Turn off puzzle", 0
+    EQUS "Charge object", 0
+    EQUS "Push boulders", 0
+    EQUS "Move next block", 0
+    EQUS "Disorientate", 0
+}
 ENDSECTION

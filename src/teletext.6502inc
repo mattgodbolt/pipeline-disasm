@@ -1,40 +1,52 @@
-; Mode 7 (SAA5050 teletext) control codes, as the BBC's screen memory holds
-; them. Each takes a character cell, shown as a space, and changes the rest
-; of its row from there (the chip ignores bit 7, and the OS writes them
-; with it set). Characters &A0-&BF and &E0-&FF in a graphics colour are
-; 2x3 blocks of "sixels"; &C0-&DF stay letters even then.
+; Teletext (Mode 7) control codes, as the SAA5050 sees them, for writing
+; Mode 7 screens as source. Each takes a character cell (shown as a space,
+; or as held graphics) and changes how the rest of the row is drawn.
+; tools/mode7.py names bytes from this file.
+;
+; Bytes from &A0 up are characters with bit 7 set; the SAA5050 ignores bit 7
+; for them, and in a graphics colour they're the 2x3 block "sixel" shapes
+; (bit 0 top left, 1 top right, 2 middle left, 3 middle right, 4 bottom left,
+; 6 bottom right; bit 5 is always set). Mode 7 screen code tends to store
+; those as &A0-&FF, so in a graphics run they're written in hex.
 
-TT_ALPHA_RED        = &81
-TT_ALPHA_GREEN      = &82
-TT_ALPHA_YELLOW     = &83
-TT_ALPHA_BLUE       = &84
-TT_ALPHA_MAGENTA    = &85
-TT_ALPHA_CYAN       = &86
-TT_ALPHA_WHITE      = &87
-TT_FLASH            = &88
-TT_STEADY           = &89
-TT_NORMAL_HEIGHT    = &8C
-TT_DOUBLE_HEIGHT    = &8D
-TT_GRAPHICS_RED     = &91
-TT_GRAPHICS_GREEN   = &92
-TT_GRAPHICS_YELLOW  = &93
-TT_GRAPHICS_BLUE    = &94
-TT_GRAPHICS_MAGENTA = &95
-TT_GRAPHICS_CYAN    = &96
-TT_GRAPHICS_WHITE   = &97
-TT_CONCEAL          = &98
-TT_CONTIGUOUS       = &99
-TT_SEPARATED        = &9A
-TT_BLACK_BACKGROUND = &9C
-TT_NEW_BACKGROUND   = &9D   ; the background takes the current foreground colour
-TT_HOLD_GRAPHICS    = &9E
-TT_RELEASE_GRAPHICS = &9F
+; Text in a colour (and leave graphics mode).
+TT_ALPHA_RED     = &81
+TT_ALPHA_GREEN   = &82
+TT_ALPHA_YELLOW  = &83
+TT_ALPHA_BLUE    = &84
+TT_ALPHA_MAGENTA = &85
+TT_ALPHA_CYAN    = &86
+TT_ALPHA_WHITE   = &87
 
-TT_SOLID_BLOCK      = &FF   ; all six sixels lit
+TT_FLASH  = &88
+TT_STEADY = &89
 
-MODE7_COLUMNS = 40
-MODE7_ROWS    = 25
-MODE7_SCREEN  = &7C00
+TT_NORMAL_HEIGHT = &8C
+TT_DOUBLE_HEIGHT = &8D
 
-; The screen address of a character cell.
-FUNCTION mode7_address(column, row) = MODE7_SCREEN + row * MODE7_COLUMNS + column
+; Graphics in a colour.
+TT_GFX_RED     = &91
+TT_GFX_GREEN   = &92
+TT_GFX_YELLOW  = &93
+TT_GFX_BLUE    = &94
+TT_GFX_MAGENTA = &95
+TT_GFX_CYAN    = &96
+TT_GFX_WHITE   = &97
+
+TT_CONCEAL           = &98
+TT_CONTIGUOUS        = &99   ; solid sixels (the default)
+TT_SEPARATED         = &9A   ; sixels with gaps between them
+TT_BLACK_BACKGROUND  = &9C
+TT_NEW_BACKGROUND    = &9D   ; background becomes the current foreground colour
+TT_HOLD_GRAPHICS     = &9E   ; control cells repeat the last sixel, not a space
+TT_RELEASE_GRAPHICS  = &9F
+
+TT_COLUMNS = 40
+TT_ROWS = 25
+
+; Start of a screen row: checks it starts where row n of a screen whose
+; first row is at `screen` should, so a row with the wrong number of bytes
+; is caught where it happens. The including file defines `screen`.
+MACRO TT_ROW n
+    ASSERT P% = screen + n * TT_COLUMNS, "Mode 7 row ", n, " starts at the wrong place"
+ENDMACRO

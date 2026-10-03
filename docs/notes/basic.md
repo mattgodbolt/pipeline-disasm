@@ -222,12 +222,12 @@ and loading IO shows its name as "Collect the" / "Sulphur!".
   so the original names: sel0 &1126, canc &1637, t2 &54, sure &1323,
   table &166B, key3 &169E, wind &14A8, help &16AD, simt... &16A7 (taking
   H.LEVDES to run at &1100).
-- `src/teletext.6502inc` (Mode 7 control codes, `mode7_address()`) is
-  general; WARNING may want it. `src/basic.6502inc` has the BASIC record
-  format and VDU 6/21/127 names.
-- OS call numbers defined locally in `src/menu.6502` (OSBYTE &0E, OSWORD
-  &0A, event 4) belong in `src/os.6502inc` when someone adds call numbers
-  there.
+- `src/basic.6502inc` has the BASIC record format (`basic_line()`), the
+  resident integers (`basic_integer("E")`) and VDU 6/21/127 names.
+- Defined locally in `src/menu.6502`, for `src/osconst.6502inc` when it's
+  next touched: `OSWORD_READ_CHAR_DEFINITION` (&0A) and `EVENT_VSYNC` (4).
+  `MODE7_SCREEN`, `mode7_address()` and `SOLID_BLOCK` could join
+  `src/teletext.6502inc`.
 
 ## 2026-10-03 18:20 — Status, and what baron would need
 
@@ -245,3 +245,14 @@ and loading IO shows its name as "Collect the" / "Sulphur!".
   bytes). Less readable but more general: let records written with EQUB
   sit inside a BASIC block (or an `ENDBASIC` that doesn't write &0D &FF),
   so the odd line could be EQUB where it falls.
+
+## 2026-10-03 18:40 — Merged main
+
+- main gained `src/teletext.6502inc` (from the WARNING work) while this
+  branch had its own; this branch now uses main's (`TT_GFX_*`,
+  `TT_COLUMNS`, `TT_ROW`) and `src/osconst.6502inc`, and the menu screen
+  is written as `TT_ROW`s inside a `.menu_screen` scope, as WARNING's is.
+  MENU's S% rows 0-9 are byte-for-byte WARNING's rows 0-9.
+- The PL notes on main agree with the editing code here: PL asks for a
+  level file and a six-digit code, and LEVEL1's is 677636 - the code
+  MISSION wants for IO's level 1, which is LEVEL1.

@@ -1,4 +1,27 @@
-; $.!BOOT: &94 bytes at sector &002.
+; $.!BOOT: &94 bytes at sector &002. The disc's *OPT4,3 boot file, so
+; SHIFT+BREAK *EXECs it: each line is typed in as if at the keyboard, first
+; to the MOS command line, then (after *BASIC) to BASIC.
+;
+; - The *| lines are MOS comments: the credits, shown as they're typed.
+; - *BASIC makes sure BASIC is the current language before the rest.
+; - *FX200,3: Escape disabled, and memory cleared on BREAK, so BREAK can't
+;   be used to stop the game and look at it.
+; - ?&224=?(&24+!&FFB7): &FFB7 holds the address of the MOS's table of
+;   default vector contents, and &24 is NETV's offset in it (as in page 2),
+;   so this puts back the low byte of NETV. Nothing on the disc touches NETV;
+;   presumably it undoes something a ROM or earlier program installed. MENU
+;   goes further, restoring every vector but BRKV the same way.
+; - CHAIN"MENU" runs the BASIC menu.
+
+CR = 13     ; *EXEC lines end with a carriage return, as typed
+
 SECTION boot, filename="!BOOT", org=0, load=&FFFFFFFF, exec=&FFFFFFFF
-    INCBIN "../data/boot.bin"
+    EQUS "*| PIPELINE/B 1.01", CR
+    EQUS "*|   Copyright (c) 1988", CR
+    EQUS "*|   William Reeve & Ian Holmes", CR
+    EQUS "*| For Superior Software", CR
+    EQUS "*BASIC", CR
+    EQUS "*FX200,3", CR
+    EQUS "?&224=?(&24+!&FFB7)", CR
+    EQUS "CHAIN""MENU""", CR
 ENDSECTION
