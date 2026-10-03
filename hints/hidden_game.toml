@@ -1,9 +1,13 @@
 # H.GAME, the game: loaded at &3000 by the GAME stub, it copies most of itself
-# down into low memory and jumps there. src/hidden_game.6502 is generated from
-# this file and the files under hints/hidden_game/, which carry the names and
-# comments:
+# down into low memory and jumps there.
 #
-#   python3 tools/dis6502seg.py hints/hidden_game.toml > src/hidden_game.6502
+# How the first draft of src/hidden_game.6502 was made. The source is now
+# edited by hand like every other piece, so don't regenerate over it. While
+# it was being annotated, the names and comments lived in annotation files
+# under hints/hidden_game/ (see commit 435d925); with those gone this makes
+# the structural draft only:
+#
+#   python3 tools/dis6502seg.py hints/hidden_game.toml
 #
 # Traces only confirm what the static trace finds (they found nothing more),
 # so they're optional; tools/play.mjs makes them, e.g.
@@ -28,20 +32,6 @@ traces = ["build/trace/attract.json", "build/trace/play1.json", "build/trace/pla
           "build/trace/play6.json"]
 # IO is loaded over the loader once it has run.
 trace_only = ["0x3000-0x30FF"]
-annotations = [
-    "hints/hidden_game/variables.toml",
-    "hints/hidden_game/loader.toml",
-    "hints/hidden_game/low.toml",
-    "hints/hidden_game/main.toml",
-    "hints/hidden_game/main2.toml",
-    "hints/hidden_game/main3.toml",
-    "hints/hidden_game/main4.toml",
-    "hints/hidden_game/main5.toml",
-    "hints/hidden_game/main6.toml",
-    "hints/hidden_game/main7.toml",
-    "hints/hidden_game/main8.toml",
-    "hints/hidden_game/main9.toml",
-]
 
 header = '''
 H.GAME: PIPELINE itself (William Reeve & Ian Holmes, Superior Software 1988).

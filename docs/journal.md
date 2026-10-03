@@ -276,3 +276,54 @@ Details in `docs/notes/graphic.md`.
 - Symbol dump: the picture macros' FOR loops add about 15,000 `@` entries to
   `build/symbols.json`, and constants like `CELL = 8` look like addresses.
   Both already in `docs/symbols-feedback.md`'s list.
+
+## 2026-10-03 21:20 — Merged: the game and IO (agent branch); everything is source
+
+Details in `docs/notes/game.md`. With this, every catalogued file and hidden
+run is source; the binaries left are pictures (SCREEN, TITLE's packed
+picture, LDATA) and PL's encrypted bytes, which a test ties to its source.
+
+- H.GAME's loader at &3000 copies the game into place with an
+  inline-parameter block copier (saved extended vectors to &037F, a sound
+  event handler into the stack page at &0131, the tune to &0880 and its
+  envelopes straight into the OS's envelope store, scrolling code to &0400,
+  the game to &0900-&23AC), sets MODE 5 with latch bit 5 clear for an 8K
+  wrapping screen at &6000, and jumps to &12A3. It also holds "GET YOUR
+  GRUBBY LITTLE HANDS OFF THIS PROGRAM!".
+- IO is loaded at the start and again on the title screen's `L` (another
+  mission): the game swaps &0D00-&1CFF out to the screen, puts an RTI at the
+  NMI routine, restores the extended vectors, re-claims filing system
+  workspace, `*DISK`, OSFILE `:0.$.IO`, and swaps back.
+- The game: step on every cell 7 ("Collect the Sulphur!"), press P facing
+  the exit, then get 5+ cells away within 4 clock ticks as it turns to
+  fire. Crates push; lava and fire kill; pipes carry you hidden to their
+  other end. Up to 4 flame monsters with 2-bit turning preferences; 8
+  objects a level, each owning 4 of the 32 triggers (teleport, move a
+  cell, swap the keys...). Keys default to Z X : / P D M CTRL T RETURN -
+  Guildmaster's actions fit this game after all. A locked mission played
+  from level 1 ends with a competition code made from the score and a
+  checksum of the level data.
+- Tricks: the object table overlays run-once startup code; trigger data
+  overwrites the end of the game's code; operand bytes double as BIT masks;
+  `throw_trigger` is reached only through a self-modified JMP; text is
+  printed inline after a JSR up to a NOP. Traces (title, play, deaths, the
+  exit, objects, pipes) saw about 78% of instructions and no code the static
+  trace had missed.
+- IO is source in `src/io.6502` with its layout in `src/io.6502inc`, computed
+  from MISSION's own size formulas; pictures, icons and the four 64x64 maps
+  are drawn in the source.
+- Decided on merge: the agent had made `src/hidden_game.6502` generated, from
+  hint files holding all the names and comments plus the binary the build
+  makes from that same source - circular, and two places to edit. Frozen
+  instead: the source is hand-edited from now on like every other piece,
+  the annotation hints are gone (history has them, 435d925), and
+  `hints/hidden_game.toml` stays as a record that still drafts the
+  structure.
+- Both the game and Level Designer agents wrote a `tools/dis6502seg.py`; the
+  game's is the superset and now also takes the Level Designer's `org` for a
+  segment's run address, so both hints files still draft code that
+  reassembles identically.
+- On main: `MOS_VSYNC_COUNTER`, `MOS_NMI_ROUTINE`, `MOS_EXTENDED_VECTORS`
+  into `os.6502inc`; the game's own names for the error pointer and Escape
+  flag now use the shared ones. `docs/baron-feedback.md` collects every
+  baron issue and wish so far.

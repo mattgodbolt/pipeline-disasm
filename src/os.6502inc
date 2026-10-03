@@ -50,6 +50,9 @@ MOS_ESCAPE_FLAG = &FF
 ; the screen mode, bit 3 the boot action, bits 4-5 the disc timings).
 MOS_STARTUP_OPTIONS = &028F
 
+; Decremented every vsync, 50 times a second.
+MOS_VSYNC_COUNTER = &0240
+
 ; Vectors in page 2.
 USERV = &0200
 BRKV  = &0202
@@ -78,6 +81,13 @@ CNPV  = &022E
 IND1V = &0230
 IND2V = &0232
 IND3V = &0234
+
+; Where the OS jumps on an NMI: a filing system puts its handler here.
+MOS_NMI_ROUTINE = &0D00
+
+; The extended vector table: a ROM address and bank for each vector, used
+; when a vector points at its extended entry point.
+MOS_EXTENDED_VECTORS = &0D9F
 
 ; 6845 CRTC.
 CRTC_ADDR = &FE00

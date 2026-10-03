@@ -6,8 +6,8 @@
 ; &0900-&23AC, sets up the screen and the sound event, and jumps to the game,
 ; which then loads the mission file IO over the loader (see io.6502inc).
 ;
-; Generated from hints/hidden_game.toml and hints/hidden_game/*.toml by
-; tools/dis6502seg.py; edit those and regenerate.
+; First drafted by tools/dis6502seg.py (hints/hidden_game.toml); edited by
+; hand since, so don't regenerate over it.
 
 INCLUDE "os.6502inc"
 INCLUDE "io.6502inc"
@@ -145,17 +145,12 @@ sprite_high = &98
 sprite_skip_x = &99                     ; character cells cut off the left
 sprite_skip_y = &9A
 player_steps = &9B
-ERROR_POINTER = &FD                     ; the OS's: the last error's BRK block, past the BRK
-ESCAPE_FLAG = &FF                       ; the OS's: bit 7 set when Escape is pressed
 
 ; Elsewhere.
 trigger_flags = &0100                   ; a byte per trigger, from io_level_trigger_flags
 keys_were_down = &0120                  ; a byte per direction key, for repeat
 step_y = &0124                          ; step's scratch
-VSYNC_COUNTER = &0240                   ; the OS decrements it every vsync, 50 a second
 saved_extended_vectors = &037F          ; the OS's cassette workspace
-NMI_HANDLER = &0D00                     ; where the OS jumps on an NMI
-EXTENDED_VECTORS = &0D9F                ; the OS's extended vector table
 trigger_args = &23AD                    ; 4 bytes a trigger, from io_level_trigger_args
 map = &5800                             ; the level being played's map, copied from io_maps
 SCREEN = &6000                          ; the game's 8K screen
@@ -194,7 +189,7 @@ bit6_mask = fire_object_vanishes + 1    ; the byte there is &40
 
 ; Each copy_block call is followed by its source, destination and length.
     JSR copy_block
-    EQUW EXTENDED_VECTORS, saved_extended_vectors, &100 - LO(EXTENDED_VECTORS)
+    EQUW MOS_EXTENDED_VECTORS, saved_extended_vectors, &100 - LO(MOS_EXTENDED_VECTORS)
     JSR copy_block
     EQUW event_handler_load, event_handler, event_handler_end - event_handler
     JSR copy_block
@@ -2635,9 +2630,9 @@ NEXT
 .wait_a_second
     LDA #50
 .wait_ticks
-    STA VSYNC_COUNTER
+    STA MOS_VSYNC_COUNTER
 .wait_ticks_loop
-    LDA VSYNC_COUNTER
+    LDA MOS_VSYNC_COUNTER
     BNE wait_ticks_loop
     RTS
 
@@ -3320,7 +3315,7 @@ NEXT
 ; at what's in front of the player and underneath, try every trigger, and do
 ; an action: the one pressed, or the pipe's move while in a pipe.
 .player_turn
-    BIT ESCAPE_FLAG                     ; Escape?
+    BIT MOS_ESCAPE_FLAG                     ; Escape?
     BPL player_turn_no_escape
 .give_up
     LDX #&FF                            ; SHIFT too?
@@ -3390,7 +3385,7 @@ NEXT
     JSR draw_page_picture               ; ...drawn
     JSR print_status
 .backpack_screen_loop
-    BIT ESCAPE_FLAG                     ; Escape: lose a life
+    BIT MOS_ESCAPE_FLAG                     ; Escape: lose a life
     BMI give_up
     JSR backpack_keys                   ; the backpack screen's keys
     LDX #LO(KEY_SPACE)                  ; Space
@@ -3655,7 +3650,7 @@ NEXT
     JSR draw_map_view
     JSR setup_crtc
 .show_map_loop
-    BIT ESCAPE_FLAG
+    BIT MOS_ESCAPE_FLAG
     BMI show_map_escape
     LDX menu_key_left                   ; Z
     JSR key_pressed
@@ -5343,11 +5338,11 @@ NEXT
     STA furthest_level                  ; A = 0: no starting late on a new mission
     JSR swap_memory                     ; the game's code out of the way
     LDA #&40                            ; RTI
-    STA NMI_HANDLER                     ; NMIs are ignored until the DFS sets them up
-    LDY #&100 - LO(EXTENDED_VECTORS) - 1
+    STA MOS_NMI_ROUTINE                     ; NMIs are ignored until the DFS sets them up
+    LDY #&100 - LO(MOS_EXTENDED_VECTORS) - 1
 .load_mission_vectors
     LDA saved_extended_vectors, Y       ; the extended vectors back
-    STA EXTENDED_VECTORS, Y
+    STA MOS_EXTENDED_VECTORS, Y
     DEY
     BPL load_mission_vectors
     LDA #&8F                            ; service call 1: claim absolute workspace
@@ -5444,9 +5439,9 @@ NEXT
     EQUB &0F                            ; the error message
     NOP
     LDY #&01
-    LDA ERROR_POINTER
+    LDA MOS_ERROR_PTR
     STA work0
-    LDA ERROR_POINTER + 1
+    LDA MOS_ERROR_PTR + 1
     STA work1
 .error_handler_print
     LDA (work0), Y

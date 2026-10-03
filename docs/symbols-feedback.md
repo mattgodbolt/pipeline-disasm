@@ -26,9 +26,12 @@ nothing here is built yet.
   file to tie it to. With overlapping programs that's the key to knowing
   when a name applies.
 - Baron's internals are included under `@` keys: FUNCTION and macro
-  parameters, anonymous scopes, and the BASIC block's per-line records
-  (`@0:2210.number`, `@0:2210.text`). Easy to filter, but they're most of
-  MENU's and MISSION's entries.
+  parameters, FOR iterations, anonymous scopes, and the BASIC block's
+  per-line records (`@0:2210.number`, `@0:2210.text`). Easy to filter, but
+  they swamp the rest: the picture macros in DEFAULT add about 15,000 of
+  them, IO's macros once made 628 KB of them, and the whole dump is still
+  about 370 KB. An option to
+  leave them out would help.
 
 ## What a consumer would want, at minimum
 

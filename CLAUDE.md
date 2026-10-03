@@ -55,7 +55,11 @@ with baron pinned by commit; bumping the pin is its own commit.
   (MODE 1/5 screen memory to PNG), `tools/plcrypt.py` (PL's encryption).
   Python tools use the standard library only.
 - `tools/dis6502seg.py` wraps dis6502 for a binary that moves pieces of
-  itself at startup: each moved piece becomes a nested, rephased section.
+  itself at startup: each moved piece becomes a nested, rephased section;
+  also inline-data calls, jump tables and annotation. A drafting tool like
+  dis6502: every piece's source is hand-edited once drafted.
+- `node tools/play.mjs` plays the game headless (matrix keys, pokes,
+  snapshots, random play, traces); `tools/traceranges.py` summarises a trace.
 - `tools/beebscreen.py` also draws a CRTC-narrowed screen (`--columns`) from
   part-way into screen memory (`--offset`).
 - `tools/graphics.py` draws a graphics set (DEFAULT's format) as a PNG, or
@@ -78,7 +82,7 @@ with baron pinned by commit; bumping the pin is its own commit.
 | MENU | menu.6502 | BASIC menu (`Originally: GUILDMASTER`) at &1900; its DIM'd heap holds the scroller (C% &2300) and menu screen (S% &3200) |
 | MISSION | mission.6502 | BASIC "MISSION GENERATOR": builds IO from DEFAULT/graphics and level files; hides an unscrambler in a REM |
 | GAME, GRAPHIC, LEVDES | game/graphic/levdes.6502 | &D9-byte stubs at &0900, one source (hidden_loader.6502inc), reading the hidden runs with OSWORD &7F |
-| H.GAME | hidden_game.6502 | the game, run at &3000; loads IO |
+| H.GAME | hidden_game.6502 | the game, all in scope `game`: loaded at &3000, copies itself to &0131, &0400, &0880 and &0900-&23AC, then loads IO |
 | H.GRAPH | hidden_graphic.6502 | the Graphics Designer, at &1AB0 entered at &2BAE; edits graphics sets (DEFAULT) and IO directly, exits via /MRUN |
 | H.LEVDES | hidden_levdes.6502 | the Level Designer, at &1100 entered at &2E21; moves pieces to &0880, &0400 and zero page; loads WDATA and LDATA, exits via /MRUN |
 | TITLE | title.6502 | `*RUN` in MODE 1 before the game: unpacks the title picture over itself |
@@ -89,7 +93,7 @@ with baron pinned by commit; bumping the pin is its own commit.
 | LDATA | ldata.6502 | the Level Designer's title picture (raw MODE 1 screen, narrowed to 64 columns) |
 | LEVEL1 | level1.6502 (+ level.6502inc) | a level in the designer's save format, loaded by MISSION; the game's first level |
 | DEFAULT | default.6502 (+ sprites.6502inc) | the default graphics set as pixel pictures: 41 sprites and 15 object names |
-| IO | io.6502 | the game's data (ends at &5800: names, mission, levels, graphics) |
+| IO | io.6502 (+ io.6502inc) | the game's data, ending at &5800: names, mission text, attributes, four levels' fields and maps, graphics; pictures and maps drawn in source |
 
 ## Baron notes
 
@@ -103,7 +107,10 @@ with baron pinned by commit; bumping the pin is its own commit.
 - List literals may span lines (`{1, 2,` newline `3}`); no need to build long
   tables in groups with CONCAT.
 - Stepped ranges whose limit equals their second element fail
-  (`0..2..2`: "Argument out of domain"); write `0..2..3` or a list.
+  (`0..2..2`: "Argument out of domain", baron#13); write `0..2..3` or a list.
+- No character literals: use `ascii("A")` from osconst.6502inc.
+- `docs/baron-feedback.md` collects baron issues and wishes; check it before
+  filing anything (issues are filed as Claude acting for Matt).
 - The symbol dump also holds FUNCTION and macro parameters under `@...`
   scopes; anything feeding jsbeeb should drop names starting with `@`.
 - Named scopes (`.game { ... }`) give dotted symbol paths in the dump; use them
