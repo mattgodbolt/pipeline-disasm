@@ -23,6 +23,8 @@ INCLUDE "level.6502inc"
 INCLUDE "wdata.6502inc"
 
 FUNCTION asc(s) = CODES(s)[0]  ; a character's code, as BASIC's ASC
+; jump_to_handler's number for a handler table, from its pointer in zero page.
+FUNCTION handlers(p) = (p - menu_tables) / 2 + 1
 
 ; Zero page. The low code's variables are its own; the rest is the editor's.
 input_buffer    = &40           ; OSWORD 0 line input, up to 16 characters
@@ -551,310 +553,362 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     BRK
     EQUB &1B
     EQUS "Escape key pressed", 0
+; get_key's loop while the simulator is running: no key means take another
+; step the way it's going.
 .get_key_simulating
-    ASL A                           ; 13AC: 0A
-    BCC get_key_step                ; 13AD: 90 02
-    INC keys_acted_on               ; 13AF: E6 58
+    ASL A                       ; C set if no key came
+    BCC get_key_step
+    INC keys_acted_on           ; keep going round
 .get_key_step
-    LDY #&11                        ; 13B1: A0 11
-    LDA direction                   ; 13B3: A5 69
-    JSR jump_to_handler             ; 13B5: 20 6B 16
-    JMP get_key_check_simulate      ; 13B8: 4C 2D 14
+    LDY #handlers(cursor_handlers_ptr)
+    LDA direction
+    JSR jump_to_handler
+    JMP get_key_check_simulate
+
+; Wait for a key, meanwhile flashing the cursor and doing the editing keys
+; themselves: Z X : / move the cursor (with the simulator's rules when it's
+; on), S switches the simulator, and if plotting is enabled Delete blanks the
+; cursor's cell and Return plots the brush there. Held keys repeat. A window
+; can be kept on screen meanwhile, moving out of the cursor's way.
+; get_key_no_plot doesn't plot.
+; In: A = nonzero to enable plotting; X = a window to keep, or negative.
+; Out: A = the key that isn't an editing key.
+; Clobbers: X, Y, ptr, work; function keys and Escape don't return.
 .get_key_no_plot
-    LDA #&00                        ; 13BB: A9 00
+    LDA #0
 .get_key
-    STA plot_enabled                ; 13BD: 85 5A
-    STX kept_window                 ; 13BF: 86 5D
-    TXA                             ; 13C1: 8A
-    BMI get_key_poll                ; 13C2: 30 03
-    JSR open_window                 ; 13C4: 20 A8 14
+    STA plot_enabled
+    STX kept_window
+    TXA
+    BMI get_key_poll
+    JSR open_window
 .get_key_poll
-    JSR toggle_cursor               ; 13C7: 20 87 12
-    LDX #&20                        ; 13CA: A2 20
-    LDY #&4F                        ; 13CC: A0 4F
-    LDA #&CA                        ; 13CE: A9 CA
-    JSR OSBYTE                      ; 13D0: 20 F4 FF
-    LDX simulating                  ; 13D3: A6 6A
-    BNE get_key_inkey               ; 13D5: D0 02
-    LDX #&14                        ; 13D7: A2 14
+    JSR toggle_cursor
+    LDX #&20                    ; caps lock on, shift lock off
+    LDY #&4F
+    LDA #&CA                    ; keyboard status byte
+    JSR OSBYTE
+    LDX simulating              ; a centisecond a step when simulating,
+    BNE get_key_inkey
+    LDX #20                     ; else flash every fifth of a second
 .get_key_inkey
-    LDA #&81                        ; 13D9: A9 81
-    LDY #&00                        ; 13DB: A0 00
-    STY keys_acted_on               ; 13DD: 84 58
-    JSR OSBYTE                      ; 13DF: 20 F4 FF
-    PHP                             ; 13E2: 08
-    STX key_pressed                 ; 13E3: 86 57
-    LDA in_main_loop                ; 13E5: A5 6B
-    BNE get_key_got                 ; 13E7: D0 04
-    TXA                             ; 13E9: 8A
-    JSR check_function_key          ; 13EA: 20 69 12
+    LDA #&81                    ; INKEY
+    LDY #0
+    STY keys_acted_on
+    JSR OSBYTE
+    PHP                         ; C set: no key
+    STX key_pressed
+    LDA in_main_loop
+    BNE get_key_got
+    TXA
+    JSR check_function_key
 .get_key_got
-    PLP                             ; 13ED: 28
-    ROR A                           ; 13EE: 6A
-    CPY #&1B                        ; 13EF: C0 1B
-    BEQ escape_pressed              ; 13F1: F0 A1
-    LDY simulating                  ; 13F3: A4 6A
-    BNE get_key_simulating          ; 13F5: D0 B5
-    ASL A                           ; 13F7: 0A
-    BCS get_key_poll                ; 13F8: B0 CD
-    JSR flush_input                 ; 13FA: 20 42 12
-    LDX #&9E                        ; 13FD: A2 9E
-    JSR test_key                    ; 13FF: 20 AE 14
-    BNE get_key_check_right         ; 1402: D0 05
-    INC keys_acted_on               ; 1404: E6 58
-    JSR cursor_left                 ; 1406: 20 70 14
+    PLP
+    ROR A
+    CPY #&1B
+    BEQ escape_pressed
+    LDY simulating
+    BNE get_key_simulating
+    ASL A
+    BCS get_key_poll
+    ; A key came: now see which keys are held, so a held key repeats at the
+    ; keyboard's rate without the buffer filling.
+    JSR flush_input
+    LDX #&9E                    ; INKEY -98: Z
+    JSR test_key
+    BNE get_key_check_right
+    INC keys_acted_on
+    JSR cursor_left
 .get_key_check_right
-    LDX #&BD                        ; 1409: A2 BD
-    JSR test_key                    ; 140B: 20 AE 14
-    BNE get_key_check_up            ; 140E: D0 05
-    INC keys_acted_on               ; 1410: E6 58
-    JSR cursor_right                ; 1412: 20 7C 14
+    LDX #&BD                    ; X
+    JSR test_key
+    BNE get_key_check_up
+    INC keys_acted_on
+    JSR cursor_right
 .get_key_check_up
-    LDX #&B7                        ; 1415: A2 B7
-    JSR test_key                    ; 1417: 20 AE 14
-    BNE get_key_check_down          ; 141A: D0 05
-    INC keys_acted_on               ; 141C: E6 58
-    JSR cursor_up                   ; 141E: 20 88 14
+    LDX #&B7                    ; :
+    JSR test_key
+    BNE get_key_check_down
+    INC keys_acted_on
+    JSR cursor_up
 .get_key_check_down
-    LDX #&97                        ; 1421: A2 97
-    JSR test_key                    ; 1423: 20 AE 14
-    BNE get_key_check_simulate      ; 1426: D0 05
-    INC keys_acted_on               ; 1428: E6 58
-    JSR cursor_down                 ; 142A: 20 94 14
+    LDX #&97                    ; /
+    JSR test_key
+    BNE get_key_check_simulate
+    INC keys_acted_on
+    JSR cursor_down
 .get_key_check_simulate
-    LDX #&AE                        ; 142D: A2 AE
-    JSR test_key                    ; 142F: 20 AE 14
-    BNE get_key_check_plot          ; 1432: D0 08
-    INC keys_acted_on               ; 1434: E6 58
-    JSR beep                        ; 1436: 20 13 16
-    JSR switch_simulate             ; 1439: 20 BE 16
+    LDX #&AE                    ; S
+    JSR test_key
+    BNE get_key_check_plot
+    INC keys_acted_on
+    JSR beep
+    JSR switch_simulate
 .get_key_check_plot
-    LDA plot_enabled                ; 143C: A5 5A
-    BEQ get_key_handled             ; 143E: F0 1C
-    LDX #&A6                        ; 1440: A2 A6
-    JSR test_key                    ; 1442: 20 AE 14
-    BNE get_key_check_return        ; 1445: D0 07
-    INC keys_acted_on               ; 1447: E6 58
-    LDA #&00                        ; 1449: A9 00
-    JSR plot_at_cursor              ; 144B: 20 99 12
+    LDA plot_enabled
+    BEQ get_key_handled
+    LDX #&A6                    ; Delete
+    JSR test_key
+    BNE get_key_check_return
+    INC keys_acted_on
+    LDA #TILE_BLANK
+    JSR plot_at_cursor
 .get_key_check_return
-    LDX #&B6                        ; 144E: A2 B6
-    JSR test_key                    ; 1450: 20 AE 14
-    BNE get_key_handled             ; 1453: D0 07
-    INC keys_acted_on               ; 1455: E6 58
-    LDA brush                       ; 1457: A5 59
-    JSR plot_at_cursor              ; 1459: 20 99 12
+    LDX #&B6                    ; Return
+    JSR test_key
+    BNE get_key_handled
+    INC keys_acted_on
+    LDA brush
+    JSR plot_at_cursor
 .get_key_handled
-    LDA keys_acted_on               ; 145C: A5 58
-    BEQ get_key_done                ; 145E: F0 03
-    JMP get_key_poll                ; 1460: 4C C7 13
+    LDA keys_acted_on
+    BEQ get_key_done
+    JMP get_key_poll
 .get_key_done
-    JSR hide_cursor                 ; 1463: 20 83 12
-    LDA kept_window                 ; 1466: A5 5D
-    BMI get_key_return              ; 1468: 30 03
-    JSR vector_close_window         ; 146A: 20 83 08
+    JSR hide_cursor
+    LDA kept_window
+    BMI get_key_return
+    JSR vector_close_window
 .get_key_return
-    LDA key_pressed                 ; 146D: A5 57
-    RTS                             ; 146F: 60
+    LDA key_pressed
+    RTS
+
+; Move the cursor a cell (cursor_handlers). Crossing the middle of the screen
+; moves the kept window to the other side.
+; Out: C set if the cursor couldn't move.
+; Clobbers: A, X, Y, ptr, work.
 .cursor_left
-    LDY #&00                        ; 1470: A0 00
-    JSR move_cursor                 ; 1472: 20 C9 14
-    BCS cursor_move_done            ; 1475: B0 1C
-    CPX #&1F                        ; 1477: E0 1F
-    BEQ reopen_window               ; 1479: F0 24
-    RTS                             ; 147B: 60
+    LDY #0
+    JSR move_cursor
+    BCS cursor_move_done
+    CPX #MAP_SIZE/2 - 1
+    BEQ reopen_window
+    RTS
 .cursor_right
-    LDY #&02                        ; 147C: A0 02
-    JSR move_cursor                 ; 147E: 20 C9 14
-    BCS cursor_move_done            ; 1481: B0 10
-    CPX #&20                        ; 1483: E0 20
-    BEQ reopen_window               ; 1485: F0 18
-    RTS                             ; 1487: 60
+    LDY #2
+    JSR move_cursor
+    BCS cursor_move_done
+    CPX #MAP_SIZE/2
+    BEQ reopen_window
+    RTS
 .cursor_up
-    LDY #&01                        ; 1488: A0 01
-    JSR move_cursor                 ; 148A: 20 C9 14
-    BCS cursor_move_done            ; 148D: B0 04
-    CPY #&1F                        ; 148F: C0 1F
-    BEQ reopen_window               ; 1491: F0 0C
+    LDY #1
+    JSR move_cursor
+    BCS cursor_move_done
+    CPY #MAP_SIZE/2 - 1
+    BEQ reopen_window
 .cursor_move_done
-    RTS                             ; 1493: 60
+    RTS
 .cursor_down
-    LDY #&03                        ; 1494: A0 03
-    JSR move_cursor                 ; 1496: 20 C9 14
-    BCS cursor_move_done            ; 1499: B0 F8
-    CPY #&20                        ; 149B: C0 20
-    BNE cursor_move_done            ; 149D: D0 F4
+    LDY #3
+    JSR move_cursor
+    BCS cursor_move_done
+    CPY #MAP_SIZE/2
+    BNE cursor_move_done
+; Close the kept window and draw it again, wherever it now goes.
 .reopen_window
-    LDA kept_window                 ; 149F: A5 5D
-    BMI cursor_move_done            ; 14A1: 30 F0
-    JSR vector_close_window         ; 14A3: 20 83 08
-    LDA kept_window                 ; 14A6: A5 5D
+    LDA kept_window
+    BMI cursor_move_done
+    JSR vector_close_window
+    LDA kept_window
+; Draw window A.
+; Clobbers: A, X, Y.
 .open_window
-    JSR vector_window_address       ; 14A8: 20 5F 23
-    JMP vector_draw_window          ; 14AB: 4C 80 08
+    JSR vector_window_address
+    JMP vector_draw_window
+
+; Is a key held down?
+; In: X = its INKEY number, negated.
+; Out: Z set if it is.
+; Clobbers: A, X, Y.
 .test_key
-    LDY #&FF                        ; 14AE: A0 FF
-    LDA #&81                        ; 14B0: A9 81
-    JSR OSBYTE                      ; 14B2: 20 F4 FF
-    INX                             ; 14B5: E8
-    RTS                             ; 14B6: 60
+    LDY #&FF
+    LDA #&81
+    JSR OSBYTE
+    INX
+    RTS
+
+; The cell next to the cursor.
+; In: Y = direction, 0 left, 1 up, 2 right, 3 down.
+; Out: X, Y = its position.
+; Clobbers: A.
 .neighbour
-    LDA cursor_x                    ; 14B7: A5 50
-    CLC                             ; 14B9: 18
-    ADC direction_dx, Y             ; 14BA: 79 BB 21
-    TAX                             ; 14BD: AA
-    LDA cursor_y                    ; 14BE: A5 51
-    CLC                             ; 14C0: 18
-    ADC direction_dy, Y             ; 14C1: 79 BA 21
-    TAY                             ; 14C4: A8
-    RTS                             ; 14C5: 60
+    LDA cursor_x
+    CLC
+    ADC direction_dx, Y
+    TAX
+    LDA cursor_y
+    CLC
+    ADC direction_dy, Y
+    TAY
+    RTS
+
 .move_blocked
-    SEC                             ; 14C6: 38
+    SEC
 .move_pop
-    PLA                             ; 14C7: 68
-    RTS                             ; 14C8: 60
+    PLA
+    RTS
+
+; Move the cursor a cell, if it can go there. Normally it can go anywhere on
+; the map; while simulating (the Help menu's Simulate) it moves like the
+; player: it walks onto blank cells and collectables, dies on wall 2, a
+; barricade or the map's edge, and enters a pipe that runs its way, which
+; starts it travelling (simulating) until it comes out. Shift lets it go
+; anywhere regardless.
+; In: Y = direction, 0 left, 1 up, 2 right, 3 down.
+; Out: C clear and X, Y = the new position if it moved.
+; Clobbers: A, ptr, work.
 .move_cursor
-    TYA                             ; 14C9: 98
-    PHA                             ; 14CA: 48
-    JSR neighbour                   ; 14CB: 20 B7 14
-    JSR vector_read_map             ; 14CE: 20 62 23
-    BMI move_into_tile              ; 14D1: 30 0F
-    PHA                             ; 14D3: 48
-    LDX #&FF                        ; 14D4: A2 FF
-    JSR test_key                    ; 14D6: 20 AE 14
-    PLA                             ; 14D9: 68
-    DEX                             ; 14DA: CA
-    BEQ move_into_tile              ; 14DB: F0 05
-    INX                             ; 14DD: E8
-    STX simulating                  ; 14DE: 86 6A
-    BEQ move_to_neighbour           ; 14E0: F0 40
+    TYA
+    PHA
+    JSR neighbour
+    JSR vector_read_map         ; negative off the map
+    BMI move_into_tile
+    PHA
+    LDX #&FF                    ; Shift
+    JSR test_key
+    PLA
+    DEX
+    BEQ move_into_tile
+    INX
+    STX simulating
+    BEQ move_to_neighbour
 .move_into_tile
-    LDX simulating                  ; 14E2: A6 6A
-    BNE simulate_travel             ; 14E4: D0 69
-    TAX                             ; 14E6: AA
-    BEQ move_to_neighbour           ; 14E7: F0 39
-    LDX simulate_window             ; 14E9: A6 68
-    BEQ move_to_neighbour           ; 14EB: F0 35
-    CMP #&07                        ; 14ED: C9 07
-    BEQ move_to_neighbour           ; 14EF: F0 31
-    CMP #&0A                        ; 14F1: C9 0A
-    BEQ simulate_lose_life          ; 14F3: F0 40
-    CMP #&0E                        ; 14F5: C9 0E
-    BEQ simulate_lose_life          ; 14F7: F0 3C
-    TAX                             ; 14F9: AA
-    BMI simulate_lose_life          ; 14FA: 30 39
-    PLA                             ; 14FC: 68
-    PHA                             ; 14FD: 48
-    TAY                             ; 14FE: A8
-    TXA                             ; 14FF: 8A
-    CMP pipe_across, Y              ; 1500: D9 B6 21
-    SEC                             ; 1503: 38
-    BNE move_pop                    ; 1504: D0 C1
-    INC simulating                  ; 1506: E6 6A
-    PLA                             ; 1508: 68
-    JSR move_push                   ; 1509: 20 21 15
-    PLA                             ; 150C: 68
-    ADC #&01                        ; 150D: 69 01
-    STA ptr                         ; 150F: 85 52
-    PLA                             ; 1511: 68
-    ADC #&00                        ; 1512: 69 00
-    STA ptr+1                       ; 1514: 85 53
-    JSR jump_via_ptr                ; 1516: 20 1E 15
-    PLA                             ; 1519: 68
-    PLA                             ; 151A: 68
-    JMP get_key_check_simulate      ; 151B: 4C 2D 14
+    LDX simulating
+    BNE simulate_travel
+    TAX
+    BEQ move_to_neighbour       ; anyone can go onto a blank
+    LDX simulate_window
+    BEQ move_to_neighbour       ; and anywhere when not simulating
+    CMP #TILE_COLLECTABLE
+    BEQ move_to_neighbour
+    CMP #TILE_WALL_2
+    BEQ simulate_lose_life
+    CMP #TILE_BARRICADE
+    BEQ simulate_lose_life
+    TAX
+    BMI simulate_lose_life
+    PLA
+    PHA
+    TAY
+    TXA
+    CMP pipe_across, Y
+    SEC
+    BNE move_pop
+    ; Into a pipe: start travelling, and finish our caller (the cursor_*
+    ; handler) by calling the rest of it, before getting on with get_key.
+    INC simulating
+    PLA
+    JSR move_push
+    PLA
+    ADC #1
+    STA ptr
+    PLA
+    ADC #0
+    STA ptr+1
+    JSR jump_via_ptr
+    PLA
+    PLA
+    JMP get_key_check_simulate
 .jump_via_ptr
-    JMP (ptr)                       ; 151E: 6C 52 00
+    JMP (ptr)
 .move_push
-    PHA                             ; 1521: 48
+    PHA
 .move_to_neighbour
-    TAX                             ; 1522: AA
-    BMI move_blocked                ; 1523: 30 A1
-    JSR hide_cursor                 ; 1525: 20 83 12
-    PLA                             ; 1528: 68
-    STA direction                   ; 1529: 85 69
-    TAY                             ; 152B: A8
-    JSR neighbour                   ; 152C: 20 B7 14
-    STX cursor_x                    ; 152F: 86 50
-    STY cursor_y                    ; 1531: 84 51
-    CLC                             ; 1533: 18
-    RTS                             ; 1534: 60
+    TAX
+    BMI move_blocked
+    JSR hide_cursor
+    PLA
+    STA direction
+    TAY
+    JSR neighbour
+    STX cursor_x
+    STY cursor_y
+    CLC
+    RTS
+
+; The simulated player died: say so and stop travelling.
 .simulate_lose_life
-    PLA                             ; 1535: 68
-    JSR hide_cursor                 ; 1536: 20 83 12
-    JSR toggle_cursor               ; 1539: 20 87 12
-    JSR beep                        ; 153C: 20 13 16
-    LDA #&42                        ; 153F: A9 42
-    JSR open_window                 ; 1541: 20 A8 14
-    JSR wait_for_key                ; 1544: 20 34 12
-    JSR reopen_window               ; 1547: 20 9F 14
-    LDA #&00                        ; 154A: A9 00
-    STA simulating                  ; 154C: 85 6A
-    RTS                             ; 154E: 60
+    PLA
+    JSR hide_cursor
+    JSR toggle_cursor
+    JSR beep
+    LDA #W_LOST_LIFE
+    JSR open_window
+    JSR wait_for_key
+    JSR reopen_window
+    LDA #0
+    STA simulating
+    RTS
+
+; One step of travelling: along pipes whatever their direction, out onto a
+; blank or a collectable (which stops it), back the way it came off curves,
+; walls, crates, markers, traps and junctions, and at an S.Monster block into
+; the first pipe it finds turning one way, the other, or straight on.
 .simulate_travel
-    LDY direction                   ; 154F: A4 69
-    JSR neighbour                   ; 1551: 20 B7 14
-    JSR vector_read_map             ; 1554: 20 62 23
-    BEQ simulate_set_running        ; 1557: F0 1E
-    BMI simulate_lose_life          ; 1559: 30 DA
-    CMP #&07                        ; 155B: C9 07
-    BEQ simulate_collect            ; 155D: F0 16
-    CMP #&0B                        ; 155F: C9 0B
-    BEQ simulate_monster            ; 1561: F0 18
-    CMP #&0A                        ; 1563: C9 0A
-    BEQ simulate_lose_life          ; 1565: F0 CE
-    BCC simulate_bounce             ; 1567: 90 06
-    CMP #&0E                        ; 1569: C9 0E
-    BEQ simulate_lose_life          ; 156B: F0 C8
-    BCC move_to_neighbour           ; 156D: 90 B3
+    LDY direction
+    JSR neighbour
+    JSR vector_read_map
+    BEQ simulate_set_running
+    BMI simulate_lose_life
+    CMP #TILE_COLLECTABLE
+    BEQ simulate_collect
+    CMP #TILE_MONSTER
+    BEQ simulate_monster
+    CMP #TILE_WALL_2
+    BEQ simulate_lose_life
+    BCC simulate_bounce
+    CMP #TILE_BARRICADE
+    BEQ simulate_lose_life
+    BCC move_to_neighbour       ; the two pipes
 .simulate_bounce
-    PLA                             ; 156F: 68
-    EOR #&02                        ; 1570: 49 02
-    STA direction                   ; 1572: 85 69
-    RTS                             ; 1574: 60
+    PLA
+    EOR #2                      ; the opposite direction
+    STA direction
+    RTS
 .simulate_collect
-    LDA #&00                        ; 1575: A9 00
+    LDA #0
 .simulate_set_running
-    STA simulating                  ; 1577: 85 6A
-    BEQ move_to_neighbour           ; 1579: F0 A7
+    STA simulating
+    BEQ move_to_neighbour
 .simulate_monster
-    PLA                             ; 157B: 68
-    JSR move_push                   ; 157C: 20 21 15
-    LDY direction                   ; 157F: A4 69
-    DEY                             ; 1581: 88
-    JSR simulate_try_turn           ; 1582: 20 94 15
-    INY                             ; 1585: C8
-    INY                             ; 1586: C8
-    JSR simulate_try_turn           ; 1587: 20 94 15
-    DEY                             ; 158A: 88
-    JSR simulate_try_turn           ; 158B: 20 94 15
-    TYA                             ; 158E: 98
-    EOR #&02                        ; 158F: 49 02
-    TAY                             ; 1591: A8
-    BPL simulate_set_direction      ; 1592: 10 17
+    PLA
+    JSR move_push
+    LDY direction
+    DEY
+    JSR simulate_try_turn
+    INY
+    INY
+    JSR simulate_try_turn
+    DEY
+    JSR simulate_try_turn
+    TYA
+    EOR #2
+    TAY
+    BPL simulate_set_direction
 .simulate_try_turn
-    TYA                             ; 1594: 98
-    AND #&03                        ; 1595: 29 03
-    TAY                             ; 1597: A8
-    PHA                             ; 1598: 48
-    JSR neighbour                   ; 1599: 20 B7 14
-    JSR vector_read_map             ; 159C: 20 62 23
-    TAX                             ; 159F: AA
-    PLA                             ; 15A0: 68
-    TAY                             ; 15A1: A8
-    TXA                             ; 15A2: 8A
-    CMP pipe_across, Y              ; 15A3: D9 B6 21
-    BEQ simulate_turn               ; 15A6: F0 01
-    RTS                             ; 15A8: 60
+    TYA
+    AND #3
+    TAY
+    PHA
+    JSR neighbour
+    JSR vector_read_map
+    TAX
+    PLA
+    TAY
+    TXA
+    CMP pipe_across, Y
+    BEQ simulate_turn
+    RTS
 .simulate_turn
-    PLA                             ; 15A9: 68
-    PLA                             ; 15AA: 68
+    PLA
+    PLA
 .simulate_set_direction
-    STY direction                   ; 15AB: 84 69
-    CLC                             ; 15AD: 18
-    LDX cursor_x                    ; 15AE: A6 50
-    LDY cursor_y                    ; 15B0: A4 51
-    RTS                             ; 15B2: 60
+    STY direction
+    CLC
+    LDX cursor_x
+    LDY cursor_y
+    RTS
 .set_palette_entry
     TAX                             ; 15B3: AA
     LDA #&13                        ; 15B4: A9 13
@@ -2933,18 +2987,30 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     EQUB &96, &96, &F0, &66, &FF, &FF, &66; 2599
 .D25A0
     EQUB &00                        ; 25A0
+; Zero page as entry leaves it: pointers to the menus' handler tables, which
+; jump_to_handler finds by number (from 1), and spare bytes.
 .zero_page_init_load
 SECTION zero_page_init, org=&0000
 .menu_tables
-    EQUB &CF, &21, &E3, &21, &F3, &21, &FF, &21; 0000
-    EQUB &0B, &22, &13              ; 0008
-    EQUS """%""-""M""S""]""c""i""o""u"""; 000B
-    EQUB &7F, &22, &85, &22         ; 001E
+.options_handlers_ptr       EQUW options_handlers
+.object_handlers_ptr        EQUW object_handlers
+.monster_handlers_ptr       EQUW monster_handlers
+.puzzle_handlers_ptr        EQUW puzzle_handlers
+.status_handlers_ptr        EQUW status_handlers
+.conditions_handlers_ptr    EQUW conditions_handlers
+.files_handlers_ptr         EQUW files_handlers
+.effect_handlers_ptr        EQUW effect_handlers
+.place_block_handlers_ptr   EQUW place_block_handlers
+.set_levels_handlers_ptr    EQUW set_levels_handlers
+.move_block_handlers_ptr    EQUW move_block_handlers
+.throw_handlers_ptr         EQUW throw_handlers
+.charge_handlers_ptr        EQUW charge_handlers
+.move_monster_handlers_ptr  EQUW move_monster_handlers
+.place_monster_handlers_ptr EQUW place_monster_handlers
+.help_handlers_ptr          EQUW help_handlers
+.cursor_handlers_ptr        EQUW cursor_handlers
 .zero_page_spare
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 0022
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 002A
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00; 0032
-    EQUB &00, &00, &00, &00, &00, &00; 003A
+    SKIP &40 - (zero_page_spare - menu_tables)
 ENDSECTION
 .low_code_load
 SECTION low_code, org=&0880
