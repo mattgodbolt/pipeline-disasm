@@ -1,4 +1,5 @@
 INCLUDE "os.6502inc"
+
 SECTION hidden_game, filename="H.GAME", org=&3000
     LDX #&FF                        ; 3000: A2 FF
     TXS                             ; 3002: 9A
@@ -609,6 +610,7 @@ SECTION low, org=&0400
     LDA #&0C                        ; 06E3: A9 0C
     STA &73                         ; 06E5: 85 73
     BNE L06C7                       ; 06E7: D0 DE
+.L06E9
     JSR L096D                       ; 06E9: 20 6D 09
     LDA #&02                        ; 06EC: A9 02
     STA &75                         ; 06EE: 85 75
@@ -643,6 +645,7 @@ SECTION low, org=&0400
     DEC &7F                         ; 0727: C6 7F
     BPL L06F4                       ; 0729: 10 C9
     RTS                             ; 072B: 60
+.L072C
     JSR L096D                       ; 072C: 20 6D 09
     LDA #&01                        ; 072F: A9 01
     STA &75                         ; 0731: 85 75
@@ -681,6 +684,7 @@ SECTION low, org=&0400
     DEC &7F                         ; 0770: C6 7F
     BPL L0737                       ; 0772: 10 C3
     RTS                             ; 0774: 60
+.L0775
     JSR L096D                       ; 0775: 20 6D 09
     LDA #&02                        ; 0778: A9 02
     STA &74                         ; 077A: 85 74
@@ -715,6 +719,7 @@ SECTION low, org=&0400
     DEC &7F                         ; 07B3: C6 7F
     BPL L0780                       ; 07B5: 10 C9
     RTS                             ; 07B7: 60
+.L07B8
     JSR L096D                       ; 07B8: 20 6D 09
     LDA #&01                        ; 07BB: A9 01
     STA &74                         ; 07BD: 85 74
@@ -3110,16 +3115,17 @@ SECTION main, org=&0900
     ASL A                           ; 1907: 0A
     TAY                             ; 1908: A8
     LDX D1917, Y                    ; 1909: BE 17 19
-    LDA D1918, Y                    ; 190C: B9 18 19
+    LDA D1917+1, Y                  ; 190C: B9 18 19
     JSR L166E                       ; 190F: 20 6E 16
 .L1912
     PLA                             ; 1912: 68
     PLA                             ; 1913: 68
     JMP L15BC                       ; 1914: 4C BC 15
 .D1917
-    EQUB &B8                        ; 1917
-.D1918
-    EQUB &07, &75, &07, &2C, &07, &E9, &06; 1918
+    EQUW L07B8                      ; 1917
+    EQUW L0775                      ; 1919
+    EQUW L072C                      ; 191B
+    EQUW L06E9                      ; 191D
 .L191F
     CMP #&06                        ; 191F: C9 06
     BEQ L1925                       ; 1921: F0 02
