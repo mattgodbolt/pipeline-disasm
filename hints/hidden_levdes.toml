@@ -1,3 +1,7 @@
+# How the first draft of src/hidden_levdes.6502 was made, with
+# tools/dis6502seg.py. The source has since been annotated by hand (and some
+# names changed), so don't regenerate over it.
+#
 # The binary is what the build makes from the source, so the hints still run
 # now data/hidden_levdes.bin is gone (`make` first).
 binary = "build/files/H.LEVDES"
