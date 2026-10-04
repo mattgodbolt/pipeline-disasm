@@ -1,22 +1,60 @@
 ; Level 1: the first of IO's four, and LEVEL1 on the disc, a level as the
-; Level Designer saved it, its triggers named. Written as leveldata.6502inc
-; describes; src/level1.6502 and src/io.6502 make their bytes from this.
+; Level Designer saved it, its triggers named. src/level1.6502 and
+; src/io.6502 make their bytes from this.
+;
+; How to read a level (leveldata.6502inc defines the notation and the
+; names; level2.6502inc to level4.6502inc are written the same way). A
+; level is a map of 64 x 64 cells, x across and y down from (0, 0) at the
+; top left, and:
+;
+; - the player's start, and the exit. Once enough sulphur is collected the
+;   player can light the exit (the pick-up key, P, facing it), and then has
+;   four ticks of the clock to get five cells clear of it before it blazes.
+; - 8 objects to pick up, carry in the backpack, use and throw. Each shows
+;   an icon from the graphics set (default.6502inc), whose name the comment
+;   gives.
+; - 4 monsters: flames that move round the map, trying turns in their own
+;   order at each step. Their cells count as fire, which kills.
+; - 32 triggers (the Level Designer calls them puzzles). A trigger is a
+;   place, or a whole row or column (IGNORE in a coordinate), that acts on
+;   the level when the player walks onto it, or, with PUZZLE_USES_OBJECT,
+;   when an object is used or lands there; object n can fire only triggers
+;   n, n + 8, n + 16 and n + 24. Its condition byte can also ask for the
+;   player to be facing a given way, or a given cell type in front (for a
+;   thrown object, the way it flew and the cell it hit). Once fired it's
+;   off (PUZZLE_OFF), unless PUZZLE_REUSABLE; one can start off, and other
+;   triggers can turn it on and off. The action's arguments A, X and Y stay
+;   in hex, as each action reads them its own way (PUZZLE_* in
+;   leveldata.6502inc); the comment above each trigger says what it does in
+;   the game. Triggers are numbered 0-31 here, as the game counts them; the
+;   designer shows them one more.
+;
+; The map is 64 strings, a row each, a character a cell (MAP_KEY): "." the
+; floor, "#" "=" and the corner pieces "r" "7" "L" "J" walls, "@" a
+; barricade (another wall), "c" a crate, "o" sulphur, "~" lava, "+" "-" "|"
+; pipes, "*" fire and "$" a cell holding an object (the start and the exit
+; are marked so too).
 level_1 = {
-    ; The editing code: MISSION wants it before it saves a locked mission's
-    ; level, and the game shows it once the level's done.
+    ; The editing code, six digits: the Level Designer asks for it before it
+    ; will edit the level, MISSION before it saves one of a locked mission's
+    ; levels as a level file, and the game shows it once the level's done.
     "677636",
-    ; The palette: logical colours 0-3.
+    ; The palette: the physical colours of logical colours 0-3, the "." and
+    ; "1" to "3" the pictures are drawn in.
     {COLOUR_BLACK, COLOUR_BLUE, COLOUR_YELLOW, COLOUR_RED},
-    ; The setup.
+    ; The setup. The last byte picks, for cell types 5 (#), 8 (=), 7 (o)
+    ; and A (~), two bits each from bit 7 down, which squares of a
+    ; checkerboard show the type's second picture: none, the odd ones
+    ; (x + y odd), the even ones or all (ALTERNATE_*).
     {
         62, 35,                         ; the player starts here
-        124,                            ; sulphur to collect before the exit opens
-        250,                            ; the clock
+        124,                            ; sulphur to collect before the exit can be lit
+        250,                            ; the clock's starting value
         31, 28,                         ; the exit
-        CELL_SULPHUR * 16 + CELL_LAVA,  ; a monster reaching lava (~) goes out, leaving sulphur (o)
+        CELL_SULPHUR * 16 + CELL_LAVA,  ; a monster meeting lava (~) turns it to sulphur (o) and is gone
         %00000111                       ; second pictures: o on odd squares, ~ on all
     },
-    ; The objects: x, y, icon, uses and flags.
+    ; The objects: x, y, icon, then the number of uses plus OBJECT_* flags.
     {
         {32, 30, 0, OBJECT_NO_THROW + 2},                                        ; 0: Remote C.D.1
         {57, 15, 3, OBJECT_NO_CHARGES + OBJECT_NO_THROW + 2},                    ; 1: Blueprints
@@ -27,15 +65,18 @@ level_1 = {
         {54, 36, 2, OBJECT_NO_THROW + 3},                                        ; 6: Remote C.D.3
         {30, 38, 14, OBJECT_NO_CHARGES + OBJECT_VANISHES + OBJECT_NO_THROW + 1}  ; 7: Explosives
     },
-    ; The monsters: x, y, the way they're going, and which ways they try.
+    ; The monsters: x, y, the way each is going, and the order it tries
+    ; turns in at each step (PATTERN_*, or four TURN_* fields, the first in
+    ; bits 0-1, written out in the comment: "on" is straight on).
     {
         {45, 32, DIRECTION_UP, PATTERN_FOLLOW_EDGES},  ; 0
         {8, 31, DIRECTION_RIGHT, PATTERN_LEFT_WALL},   ; 1
         {1, 5, DIRECTION_UP, PATTERN_FOLLOW_EDGES},    ; 2
         {15, 3, DIRECTION_DOWN, PATTERN_FOLLOW_EDGES}  ; 3
     },
-    ; The triggers: name, action and flags, where, the action's A, X and Y,
-    ; and a condition.
+    ; The triggers: name, action (PUZZLE_*) and flags, where (x, y), the
+    ; action's arguments A, X and Y, and the condition. The comment above
+    ; each says what it does, then what the condition asks for.
     {
         ; 0: the cell at (31, 33) moves right; when facing down at a barricade (@)
         {"First Door", PUZZLE_MOVE_BLOCK + PUZZLE_USES_OBJECT + PUZZLE_REUSABLE, 31, 32, &01, &1F, &21, &F9},
@@ -67,8 +108,10 @@ level_1 = {
         {"Real Start", PUZZLE_TELEPORT + PUZZLE_REUSABLE, IGNORE + 24, 61, &00, &1B, &1A, &EA},
         ; 14: turns on trigger 15
         {"Monleap on", PUZZLE_TURN_ON + PUZZLE_REUSABLE, 1, 59, &0F, &0F, &0F, &00},
-        ; 15: pushes the cell in front to the left; when facing fire (*). (The
-        ; designer would show &02 as backwards, but the game turns it left.)
+        ; 15: pushes the cell in front to the player's left; when facing fire
+        ; (*). (The designer stores a TURN_* times 4, so it would show &02 as
+        ; backwards; but the game looks up &02 plus the way the player faces
+        ; in its turns table, which for every facing gives the turn left.)
         {"Monleap   ", PUZZLE_MOVE_NEXT_BLOCK + PUZZLE_OFF + PUZZLE_REUSABLE, IGNORE, IGNORE, &02, &00, &00, &5E},
         ; 16: turns off triggers 15 and 21
         {"Monleap of", PUZZLE_TURN_OFF + PUZZLE_REUSABLE, 31, 30, &0F, &15, &0F, &00},
@@ -103,7 +146,7 @@ level_1 = {
         ; 31: (61, 2) becomes a barricade (@); when facing right
         {"One way 3 ", PUZZLE_PLACE_BLOCK, 59, 0, &09, &3D, &02, &90}
     },
-    ; The map.
+    ; The map: 64 rows of 64 cells, in MAP_KEY's characters.
     {
         "~=.~~~~~~~=====~~~~~~~=~~~~=~~~.--+..#o..........@..-----------+",
         "~........=.............==o.....=o.|7r#|----------|..LLL**...*or|",

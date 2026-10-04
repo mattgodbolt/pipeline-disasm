@@ -1,23 +1,29 @@
-; Level 4: the last of IO's four. Written as leveldata.6502inc describes;
-; src/io.6502 makes its bytes from this. A mission doesn't keep its levels'
-; trigger names (MISSION names them "Puzzle 1" to "Puzzle 32" when it saves
-; one as a level file), so these have none.
+; Level 4: the last of IO's four. Written as leveldata.6502inc describes,
+; and as level1.6502inc's header explains; src/io.6502 makes its bytes from
+; this. A mission doesn't keep its levels' trigger names (MISSION names them
+; "Puzzle 1" to "Puzzle 32" when it saves one as a level file), so these
+; have none.
 level_4 = {
-    ; The editing code: MISSION wants it before it saves a locked mission's
-    ; level, and the game shows it once the level's done.
+    ; The editing code, six digits: the Level Designer asks for it before it
+    ; will edit the level, MISSION before it saves one of a locked mission's
+    ; levels as a level file, and the game shows it once the level's done.
     "114226",
-    ; The palette: logical colours 0-3.
+    ; The palette: the physical colours of logical colours 0-3, the "." and
+    ; "1" to "3" the pictures are drawn in.
     {COLOUR_BLACK, COLOUR_BLUE, COLOUR_CYAN, COLOUR_RED},
-    ; The setup.
+    ; The setup. The last byte picks, for cell types 5 (#), 8 (=), 7 (o)
+    ; and A (~), two bits each from bit 7 down, which squares of a
+    ; checkerboard show the type's second picture: none, the odd ones
+    ; (x + y odd), the even ones or all (ALTERNATE_*).
     {
         39, 37,                         ; the player starts here
-        85,                             ; sulphur to collect before the exit opens
-        180,                            ; the clock
+        85,                             ; sulphur to collect before the exit can be lit
+        180,                            ; the clock's starting value
         14, 10,                         ; the exit
-        CELL_SULPHUR * 16 + CELL_LAVA,  ; a monster reaching lava (~) goes out, leaving sulphur (o)
+        CELL_SULPHUR * 16 + CELL_LAVA,  ; a monster meeting lava (~) turns it to sulphur (o) and is gone
         %11110100                       ; second pictures: # on all, = on all, o on odd squares
     },
-    ; The objects: x, y, icon, uses and flags.
+    ; The objects: x, y, icon, then the number of uses plus OBJECT_* flags.
     {
         {37, 39, 2, OBJECT_NO_CHARGES + OBJECT_NO_THROW + 1},  ; 0: Remote C.D.3
         {27, 32, 1, OBJECT_NO_CHARGES + OBJECT_NO_THROW},      ; 1: Remote C.D.2
@@ -28,15 +34,18 @@ level_4 = {
         {10, 37, 14, OBJECT_VANISHES + 1},                     ; 6: Explosives
         {11, 63, 11, OBJECT_NO_CHARGES + OBJECT_NO_THROW + 6}  ; 7: Laser Gun
     },
-    ; The monsters: x, y, the way they're going, and which ways they try.
+    ; The monsters: x, y, the way each is going, and the order it tries
+    ; turns in at each step (PATTERN_*, or four TURN_* fields, the first in
+    ; bits 0-1, written out in the comment: "on" is straight on).
     {
         {37, 54, DIRECTION_UP, PATTERN_RIGHT_WALL},  ; 0
         {35, 17, DIRECTION_DOWN, %00101101},         ; 1: tries on, left, right, back
         {10, 19, DIRECTION_UP, %00111101},           ; 2: tries on, left, left, back
         {12, 38, DIRECTION_UP, PATTERN_RIGHT_WALL}   ; 3
     },
-    ; The triggers: name, action and flags, where, the action's A, X and Y,
-    ; and a condition.
+    ; The triggers: name, action (PUZZLE_*) and flags, where (x, y), the
+    ; action's arguments A, X and Y, and the condition. The comment above
+    ; each says what it does, then what the condition asks for.
     {
         ; 0: the cell in front becomes the floor (.); when facing left at a barricade (@)
         {"", PUZZLE_NEXT_BLOCK + PUZZLE_USES_OBJECT, 47, 49, &00, &00, &00, &C9},
@@ -103,7 +112,7 @@ level_4 = {
         ; 31: the cell at (49, 42) moves left; when facing right at a pipe down (|)
         {"", PUZZLE_MOVE_BLOCK, 50, 41, &00, &31, &2A, &DD}
     },
-    ; The map.
+    ; The map: 64 rows of 64 cells, in MAP_KEY's characters.
     {
         "+----------------------------------------------+@@@+--------oooo",
         "|.r~o.~o~o...7or7.----------------+-oo+----o--o|cr7||r7c|#.#oooo",
