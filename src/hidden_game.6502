@@ -1241,6 +1241,7 @@ NEXT
     EQUW 0, 0, 0, 0
 .alternate_offsets_odd
     EQUW 0, 0, 0, 0
+.alternate_offsets_end
 
 ; Rub out monster A, with the floor picture.
 ; Clobbers: A, X, Y and the sprite variables.
@@ -2215,55 +2216,60 @@ ASSERT LO(map_view_patterns) = 0
 .set_cell_done
     RTS
 
-; Start the tune: everything back to the beginning, the sound event on, and a
-; silent note on channels 1 and 2 together, whose ending starts the event
-; handler off.
+; Start the tune from the beginning: the sound event on, and a silent note on
+; channels 1 and 2 together, whose ending sets the event handler going.
+; Clobbers: A, X, Y, the sound effects' block.
 .start_tune
-    LDX #&00
-    LDY #&04
+    LDX #0
+    LDY #4
 .start_tune_reset
-    STX tune_position, Y
-    STX sound_amplitude, Y
+    STX tune_position, Y                ; tune_position to tune_together
+    STX sound_amplitude, Y              ; silent, for no time
     DEY
     BPL start_tune_reset
-    LDA #&0E                            ; enable event 0, output buffer empty
+    LDA #OSBYTE_ENABLE_EVENT            ; X = EVENT_OUTPUT_EMPTY
     JSR OSBYTE
-    LDY #&01                            ; channel 1, in step with one other
+    LDY #1                              ; channel 1, SOUND_SYNC_1: in step with one other
     STY sound_channel
     STY sound_channel_high
     DEY
     STY sound_duration_high
-    LDX #&30
-    LSR A                               ; OSWORD 7, SOUND
+    LDX #LO(sound_channel)              ; (Y = HI(sound_channel))
+    LSR A                               ; OSBYTE left A alone: OSWORD_SOUND
     JSR OSWORD
     INC sound_channel                   ; channel 2
-    LDX #&30
-    LDY #&00
+    LDX #LO(sound_channel)
+    LDY #HI(sound_channel)
     JMP OSWORD
+ASSERT OSBYTE_ENABLE_EVENT DIV 2 = OSWORD_SOUND AND EVENT_OUTPUT_EMPTY = 0 AND HI(sound_channel) = 0
 
 ; Flush all the buffers, which stops the tune (and loses any keys pressed).
+; Clobbers: A, X, Y.
 .flush_buffers
-    LDX #&00
-    LDA #&0F
+    LDX #0                              ; all of them
+    LDA #OSBYTE_FLUSH_BUFFERS
     JMP OSBYTE
 
 ; How a step in each direction moves: left, right, up, down, then up-left,
-; up-right, down-left, down-right, and 8, nowhere.
+; up-right, down-left, down-right, and DIRECTION_NONE, nowhere.
 .direction_dx
     EQUB -1, 1, 0, 0, -1, 1, -1, 1, 0
 .direction_dy
     EQUB 0, 0, -1, 1, -1, -1, 1, 1, 0
+ASSERT direction_dy - direction_dx = DIRECTION_NONE + 1
 
-; Directions turned: indexed by the direction plus 0 for its opposite, 4 for
-; itself, 8 turned clockwise and 12 anticlockwise.
+; Directions turned: indexed by the direction plus TURN_BACK, TURN_AHEAD,
+; TURN_CLOCKWISE or TURN_ANTICLOCKWISE.
 .turns
-    EQUB 1, 0, 3, 2         ; opposite
-    EQUB 0, 1, 2, 3         ; the same
-    EQUB 2, 3, 1, 0         ; clockwise
-    EQUB 3, 2, 0, 1         ; anticlockwise
+    EQUB DIRECTION_RIGHT, DIRECTION_LEFT, DIRECTION_DOWN, DIRECTION_UP     ; back
+    EQUB DIRECTION_LEFT, DIRECTION_RIGHT, DIRECTION_UP, DIRECTION_DOWN     ; ahead
+    EQUB DIRECTION_UP, DIRECTION_DOWN, DIRECTION_RIGHT, DIRECTION_LEFT     ; clockwise
+    EQUB DIRECTION_DOWN, DIRECTION_UP, DIRECTION_LEFT, DIRECTION_RIGHT     ; anticlockwise
 
-; Look at the cell in front of the player.
-; Returns: front_x, front_y, front_cell (and A, Z as cell_at).
+; Look at the cell in front of the player: find_front from where they face,
+; look_at_front at front_x and front_y, look_at at (X, Y).
+; Out: front_x, front_y, front_cell; A, Z and carry as cell_at.
+; Clobbers: X, Y, cell_x, cell_y, map_pointer, cell_low_nibble.
 .find_front
     LDY facing
     LDA player_x
@@ -2284,16 +2290,17 @@ ASSERT LO(map_view_patterns) = 0
     STA front_cell
     RTS
 
-; The title screen's pictures: six flames (a monster's picture) and the
-; player.
+; The title screen's pictures: six flames (a monster's first picture) and the
+; player, facing up.
+; Clobbers: A, X, Y and the sprite variables.
 .draw_title_pictures
-    LDA #&00
+    LDA #0
     STA sprite
-    LDY #&0A
+    LDY #title_flames_end - title_flames - 2
 .draw_title_flame
     TYA
     PHA
-    LDA #HI(io_tiles + &E * 128)        ; a flame
+    LDA #HI(tile(CELL_FIRE))            ; a flame
     STA sprite_high
     LDA title_flames, Y
     TAX
@@ -2306,25 +2313,29 @@ ASSERT LO(map_view_patterns) = 0
     DEY
     DEY
     BPL draw_title_flame
-    LDA #HI(io_player + 2 * 128)        ; the player
+    LDA #HI(player_facing(DIRECTION_UP)) ; the player
     STA sprite_high
-    LDX #&10
-    LDY #&1B
+    LDX #16
+    LDY #27
     SEC
     JMP draw_sprite
 
-; x, y in character cells.
+; The flames' x and y, in character cells (the view being 2 in from the
+; screen's edges).
 .title_flames
     EQUB 6, 24, 16, 8, 16, 19, 10, 21, 26, 24, 21, 22
+.title_flames_end
 
-; Work out alternate_offsets for this level from alternate_cells: for each of
-; the 4 cell types with a second picture, two bits say whether it's used on
-; odd and on even squares.
+; Work out alternate_offsets for this level from alternate_cells: two bits
+; for each cell type with a second picture, from the top 5, 8, 7 and A (the
+; designer's wall one, wall two, collectable and fatal trap), the low bit to
+; use it on odd squares, the high on even.
+; Clobbers: A, X, Y, work0-work3.
 .setup_alternate_pictures
-    LDX #&03
-    LDA #&00
+    LDX #ALTERNATES - 1
+    LDA #0
     STA work0
-    LDY #&11
+    LDY #alternate_offsets_end - alternate_offsets - 1
 .setup_alternate_clear
     STA alternate_offsets, Y            ; no second pictures
     DEY
@@ -2340,7 +2351,7 @@ ASSERT LO(map_view_patterns) = 0
     ASL A
     PLA
     ROR A
-    STA work1                           ; ...times 128
+    STA work1                           ; ...times PICTURE_BYTES, signed
     ROR work0
     PLA
     STA work2
@@ -2377,17 +2388,20 @@ ASSERT LO(map_view_patterns) = 0
     BCC setup_alternate_cell
     RTS
 
-; Print object A's name.
+; Print the name of object icon A.
+; Clobbers: A, X, Y, work0.
 .print_object_name
-    ASL A                               ; 12 characters a name
+    ASL A                               ; * IO_NAME_LENGTH
     ASL A
     STA work0
     ASL A
     ADC work0
     TAY
-    LDX #&0B
+    LDX #IO_NAME_LENGTH - 1
+ASSERT IO_NAME_LENGTH = 12
 
 ; Print X + 1 characters from io_object_names + Y.
+; Clobbers: A, X, Y.
 .print_names_text
     LDA io_object_names, Y
     JSR OSWRCH
@@ -2396,20 +2410,21 @@ ASSERT LO(map_view_patterns) = 0
     BPL print_names_text
     RTS
 
-; The title and backpack screens' frame: a row of cell 5's picture across the
-; top and bottom of the view and a column down each side (the view is offset
-; two characters, so only half of each shows).
+; The title and backpack screens' frame: a row of cell 5's picture (a wall)
+; across the top and bottom of the view and a column down each side (the view
+; is offset half a cell, so only half of each shows).
+; Clobbers: A, X, Y, work2 and the sprite variables.
 .draw_title_border
-    LDA #&08                            ; 9 pictures a side
+    LDA #VIEW_CELLS                     ; 9 pictures a side
     STA work2
 .draw_title_border_loop
-    LDY #&00
+    LDY #0
     JSR draw_border_across
-    LDY #&20
+    LDY #VIEW_CELLS * CHARS_PER_CELL
     JSR draw_border_across
-    LDX #&00
+    LDX #0
     JSR draw_border_down
-    LDX #&20
+    LDX #VIEW_CELLS * CHARS_PER_CELL
     JSR draw_border_down
     DEC work2
     BPL draw_title_border_loop
@@ -2426,15 +2441,17 @@ ASSERT LO(map_view_patterns) = 0
     ASL A
     TAY
 .draw_border_picture
-    LDA #LO(io_tiles + 5 * 128)
+    LDA #LO(tile(5))
     STA sprite
-    LDA #HI(io_tiles + 5 * 128)
+    LDA #HI(tile(5))
     STA sprite_high
     SEC
     JMP draw_sprite
 
-; The entry and edit codes are printed in a base-32 alphabet, "1"-"9" then
-; "A"-"W". Print A's low 5 bits, then its top 5 (bits 3-7).
+; The entry code is printed in a base-32 alphabet, "1"-"9" then "A"-"W".
+; print_code_byte prints A's low 5 bits, then its top 5 (bits 3-7);
+; print_code_digit just the low 5.
+; Clobbers: A.
 .print_code_byte
     PHA
     JSR print_code_digit
@@ -2445,15 +2462,17 @@ ASSERT LO(map_view_patterns) = 0
 .print_code_digit
     AND #&1F
     CLC
-    ADC #&31                            ; '1' for 0
-    CMP #&3A
+    ADC #ascii("1")                     ; "1" for 0
+    CMP #ascii("9") + 1
     BCC print_code_char
-    ADC #&06                            ; 'A' for 9
+    ADC #ascii("A") - ascii("9") - 2    ; "A" for 9 (the carry's set)
 .print_code_char
     JMP OSWRCH
 
 ; Scramble a byte for a code: rotate it left a bit, then swap each pair of
-; bits. Returns: A. Clobbers: work0.
+; bits. This undoes the scrambling of the levels' edit codes (code_byte in
+; leveldata.6502inc), giving their BCD digits back.
+; Out: A. Clobbers: work0.
 .scramble
     PHA
     ASL A                               ; the top bit...
@@ -2469,20 +2488,21 @@ ASSERT LO(map_view_patterns) = 0
     ORA work0
     RTS
 
-; Print the characters after the JSR, up to a NOP (&EA), and carry on at the
-; NOP. Clobbers: A, Y, work0, work1.
+; Print the characters after the JSR, up to a NOP, and carry on at the NOP.
+; (Text is printed through the OS: see TEXT_AT for where it lands.)
+; Clobbers: A, Y, work0, work1.
 .print_inline
     PLA                                 ; the return address is the byte before the text
     CLC
-    ADC #&01
+    ADC #1
     STA work0
     PLA
-    ADC #&00
+    ADC #0
     STA work1
-    LDY #&00
+    LDY #0
 .print_inline_loop
     LDA (work0), Y
-    CMP #&EA                            ; NOP ends it
+    CMP #OPCODE_NOP                     ; NOP ends it
     BEQ print_inline_return
     JSR OSWRCH
     INC work0
@@ -2492,23 +2512,26 @@ ASSERT LO(map_view_patterns) = 0
 .print_inline_return
     JMP (work0)                         ; and runs
 
-; The backpack screen's text: the time left (in red when it's under 10), the
-; level, the tune and sound effects settings, and the score.
+; The backpack screen's text: the time left, the level, the tune and sound
+; effects settings, and the score. Under 10, the time is in its label's
+; colour 3 (red in level 1's palette), else colour 2 like the other values.
+; Clobbers: A, X, Y, work0, work1.
 .print_status
     JSR print_inline
-    EQUB &1F, &09, &13, &11, &03
+    TEXT_AT 10, 16
+    EQUB VDU_COLOUR, 3
     EQUS "Time:"
     NOP
     LDA time_left
     CMP #10                             ; under 10...
     BCC print_status_time
     PHA
-    JSR print_inline                    ; ...stays red
-    EQUB &11, &02
+    JSR print_inline                    ; ...stays in colour 3
+    EQUB VDU_COLOUR, 2
     NOP
     PLA
 
-; A decimal number up to 255.
+; A decimal number up to 255, without leading zeros.
 .print_status_time
     LDX #&FF
 .print_hundreds
@@ -2522,9 +2545,9 @@ ASSERT LO(map_view_patterns) = 0
     BEQ print_tens
     JSR print_digit
 .print_tens
-    TAY
+    TAY                                 ; nonzero if there were hundreds
     PLA
-    LDX #&00
+    LDX #0
 .print_tens_loop
     INX
     SEC
@@ -2538,45 +2561,49 @@ ASSERT LO(map_view_patterns) = 0
     BEQ print_units                     ; ...and no hundreds: just the units
 .print_tens_digit
     TXA
-    LDX #&03
-    CMP #&00
+    LDX #3                              ; a zero tens digit prints
+    CMP #0
     JSR print_digit
 .print_units
     PLA
     JSR print_digit
     JSR print_inline
-    EQUB &1F, &00, &15, &11, &03
+    TEXT_AT 8, 18
+    EQUB VDU_COLOUR, 3
     EQUS "Level:"
-    EQUB &11, &02
+    EQUB VDU_COLOUR, 2
     NOP
     JSR print_level
 
-; Also printed when T or S changes them.
+; The tune and sound effects settings; also printed when T or S changes them.
 .print_sound_settings
     JSR print_inline
-    EQUB &1F, &09, &17, &11, &03
+    TEXT_AT 10, 21
+    EQUB VDU_COLOUR, 3
     EQUS "Tune"
     NOP
     LDA tune_off
     JSR print_yes_no
     JSR print_inline
-    EQUB &1F, &02, &18, &11, &03
+    TEXT_AT 4, 22
+    EQUB VDU_COLOUR, 3
     EQUS "SoundFX"
     NOP
     LDA effects_off
     JSR print_yes_no
     JSR print_inline
-    EQUB &1F, &10, &15
+    TEXT_AT 8, 19
     NOP
 
 ; "Score:" and the score, 4 BCD digits.
+; Clobbers: A, X, Y, work0, work1.
 .print_score
     JSR print_inline
-    EQUB &11, &03
+    EQUB VDU_COLOUR, 3
     EQUS "Score:"
-    EQUB &11, &02
+    EQUB VDU_COLOUR, 2
     NOP
-    LDX #&00
+    LDX #0
     LDA score_high
     JSR print_bcd
     LDA score
@@ -2591,47 +2618,57 @@ ASSERT LO(map_view_patterns) = 0
     AND #&0F
 
 ; Print digit A, counting digits in X: leading zeros print nothing (VDU 0)
-; until the third, and 0 prints as the letter O.
+; while X is under 3 (so the last of four always prints), and 0 prints as the
+; letter O.
+; In: A = the digit, Z set if it's 0; X = digits so far.
+; Out: X one more, or 4 after a digit that isn't 0.
+; Clobbers: A.
 .print_digit
     BEQ print_digit_zero
-    LDX #&03
-    ORA #&30                            ; a digit; zeros from now on print
+    LDX #3
+    ORA #ascii("0")                     ; a digit; zeros from now on print
     BNE print_digit_char
 .print_digit_zero
-    CPX #&03                            ; a leading zero?
+    CPX #3                              ; a leading zero?
     BCC print_digit_char
-    LDA #&4F                            ; zero is the letter O
+    LDA #ascii("O")                     ; zero is the letter O
 .print_digit_char
     INX                                 ; VDU 0 prints nothing
     JMP OSWRCH
 
 ; Print ": yes" for A zero (the tune_off and effects_off flags), else ": no".
+; Clobbers: A, Y, work0, work1.
 .print_yes_no
     PHA
     JSR print_inline
-    EQUB &3A, &11, &02
+    EQUS ":"
+    EQUB VDU_COLOUR, 2
     NOP
     PLA
     BEQ print_yes
     JSR print_inline
-    EQUB &6E, &6F
+    EQUS "no"
     NOP
     RTS
 .print_yes
     JSR print_inline
-    EQUB &79, &65, &73
+    EQUS "yes"
     NOP
     RTS
 
-; Never called.
+; Never called: the level after a TAB to the right of the title screen's.
 .print_level_at
     JSR print_inline
-    EQUB &1F, &08, &11, &11, &02
+    TEXT_AT 24, 13
+    EQUB VDU_COLOUR, 2
     NOP
+
+; Print the level's number, 1-4.
+; Clobbers: A.
 .print_level
     LDA level
     CLC
-    ADC #&31                            ; '1' for level 0
+    ADC #ascii("1")                     ; "1" for level 0
     JMP OSWRCH
 
 ; "WELL DONE!" in blocks: 11 rows of 32 bits, a bit a character cell.
