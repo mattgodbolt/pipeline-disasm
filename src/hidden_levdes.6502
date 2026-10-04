@@ -77,10 +77,10 @@ INCLUDE "wdata.6502inc"
 ; jump_to_handler's number for a handler table, from its pointer in zero page.
 FUNCTION handlers(p) = (p - menu_tables) / 2 + 1
 
-; Zero page. &00-&3F are the handler tables' pointers (menu_tables, near the
-; end of this file); the editor's variables follow. The low code keeps its
-; own, from &72, which the routines' Clobbers lines call "the low code's
-; zero page".
+; Zero page. &00-&21 hold the handler tables' pointers and &22-&3F are spare
+; (menu_tables, near the end of this file); the editor's variables follow.
+; The low code keeps its own, from &72, which the routines' Clobbers lines
+; call "the low code's zero page".
 input_buffer    = &40           ; OSWORD 0's line, 16 bytes (12 characters
                                 ; at most, then a Return)
 cursor_x        = &50           ; the map cursor, 0-63 across
@@ -149,9 +149,9 @@ box_left_side   = screen_address(MESSAGE_BOX_COLUMN - 1, box_bottom)
 box_right_side  = screen_address(MESSAGE_BOX_COLUMN + MESSAGE_BOX_COLUMNS, box_bottom)
 
 ; The cursor's directions, for moving it and the simulated player:
-; clockwise from left, so EOR 2 turns about. The designer's own numbering:
-; a level's directions (DIRECTION_* in leveldata.6502inc) go left, right,
-; up, down.
+; clockwise from left, so EOR 2 turns about. This numbering is the
+; designer's own; a level's directions (DIRECTION_* in leveldata.6502inc) go
+; left, right, up, down instead.
 MOVE_LEFT  = 0
 MOVE_UP    = 1
 MOVE_RIGHT = 2
@@ -264,7 +264,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     JSR test_key
     BNE choose_done
 .confirm_and_exit
-    JSR confirm                 ; returns to our caller on N
+    JSR confirm                 ; on N, returns from escape_reset
 ; Files menu, Exit: back to the PIPELINE menu by way of /MRUN, once the
 ; PIPELINE disc is back in.
 .files_exit
@@ -383,12 +383,13 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     LDX #1                      ; just the input buffer
     JMP OSBYTE
 
-; RDCHV from main on (brk_handler takes it out while it shows an error, and
-; MRUN when the designer is left): OSRDCH, and so OSWORD 0, only sees Return,
-; Delete and keys from input_min_char to input_max_char (normally all of them;
-; input_line narrows them), and a function key abandons whatever is going on
-; for its command. Escape goes straight through. entry puts the OS's RDCHV in
-; the JSR here.
+; The designer's RDCHV handler, in place from main on (brk_handler takes it
+; out while it shows an error, and MRUN when the designer is left). With it,
+; OSRDCH, and so OSWORD 0, only sees Return, Delete and keys from
+; input_min_char to input_max_char (normally all of them; input_line narrows
+; them), others being read again; and a function key abandons whatever is
+; going on for its command. Escape goes straight through. entry puts the
+; OS's RDCHV in the JSR here.
 .rdchv_filter_retry
     PLP
 .rdchv_filter
@@ -583,7 +584,7 @@ saved_rdchv = rdchv_filter + 1
 ; In: A = the most characters; X = the prompt's message.
 ; Out: ptr = the number of characters; input_buffer = them and a Return,
 ; then spaces to its end. The cursor is off again and any key allowed.
-; Clobbers: A, X, Y.
+; Clobbers: A, X, Y, window_ptr.
 .input_text
     LDY #' '
     STY input_min_char
