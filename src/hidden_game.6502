@@ -160,7 +160,7 @@ trigger_flags = &0100                   ; a byte per trigger, from io_level_trig
 keys_were_down = &0120                  ; a byte per direction key: 1 if it was down last time
 step_y = &0124                          ; step's scratch
 saved_extended_vectors = &037F          ; over the cassette filing system's workspace
-map = &5800                             ; the level being played's map, copied from io_maps
+map = IO_END                            ; the level being played's map, copied from io_maps
 
 menu_keys = &50                         ; where MENU leaves the ten keys
 copy_return = &00
