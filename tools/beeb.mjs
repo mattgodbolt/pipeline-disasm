@@ -11,7 +11,8 @@
 //   key CODE [FRAMES]    press and release a key, held FRAMES frames (default 3);
 //                        CODE is a KeyboardEvent.code: Space, KeyZ, Digit1, Enter...
 //   down CODE / up CODE  hold or release a key
-//   type TEXT            type at the keyboard (rest of the command is the text)
+//   type TEXT            type at the keyboard (rest of the command is the text), then
+//                        Return: a `key Enter` after it presses Return a second time
 //   until ADDR           run until the PC reaches ADDR (hex, & or 0x optional)
 //   prompt [SECS]        run until the machine waits for keyboard input
 //   out                  print the text written to the screen since the last `out`
@@ -23,6 +24,9 @@
 //                        at the end as JSON {"executed": {"&ADDR": [opcode, count]}}
 //   reads FILE           likewise every address read or written by an instruction,
 //                        as {"read": [...], "written": [...]}
+//   ssd FILE             save drive 0's disc as it is now, as an .ssd, to see what the
+//                        program wrote to it (a sector an .ssd can't hold, say one with
+//                        a CRC error, is left as zeros)
 //
 // The disc is autobooted with SHIFT+BREAK before the script starts, unless
 // --boot no, which leaves the machine at the BASIC prompt with the disc in.
@@ -30,6 +34,7 @@ import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { MachineSession } from "jsbeeb/machine-session";
 import { BBC } from "jsbeeb/src/keymap.js";
+import { toSsdOrDsd } from "jsbeeb/src/disc.js";
 
 const CYCLES_PER_SEC = 2_000_000;
 
@@ -164,6 +169,9 @@ export async function runScript(session, commands) {
                 break;
             case "reads":
                 recorders.push({ file: args[0], recorder: recordAccesses(session) });
+                break;
+            case "ssd":
+                writeFileSync(args[0], toSsdOrDsd(session._machine.processor.fdc._drives[0].disc, { force: true }));
                 break;
             default:
                 throw new Error(`unknown command: ${command}`);
