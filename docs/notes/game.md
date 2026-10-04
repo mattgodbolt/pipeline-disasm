@@ -241,3 +241,125 @@ load IO and swaps the game back. TITLE (&6300-&7979) is long gone by then.
 - Handy pokes: the level's setup is at io_level_setup (&25A0 for level 1):
   poking the start position there before Space puts the player anywhere;
   &58 is the number left to collect, &59 the clock, &24-&27 the backpack.
+
+## 2026-10-03 19:52 — Reviewing H.GAME's source: corrections and findings
+
+A reviewer's pass over every routine of `src/hidden_game.6502`, checking
+the comments against the code, with the emulator where reading wasn't
+enough (play.mjs pokes, peeks and screenshots; each check is noted).
+
+Corrections to earlier claims (here and in the source's comments):
+
+- The player is drawn upside down every four cells walked, not every other
+  step: player_frame goes up &20 a cell (peeked: 00, 20, 40, 60, 80...) and
+  bit 7 flips the picture. Facing up or down, a flipped player uses the
+  other up/down picture.
+- Scores are one more than they looked: add_points runs into add_point
+  after its loop, so it adds X + 1. A monster put out or eaten scores 26
+  (checked: removing one monster scored 26), a level 101 (checked: a poked
+  1234 became 1335), and the time bonus is the time left plus one (257 if
+  the clock reached 0 in the cycle the exit was lit). score_25 is now
+  score_monster.
+- The entry code is, in order: a digit of the checksum's running sum, the
+  score's low byte (scrambled, EOR &AA, two characters), four of the
+  checksum, one of the score mixed, then the high byte (EOR &55, two). The
+  comments had the score's bytes swapped. Checked: score 1335 gives
+  PW8CKNJGDA, and "W8" decodes from &35, "DA" from &13. It's shown in a box
+  of background colour 2, rows of spaces above and below.
+- The tune is not the title's: start_tune runs as a level starts (peeked:
+  silent on the title screen). Each voice plays 30 of its 32 notes, and the
+  variations go voice 1 alone, both, voice 1 alone a fourth up, both a
+  fourth up, then the same with voice 2 alone. The sound effects use all
+  four envelopes, not just 3 and 4.
+- WELL DONE: each set bit is a speckled block in colours 2 and 3, and two
+  pixels of colour 1 go in the cell to its right, so a shadow shows on the
+  right of each run (screenshot). Not "the bottom half: a shadow".
+- Caught by the blaze (time up, under 5 cells from the lit exit), the view
+  is wiped to bare floor, not flashed (screenshot); then colour 0 flashes
+  red and cyan as for any lost life.
+- redraw_view fills with a diagonal hatch (&7F, &BF, &DF...), not stripes
+  (screenshot).
+- The map view draws each byte's low nibble, the odd row, first, in the
+  lower four lines; the comments had the rows swapped.
+- After a level, the edit code shown is the level just finished's
+  (screenshot: 677636 after level 1), not the next one's.
+- draw_title_screen is the title screen, also behind the filename prompt
+  and error messages; the backpack screen uses draw_screen_frame alone.
+- random mixes in the user VIA's timer 2 high byte, not two low bytes.
+- The OSFILE block's top zeros don't mean "the I/O processor"; it's the
+  execution address's low byte of 0 that makes OSFILE load at io_start.
+- The CRTC values don't overlap alternate_pictures; setup_crtc reads
+  exactly crtc_values.
+- trigger_places is leftover data in the file, overwritten per level; four
+  of its bytes had been drafted as the string "pp00".
+
+Newly understood:
+
+- Text goes through the OS, which still believes MODE 5 (peeked &350:
+  `00 58 40 01`, screen at &5800, 320-byte rows), while the game shows
+  256-byte rows from &6000. So TAB(x, y) lands at &5800 + 320y + 16x on the
+  game's screen, and the game's odd-looking TABs are chosen for where that
+  falls: TAB(7,15) and TAB(19,16) are columns 6 of rows 11 and 13, say.
+  The source now writes `TEXT_AT column, row` (game.6502inc), which
+  computes the TAB. The filename prompt's box is twelve DELETEs walked
+  backwards from "<" at the right edge, wrapping from one OS row to the
+  previous, which on the game's screen is one straight run (screenshot).
+- A teleport moves where the level restarts: place_player stores its
+  target as start_x and start_y. Checked: after a poked teleport and an
+  Escape, the player came back at the teleport's destination.
+- Action 6 with X = &10 ("all four monsters") is broken: only monster 3
+  gets the direction asked for; set_monster_direction changes A, and the
+  loop then passes each monster the previous X, so monsters 2 and 1 get 12
+  and 8 (gone, 26 points each) and monster 0 gets 4, stuck going left,
+  which it soon moves out of. Checked with a poked trigger. The shipped
+  mission never asks for all four (its only action 6 is level 2's trigger
+  6, for monster 0).
+- action_explode reads the object's place with Y straight from the
+  trigger's third argument: the Level Designer stores the object * 4 there
+  ("+2 the same times 4"), and every shipped detonate trigger has it.
+- action_recharge works on any object except the one landing, and
+  re-enables trigger A, the object's own first trigger.
+- An OBJECT_NO_THROW object can still be thrown; its triggers just aren't
+  tried when it lands (the designer's "Throw:" flag).
+- thrown_object is the object while it flies, + &80 only while its landing
+  triggers run, then &FF; so "in flight" in find_carried (explode,
+  recharge, launch) means "landing".
+- A one-shot trigger is marked fired before its action runs, so one whose
+  action can't happen (a blocked cell in front, say) is spent anyway.
+- When something landing during a step's think stops the step
+  (ACTION_STOP), move_done drops the pushed cell rather than play_cycle's
+  return address, and the cycle goes on to think a second time.
+- The on-foot check underfoot runs twice a turn, before the triggers
+  (check_pipe_end) and after (check_underfoot); anything underfoot but
+  floor or sulphur kills.
+- The last sulphur's spin is four turns to a falling run of four notes,
+  each run a semitone higher (pitch - &3F, wrapping).
+- Never used, beside the known three: thing_picture's player-picture
+  branch (nothing passes it &20 and up), and walk_up's last screen_high
+  sum, which is overwritten before it's read.
+- OSWORD returns with Z clear, which the backpack's tune toggle leans on
+  (checked: T off and on again restarts the tune).
+- The Level Designer's block names in `src/level.6502inc` (TILE_*) are
+  mislabelled for 6, 8, 9, A, B, E and F. choose_from_window reads
+  tile_menu_map both ways: the high nibble of entry n is block n's menu
+  item, the low nibble is menu item n's block. Read so, menu item "Crate"
+  is block 6, "Wall 2" 8, "Barricade" 9, "Fatal trap" A, "Junction" B,
+  "S.Monster" E and "Marker" F, which is what the game does with them (it
+  pushes 6, A kills, B is a pipe junction, E is a monster's fire), and the
+  designer's graphics window order (wall one, wall two, collectable, fatal
+  trap) is alternate_cells' 5, 8, 7, A. leveldata.6502inc's MAP_KEY note
+  calls 9 the designer's marker; it's the barricade.
+
+Source changes: `src/game.6502inc` holds the game's own names (screen
+geometry, pictures, actions, MENU's key order, monster, object and trigger
+masks, stages, sound, OS numbers not yet shared), INCLUDEd inside the
+`.game` scope; leveldata.6502inc supplies the shared level names. Routine
+headers are purpose, In:, Out:, Clobbers:. Renamed: player_steps to
+steps_since_drawn, return_0AD0 to draw_player_at_done, unused_1260 to
+burn_up_unused, the object_icon routine to object_icon_picture (object_icon
+is now the field), map_key to map_screen, trigger_move_monster to
+action_move_monster, score_25 to score_monster, return_from_caller to
+drop_two_and_return, envelope_1 to envelopes. The WELL DONE bitmap is
+drawn as rows of blocks, and ASSERTs pin what the code relies on (the
+objects over game_start's 32 bytes, trigger data running up to io_start,
+the swap's range, the BIT masks' operands).
