@@ -10,6 +10,7 @@
 ; default set (src/default.6502inc, which DEFAULT is too) and the levels are
 ; src/level1.6502inc (LEVEL1's too) to src/level4.6502inc.
 
+INCLUDE "osconst.6502inc"
 INCLUDE "io.6502inc"
 INCLUDE "default.6502inc"
 INCLUDE "level1.6502inc"
@@ -17,11 +18,12 @@ INCLUDE "level2.6502inc"
 INCLUDE "level3.6502inc"
 INCLUDE "level4.6502inc"
 
-; The mission's name is two halves, each a VDU 31 (TAB) and 12 characters,
-; the spaces stored as 9 (cursor right) so the picture behind them shows.
+; The mission's name is two halves, each a VDU_TAB and 12 characters, the
+; spaces stored as VDU_RIGHT so the picture behind them shows.
 FUNCTION mission_name_half(x, y, text)
     ASSERT LEN(text) = IO_MISSION_SIZE / 2 - 3, "half a mission name is 12 characters"
-= CONCAT(31, x, y, CODES(text) - 23 * (CODES(text) = 32))
+    spaces = CODES(text) = ascii(" ")
+= CONCAT(VDU_TAB, x, y, CODES(text) + (VDU_RIGHT - ascii(" ")) * spaces)
 
 SECTION io, filename="IO", org=io_start, load=io_start, exec=0
 .io

@@ -32,8 +32,8 @@ io_start = IO_END - IO_LEVELS * IO_LEVEL_SIZE - IO_GRAPHICS_SIZE - IO_ATTRS_SIZE
 io_no_object_picture = io_start
 io_object_names      = io_no_object_picture + LARGE_SPRITE_SIZE
 
-; The mission text: two VDU 31 (TAB) sequences and 12 characters each, with
-; spaces stored as 9 (cursor right) so they don't paint over the background.
+; The mission text: two VDU_TAB sequences and 12 characters each, with
+; spaces stored as VDU_RIGHT so they don't paint over the background.
 io_mission_text = io_start + IO_NAMES_SIZE
 
 ; The mission's attributes, set by MISSION's "change features".
