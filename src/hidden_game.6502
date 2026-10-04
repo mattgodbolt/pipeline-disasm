@@ -519,15 +519,15 @@ SECTION low_code, org=&0400
 ; a byte (four MODE 5 pixels) a line. Then the player, facing each way.
 .map_view_patterns
     EQUB &00, &00, &00, &00             ; CELL_FLOOR
-    EQUB &10, &30, &70, &F0             ; 1-4: curved walls
+    EQUB &10, &30, &70, &F0             ; CELL_SE_CURVE to CELL_NW_CURVE: curved walls
     EQUB &80, &C0, &E0, &F0
     EQUB &F0, &70, &30, &10
     EQUB &F0, &E0, &C0, &80
-    EQUB &F0, &F0, &F0, &F0             ; 5: a wall
+    EQUB &F0, &F0, &F0, &F0             ; CELL_WALL_1
     EQUB &06, &69, &69, &06             ; CELL_CRATE
     EQUB &FF, &FF, &66, &66             ; CELL_SULPHUR
     EQUB &1F, &2F, &4F, &8F             ; CELL_WALL
-    EQUB &FF, &60, &60, &FF             ; 9: a wall
+    EQUB &FF, &60, &60, &FF             ; CELL_BARRICADE
     EQUB &60, &90, &90, &60             ; CELL_LAVA
     EQUB &06, &0F, &0F, &06             ; CELL_JUNCTION
     EQUB &00, &0F, &0F, &00             ; CELL_PIPE_ACROSS
@@ -575,7 +575,7 @@ SECTION low_code, org=&0400
 ; Program CRTC registers 1-9 from crtc_values, then the start address. R1 is
 ; last, so the display comes back on (blank_display turns it off with R1 = 0)
 ; once the rest is set.
-; Clobbers: A, X.
+; Clobbers: A, X, Y.
 .setup_crtc
     LDX #crtc_values_end - crtc_values
 .setup_crtc_loop
@@ -967,7 +967,7 @@ ASSERT MAP_COLUMN_BYTES = 1 << 5 AND LO(map) = 0
 
 ; Scroll the view a character cell right, left, up or down: move the CRTC's
 ; start address and the view's top left on the screen, wrapping round.
-; Clobbers: A, X.
+; Clobbers: A, X, Y.
 .scroll_right
     INC view_x                          ; the view moves right
     INC screen_start                    ; the CRTC starts a character on
@@ -1204,7 +1204,7 @@ ASSERT MAP_COLUMN_BYTES = 1 << 5 AND LO(map) = 0
 ; trap, the collectable, wall two and wall one, and alternate_cells has their
 ; bits in the reverse order, wall one at the top.
 .alternate_cell_types
-    EQUB CELL_LAVA, CELL_SULPHUR, CELL_WALL, 5
+    EQUB CELL_LAVA, CELL_SULPHUR, CELL_WALL, CELL_WALL_1
 ASSERT P% - alternate_cell_types = ALTERNATES
 
 ; Copied but never used.
@@ -1234,8 +1234,8 @@ SECTION main_code, org=&0900
 
 ; Play the next note of the voice on channel A, if that's the channel that
 ; ran dry. Channel 1 plays voice 1, an octave above voice 2 on channel 2; each
-; voice's last note is pitched nearly another octave up. The voice's channel
-; is also its envelope.
+; voice's last note is pitched another octave up. The voice's channel is also
+; its envelope.
 ; In: A = the channel (1 or 2), or 0 if the voice isn't playing.
 ; Clobbers: A, X, Y, the tune block.
 .play_voice
@@ -1278,7 +1278,7 @@ SECTION main_code, org=&0900
     LDX tune_position, Y                ; the voice's last note...
     CPX #TUNE_NOTES
     BNE play_voice_note
-    ADC #OCTAVE - 1                     ; ...a little under an octave up
+    ADC #OCTAVE - 1                     ; ...an octave up (the CPX set the carry)
 .play_voice_note
     STA tune_pitch
     PLA
@@ -1325,8 +1325,11 @@ SECTION main_code, org=&0900
 .alternate_pictures
     EQUB FIRST_ALTERNATE + 3, FIRST_ALTERNATE + 1, FIRST_ALTERNATE + 2, FIRST_ALTERNATE
 
-; CRTC registers 1-9: 32 characters across and 32 rows of 8 lines, the screen
-; centred.
+; CRTC registers 1-9: characters across, horizontal sync position, sync
+; widths, vertical total less 1, vertical adjust, rows, vertical sync
+; position, interlace, lines a row less 1. MODE 5's but for the first two:
+; 32 characters across instead of 40, and the horizontal sync moved from 49
+; to 45 to keep the narrower screen centred. 32 rows of 8 lines.
 .crtc_values
     EQUB SCREEN_COLUMNS, 45, 36, 38, 0, SCREEN_ROWS, 34, 1, 7
 .crtc_values_end
@@ -1360,8 +1363,9 @@ NEXT
     SEC
     JMP draw_sprite
 
-; Draw monster A: the monsters' two frames are cell types E's and F's
-; pictures, so the caller puts 0 or PICTURE_BYTES in sprite for the low byte.
+; Draw monster A: the monsters' two pictures are CELL_FIRE's and
+; CELL_OBJECT's, in one page, so the caller puts 0 or PICTURE_BYTES in
+; sprite for the low byte.
 ; Clobbers: A, X, Y and the sprite variables.
 .draw_monster
     JSR monster_position
@@ -1371,8 +1375,9 @@ NEXT
     JMP draw_sprite
 
 ; Draw the player in the middle of the view, facing their way. Every four
-; cells walked (player_frame's bit 7) the picture is drawn upside down, and
-; facing up or down the other of the two up and down pictures is used.
+; cells walked (player_frame's bit 7) the picture turns upside down or back,
+; and while it's upside down, facing up or down uses the other of the two up
+; and down pictures.
 ; Clobbers: A, X, Y, picture, player_screen, player_screen_base, draw_step,
 ; count_across, count_down, steps_since_drawn.
 .draw_player
@@ -2150,7 +2155,7 @@ NEXT
     RTS
 
 ; Wait for the vsync, then point the CRTC at screen_start.
-; Clobbers: A, X.
+; Clobbers: A, X, Y.
 .set_screen_start
     JSR wait_vsync
     LDX #CRTC_START_HIGH
@@ -2161,7 +2166,8 @@ NEXT
     JMP set_crtc_register
 ASSERT CRTC_START_LOW = CRTC_START_HIGH + 1
 
-; Wait for the vertical sync. Preserves A.
+; Wait for the vertical sync.
+; Preserves A. Clobbers: X, Y (OSBYTE 19 changes them).
 .wait_vsync
     PHA
     LDA #OSBYTE_WAIT_VSYNC
@@ -2219,9 +2225,9 @@ ASSERT LO(map_view_patterns) = 0
     CPY exit_y
     BNE cell_at_checked
     JSR read_map_cell
-    CMP #CELL_OBJECT                    ; the exit's icon
-    BNE cell_at_exit                    ; a wall
-    LDA #CELL_WALL
+    CMP #CELL_OBJECT                    ; still showing the exit's icon?
+    BNE cell_at_exit                    ; no: it's been lit, and is fire
+    LDA #CELL_WALL                      ; yes: a wall
 .cell_at_exit
     CMP #0
     RTS
@@ -2535,7 +2541,7 @@ ASSERT OBJECT_NAME_LENGTH = 12
     BPL print_names_text
     RTS
 
-; The title and backpack screens' frame: a row of cell 5's picture (a wall)
+; The title and backpack screens' frame: a row of CELL_WALL_1's picture
 ; across the top and bottom of the view and a column down each side (the view
 ; is offset half a cell, so only half of each shows).
 ; Clobbers: A, X, Y, work2 and the sprite variables.
@@ -2566,9 +2572,9 @@ ASSERT OBJECT_NAME_LENGTH = 12
     ASL A
     TAY
 .draw_border_picture
-    LDA #LO(tile(5))
+    LDA #LO(tile(CELL_WALL_1))
     STA sprite
-    LDA #HI(tile(5))
+    LDA #HI(tile(CELL_WALL_1))
     STA sprite_high
     SEC
     JMP draw_sprite
@@ -2648,10 +2654,10 @@ ASSERT OBJECT_NAME_LENGTH = 12
     EQUS "Time:"
     NOP
     LDA time_left
-    CMP #10                             ; under 10...
+    CMP #10                             ; under 10, it stays in colour 3
     BCC print_status_time
     PHA
-    JSR print_inline                    ; ...stays in colour 3
+    JSR print_inline                    ; 10 or more: colour 2
     EQUB VDU_COLOUR, 2
     NOP
     PLA
@@ -5785,8 +5791,8 @@ NEXT
 ; through the extended vector entry at &0DD5. Once the game is swapped back,
 ; its code fills that entry, so the next OSWORD 0 (ask_for_mission's, which
 ; calls NETV after the line) jumps into the game and ends on its error screen;
-; title-screen L can never load a mission there (seen in jsbeeb with Econet
-; fitted, docs/notes/loaders.md). Without Econet the NFS stays asleep.
+; title-screen L can never load a mission there (docs/notes/loaders.md has
+; the evidence). Without Econet the NFS stays asleep.
     LDA #OSBYTE_SERVICE_CALL
     LDX #SERVICE_CLAIM_ABSOLUTE
     LDY #&0E                            ; (the page the claims start from)
