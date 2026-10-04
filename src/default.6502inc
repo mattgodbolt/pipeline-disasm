@@ -12,7 +12,7 @@
 ; read them.
 ;
 ; The designer numbers the pictures as slots, &00-&28; the game uses them by
-; slot too, so each slot has a part to play (as io.6502inc names them):
+; slot too, so each slot has a part to play (as sprites.6502inc names them):
 ;
 ;   &00-&0F  large: a picture for each type of map cell
 ;   &10-&1F  small: the objects' icons

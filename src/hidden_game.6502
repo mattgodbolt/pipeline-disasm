@@ -6,10 +6,11 @@
 ; &0900-&23AC, sets up the screen and the sound event, and jumps to the game,
 ; which then loads the mission file IO over the loader (see io.6502inc).
 ;
-; Names for the game's screen, data and OS calls are in game.6502inc. Routine
-; headers say what a routine is for, then In:, Out: and Clobbers: (where
-; "everything" means the registers and whatever zero page the routines it
-; calls use). Text is printed through the OS, placed with TEXT_AT.
+; Names for the game's screen and data are in game.6502inc (the OS's in
+; osconst.6502inc, a level's in leveldata.6502inc). Routine headers say what
+; a routine is for, then In:, Out: and Clobbers: (where "everything" means
+; the registers and whatever zero page the routines it calls use). Text is
+; printed through the OS, placed with TEXT_AT.
 ;
 ; First drafted by tools/dis6502seg.py (hints/hidden_game.toml); edited by
 ; hand since, so don't regenerate over it.
