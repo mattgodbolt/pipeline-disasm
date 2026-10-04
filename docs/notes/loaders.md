@@ -286,9 +286,9 @@ protects isn't settled: in jsbeeb it changes nothing that can be seen.
 - With an interface fitted, NFS's service call 2 handler (&82C5) claims
   NETV at every reset: OSBYTE &A8 for the extended vector table (&0D9F),
   then `LDY #&36 : STY &0224` (&8332) and NETV's extended entry at &0DD5 =
-  &9080, ROM &0E. Only the low byte is written: the default (&FFA6) and
-  the extended entry (&FF36) share the high byte, as every vector's do.
-  So !BOOT undoes exactly what the NFS does, one byte for one byte.
+  &9080, ROM &0E. Only the low byte is written: NETV's default (&FFA6)
+  and its extended entry (&FF36) share the high byte. So !BOOT undoes
+  exactly what the NFS does, one byte for one byte.
 - NFS 3.60's NETV handler (&9080) takes reasons 0-8 and returns at once
   for any other (&908A `CMP #9 : BCS`).
 
