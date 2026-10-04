@@ -480,3 +480,36 @@ which include holds what.
 - The symbol dump grew from 744 KB to 797 KB: each file's dump lists every
   constant its includes define, and osconst is in 15 of the 19 sources. The
   `@` entries didn't grow.
+
+## 2026-10-04 01:30 — Merged: the second review of the smaller pieces
+
+Details in the newest sections of `docs/notes/loaders.md` and
+`docs/notes/basic.md`. Corrections, mostly seen in jsbeeb:
+
+- MENU's `*FX255 8 247` sets start-up option bit 3, which stops plain BREAK
+  booting the disc (the notes had it the other way round); why isn't clear.
+  Quit's `CALL !-4` is a BREAK that, with `*FX200 2`, clears memory and stops
+  at BASIC's prompt. `LOMEM=TOP` before starting something matters: with C%
+  and S% still DIM'd, option 1's MODE 1 would be "Bad MODE", and line 80's
+  error trap would hang the machine.
+- MISSION's REM routine scrambles the typed editing code the way levels
+  store theirs, to compare them; it never unscrambles (correcting 19:40's
+  entry). Backpack sizes are 2-4. The lock keys work lower case only, i
+  storing 1 and h &FF; only h's negative value makes the game show the
+  competition entry code.
+- PL's cheat, mapped onto the game's source: 31 lives (`new_game`'s
+  `LDX #START_LIVES`), every level offered (`load_mission`'s store of
+  `furthest_level` NOPped and &61 set to 3) - and the competition entry code
+  never shown, so a cheat can't win the prize. Another anti-tamper check: X
+  from `*FX200` doubles as the last code byte's index.
+- TITLE's unpacker overwrites the packed data's last 41 bytes with zeros
+  before reading them, which then read as runs of 256 zeros and carry the
+  writes to &8DB1 (jsbeeb's write record agrees); the final clear changes
+  nothing.
+- The stubs' 80-track path, untested until now: jsbeeb can put a 40-track
+  disc in an 80-track drive, and each stub then sets `double_step` and reads
+  its run correctly - but DFS 1.2 doesn't double-step its own reads, so the
+  game then fails to load IO ("Disk fault 18"). The stubs' care only pays off
+  with a DFS that does.
+- On main: WARNING's rows 0-9 and MENU's menu screen rows 0-9 are now one
+  include (`src/mode7_header.6502inc`).

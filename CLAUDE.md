@@ -53,7 +53,9 @@ fails if a scope redefines a name its file already has outside it.
   `SCREEN_MEMORY_END`: addresses, but kept out of os.6502inc so the
   disassembler doesn't name every &3000 and &5800 after them), 6502 opcodes,
   and the 8271's commands.
-- `src/teletext.6502inc`: Mode 7 control codes, `MODE7_SCREEN` and `TT_ROW`.
+- `src/teletext.6502inc`: Mode 7 control codes, `MODE7_SCREEN` and `TT_ROW`;
+  `src/mode7_header.6502inc`: rows 0-9 of the Mode 7 pages, which WARNING and
+  MENU's screen share.
 - `src/sprites.6502inc`: the graphics set's format (sprite sizes, its layout
   `SET_*`, slots and their roles `SLOT_*`, `OBJECT_KINDS`,
   `OBJECT_NAME_LENGTH`, `EXIT_ICON`), then the picture notation
@@ -114,7 +116,7 @@ fails if a scope redefines a name its file already has outside it.
 |---|---|---|
 | `!BOOT` | boot.6502 | `*EXEC` text: credits, `*FX200,3`, CHAIN"MENU" |
 | MENU | menu.6502 | BASIC menu (`Originally: GUILDMASTER`) at &1900; its DIM'd heap holds the scroller (C% &2300) and menu screen (S% &3200) |
-| MISSION | mission.6502 | BASIC "MISSION GENERATOR": builds IO from DEFAULT/graphics and level files; hides an unscrambler in a REM |
+| MISSION | mission.6502 | BASIC "MISSION GENERATOR": builds IO from DEFAULT/graphics and level files; hides a code scrambler in a REM |
 | GAME, GRAPHIC, LEVDES | game/graphic/levdes.6502 | &D9-byte stubs at &0900, one source (hidden_loader.6502inc), reading the hidden runs with OSWORD &7F |
 | H.GAME | hidden_game.6502 | the game, all in scope `game`: loaded at &3000, copies itself to &0131, &0400, &0880 and &0900-&23AC, then loads IO |
 | H.GRAPH | hidden_graphic.6502 | the Graphics Designer, at &1AB0 entered at &2BAE; edits graphics sets (DEFAULT) and IO directly, exits via /MRUN |

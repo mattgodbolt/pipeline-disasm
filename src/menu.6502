@@ -454,51 +454,8 @@ shift_from = &100 - (SCROLL_RIGHT - SCROLL_LEFT)    ; Y counts up to zero
 {
     ASSERT menu_screen = scroller + &EFF + 1
 .screen
-; rows 0-3: the PIPELINE logo, magenta and red, inside the blue pipe
-    TT_ROW 0
-    EQUB TT_GFX_BLUE, &FF, &E6, TT_GFX_MAGENTA, &FE, &AF, &EF, &F4, &20, &FF, &20, &FE, &AF, &EF
-    EQUB &F4, &20, &E8, &FF, &AF, &20, &FF, &20, &20, &20, &FF, &20, &FE, &EF, &B4, &20, &FF, &20
-    EQUB &E8, &FF, &AF, TT_GFX_BLUE, &A0, &FF, &B9, &20
-    TT_ROW 1
-    EQUB TT_GFX_BLUE, &FF, &B9, TT_GFX_RED, &FF, &20, &A0, &FF, &20, &FF, &20, &FF, &20, &20, &FF
-    EQUB &20, &FF, &E1, &F0, &20, &FF, &20, &20, &20, &FF, &20, &FF, &A2, &FF, &20, &FF, &20, &FF
-    EQUB &E1, &F0, TT_GFX_BLUE, &20, &FF, &E6, &20
-    TT_ROW 2
-    EQUB TT_GFX_BLUE, &FF, &E6, TT_GFX_MAGENTA, &FF, &E8, &FE, &A7, &20, &FF, &20, &FF, &E8, &FE
-    EQUB &A7, &20, &FF, &B2, &A3, &20, &FF, &20, &20, &20, &FF, &20, &FF, &20, &EA, &B5, &FF, &20
-    EQUB &FF, &B2, &A3, TT_GFX_BLUE, &A0, &FF, &B9, &20
-    TT_ROW 3
-    EQUB TT_GFX_BLUE, &FF, &B9, TT_GFX_MAGENTA, &FF, &20, &20, &20, &20, &FF, &20, &FF, &20, &20
-    EQUB &20, &20, &AA, &EF, &FC, &20, &EF, &FD, &FC, &20, &FF, &20, &FF, &20, &20, &EF, &BF, &20
-    EQUB &AA, &EF, &FC, TT_GFX_BLUE, &A0, &FF, &E6, &20
-; row 4: the copyright line
-    TT_ROW 4
-    EQUB TT_GFX_BLUE, &FF, &E6, TT_ALPHA_CYAN, "(c) Ian Holmes & William Reeve ", TT_GFX_BLUE, &E8
-    EQUB &FF, &B9, &20
-; row 5: 1988, under the pipe
-    TT_ROW 5
-    EQUB TT_GFX_BLUE, &FF, &B9, &E8, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &F4
-    EQUB &B0, TT_ALPHA_CYAN, "1988", TT_GFX_BLUE, &E0, &F8, &FC, &FC, &FC, &FC, &FC, &FC, &FC, &FC
-    EQUB &FC, &FC, &FE, &FF, &FF, &E6, &A0
-; rows 6-9: the pipe, and a picture at each side (WARNING's rows 0-9 are the same)
-    TT_ROW 6
-    EQUB TT_GFX_BLUE, &FF, &E6, &A2, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &A6, &E6, &E7
-    EQUB &EF, &F4, &20, &20, &20, &A0, &F8, &BF, &BB, &B9, &A9, &A9, &A9, &A9, &A9, &A9, &A9, &A9
-    EQUB &A9, &A9, &A9, &A9, &A1, &A0
-    TT_ROW 7
-    EQUB TT_GFX_BLUE, &FF, &B9, TT_GFX_RED, TT_GFX_RED, &E6, &A4, &A5, TT_GFX_BLUE, &20, &20, &20
-    EQUB &20, &20, &20, &A9, &A9, &AB, &AD, &20, &20, &AE, &A7, &A6, &A6, TT_GFX_YELLOW, &20, &20
-    EQUB &20, &20, &20, &20, &20, TT_GFX_RED, &A8, &F2, &A4, TT_GFX_YELLOW, TT_GFX_YELLOW
-    EQUB TT_GFX_YELLOW
-    TT_ROW 8
-    EQUB TT_GFX_BLUE, &FF, &E6, TT_GFX_RED, &E0, &A9, &F6, &E0, TT_GFX_BLUE, &E0, &FC, &EF, &EF
-    EQUB &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &EF, &6F, &6F
-    EQUB &6D, &74, TT_GFX_RED, &E6, &BD, &F7, TT_GFX_YELLOW, TT_GFX_YELLOW, TT_GFX_YELLOW
-    TT_ROW 9
-    EQUB TT_GFX_BLUE, &FF, &B9, TT_GFX_YELLOW, TT_GFX_YELLOW, &AB, &A7, &A7, TT_GFX_BLUE, &BE, &B9
-    EQUB &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1, &A1
-    EQUB &21, &21, &29, &3B, &75, TT_GFX_YELLOW, &F6, &BD, TT_GFX_YELLOW, TT_GFX_YELLOW
-    EQUB TT_GFX_YELLOW
+; rows 0-9: the logo, credits and pipe top, shared with WARNING
+    INCLUDE "mode7_header.6502inc"
 ; rows 10-15: the options, yellow numbers and green text, between the pictures
     TT_ROW 10
     EQUB TT_GFX_BLUE, &FF, &E6, &AA, &BF, &BF, &BF, &BF, &6A, &F7, &A4, &20, TT_ALPHA_YELLOW, "1"
