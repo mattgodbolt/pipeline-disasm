@@ -5,8 +5,8 @@
 ; What it does, once it has decrypted itself:
 ;
 ; 1. MODE 7, cursor off, paged mode on, and nothing on the screen. It waits
-;    for the keys to be let go, then silently reads a filename (up to 12
-;    characters) and a six-digit code.
+;    for the keys to be let go, then reads, with no prompt (what's typed is
+;    echoed), a filename (up to 12 characters) and a six-digit code.
 ; 2. *LOADs the file - a level file as the Level Designer saves it, like
 ;    LEVEL1, at &25A1 - and checks the code against the three bytes the file
 ;    keeps at &26E1. A wrong code resets the machine.
@@ -15,7 +15,9 @@
 ;    is 677636.
 ; 4. After a key, fills the screen with a fake BASIC "Bad program" error
 ;    until I, N, O and S are held down together; then beeps, *LOADs GAME and
-;    pokes the game for a cheat before jumping into it at &3000.
+;    pokes the game for a cheat before jumping into it at &3000: 31 lives,
+;    any level to start on from the title screen, and no competition entry
+;    code at the end, so the cheat can't win one.
 ;
 ; Step 4 can't work on this disc: GAME is now the &D9-byte stub loader at
 ; &0900, not the game, so the jump finds no game at &3000 and the machine
@@ -63,7 +65,8 @@ SECTION pl, filename="PL", org=&0400, load=&400, exec=&400
     LDA CPU_NMI_VECTOR, X       ; X=2: the reset entry's low byte
     STA BRKV
     LDA #OSBYTE_BREAK_EFFECT
-    JSR OSBYTE                  ; *FX200 with X=2: BREAK clears memory
+    JSR OSBYTE                  ; *FX200,2 (Y is 0 after *FX4, seen in jsbeeb):
+                                ; BREAK clears memory
 
     ; Decrypt from `encrypted` to the end of page 6, a byte at a time:
     ; plain = key EOR previous plain byte EOR stored. Page 4 starts at
@@ -113,14 +116,17 @@ key_bytes = pl.read_reset_high + 1
 ; shows each puzzle's action and whether it's PUZZLE_OFF (level_puzzle_types).
 
 ; The game as it was when PL was written, a plain file loaded at &3000, and
-; the places the cheat pokes. What they do is the game's business
-; (src/hidden_game.6502); as instructions in H.GAME they are:
+; the places the cheat pokes, as H.GAME holds them loaded at &3000 (the game
+; runs that code copied down to &0900 on; the names quoted are
+; hidden_game.6502's).
 GAME_START = &3000
-game_ldx_3 = &3FC6          ; LDX #3 : STX &2E - the cheat makes it LDX #31
-game_beq = &4874            ; BEQ +3 over a JMP &1C13 - the cheat makes it BEQ +0
-game_sta_61 = &4F31         ; STA &61 - the cheat makes it two NOPs
-game_var_61 = &61           ; and sets &61 to 3 itself
-CHEAT_LDX_VALUE = 31
+game_set_lives = &3FC6              ; new_game's LDX #START_LIVES : STX lives,
+CHEAT_LIVES = 31                    ; made LDX #31
+game_entry_code_test = &4874        ; mission_done_screen's BEQ show_entry_code over
+                                    ; JMP wait_for_space, made BEQ +0: no entry code
+game_clear_furthest_level = &4F31   ; load_mission's STA furthest_level, made NOPs
+game_furthest_level = &61           ; furthest_level, how far the title screen's S
+CHEAT_FURTHEST_LEVEL = 3            ; steps the start level: 3, the fourth
 
 ; Zero page, once decrypted. BASIC's, and the MOS's line input buffer for the
 ; code goes right at the bottom.
@@ -155,7 +161,8 @@ SECTION pl_decrypted, filename="PLDEC", org=pl.encrypted - 1
     DEY
     BPL send_screen_setup
     CLI
-    ; Let go of W and T (and RETURN) first, or they'd be typed.
+    ; Wait for every key to be let go (W and T were held to get here), or
+    ; they'd be typed.
 .wait_keys_up
     LDA MOS_KEY_PRESSED
     BMI wait_keys_up
@@ -216,8 +223,10 @@ SECTION pl_decrypted, filename="PLDEC", org=pl.encrypted - 1
     JSR OSBYTE                  ; *FX200,2 again: BREAK clears memory
 
     ; Each code byte must match the file's once its bit pairs are swapped
-    ; and it's rotated right a bit. checks_left goes 2, 1, 0, &FF and back
-    ; to 0 only if all three compares ran.
+    ; and it's rotated right a bit, last byte first. X is the old *FX200
+    ; setting, which OSBYTE hands back: 2, as set at the start (seen in
+    ; jsbeeb), so anyone changing that breaks the check. checks_left goes 2,
+    ; 1, 0, &FF and back to 0 only if all three compares ran.
 .check_code_byte
     DEC checks_left
     LDA code_bcd, X
@@ -273,8 +282,8 @@ SECTION pl_decrypted, filename="PLDEC", org=pl.encrypted - 1
     ASL A
     TAY
 ASSERT PUZZLE_NAME_HEAD = 8
-    ; Never taken: a pushed P always has B and I set (we're under SEI). A
-    ; decoy check.
+    ; Never taken: PHP always pushes the B flag (bit 4) set, so the AND
+    ; can't be zero. A decoy check.
     PLA
     AND #%10010110
     BEQ reset_machine
@@ -387,8 +396,9 @@ ASSERT PUZZLE_NAME_HEAD = 8
     LDA #BEL
     CLI
     JSR OSWRCH
-    LSR A                       ; 3
-    STA game_var_61, X
+    LSR A                       ; BEL >> 1 = CHEAT_FURTHEST_LEVEL
+ASSERT BEL >> 1 = CHEAT_FURTHEST_LEVEL
+    STA game_furthest_level, X
     INY                         ; 0
     LDA #OSBYTE_ESCAPE_KEY
     JSR OSBYTE                  ; *FX229,0
@@ -402,17 +412,18 @@ ASSERT PUZZLE_NAME_HEAD = 8
     ; Poke the cheat into the game. The addresses are dressed up with index
     ; registers so they don't show in the code as written.
     LDA #OPCODE_NOP
-    STA game_sta_61 + 1
-    LDX #CHEAT_LDX_VALUE
-    STA game_sta_61 - CHEAT_LDX_VALUE, X
+    STA game_clear_furthest_level + 1
+    LDX #CHEAT_LIVES
+    STA game_clear_furthest_level - CHEAT_LIVES, X
     LDY #0
     TXA
-    STY game_beq + 1
-    STA game_ldx_3 + 1, Y
+    STY game_entry_code_test + 1
+    STA game_set_lives + 1, Y
     JMP GAME_START
 
 ; Print the next character of format_chars and step on to the one after.
-; Clobbers A, Y.
+; In: format_index = the character's place in format_chars.
+; Clobbers: A, Y.
 .print_format_char
     LDY format_index
     LDA format_chars, Y
