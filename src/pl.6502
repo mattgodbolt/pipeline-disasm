@@ -38,9 +38,6 @@ INCLUDE "os.6502inc"
 INCLUDE "osconst.6502inc"
 INCLUDE "teletext.6502inc"
 
-OPCODE_BMI = &30
-OPCODE_NOP = &EA
-
 ; Zero page. BASIC's, but BASIC is never coming back.
 crypt_ptr = &70             ; (2) the decryptor's page pointer
 
@@ -426,10 +423,9 @@ SECTION pl_decrypted, filename="PLDEC", org=pl.encrypted - 1
     INC format_index
     RTS
 
-; VDU codes, sent from the end backwards: MODE 7; cursor off (6845 register
-; 10, the cursor start line, := &20); paged mode on.
+; VDU codes, sent from the end backwards: MODE 7; cursor off; paged mode on.
 .screen_setup
-    EQUB REVERSE({VDU_MODE, 7, VDU_DEFINE, 0, 10, &20, 0, 0, 0, 0, 0, 0, VDU_PAGED_ON})
+    EQUB REVERSE({VDU_MODE, 7, VDU_DEFINE, 0, CRTC_CURSOR_START, CRTC_CURSOR_OFF, 0, 0, 0, 0, 0, 0, VDU_PAGED_ON})
 .screen_setup_end
 
 ; OSWORD 0 for the filename: up to 12 characters, any printable.

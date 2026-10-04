@@ -556,12 +556,12 @@ saved_rdchv = rdchv_filter + 1
 ; editing (*FX4,2: they act as f11-f15, &8B-&8F); or on and editing.
 ; Clobbers: A, X, Y.
 .cursor_off
-    LDA #CURSOR_NONE
+    LDA #CRTC_CURSOR_OFF
     JSR crtc_set_cursor_start
     LDX #CURSOR_KEYS_SOFT
     BNE set_cursor_key_mode
 .cursor_on
-    LDA #CURSOR_BLINK
+    LDA #CRTC_CURSOR_BLINK
     JSR crtc_set_cursor_start
     LDX #CURSOR_KEYS_EDIT
 .set_cursor_key_mode
@@ -4377,10 +4377,10 @@ entry_font_to = entry_copy_font_store + 1
     INX
     TXA                         ; MODE 1
     JSR OSWRCH
-    LDA #SCREEN_COLUMNS         ; X = 1, CRTC_HORIZ_DISPLAYED
+    LDA #SCREEN_COLUMNS         ; X = 1, CRTC_HORIZONTAL_DISPLAYED
     JSR vector_crtc_write
     INX
-    LDA #90                     ; X = 2, CRTC_HORIZ_SYNC: moved to centre
+    LDA #90                     ; X = 2, CRTC_HSYNC_POSITION: moved to centre
     JSR vector_crtc_write       ; them
     JSR vector_cursor_off
     LDA #OSBYTE_AUTO_REPEAT_PERIOD

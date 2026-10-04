@@ -174,6 +174,32 @@ PLOT_MOVE_RELATIVE = 0
 PLOT_DRAW_RELATIVE = 1
 PLOT_MOVE          = 4
 
+; 6845 CRTC registers: write the number to CRTC_ADDR, then the value to
+; CRTC_DATA (or VDU_DEFINE, 0, register, value...).
+CRTC_HORIZONTAL_DISPLAYED = 1
+CRTC_HSYNC_POSITION       = 2
+CRTC_VERTICAL_DISPLAYED   = 6
+CRTC_VSYNC_POSITION       = 7
+CRTC_CURSOR_START         = 10  ; the cursor's first scan line, and bits 5-6 how it blinks
+CRTC_START_HIGH           = 12  ; the screen's start address, in units of 8 bytes
+CRTC_START_LOW            = 13
+
+; Values for CRTC_CURSOR_START.
+CRTC_CURSOR_OFF   = &20         ; bits 5-6 01: no cursor
+CRTC_CURSOR_BLINK = &67         ; bits 5-6 11: blinking, from scan line 7, as MODEs 0-6 have it
+
+; Written to the system VIA's port B (SYSVIA_ORB), a byte sets one of the
+; addressable latch's bits: bits 0-2 say which, bit 3 its value. Latch bits
+; 4 and 5 (C0 and C1) set where the hardware wraps the screen round:
+; clearing bit 5 with bit 4 set, as MODE 5 leaves it, wraps it at 8K.
+SCREEN_WRAP_8K = &05
+
+; 6502 opcodes the programs write or look for.
+OPCODE_BMI           = &30
+OPCODE_RTI           = &40
+OPCODE_LDX_IMMEDIATE = &A2
+OPCODE_NOP           = &EA
+
 ; OSWORD &7F: hand a raw command to the 8271 floppy disc controller via DFS.
 OSWORD_DISC_COMMAND = &7F
 

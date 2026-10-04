@@ -116,13 +116,6 @@ KEYCODE_F0          = &80       ; f0-f9: &80-&89
 KEYCODE_CURSOR_DOWN = &8E       ; function key 14
 KEYCODE_CURSOR_UP   = &8F       ; function key 15
 
-; 6845 CRTC registers.
-CRTC_HORIZ_DISPLAYED = 1
-CRTC_HORIZ_SYNC      = 2
-CRTC_CURSOR_START    = 10       ; bits 5-6: 01 no cursor, 11 blinking
-CURSOR_NONE  = &20
-CURSOR_BLINK = &67              ; MODE 1's own: blinking, from scan line 7
-
 ; The startup options byte (the keyboard links) that opens the back door.
 DEVELOPERS_LINKS = &CF
 ; The designer's own error number for Escape.

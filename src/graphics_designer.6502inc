@@ -5,11 +5,6 @@
 
 ; ---- For osconst.6502inc ----
 
-; 6845 CRTC register 10: the cursor's start line, and bits 5-6 its blink
-; mode, where &20 turns it off.
-CRTC_CURSOR_START = 10
-CRTC_CURSOR_OFF   = &20
-
 ; ---- For sprites.6502inc ----
 
 ; A graphics set, as the Graphics Designer keeps it at &4000 and saves it

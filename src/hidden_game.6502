@@ -242,9 +242,9 @@ bit6_mask = fire_object_vanishes + 1    ; the byte there is &40
 .message_to_crackers
     EQUS " GET YOUR GRUBBY LITTLE HANDS OFF THIS PROGRAM! "
 
-; VDU 23, 0, CRTC_CURSOR_START, 32, 0, 0, 0, 0, 0, 0, backwards.
+; VDU 23, 0, CRTC_CURSOR_START, CRTC_CURSOR_OFF, 0, 0, 0, 0, 0, 0, backwards.
 .cursor_off_vdu
-    EQUB 0, 0, 0, 0, 0, 0, 32, CRTC_CURSOR_START, 0, VDU_DEFINE
+    EQUB 0, 0, 0, 0, 0, 0, CRTC_CURSOR_OFF, CRTC_CURSOR_START, 0, VDU_DEFINE
 .cursor_off_vdu_end
 
 ; For each of the action keys in the order the game tests them (action_keys),
