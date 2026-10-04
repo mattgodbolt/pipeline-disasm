@@ -1,16 +1,81 @@
-; H.GAME: PIPELINE itself (William Reeve & Ian Holmes, Superior Software 1988).
+; H.GAME: PIPELINE itself (William Reeve & Ian Holmes, Superior Software 1988):
+; the title screen, the four levels of a mission, and the screens between.
 ;
-; The GAME stub reads this from the hidden sectors &122-&142 to &3000 and jumps
-; to it. It's built to be loaded at &3000 but to run lower down: the loader at
-; the start copies the rest into the stack page, page 8, &0400-&07FF and
-; &0900-&23AC, sets up the screen and the sound event, and jumps to the game,
-; which then loads the mission file IO over the loader (see io.6502inc).
+; How it's reached: MENU runs GAME, a small stub loader (src/game.6502, with
+; hidden_loader.6502inc), which reads this file to &3000 from disc sectors
+; &122-&142 and jumps to it. No catalogue entry lists those sectors (the "H."
+; is for hidden), so copying the disc's files doesn't copy the game. It's
+; built to be loaded at &3000 but to run lower down: the loader at the start
+; copies the rest into the stack page, page 8, &0400-&07FF and &0900-&23AC,
+; sets up the screen and the sound event, and jumps to the game, which then
+; loads the mission file IO over the loader. A mission is four levels with
+; their graphics, object names and settings, as MISSION (the Mission
+; Generator) saves them (io.6502inc has IO's layout).
+;
+; Memory while the game runs:
+;   &00-&9B      zero page: the variables below
+;   &0100-&0124  trigger_flags, keys_were_down and step_y, at the bottom of
+;                the stack page
+;   &0131-&0190  event_handler, feeding the tune to the OS's sound queues
+;   &037F-&03DF  the OS's extended vectors, saved while the game covers them
+;   &0400-&07FF  low_code: the map view's patterns, drawing the view, scrolling
+;   &0880-&08FF  sound_data: the tune, then the envelopes in the OS's store
+;   &0900-&23AC  main_code, the rest of the game; each level's objects are
+;                copied over game_start, which has run by then
+;   &236D-&242C  the level's trigger places and arguments: over main_code's
+;                last bytes (trigger_places) and just past it (trigger_args)
+;   &242D-&57FF  IO, the mission (io_start up to IO_END)
+;   &5800-&5FFF  map: the map of the level being played, which play changes
+;   &6000-&7FFF  the screen (game.6502inc)
+;
+; The file, in order: the variables; the loader, which runs at &3000; then
+; the pieces it copies, each a SECTION assembled at its run-time address:
+; event_handler, sound_data, low_code, and main_code. main_code runs, roughly:
+; the tune, drawing the player, sprites and the map view; reading and writing
+; map cells; text, numbers and the end-of-level and game-over effects;
+; game_start, the main loop and a level's end; the title, backpack and map
+; screens; the player's actions; triggers and what they do; monsters'
+; thinking and the score; loading a mission and the error handler; and the
+; dispatch tables. Past what the loader copies, leftover bytes.
+;
+; Words used throughout:
+; - A map cell is one of a level's 64 x 64 squares, drawn as a picture 4 x 4
+;   character cells across (a character cell being 4 pixels across and 8
+;   lines down, a byte a line). Positions are in character cells where things
+;   move a character at a time (the view, monsters, a thrown object), and in
+;   map cells otherwise.
+; - The view is the part of the map on screen, 8 x 8 map cells round the
+;   player, scrolled by the hardware a character at a time (game.6502inc).
+; - A sprite is a picture drawn at any character position rather than in a
+;   map cell's place, clipped to the view (draw_sprite): monsters, a thrown
+;   object, and the pictures on the title and backpack screens. An icon is an
+;   object's small picture, drawn in the middle of a floor picture.
+; - A cycle is one turn of the main loop (play_cycle): the player acts, think
+;   decides where the monsters go, and everything that moves by itself moves
+;   a character in each of four frames (TV frames, 50 a second). A step is
+;   the player moving a map cell; a walk scrolls the view 4 characters for it.
+; - Sulphur (CELL_SULPHUR) is what the player collects; the exit, the stage,
+;   triggers and monsters are explained in game.6502inc; a pipe carries the
+;   player along it (pipe_move); the backpack holds what they carry.
+; - A cell type's second picture (an "alternate") is shown instead of its
+;   first on some squares of a checkerboard, as the level says.
 ;
 ; Names for the game's screen and data are in game.6502inc (the OS's in
 ; osconst.6502inc, a level's in leveldata.6502inc). Routine headers say what
 ; a routine is for, then In:, Out: and Clobbers: (where "everything" means
 ; the registers and whatever zero page the routines it calls use). Text is
 ; printed through the OS, placed with TEXT_AT.
+;
+; Tricks the code uses, met all through it: calls followed by inline data
+; that the routine steps over (copy_block, print_inline); jump tables
+; (action_table and walks, through jump_to; trigger_actions, through a
+; self-modified JSR); self-modified jumps and operands
+; (try_object_trigger_jump, trigger_action_call, draw_player_flipped_copy,
+; draw_map_view_copy); BIT tests against other instructions' operands
+; (bit4_mask, bit6_mask); routines that return from their caller by dropping
+; its return address (clip_sprite_out_of_view, selected_object,
+; drop_two_and_return); and tables laid over code that has already run
+; (objects) or over bytes the file happens to end with (trigger_places).
 ;
 ; First drafted by tools/dis6502seg.py (hints/hidden_game.toml); edited by
 ; hand since, so don't regenerate over it.
@@ -24,39 +89,51 @@ SECTION hidden_game, filename="H.GAME", org=&3000
 {
 INCLUDE "game.6502inc"                  ; in the scope: its names are the game's own
 
-; Zero page. The loader's block copy uses &00-&07 too (copy_return...).
-monster_x = &00                         ; MONSTERS of MONSTER_BYTES: x, y in character cells
+; Zero page, &00-&9B. The loader's block copy uses &00-&07 too (copy_return
+; and the rest, below), before the monsters are there.
+
+; The level's monsters (&00-&0F): MONSTERS of MONSTER_BYTES, copied from IO.
+monster_x = &00                         ; x and y in character cells
 monster_y = &01
-monster_direction = &02                 ; DIRECTION_*; + MONSTER_STUCK: stuck; MONSTER_GONE and up: not out
+monster_direction = &02                 ; DIRECTION_*, plus MONSTER_STUCK if it's stuck;
+                                        ; MONSTER_GONE or more if it's gone
 monster_turns = &03                     ; four 2-bit TURN_* fields, tried from the bottom
+
+; The thrown object, the player and the state of play (&10-&2E).
 thrown_x = &10                          ; a thrown object in flight, in character cells
 thrown_y = &11
 thrown_direction = &12                  ; THROWN_*: its direction + 1, or 0 for nothing in flight
 thrown_picture = &13                    ; its icon; once it lands, the cell type it hit
 thrown_picture_high = &14
-front_x = &15                           ; the cell in front of the player (or a thrown object hit)
+front_x = &15                           ; the cell in front of the player (or the cell a thrown object hit)
 front_y = &16
 action = &17                            ; ACTION_*: the action to do next
-frame_counter = &18                     ; +&20 a cycle; bit 7 picks the monsters' picture
-thrown_object = &19                     ; the object thrown; + &80 while it lands; then &FF
+frame_counter = &18                     ; goes up by &20 each cycle; bit 7 picks which of the
+                                        ; monsters' two pictures to draw
+thrown_object = &19                     ; the object in flight; &80 is added while its landing
+                                        ; triggers run, and it's &FF once it's down
 backpack_slot = &1A                     ; the selected slot
 throw_range = &1B                       ; cells the thrown object has left to fly
 started_late = &1C                      ; nonzero: the game didn't start on level 1
 pushes_left = &1D                       ; how many more crates the player may push
-clock_fraction = &1E                    ; io_time_rate is added each cycle
+clock_fraction = &1E                    ; io_time_rate is added each cycle; the clock ticks when it carries
 clip_position = &1F                     ; the sprite's x or y, being clipped to the view
 player_x = &20                          ; the player's map cell
 player_y = &21
 score = &22                             ; BCD: the low two digits
 score_high = &23                        ; and the high two
-backpack = &24                          ; BACKPACK_SLOTS: an object, or negative for empty
+backpack = &24                          ; BACKPACK_SLOTS bytes: an object's number, or
+                                        ; negative for an empty slot
 menu_key_left = &29                     ; the direction keys as MENU set them (the loader
 menu_key_right = &2A                    ; copies all ten here, but the rest are soon
 menu_key_up = &2B                       ; overwritten)
 menu_key_down = &2C
 empty_channel = &2D                     ; the sound channel the event says ran dry
 lives = &2E
-sound_channel = &30                     ; an OSWORD 7 block for sound effects
+
+; Two OSWORD 7 (SOUND) parameter blocks, "the sound effects' block" and "the
+; tune block" (&30-&3F), and where the tune has got to (&40-&44).
+sound_channel = &30                     ; the sound effects' block
 sound_channel_high = &31
 sound_amplitude = &32
 sound_amplitude_high = &33
@@ -64,7 +141,7 @@ sound_pitch = &34
 sound_pitch_high = &35
 sound_duration = &36
 sound_duration_high = &37
-tune_channel = &38                      ; an OSWORD 7 block for the tune
+tune_channel = &38                      ; the tune block
 tune_channel_high = &39
 tune_amplitude = &3A
 tune_amplitude_high = &3B
@@ -77,45 +154,58 @@ tune_position_2 = &41                   ; voice 2's
 tune_swap = &42                         ; which voice plays alone: 0 voice 1, 1 voice 2
 tune_transpose = &43                    ; 0 or TRANSPOSE_FOURTH
 tune_together = &44                     ; nonzero: both voices play
+
+; More of the state of play, and scratch (&48-&6F).
 triggers_fired = &48                    ; counts triggers that matched and acted
 level = &49                             ; 0-3
-draw_step = &4A                         ; drawing: cells to a picture's edge, a step from cell to cell, or flip the player
-draw_step_high = &4B
-monster_index = &4C
+draw_step = &4A                         ; three uses: character cells left to a picture's
+draw_step_high = &4B                    ; edge (draw_row_part, draw_column_part), the screen
+                                        ; step from one cell to the next (rub_out_trail), or
+                                        ; nonzero to draw the player upside down
+monster_index = &4C                     ; the monster move_things is moving
 picture_stride = &4E                    ; bytes from one column of a picture to the next
-picture_size = &4F                      ; negative: a whole picture; 1: an icon on the floor
+picture_size = &4F                      ; negative (&80) for a whole picture, 1 for an icon on the floor
 work0 = &50                             ; scratch, used for all sorts
 work1 = &51
 work2 = &52
 work3 = &53
 work4 = &54
 work5 = &55
-start_x = &56                           ; the level's setup, copied from io_level_setup
-start_y = &57
+start_x = &56                           ; the level's setup, copied from io_level_setup (LEVEL_*):
+start_y = &57                           ; the view's top-left map cell at the start
 to_collect = &58                        ; sulphur still to collect
 time_left = &59                         ; the clock
 exit_x = &5A
 exit_y = &5B
 monster_food = &5C                      ; low nibble: a cell monsters eat; high: what they leave
-alternate_cells = &5D                   ; 2 bits a cell type: which squares use its second picture
+alternate_cells = &5D                   ; 2 bits a cell type: which squares show its second picture
 player_dead = &5E                       ; nonzero: lose a life
-pipe_move = &5F                         ; inside a pipe: the move action that carries the player on
+pipe_move = &5F                         ; inside a pipe, the move action (ACTION_LEFT...)
+                                        ; carrying the player on; 0 on foot
 stage = &60                             ; STAGE_*
 furthest_level = &61                    ; the title screen's start level goes up to this
 front_cell = &62                        ; what's in the cell in front of the player
 fill_screen = &63                       ; nonzero: clear_screen fills with the floor pattern, not black
-tune_off = &64
-effects_off = &65
-action_keys = &66                       ; by action: P, D, M, CTRL, T, Return (actions 1-6)
-key_map = action_keys + ACTION_MAP - 1  ; M
-key_left = &6C                          ; this level's direction keys (actions 7-10)
+tune_off = &64                          ; nonzero: the tune is off
+effects_off = &65                       ; nonzero: the sound effects are off
+action_keys = &66                       ; the keys for actions 1-6, as MENU set them: by
+                                        ; default P, D, M, CTRL, T, Return
+key_map = action_keys + ACTION_MAP - 1  ; the map key (M by default)
+key_left = &6C                          ; this level's direction keys (actions 7-10),
+                                        ; which a trigger can swap
 key_right = &6D
 key_up = &6E
 key_down = &6F
+
+; The drawing variables (&70-&9B, with draw_step to picture_size and
+; clip_position above). Routine headers call picture, picture_size and
+; picture_stride "the picture variables", and sprite_columns to
+; sprite_skip_y with clip_position "the sprite variables".
 cell_x = &70                            ; the map cell being looked at or drawn
 cell_y = &71
-screen_start = &72                      ; the CRTC's start address
-screen_start_high = &73
+screen_start = &72                      ; the CRTC's start address, in its units of 8
+screen_start_high = &73                 ; bytes; in the map view, the low byte is the map
+                                        ; column at the left edge
 view_sub_x = &74                        ; the character column, within its map cell, being drawn
 view_sub_y = &75                        ; the character row, likewise
 picture = &76                           ; the picture being drawn
@@ -123,30 +213,33 @@ picture_high = &77
 screen = &78                            ; where it's being drawn
 screen_high = &79
 strip_cells = &7A                       ; map cells drawn along a row so far
-cell_low_nibble = &7B                   ; the cell is in its map byte's low nibble
-map_pointer = &7C
+cell_low_nibble = &7B                   ; 1 if the cell is in its map byte's low nibble
+                                        ; (an odd row), else 0
+map_pointer = &7C                       ; the map byte holding cell_x, cell_y (map_address)
 map_pointer_high = &7D
 strip_cells_down = &7E                  ; map cells drawn down a column so far
-steps = &7F
+steps = &7F                             ; a counter: a walk's character steps,
+                                        ; redraw_view's, burn_up's square
 view_screen = &80                       ; the screen address of the view's top left
 view_screen_high = &81
-count_across = &82
-count_down = &83
-player_screen = &84
+count_across = &82                      ; counters for draw_player_at (rows, despite the name),
+count_down = &83                        ; redraw_view and burn_up: see there
+player_screen = &84                     ; where draw_player_at and rub_out_trail are drawing
 player_screen_high = &85
 player_screen_base = &86                ; the player's top left on the screen
 player_screen_base_high = &87
-player_frame = &88                      ; +&20 a cell walked; bit 7 flips the player's picture
-facing = &89                            ; DIRECTION_*
+player_frame = &88                      ; goes up by &20 each cell walked; bit 7 draws the player upside down
+facing = &89                            ; the way the player faces: DIRECTION_*
 view_x = &8A                            ; the view's top left, in character cells (4 to a map cell)
 view_y = &8B
-sprite_columns = &8E                    ; character cells to draw, less 1
-sprite_rows = &8F
-sprite_column = &90
+sprite_columns = &8E                    ; the sprite's character cells to draw across, less 1
+sprite_rows = &8F                       ; and down
+sprite_column = &90                     ; counting them
 sprite_row = &91
-sprite_screen = &92
+sprite_screen = &92                     ; where the sprite is being drawn
 sprite_screen_high = &93
-view_cell_x = &94                       ; view_x DIV 4
+view_cell_x = &94                       ; the map cell at the view's top left (view_x
+                                        ; DIV 4, standing still)
 view_cell_y = &95
 temp = &96
 sprite = &97                            ; the picture being drawn
@@ -158,29 +251,33 @@ steps_since_drawn = &9B                 ; steps scrolled in a pipe since the pla
 ; Elsewhere.
 trigger_flags = &0100                   ; a byte per trigger, from io_level_trigger_flags
 keys_were_down = &0120                  ; a byte per direction key: 1 if it was down last time
-step_y = &0124                          ; step's scratch
-saved_extended_vectors = &037F          ; over the cassette filing system's workspace
-map = IO_END                            ; the level being played's map, copied from io_maps
+step_y = &0124                          ; step's scratch byte
+saved_extended_vectors = &037F          ; the OS's extended vectors (in the cassette filing system's
+                                        ; workspace, unused with a disc), for load_mission
+map = IO_END                            ; the map of the level being played, copied from io_maps
 
+; Before the game takes it over, the loader uses zero page for these.
 menu_keys = &50                         ; where MENU leaves the ten keys
-copy_return = &00
+copy_return = &00                       ; copy_block's
 copy_from = &02
 copy_to = &04
 copy_count = &06
 
-; A level's objects, OBJECT_BYTES each, laid over code that runs once.
+; The level's OBJECTS objects, OBJECT_BYTES each, copied by setup_level over
+; game_start, code that runs only once.
 objects = game_start
 object_x = objects + 0
 object_y = objects + 1
 object_icon = objects + 2
 object_flags = objects + 3
 
-; The triggers' places and arguments, laid over the end of the game's own
-; code by setup_level (trigger_places) and just past it.
-trigger_args = trigger_places + 2 * PUZZLES     ; 4 bytes a trigger
-trigger_condition = trigger_args + 3
+; The triggers' places and arguments, copied by setup_level over the end of
+; the game's own code (trigger_places) and just past it.
+trigger_args = trigger_places + 2 * PUZZLES     ; 4 bytes a trigger: three for its action, then
+trigger_condition = trigger_args + 3            ; its condition
 
-; Masks for BIT that are other instructions' operands.
+; BIT needs its mask in memory: these are operands of other instructions
+; that happen to hold the right bits.
 bit4_mask = show_map_centre + 1         ; the byte there is &10
 bit6_mask = fire_object_vanishes + 1    ; the byte there is &40
 
