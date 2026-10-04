@@ -1,0 +1,173 @@
+; Level 3: the third of IO's four. Written as leveldata.6502inc describes;
+; src/io.6502 makes its bytes from this. A mission doesn't keep its levels'
+; trigger names (MISSION names them "Puzzle 1" to "Puzzle 32" when it saves
+; one as a level file), so these have none.
+level_3 = {
+    ; The editing code: MISSION wants it before it saves a locked mission's
+    ; level, and the game shows it once the level's done.
+    "218652",
+    ; The palette: logical colours 0-3.
+    {COLOUR_BLACK, COLOUR_BLUE, COLOUR_YELLOW, COLOUR_MAGENTA},
+    ; The setup.
+    {
+        32, 63,                         ; the player starts here
+        250,                            ; sulphur to collect before the exit opens
+        240,                            ; the clock
+        32, 43,                         ; the exit
+        CELL_LAVA * 16 + CELL_LAVA,     ; a monster reaching lava (~) goes out, leaving lava (~)
+        %01110111                       ; second pictures: # on odd squares, = on all, o on odd squares, ~ on all
+    },
+    ; The objects: x, y, icon, uses and flags.
+    {
+        {32, 47, 0, OBJECT_NO_CHARGES + OBJECT_NO_THROW},  ; 0: Remote C.D.1
+        {43, 22, 3, OBJECT_NO_THROW + 3},                  ; 1: Blueprints
+        {13, 18, 1, OBJECT_NO_CHARGES + OBJECT_NO_THROW},  ; 2: Remote C.D.2
+        {43, 37, 5, OBJECT_NO_CHARGES + OBJECT_NO_THROW},  ; 3: Spanner
+        {19, 30, 7, OBJECT_VANISHES + 1},                  ; 4: Magnet
+        {41, 8, 9, OBJECT_NO_CHARGES + OBJECT_NO_THROW},   ; 5: Jovian Wine
+        {27, 60, 2, OBJECT_NO_CHARGES + OBJECT_NO_THROW},  ; 6: Remote C.D.3
+        {0, 63, 4, 4}                                      ; 7: Mallet
+    },
+    ; The monsters: x, y, the way they're going, and which ways they try.
+    {
+        {25, 7, DIRECTION_RIGHT, %01010101},            ; 0: tries on, on, on, on
+        {7, 15, DIRECTION_UP, PATTERN_LEFT_WALL},       ; 1
+        {17, 10, DIRECTION_UP, PATTERN_RIGHT_WALL},     ; 2
+        {1, 56, DIRECTION_RIGHT, PATTERN_FOLLOW_EDGES}  ; 3
+    },
+    ; The triggers: name, action and flags, where, the action's A, X and Y,
+    ; and a condition.
+    {
+        ; 0: (38, 51) becomes the floor (.); when facing right at a marker (@)
+        {"", PUZZLE_PLACE_BLOCK + PUZZLE_USES_OBJECT, 37, 51, &00, &26, &33, &D9},
+        ; 1: takes the player to (32, 14)
+        {"", PUZZLE_TELEPORT + PUZZLE_USES_OBJECT + PUZZLE_REUSABLE, IGNORE, IGNORE, &FF, &1C, &0A, &09},
+        ; 2: (46, 23) becomes the floor (.); when facing up at lava (~)
+        {"", PUZZLE_PLACE_BLOCK + PUZZLE_USES_OBJECT, 46, 24, &00, &2E, &17, &EA},
+        ; 3: the cell at (43, 36) moves left; when facing up at a wall (7)
+        {"", PUZZLE_MOVE_BLOCK + PUZZLE_USES_OBJECT, 43, 37, &00, &2B, &24, &E2},
+        ; 4: pushes the cell in front back; when facing a wall (#)
+        {"", PUZZLE_MOVE_NEXT_BLOCK + PUZZLE_USES_OBJECT + PUZZLE_OFF, IGNORE, IGNORE, &00, &2A, &0F, &45},
+        ; 5: sets the clock to 230
+        {"", PUZZLE_SET_LEVELS + PUZZLE_USES_OBJECT, IGNORE, IGNORE, &01, &E6, &00, &06},
+        ; 6: the cell in front becomes the floor (.); when facing down at a marker (@)
+        {"", PUZZLE_NEXT_BLOCK + PUZZLE_USES_OBJECT + PUZZLE_COUNTS_COLLECTS, 32, 41, &00, &1C, &3B, &F9},
+        ; 7: the cell in front becomes the floor (.); when facing a wall (#)
+        {"", PUZZLE_NEXT_BLOCK + PUZZLE_USES_OBJECT + PUZZLE_REUSABLE, IGNORE, IGNORE, &00, &14, &20, &45},
+        ; 8: turns off triggers 19, 22 and 31
+        {"", PUZZLE_TURN_OFF + PUZZLE_REUSABLE, 32, 14, &13, &16, &1F, &00},
+        ; 9: puts monster 0 at (11, 18) going up, trying on, back, back, back; when facing left
+        {"", PUZZLE_PLACE_MONSTER, 29, 14, &2C, &01, &4A, &80},
+        ; 10: (32, 11) becomes lava (~); when facing left
+        {"", PUZZLE_PLACE_BLOCK, 29, 14, &0A, &20, &0B, &8A},
+        ; 11: turns off trigger 31; when facing up
+        {"", PUZZLE_TURN_OFF + PUZZLE_REUSABLE, 32, 18, &1F, &1F, &1F, &A1},
+        ; 12: turns on trigger 31; when facing down
+        {"", PUZZLE_TURN_ON + PUZZLE_REUSABLE, 32, 20, &1F, &1F, &1F, &B9},
+        ; 13: lets the player push 23 crates
+        {"", PUZZLE_PUSH_CRATES + PUZZLE_USES_OBJECT, IGNORE + 32, IGNORE + 44, &17, &C8, &00, &29},
+        ; 14: (29, 14) becomes lava (~); when facing down
+        {"", PUZZLE_PLACE_BLOCK, 32, 17, &0A, &1D, &0E, &B0},
+        ; 15: swaps the direction keys
+        {"", PUZZLE_DISORIENTATE + PUZZLE_REUSABLE, 47, 25, &0A, &0B, &08, &1A},
+        ; 16: turns on triggers 19 and 4; when facing up
+        {"", PUZZLE_TURN_ON + PUZZLE_REUSABLE, 32, 9, &13, &04, &13, &A0},
+        ; 17: the cell in front becomes a pipe down (|); when facing down at a pipe across (-)
+        {"", PUZZLE_NEXT_BLOCK, IGNORE + 5, 47, &0D, &0D, &FF, &FC},
+        ; 18: turns off triggers 19 and 4; when facing down
+        {"", PUZZLE_TURN_OFF + PUZZLE_REUSABLE, 32, 9, &13, &04, &13, &B0},
+        ; 19: throws object 4, 63 cells; when facing the floor (.)
+        {"", PUZZLE_THROW_OBJECT + PUZZLE_OFF + PUZZLE_REUSABLE, IGNORE + 32, IGNORE + 10, &04, &1C, &3F, &70},
+        ; 20: turns on trigger 22; when facing down
+        {"", PUZZLE_TURN_ON + PUZZLE_REUSABLE, 54, 54, &16, &16, &16, &B7},
+        ; 21: turns off trigger 22; when facing up
+        {"", PUZZLE_TURN_OFF + PUZZLE_REUSABLE, 54, 54, &16, &16, &16, &A7},
+        ; 22: the cell in front becomes lava (~); when facing sulphur (o)
+        {"", PUZZLE_NEXT_BLOCK + PUZZLE_OFF + PUZZLE_REUSABLE, IGNORE, IGNORE, &0A, &FF, &FF, &47},
+        ; 23: (12, 14) becomes a pipe down (|); when facing left at a pipe down (|)
+        {"", PUZZLE_PLACE_BLOCK, 11, 14, &0D, &0C, &0E, &CD},
+        ; 24: puts monster 3 at (59, 62) going up, back and forth; when facing right
+        {"", PUZZLE_PLACE_MONSTER, 59, 41, &EF, &B1, &FA, &9A},
+        ; 25: (32, 17) becomes lava (~); when facing right at the floor (.)
+        {"", PUZZLE_PLACE_BLOCK, 35, 14, &0A, &20, &11, &D0},
+        ; 26: puts monster 3 at (61, 62) going up, back and forth; when facing right at the floor (.)
+        {"", PUZZLE_PLACE_MONSTER, 61, 39, &F7, &B1, &FA, &D0},
+        ; 27: puts monster 3 at (63, 62) going up, back and forth; when facing right
+        {"", PUZZLE_PLACE_MONSTER, 63, 39, &FF, &B1, &FA, &9A},
+        ; 28: the cell in front swaps between fire (*) and the floor (.); when facing right
+        {"", PUZZLE_SWAP_NEXT + PUZZLE_REUSABLE, 50, 20, &0E, &00, &0E, &98},
+        ; 29: the cell in front becomes a junction (+); when facing a pipe across (-)
+        {"", PUZZLE_NEXT_BLOCK, 48, 61, &0B, &16, &1F, &5C},
+        ; 30: turns off triggers 31 and 22
+        {"", PUZZLE_TURN_OFF + PUZZLE_REUSABLE, 32, 63, &1F, &16, &1F, &3F},
+        ; 31: the cell in front becomes a crate (c); when facing the floor (.)
+        {"", PUZZLE_NEXT_BLOCK + PUZZLE_OFF + PUZZLE_REUSABLE, IGNORE + 32, IGNORE + 44, &06, &2E, &27, &60}
+    },
+    ; The map.
+    {
+        "ooo.---+----.========+--.-------+--|---|-----...........#####o.o",
+        "*~*~*..|....|=.....|.|c-----+----|---|----..###########.....##.#",
+        ".-----------.=or7..|..r#7r#7r#7r#7r#7r#7r#7.....o#o...#####.....",
+        ".~.-+-.-.---.=|J..c|c.#.o.....LJ........oo####.######.....#o#.#.",
+        ".-+o|c||.=====|7o.ccc.L......7.......r...oJ.........#####.###o#.",
+        "|.|.--|+.==~|.oL7.c.c.r....c....r#7..L...o7.#######.#.......###.",
+        "|.|...||..=.|.L#J.....#....o....L#J......o#..#...#..#.#####.#...",
+        "|.|r7-|-+.=.|.....#|7.L..*o........#....ccJ~.#.#.#o##.#.....#.#o",
+        "+--.L7..|o=.|..#..-o-.ro.......|...##---.$7..#.#o###o.#.#####.##",
+        "c+-..---+-.o|||#..#-J.#....r#7..........cc#.##.###.##.#o#.....#o",
+        "+|-.rJ~~|=c.|..#.*#o$.L#JL#JL#JL.JL#JL#JL#J...........###.#####.",
+        "|||LJ.oo|=|.|r--#7-r#----#7L==Jro7L==J....========.==...........",
+        "|||.....|=|.||...L-Jo.....L7LJrJ.L7LJ.cc......c....o=LJLJLJLJLJr",
+        "||...oo.|=|.c-c........o...L7rJ...L7ccc.===.crc7..coJ+--------+L",
+        "||o..r7.|=|..-...............o.....o.c.o..c.rJoL7..~7|r7r7r7r7|r",
+        "||o..oo*|=|.c-c....o.....o.rJL7...rJc~~c...rJ...L7..J|#o.o.o.J|L",
+        "||...LJ.|=|.||...r-7..o...rJr7L7.rJr7o..~.rJ.....L7o7|LJLJLJo7|r",
+        "|o~..oo.|=|.|L--#J-L#----#Jr==7LoJr==7..orJ..ro7..L7J+------.J|L",
+        "|-o.....|=|..$|o....o.....oL==Jr|7L==J.orJo.rJ.L7.o#r7r7r7L7r7|r",
+        "||o~.===|=L---J~~*~~.~~*~~.*LJrJ|L7LJr######J...L##JLJ#LJ#rJLJ|L",
+        "||~ooo~o......o~o.........o*.rJ.o.L7o......o.....o..----------+r",
+        "||===========|.~.~~~.~~~~~r##J.....L#######~7.o.rJ~~~~~~~~~~~~~~",
+        "||o......=...|.~.~*~.~**~rJ..oo....o-oL7~~~$L7.rJ~o...o~~~~o~~.o",
+        "|+-.====.=.|.|.~.~*~.~*~rJ...o.o.o.....L7~~.~#~#~~~~~.~~.......~",
+        "|o.........|.|.~.~*~.~~rJ........||||...L7~.~#.#......~o.~~~~~.~",
+        "|r7+--|+---+.|.~.~~~.~rJ......c..||||....L7....-..o.~~~~.~......",
+        "|LJ|r#7|7c#|o|......orJ.ooo.....-+-----o.oL###.#.......~o~.~~~~o",
+        "+--o---o-|-o--~~~~~~~L#####################Jo#.#~.~~~~.~~~.~~o~~",
+        "o.o|#c#|#cL|.........|--..-+.o.--+-~cc....co.#.#~....~..........",
+        ".~.+---+---+.===========|..||||+--~c...cc......J~~~~.~~~o~~o~~~o",
+        "o.o..........==...#$~~~o+-|-+||--|c..cco.ccr#7|r~7r7o*#~c#######",
+        ".#7@------.#.=o.=.#.--||~||+-----.c.c.oc...#7c|#~#o#7.#..~....o.",
+        ".|L7~-----.#.====.#|-|-|=|.|~-+--.coc.c..c.L#7|#~#.#L7#o|o.c...c",
+        ".-oL7o----.#...=..#|--||=||+---|----o...c.ocL#|#~#o#.L#.|7...c..",
+        ".|7|L7~---.#==.=.=#|||||=||o.+-+cccocc.....L#J|L~J.#*.L@|J~c|.|c",
+        ".|J|~L7o--.#o=.=.=#.....=||.|-.-+cc...c.c.o...|.............o...",
+        ".-.|o.L7o-.#.=...=#~~~|~=|+---.||cccc...c.r7r.|.--------+.r#####",
+        ".|7|~.~L7~.#...=.o|-|||-|--..|||+-cccccco.#$#.|........o||#o#o#o",
+        ".|J|o..~L7.##-###-#|-|-|=|-|--+.|cccccccccL.J..---------+|#$#$#$",
+        ".-o|~~..rJ.#.---.|#||-||=||+|||-----.----o#.###7o--------+#.....",
+        ".|7|...--.|#o|o-..#|||||=|o..+-|||||||||-o#...oc#c#########.~.~.",
+        ".|J|o~rJ~|||-.-|-+#.....=|.~.-|-o--+-----o#.###J..........-.~.~.",
+        ".-o|~rJo||||-|-.||#~|~~~=|.o.-+r@7+|--+--o#.#|.oL#######7cc.~.~.",
+        ".|7|rJ..||||o|o|o|#|||||=||||.r#$#7+-+|r###.#|.c...c...c.-|.~.~.",
+        ".|JrJo|+-|||.-.|-.#|||||=||-+r#####7~||#o...#|o..c...c...|-.~.~.",
+        ".--+o||||||#|o-.-|#|||||=|-+r#J...L#7||L###.#|cor#######Jcc.~.~.",
+        ".#J||||||||#+---|+#|||||=-+r#J.....L#7....#.###7.....|...or.~.~.",
+        "........................=|r#J...$...L#7...#...o#or|7o|.o..L.~.~.",
+        ".o~or----------~.~|.o.L.=|#J.........L#...#.###JrJ|L7L..o.r.~.~.",
+        ".-orJ+.7~r~7~r.~.~|..o..=|#...........#..o#.@o.-|.o.|~o...L.~.~.",
+        ".orJo|.#rJ.|~J.~.~|.7.o.=|#....r#7....#####.#===L7|rJ7r7r|r.~o~o",
+        "|.#~|-.#J~.|-o.~.~|.....=|#.o..#~#..o.@.....#o=~oL|JoLJLJ-Lo~.~.",
+        "|.#o--|--o.|~7.~.~|c|c.c=|#....L#J....######J|=-|...||||||r.~.~.",
+        "||~.|~|JL7.J~L.~.~|o|...=|#...........#...........~......oL.~.~.",
+        "||~..@|........~o~|..cco=|#7.........r#.LLLLL.7r|7r.r#|#7cr.~.~.",
+        "o|~cc~cc~c~c~c~~~~~~~~~c=|##7...o...r##.~.o@~.co..c|oo..-oL.~.~.",
+        "c*.....o$$$$$$$$$$$$$-.o=|###7.....r###.~.|.~.c##.c|....-.r.~.~.",
+        "ccc.---.-----------|oc~.=|####7...r####.~.|.~oco..c|.oo.-oL.~.~.",
+        "o.+-$$$$.$$$.$$.$.$.o$o|=|#####7.r#####.-.|.~--------o|o-.r.~.~.",
+        ".||~o|---|-|-||-|-|----.=|##~~~~.~~~~##.~.|.-.-o|o-.#.o.-oL.~.~.",
+        "|.o$o$$$.$.$.$..$.$.$$-+=|#$~~~~.~~~~##.~.|.~.|-|-|.#|||#.r.~.~.",
+        "+------|-|-|-|-||-|-|o~|=..#~~~~.~~~~##.~.|.~.--|--.#o..o.L.~.~.",
+        "~o$.$$$o.$$$.$.$$.$.$o$|=-|#~~~~.~~~~##.~@o.~.|-|-|.#o..-.r.~.~.",
+        "$.|--------------------.-|+#~~~~$~~~~##~rrrrr.-o|o-.#o.o#oL~~~~~"
+    }
+}
