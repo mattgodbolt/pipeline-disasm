@@ -15,7 +15,7 @@ INCLUDE "osconst.6502inc"
 INCLUDE "basic.6502inc"
 INCLUDE "teletext.6502inc"
 
-editing_code = basic_integer("E")   ; FNn's code, unscrambled in place
+editing_code = basic_integer("E")   ; FNn's code, scrambled in place
 swap_temp    = BASIC_USER_ZP
 
 SECTION mission, filename="MISSION", org=&1900, load=&FFFF1900, exec=&FFFF8023
@@ -36,13 +36,17 @@ SECTION mission, filename="MISSION", org=&1900, load=&FFFF1900, exec=&FFFF8023
     EQUB CHR(BASIC_TOKEN_REM) + """" + CHR({VDU_DELETE, TT_ALPHA_BLUE, TT_NEW_BACKGROUND, TT_ALPHA_GREEN, TT_DOUBLE_HEIGHT}) + "Hello," + CHR({TT_ALPHA_YELLOW, TT_FLASH}) + "all my friends!  " + CHR(TT_BLACK_BACKGROUND) + "          " + CHR({TT_ALPHA_BLUE, TT_NEW_BACKGROUND, TT_ALPHA_GREEN, TT_DOUBLE_HEIGHT}) + "Hello," + CHR({TT_ALPHA_YELLOW, TT_FLASH}) + "all my friends!  " + CHR(TT_BLACK_BACKGROUND)
     EQUB VDU_DISABLE                ; LIST shows nothing from here...
 
-; Unscrambles the editing code FNn has read into E% (CALL PAGE+198, line
-; 1170): each of E%'s low three bytes has its adjacent bits swapped, then
-; is rotated right one place. PROCsavelev compares the result with the
-; level's fields 0-2.
-; Clobbers A, X and swap_temp.
-.unscramble_editing_code
-    ASSERT unscramble_editing_code = program + 198
+; Scrambles the editing code FNn has read into E% (CALL PAGE+198, line
+; 1170) the way a level stores its code (leveldata.6502inc's code_byte), so
+; PROCsavelev can compare it with the level's fields 0-2: each of E%'s low
+; three bytes has its adjacent bits swapped, then is rotated right one
+; place. (Not an unscrambler: the stored code is never turned back into
+; digits.)
+; In: E% = the six digits read as hex, &00dddddd.
+; Out: E%'s low three bytes scrambled.
+; Clobbers: A, X, swap_temp.
+.scramble_editing_code
+    ASSERT scramble_editing_code = program + 198
     LDX #2
 .each_byte
     LDA editing_code, X
@@ -65,11 +69,12 @@ SECTION mission, filename="MISSION", org=&1900, load=&FFFF1900, exec=&FFFF8023
     EQUB VDU_ENABLE                 ; ...to here
 .line_70
 BASIC
-; Start-up. Escape is just a key until the set-up is done. Line 90's error
-; handler covers only the set-up: it reports the error and skips to line
-; 130, except for Escape (error 17), which asks whether to quit and, if
-; not, falls into line 100 and starts afresh ("Sorry about the GOTO").
-; From line 130 an error is reported and the menu carries on at line 140.
+; Start-up. Line 90's error handler covers only the set-up: it reports the
+; error and skips to line 130. For Escape (error 17) it would ask whether
+; to quit and, if not, fall into line 100 and start afresh ("Sorry about
+; the GOTO"), but Escape is just a key (*FX229 1) until line 140, so that
+; can't happen. From line 130 an error is reported (Escape asks whether to
+; quit) and the menu carries on at line 140.
 70:
 80*FX229 1
 90ONERRORPROCerr:IFERR<>17GOTO130
@@ -78,10 +83,11 @@ BASIC
 120MODE7:PROCinit
 130ONERRORPROCerr
 140*FX229
-; The main menu: 1-9 (1-8 on tape, which has no catalogue) or the cursor
-; keys pick an option (K%), RETURN does it; OR 16 lets the shifted digits
-; count. The undocumented i and h keys go straight to "save a mission" with
-; I% set, which locks the saved mission (PROClock, line 1390).
+; The main menu: 1-9 (1-8 on tape, which has no catalogue) or the down and
+; up cursor keys pick an option (K%), RETURN does it; OR 16 lets the
+; shifted digits count. The undocumented i and h keys (lower case, so Caps
+; Lock off) go straight to "save a mission" with I% set, which locks the
+; saved mission (PROClock, line 1390). Any other key clears I%.
 150REPEAT
 160CLS
 170PRINT"Key:";
@@ -112,12 +118,13 @@ BASIC
 420DATAchange name,change features,load graphics,save graphics,load a level,save a level,load a mission,save a mission,see a catalogue
 430:
 ; PROCinit: the sizes behind every file MISSION reads and writes (the
-; layouts are in docs/notes/basic.md), and memory for them:
-;   F%   a mission, as saved: names (&134, a graphics file's tail), text
-;        (30), features (5), then from L% the four levels - each of the 11
-;        fields for all four levels together, then four &800 maps - and
-;        from G% the graphics (&E00), with room after for a graphics file's
-;        names
+; layouts are in docs/notes/basic.md; io.6502inc computes IO's from the
+; same sizes, and leveldata.6502inc has the 11 fields), and memory for them:
+;   F%   a mission, as saved: names (&134, a graphics file's tail: its last
+;        slot's picture and the object names), text (30), features (5),
+;        then from L% the four levels - each of the 11 fields for all four
+;        levels together, then four &800 maps - and from G% the graphics
+;        (&E00), with room after for a graphics file's names
 ;   B%   one level file: puzzle names (320), fields (data, &11F), map
 ;   addr where a saved mission reloads, so it ends at &5800 (&242D)
 ;   osc  PROCosc's command buffer
@@ -145,11 +152,14 @@ BASIC
 640PRINT''TAB(1-7*T%)CHR$(134)CHR$(157)CHR$(132);
 650IFT%PRINT"Please wait";ELSEPRINT"Loading Standard Graphics";
 660PRINT":  "CHR$(157)
-; A blank mission: names, text and features cleared; every level's field 3
-; 31 22 14 00, fields 4-10 &FF and an empty map (fields 0-2, the editing
-; code, are left as they were); features time 15 (shown as 9), mapping 2,
-; backpack 2 (shown as 3), throwing 6, unlocked. On disc, DEFAULT's
-; graphics too.
+; A blank mission: names, text and features cleared; every level's
+; palette (field 3) &31 &22 &14 &00 (3 red, 2 green, 1 blue, 0 black: see
+; palette_entry), fields 4-10 &FF and an empty map; features time 15
+; (shown as 9), mapping 2, backpack 2 (shown as 3), throwing 6, unlocked.
+; Fields 0-2, the editing codes, are left as memory held them, except
+; level 0's field 0, which the features' clearing runs into (line 670 ends
+; at L%+0). The &FF fill starts at numlev*4, inside field 3, which line 760
+; then writes. On disc, DEFAULT's graphics too.
 670FORN%=0TOnames+miss+4STEP4
 680N%!F%=0:NEXT
 690FORN%=numlev*4TOnumlev*data-4STEP4
@@ -168,9 +178,10 @@ BASIC
 810DEFPROCcursor(N%)
 820VDU23,1,N%;0;0;0;
 830ENDPROC
-; PROCtitle: the double-height title and blue bars down both sides; PROCw
-; sets the text window between them. C% marks a screen that needs the
-; title redrawing after an error.
+; PROCtitle: the double-height title, yellow on red, and below it a blue
+; panel from row 4 down (blue background from column 1, yellow text from
+; column 2, black again at column 38); PROCw sets the text window inside
+; it. C% marks a screen that needs the title redrawing after an error.
 840DEFPROCtitle
 850PROCcursor(0)
 860VDU26,12:FORN%=1TO2
@@ -180,7 +191,9 @@ BASIC
 900PROCw:C%=0:ENDPROC
 910DEFPROCw:VDU28,3,23,36,5:ENDPROC
 ; PROCline: A% is the key (90 and 91 here are the cursor keys, 138 and
-; 139). Highlights option K% with a green background from column 8.
+; 139). Highlights option K% (screen row K%+4: line 230's VDU 26 left the
+; whole screen as the window) with a green background from column 8 and
+; blue text.
 920DEFPROCline:A%=A%-48
 930IFA%>89ANDK%=0ENDPROC
 940IFA%=90A%=K%+1:IFA%>opts A%=1
@@ -208,7 +221,8 @@ BASIC
 1120IFA%=127 A$=LEFT$(A$,LEN(A$)-1)
 1130UNTILA%=13:PROCcursor(0):=A$
 ; FNlevel is 0-3. FNn reads the editing code as six digits, taken as hex
-; (EVAL "&0..."), and unscrambles it with the code hidden in line 60.
+; (EVAL "&0..."), and scrambles it, as levels store their codes, with the
+; code hidden in line 60.
 1140DEFFNname=FNinput("Enter filename: ",12+2*T%,32,127)
 1150DEFFNlevel=(VAL(FNinput("Which level number ? ",1,48,49+numlev))-1)AND3
 1160DEFFNn
@@ -243,7 +257,10 @@ BASIC
 1380NEXT:ENDPROC
 ; PROClock: the secret keys. I% becomes 1 for i, -1 for h (stored as &FF),
 ; and the menu jumps to option opts-1 with RETURN pressed: "save a
-; mission", though on tape, where opts is 8, it's "load a mission".
+; mission", though on tape, where opts is 8, it's "load a mission". Either
+; lock stops MISSION saving the mission again or giving up a level without
+; its code; only h's (negative: io_locked) makes the game show the
+; competition entry code at the end. Seen in jsbeeb: i stores 1, h &FF.
 1390DEFPROClock:I%=A%*2-209
 1400A%=opts+47:PROCline
 1410A%=13:ENDPROC
@@ -288,9 +305,11 @@ BASIC
 1740ENDPROC
 1750:
 ; PROCsavelev: the reverse. A locked mission (L%?-1, the lock byte, set)
-; gives up a level only for the editing code that unscrambles to its
-; fields 0-2. The puzzle names aren't kept in a mission, so they are reset
-; to "Puzzle 1" and on. Saved to reload ending at &3000, exec &8380.
+; gives up a level only for the editing code that scrambles to its fields
+; 0-2; any other goes quietly back to the menu (seen in jsbeeb, with IO's
+; level 1 and 677636). The puzzle names aren't kept in a mission, so they
+; are reset to "Puzzle 1" and on. Saved to reload ending at &3000, exec
+; &8380, as the Level Designer saves a level.
 1760DEFPROCsavelev
 1770S%=FNlevel
 1780IFL%?-1PRINT:IFFNn<>L%?S%*65536+L%?(S%+4)*256+L%?(S%+8)ENDPROC
@@ -317,8 +336,8 @@ BASIC
 1980ENDPROC
 1990:
 ; PROCsavemss: places the two halves of the text (VDU 31,18,16 and VDU
-; 31,14,17), refuses a locked mission, sets the lock byte to I% and saves
-; to reload at addr, ending at &5800.
+; 31,14,17), refuses a locked mission (quietly, before asking for a name),
+; sets the lock byte to I% and saves to reload at addr, ending at &5800.
 2000DEFPROCsavemss
 2010N%=F%+names
 2020?N%=31:N%?1=18:N%?2=16
@@ -332,11 +351,15 @@ BASIC
 2090DATA1,1,1,4,8,32,16,32,64,64,64
 2100:
 ; The features: names, then for each the input length and the lowest and
-; highest key codes allowed, exclusive.
+; highest key codes allowed, exclusive: time and throwing two digits,
+; mapping 0-4, backpack 2-4 (so it holds 2 to 4 things; 1 and 5 are
+; refused, seen in jsbeeb). Line 2390 then wants time 1-16 and throwing
+; 0-63. The fifth triple (a digit 1-3) belongs to no feature.
 2110DATA Time consumption,Mapping ability,Backpack size,Throwing distance
 2120DATA 2,47,58,1,47,53,1,49,53,2,47,58,1,48,52
-; PROCattrs: the features page; the cursor keys move the "]", RETURN
-; changes one (PROCchangeattr, which checks the range).
+; PROCattrs: the features page; the down and up cursor keys move the "]"
+; (an arrow in Mode 7), RETURN changes one (PROCchangeattr, which checks the
+; range).
 2130DEFPROCattrs
 2140PRINT"Select feature to change:"'
 2150V%=VPOS:PRINT"]";
