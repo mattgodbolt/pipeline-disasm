@@ -306,9 +306,9 @@ BASIC
 1750:
 ; PROCsavelev: the reverse. A locked mission (L%?-1, the lock byte, set)
 ; gives up a level only for the editing code that scrambles to its fields
-; 0-2; any other goes quietly back to the menu (seen in jsbeeb, with IO's
-; level 1 and 677636). The puzzle names aren't kept in a mission, so they
-; are reset to "Puzzle 1" and on. Saved to reload ending at &3000, exec
+; 0-2; any other goes quietly back to the menu (seen in jsbeeb with IO's
+; level 1: 677637 returns, 677636 carries on). The puzzle names aren't kept
+; in a mission, so they are reset to "Puzzle 1" and on. Saved to reload ending at &3000, exec
 ; &8380, as the Level Designer saves a level.
 1760DEFPROCsavelev
 1770S%=FNlevel
