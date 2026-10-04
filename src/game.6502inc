@@ -241,3 +241,6 @@ TRANSPOSE_FOURTH = 5 * SEMITONE
 SWAP_START = MOS_NMI_ROUTINE
 SWAP_PAGES = &10
 SWAP_END   = SWAP_START + SWAP_PAGES * &100
+
+; The longest mission file name the title screen's L takes.
+FILENAME_LENGTH = 12
