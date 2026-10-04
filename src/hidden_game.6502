@@ -3894,22 +3894,25 @@ ASSERT SCREEN_COLUMNS / 2 = &10         ; for bit4_mask
     STA work5
     RTS
 
-; Actions 7-10: a step left, right, up or down (Y is the action * 2). Turn
-; that way, then step into the next cell if it's empty, the thing to collect
-; (7), or a pipe running this way (C across, D down), which carries the player
-; along until it ends; a crate (6) is pushed if the player has pushes left.
-; Anything else stops the player: lava or fire kill. After a step, the move
-; ends the cycle (the walk moved everything four times already).
+; Actions 7-10: a step left, right, up or down. Turn that way, then step into
+; the next cell if it's empty, sulphur, or a pipe running this way, which
+; carries the player along until it ends; a crate is pushed if the player has
+; pushes left. Anything else stops the player: lava or fire kill. Inside a
+; pipe the step goes on whatever's ahead (check_underfoot steers). After a
+; step, the move ends the cycle (the walk moved everything four times
+; already).
+; In: Y = the action * 2; the carry clear.
 .move
-    TYA                                 ; (action - 7) * 2 with the carry clear...
-    SBC #14 - 1
+    TYA                                 ; (action - ACTION_LEFT) * 2...
+    SBC #2 * ACTION_LEFT - 1            ; (the carry's clear)
     LSR A                               ; ...halved: the direction
     STA facing
     TAY
-    LSR A                               ; the pipe that runs this way
+    LSR A                               ; the pipe that runs this way:
     CLC
     ADC #CELL_PIPE_ACROSS
-    STA work4                           ; C across, D up and down
+    STA work4                           ; across for left and right, down for up and down
+ASSERT DIRECTION_UP = 2 AND DIRECTION_DOWN = 3 AND CELL_PIPE_DOWN = CELL_PIPE_ACROSS + 1
     TYA
     LDX player_x
     LDY player_y
@@ -3943,8 +3946,8 @@ ASSERT SCREEN_COLUMNS / 2 = &10         ; for bit4_mask
     ADC #ACTION_LEFT
     STA pipe_move
 
-; Unless a trigger has called for action 11, step: walk the view a cell
-; (walks, by direction), and see what's ahead now.
+; Unless a trigger has stopped the player (ACTION_STOP), step: walk the view a
+; cell (walks, by direction), and see what's ahead now.
 .move_on
     JSR think                           ; everything else moves
     LDA action                          ; a trigger said stop?
@@ -3965,9 +3968,9 @@ ASSERT SCREEN_COLUMNS / 2 = &10         ; for bit4_mask
     LDA walks + 1, Y
     JSR jump_to
 .move_done
-    PLA                                 ; drop the cell pushed...
-    PLA                                 ; ...and return from player_turn's caller too
-    JMP mark_monsters
+    PLA                                 ; two bytes off the stack: after a step,
+    PLA                                 ; the return to play_cycle, so this ends the
+    JMP mark_monsters                   ; cycle; if stopped, the cell pushed
 
 ; The walk routines, by direction.
 .walks
@@ -3976,9 +3979,11 @@ ASSERT SCREEN_COLUMNS / 2 = &10         ; for bit4_mask
     EQUW walk_up
     EQUW walk_down
 
-; Can the player push the crate (cell 6) in front of them? Only with pushes
-; left, and only into an empty cell.
-; Returns: carry set if it moved.
+; Can the player push the crate in front of them? Only with pushes left, and
+; only into an empty cell.
+; In: A = the cell in front.
+; Out: the carry set if it moved.
+; Clobbers: A, X, Y, work0-work5 and the drawing variables.
 .try_push
     CMP #CELL_CRATE
     BEQ try_push_crate
@@ -3997,7 +4002,9 @@ ASSERT SCREEN_COLUMNS / 2 = &10         ; for bit4_mask
     RTS
 
 ; Push the cell in front of the player a cell further in direction Y, if the
-; cell beyond is empty. Returns: carry set if it moved.
+; cell beyond is empty.
+; Out: the carry set if it moved.
+; Clobbers: A, X, Y, work0-work5 and the drawing variables.
 .push_cell
     STY work2
     TYA
@@ -4013,11 +4020,13 @@ ASSERT SCREEN_COLUMNS / 2 = &10         ; for bit4_mask
     SEC
     RTS
 
-; What the player stands on (A), after the triggers have had their turn: the
-; thing to collect is collected and anything else (fire, a monster) kills,
-; unless the player's in a pipe. In a pipe: at a junction (B), follow the
-; pipe round a corner or straight on; a dead end, or a cell a pipe can't go
-; into, turns the player back.
+; What the player stands on, after the triggers have had their turn. On
+; foot: sulphur is collected, and anything else that isn't floor kills
+; (lava, fire, or whatever a trigger put there). In a pipe: at a junction,
+; follow a pipe round a corner or straight on; ahead, a dead end, or a cell a
+; pipe can't go into, turns the player back, and lava or fire kill.
+; In: A = the cell underfoot.
+; Clobbers: everything.
 .check_underfoot
     STA work0
     LDX pipe_move                       ; in a pipe?
@@ -4027,7 +4036,7 @@ ASSERT SCREEN_COLUMNS / 2 = &10         ; for bit4_mask
     BEQ try_push_done
     CMP #CELL_JUNCTION                  ; a junction?
     BNE pipe_check_ahead
-    LDA #12                             ; anticlockwise first
+    LDA #TURN_ANTICLOCKWISE             ; anticlockwise first
     STA work2
 
 ; Try turning anticlockwise, then clockwise, then straight on, for a pipe
@@ -4039,10 +4048,10 @@ ASSERT SCREEN_COLUMNS / 2 = &10         ; for bit4_mask
     TAY
     LDA turns, Y                        ; a direction
     STA work0
-    LDX #CELL_PIPE_ACROSS               ; C for left or right...
-    CMP #&02
+    LDX #CELL_PIPE_ACROSS               ; across for left or right...
+    CMP #DIRECTION_UP
     BCC pipe_junction_try
-    INX                                 ; ...D for up or down
+    INX                                 ; ...down for up or down
 .pipe_junction_try
     STX work1
     LDX player_x
@@ -4053,10 +4062,11 @@ ASSERT SCREEN_COLUMNS / 2 = &10         ; for bit4_mask
     BEQ pipe_junction_found
     LDA work2                           ; then clockwise, then straight on
     SEC
-    SBC #&04
+    SBC #TURN_ANTICLOCKWISE - TURN_CLOCKWISE
     STA work2
-    BNE pipe_junction_turn
+    BNE pipe_junction_turn              ; (TURN_BACK: not tried)
     BEQ pipe_reverse                    ; no way on: turn back
+ASSERT TURN_ANTICLOCKWISE - TURN_CLOCKWISE = TURN_CLOCKWISE - TURN_AHEAD AND TURN_BACK = 0
 .underfoot_on_foot
     CMP #CELL_SULPHUR                   ; the thing to collect?
     BEQ collect
@@ -4064,8 +4074,8 @@ ASSERT SCREEN_COLUMNS / 2 = &10         ; for bit4_mask
     BNE kill_player
     RTS
 .pipe_junction_found
-    LDA work0                           ; carry set: + 7, the move
-    ADC #ACTION_LEFT - 1
+    LDA work0                           ; the move that way
+    ADC #ACTION_LEFT - 1                ; (the carry's set)
     STA pipe_move
     RTS
 .pipe_check_ahead
@@ -4073,18 +4083,19 @@ ASSERT SCREEN_COLUMNS / 2 = &10         ; for bit4_mask
     BEQ check_deadly
     CMP #CELL_SULPHUR                   ; ...or to collect: carry on
     BEQ check_deadly
-    CMP #CELL_LAVA                      ; 1-9 or F: blocked
+    CMP #CELL_LAVA                      ; walls, crates: blocked
     BCC pipe_reverse
-    CMP #CELL_OBJECT                    ; lava or fire: as below; B-D: carry on
+    CMP #CELL_OBJECT                    ; lava or fire: as below; pipes: carry on
     BCC check_deadly
 .pipe_reverse
     LDY pipe_move                       ; the reverse move
-    LDA reverse_moves - 7, Y
+    LDA reverse_moves - ACTION_LEFT, Y
     STA pipe_move
-    LDA #&00
+    LDA #0                              ; (and on into check_deadly, harmlessly)
     STA work1
 
-; Lava (A) and fire (E) kill.
+; Lava and fire kill.
+; In: A = a cell type.
 .check_deadly
     CMP #CELL_LAVA
     BEQ kill_player
@@ -4095,8 +4106,11 @@ ASSERT SCREEN_COLUMNS / 2 = &10         ; for bit4_mask
 .check_deadly_done
     RTS
 
-; At the start of the player's turn, with A what they stand on: out of the
-; end of a pipe onto the floor, the pipe lets go.
+; At the start of the player's turn, before the triggers, what the player
+; stands on: on foot, as check_underfoot (so that's done before the triggers
+; and after); in a pipe, sulphur is collected, and on the floor, out of the
+; pipe's end, the pipe lets go.
+; In: A = the cell underfoot.
 .check_pipe_end
     LDX pipe_move
     BEQ underfoot_on_foot
@@ -4108,11 +4122,12 @@ ASSERT SCREEN_COLUMNS / 2 = &10         ; for bit4_mask
     STA pipe_move
     JMP draw_player
 
-; Collect the thing the player stands on (cell 7): a point, and when it's the
-; last one, the player spins round with rising tones.
-; Returns: carry clear.
+; Collect the sulphur the player stands on: a point, and when it's the last
+; one needed, the player spins round four times to a falling arpeggio.
+; Out: the carry clear.
+; Clobbers: everything.
 .collect
-    LDA #&00                            ; pipes let go
+    LDA #0                              ; pipes let go
     STA pipe_move
     JSR clear_player_cell               ; it's gone
     JSR draw_player
@@ -4130,14 +4145,14 @@ ASSERT SCREEN_COLUMNS / 2 = &10         ; for bit4_mask
 .collect_spin
     LDA facing                          ; anticlockwise
     CLC
-    ADC #&0C
+    ADC #TURN_ANTICLOCKWISE
     TAY
     LDA turns, Y
     STA facing
     JSR draw_player
-    LDA work1                           ; the note rises
-    SEC
-    SBC #&3F
+    LDA work1                           ; down &3F, wrapping round: four notes
+    SEC                                 ; falling, then four from a semitone
+    SBC #&3F                            ; higher, and so on
     STA work1
     JSR sound_tone
     LDY #&80                            ; a pause
