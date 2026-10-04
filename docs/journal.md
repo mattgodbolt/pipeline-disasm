@@ -557,3 +557,31 @@ Details in the newest section of `docs/notes/levdes.md`.
   back when it exits, so data was presumably meant for a disc of its own.
 - tools/beeb.mjs: `ssd FILE` writes drive 0's disc as it stands, to see what
   a program saved.
+
+## 2026-10-03 23:39 — Merged: why MENU forces start-up option bit 3, and !BOOT's NETV
+
+Details in the newest sections of `docs/notes/basic.md` and
+`docs/notes/loaders.md`.
+
+- `*FX255 8 247` makes sure a BREAK on its own never boots the disc. A B
+  reads its keyboard links only at power-on and CTRL+BREAK, and a plain
+  BREAK keeps the start-up options as MENU set them. So with memory
+  cleared on BREAK (`*FX200 2`), Quit's `CALL !-4`, the BREAK key and PL's
+  resets all stop at BASIC's prompt. In jsbeeb, with links that make BREAK
+  boot, Quit reached BASIC; with line 130 made a no-op, Quit rebooted
+  PIPELINE. A Master treats a memory-clearing BREAK as a power-on and
+  reloads its configuration, so on one configured to BOOT, Quit restarts the
+  game anyway.
+- !BOOT's `?&224=...` puts back the one byte of NETV that Econet's NFS
+  changes when it claims the vector (&FF36 rather than the MOS's &FFA6). In
+  jsbeeb with Econet fitted it changes nothing visible: the NFS ignores the
+  calls PIPELINE makes (OSWORD 0 after each line), and MENU restores every
+  vector but BRKV anyway. The reason for having it is still a guess.
+- Found: on a B with Econet, the game's title-screen L (load another
+  mission) fails. `load_mission`'s service calls wake the NFS, which claims
+  NETV again, and OSWORD 0's call then jumps through the game's code in
+  page &0D. Without Econet, or with NETV poked back, IO loads.
+- jsbeeb's "DFS 1.2" B is Acorn's DNFS (NFS 3.60 + DFS 1.20); every earlier
+  "DFS 1.2" observation was DFS 1.20 in that ROM.
+- tools/beeb.mjs: `--links HEX`, `--econet STATION`, `log ADDR`, `poke`
+  and `break [shift|ctrl]`, merged alongside the Level Designer's `ssd`.
