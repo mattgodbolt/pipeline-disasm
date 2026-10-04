@@ -4562,6 +4562,7 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
 ; Action 1, P: pick up the object in front into the selected slot, or the
 ; last free one; with nothing to collect left, in front of the exit, light
 ; it instead (light_exit).
+; Clobbers: everything.
 .pick_up
     JSR light_exit
     LDA front_cell
@@ -4584,27 +4585,29 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     LDY front_y
     JSR find_object                     ; the object in front
     BCC action_done
-    LDA #&80                            ; off the map
+    LDA #OBJECT_ABSENT                  ; off the map
     STA object_x, Y
     LDY backpack_slot
     STX backpack, Y                     ; into the backpack
     LDX front_x
     LDY front_y
-    LDA #&00
+    LDA #CELL_FLOOR
     JMP set_cell_and_draw               ; and its cell's empty
 
 ; Action 2, D: drop the selected object (or any) into the empty cell in front.
+; Clobbers: everything.
 .drop
     LDY front_cell
     BNE action_done                     ; the cell in front must be empty
     JSR selected_object
-    DEY                                 ; &FF: an empty slot
+    DEY                                 ; EMPTY_SLOT
     STY backpack, X
     STX backpack_slot
     LDX front_x
     LDY front_y
 
 ; Put object A at map cell (X, Y) and draw it.
+; Clobbers: A, X, Y, work0-work5 and the drawing variables.
 .put_object
     STX work2
     STX work4
@@ -4619,12 +4622,12 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
 
 ; The selected object, or if that slot's empty, the one in the highest slot;
 ; with none at all, return from the caller.
-; Returns: A = the object, X = its slot.
+; Out: A = the object, X = its slot.
 .selected_object
     LDX backpack_slot
     LDA backpack, X
     BPL selected_object_done
-    LDX #&03
+    LDX #BACKPACK_SLOTS - 1
 .selected_object_any
     LDA backpack, X                     ; any object
     BPL selected_object_done
@@ -4637,7 +4640,8 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
 
 ; Action 5, T: throw the selected object from the empty cell in front, the
 ; way the player faces, up to io_throw_distance cells (with 0, nothing can be
-; thrown).
+; thrown). OBJECT_NO_THROW doesn't stop it: see fly_thrown.
+; Clobbers: everything.
 .throw
     JSR selected_object
     STX backpack_slot
@@ -4650,14 +4654,16 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
 
 ; Throw object X Y cells from the cell in front: out of the backpack and off
 ; the map, flying as a sprite (move_things moves it a character at a time).
-; Returns: carry set if something was already in flight.
+; In: work0 = its slot in the backpack.
+; Out: the carry set if something was already in flight.
+; Clobbers: A, X, Y.
 .launch_object
     SEC                                 ; already something in flight?
     LDA thrown_direction
     BNE throw_done
     STX thrown_object
     STY throw_range
-    ROR A                               ; &80: the slot's empty
+    ROR A                               ; (THROWN_NONE and the carry) &80: the slot's empty
     LDY work0
     STA backpack, Y
     LDA front_x                         ; from the cell in front, in characters
@@ -4672,23 +4678,25 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     ASL A
     ASL A
     TAY
-    LDA #&80                            ; off the map
+    LDA #OBJECT_ABSENT                  ; off the map
     STA object_x, Y
     JSR object_icon_picture             ; it flies as its icon
     STX thrown_picture
     STY thrown_picture_high
-    LDX facing                          ; the way the player faces, + 1
+    LDX facing                          ; THROWN_*: the way the player faces, + 1
     INX
     STX thrown_direction
     CLC
 .throw_done
     RTS
 
-; Once a cycle: move a thrown object a cell. It lands when it runs out of
-; range, comes to something that isn't empty or would hit the player; the
-; cell it lands against (in thrown_picture now) and its direction then count
-; for its triggers (try_object_trigger goes to throw_trigger). Unless used up,
-; it lands in the empty cell it reached.
+; Once a cycle (think): move a thrown object a cell. It lands when it runs
+; out of range, comes to something that isn't empty, or would hit the player;
+; the cell it lands against (in thrown_picture now: floor for the player or
+; the end of its range) and its direction then count for its triggers
+; (try_object_trigger goes to throw_trigger), unless it's OBJECT_NO_THROW.
+; Unless used up, it lands in the empty cell it reached.
+; Clobbers: everything.
 .fly_thrown
     LDX thrown_x                        ; its cell
     LDY thrown_y
@@ -4696,13 +4704,13 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     LDA thrown_direction                ; in flight?
     BEQ throw_done
     SEC
-    SBC #&01
+    SBC #1                              ; the direction
     PHA
     JSR step                            ; the next cell
     PLA
     CPX player_x                        ; the player?
     BNE fly_thrown_ahead
-    LDA #&00
+    LDA #CELL_FLOOR
     CPY player_y
     BEQ thrown_lands
 .fly_thrown_ahead
@@ -4718,7 +4726,7 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     LSR thrown_y
     LDX thrown_x
     LDY thrown_y
-    LDA #&00                            ; rub out its sprite
+    LDA #CELL_FLOOR                     ; rub out its sprite
     JSR set_cell_and_draw
     LDA #LO(throw_trigger)              ; its triggers are throw triggers
     STA try_object_trigger_jump + 1
@@ -4728,17 +4736,17 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     LDX thrown_object
     TXA
     PHA
-    ORA #&80
+    ORA #&80                            ; landing (find_carried looks for this)
     STA thrown_object
     ASL A
     ASL A
     TAY
     LDA object_flags, Y                 ; its flags
     SEC
-    BMI thrown_landed                   ; bit 7: it does nothing thrown
+    BMI thrown_landed                   ; OBJECT_NO_THROW: no triggers
     JSR fire_object_triggers
 .thrown_landed
-    LDX #&00
+    LDX #THROWN_NONE
     STX thrown_direction
     DEX
     STX thrown_object
@@ -4748,32 +4756,35 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     LDY thrown_y
     JMP put_object
 
-; Try object X's triggers (X, X + 8, X + 16 and X + 24), A being its uses and
-; flags: through use_trigger or throw_trigger, as patched into
-; try_object_trigger. If one fires, a use is used: 32 and over never run out,
-; and at none, with bit 6, the object is gone.
-; Returns: A negative (with the carry set) if nothing fired; else the carry
-; clear if the object's gone.
+; Try object X's triggers (X, X + OBJECTS, X + 2 * OBJECTS, X + 3 *
+; OBJECTS), through use_trigger or throw_trigger, as patched into
+; try_object_trigger. If one fires, a use is used: OBJECT_NO_CHARGES's never
+; run out, and an OBJECT_VANISHES object with none left is gone.
+; In: A = its uses and flags.
+; Out: the carry clear if the object's gone. With the carry set: A negative
+; if its triggers were tried and none fired; A = 0 if it had no uses left,
+; and none were tried.
+; Clobbers: everything.
 .fire_object_triggers
-    AND #&3F                            ; no uses left: nothing
+    AND #OBJECT_USES                    ; no uses left: nothing
     SEC
     BEQ throw_done
-    LDA #&00
+    LDA #0
     STA triggers_fired
     TXA
     PHA
     JSR try_object_trigger
     PLA
     PHA
-    ORA #&08                            ; its four triggers
+    ORA #1 * OBJECTS                    ; its four triggers
     JSR try_object_trigger
     PLA
     PHA
-    ORA #&10
+    ORA #2 * OBJECTS
     JSR try_object_trigger
     PLA
     PHA
-    ORA #&18
+    ORA #3 * OBJECTS
     JSR try_object_trigger
     PLA
     TAX
@@ -4784,14 +4795,14 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     BEQ fire_object_nothing
     LDA object_flags, Y
     PHA
-    AND #&C0
+    AND #OBJECT_VANISHES OR OBJECT_NO_THROW
     STA work0
     PLA
-    AND #&3F
+    AND #OBJECT_USES
     BEQ fire_object_uses
-    CMP #&20                            ; 32 and up: never used up
+    CMP #OBJECT_NO_CHARGES              ; 32 and up: never used up
     BCS fire_object_done
-    SBC #&00                            ; a use less
+    SBC #0                              ; a use less (the carry's clear)
 .fire_object_uses
     SEC
     PHA
@@ -4801,22 +4812,24 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     BNE fire_object_done
     LDA work0
 .fire_object_vanishes
-    AND #&40                            ; used up: bit 6 says it goes
+    AND #OBJECT_VANISHES                ; used up: does it go?
     BEQ fire_object_done
     CLC
 .fire_object_done
     RTS
+ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
 .fire_object_nothing
     SEC
     LDA #&80
     RTS
 .try_object_trigger
-    LDY #&80                            ; triggers that need an object
+    LDY #PUZZLE_USES_OBJECT             ; triggers fired by an object
 .try_object_trigger_jump
     JMP do_nothing                      ; self-modified: use_trigger or throw_trigger
 
 ; Action 6, Return: use the selected object where the player stands, facing
 ; the way they do.
+; Clobbers: everything.
 .use
     JSR selected_object
     STX backpack_slot
@@ -4832,13 +4845,14 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     JSR fire_object_triggers            ; fire them
     BMI delay_done                      ; none fired
     BCS use_pause                       ; kept
-    ASL A                               ; gone: &80, an empty slot
+    ASL A                               ; gone: OBJECT_VANISHES * 2, an empty slot
     LDX backpack_slot
     STA backpack, X
 .use_pause
     LDY #&C0
 
-; Wait Y * 256 turns of a DEX loop. Clobbers: X, Y.
+; Wait Y * 256 turns of a DEX loop (Y = 0: 65536).
+; Clobbers: X, Y.
 .delay
     LDX #&00
 .delay_loop
@@ -4849,16 +4863,16 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
 .delay_done
     RTS
 
-; Trigger A for a thrown object that has landed: a trigger that needs an
-; object (flags bit 7), not yet fired (bit 5), at the cell it landed in (or
-; anywhere, a negative x or y), and meeting the condition (args 3): bit 7, it
-; flew direction bits 4-5; bit 6, it landed against cell type bits 0-3.
-; Y is the trigger's offset into trigger_args: trigger * 4.
+; Try trigger A for a thrown object that has landed: one fired by an object
+; (PUZZLE_USES_OBJECT), not fired already (PUZZLE_OFF), at the cell it landed
+; in (or anywhere along an IGNORE coordinate), and meeting the condition: the
+; direction it flew, the cell type it landed against.
+; Clobbers: everything.
 .throw_trigger
     TAX
-    LDA trigger_flags, X                ; a trigger that needs an object...
-    EOR #&80                            ; ...not yet fired
-    AND #&A0
+    LDA trigger_flags, X                ; fired by an object...
+    EOR #PUZZLE_USES_OBJECT             ; ...not yet fired
+    AND #PUZZLE_USES_OBJECT OR PUZZLE_OFF
     BNE delay_done
     INC triggers_fired                  ; tried
     TXA
@@ -4876,11 +4890,11 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
 .throw_trigger_condition
     TYA
     ASL A
-    TAY
+    TAY                                 ; the trigger * 4, for trigger_args
     LDA trigger_condition, Y            ; the condition
     STA work0
-    BPL throw_trigger_cell              ; no direction needed
-    AND #&30
+    BPL throw_trigger_cell              ; CONDITION_DIRECTION?
+    AND #CONDITION_DIRECTION_BITS
     LSR A
     LSR A
     LSR A
@@ -4889,14 +4903,14 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     BNE trigger_no_match
     LDA work0
 .throw_trigger_cell
-    BIT bit6_mask                       ; a cell type needed?
+    BIT bit6_mask                       ; CONDITION_CELL?
     BEQ throw_trigger_fires
-    AND #&0F
+    AND #CONDITION_CELL_BITS
     CMP thrown_picture                  ; what it landed against?
     BNE trigger_no_match
 
-; It fires: its action works on the cell beyond where it landed, in the
-; direction it flew.
+; It fires: its action works on the cell the object hit, beyond where it
+; landed (front_x, front_y), with that cell's type and the direction it flew.
 .throw_trigger_fires
     STY work0
     LDA thrown_picture
@@ -4913,16 +4927,18 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     LDA thrown_direction
     BPL trigger_fires
 
-; Trigger A, for the player: Y is 0 for one that fires when walked on (flags
-; bit 7 clear), &80 for one that needs an object used. Not yet fired, where
-; the player is, and the condition: bit 7, facing direction bits 4-5; bit 6,
-; facing cell type bits 0-3.
+; Try trigger A for the player: one fired by walking onto it, or by using an
+; object (Y), not fired already, where the player is (or anywhere along an
+; IGNORE coordinate), and meeting the condition: the way the player faces,
+; the type of the cell in front.
+; In: Y = 0 for walking, PUZZLE_USES_OBJECT for an object used.
+; Clobbers: everything.
 .use_trigger
     INC triggers_fired                  ; tried
     TAX
     TYA                                 ; walked on or used, matching...
     EOR trigger_flags, X
-    AND #&A0                            ; ...and not yet fired
+    AND #PUZZLE_USES_OBJECT OR PUZZLE_OFF ; ...and not yet fired
     BNE trigger_no_match
     TXA
     ASL A
@@ -4939,11 +4955,11 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
 .use_trigger_condition
     TYA
     ASL A
-    TAY
+    TAY                                 ; the trigger * 4, for trigger_args
     LDA trigger_condition, Y            ; the condition
     STA work0
-    BPL use_trigger_cell                ; no direction needed
-    AND #&30
+    BPL use_trigger_cell                ; CONDITION_DIRECTION?
+    AND #CONDITION_DIRECTION_BITS
     LSR A
     LSR A
     LSR A
@@ -4955,9 +4971,9 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     BNE trigger_fails
     LDA work0
 .use_trigger_cell
-    BIT bit6_mask                       ; a cell type needed?
+    BIT bit6_mask                       ; CONDITION_CELL?
     BEQ use_trigger_fires
-    AND #&0F
+    AND #CONDITION_CELL_BITS
     CMP front_cell                      ; the cell in front?
     BNE trigger_fails
 .use_trigger_fires
@@ -4965,26 +4981,30 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     STA work5
     LDA facing
 
-; The trigger fires: flags bit 6 needs everything collected first. Bit 4 lets
-; it fire again; without it, bit 5 marks it fired. Its action is the flags'
-; low nibble, with the trigger's arguments, the cell it's facing in work5 and
-; the direction in work4.
+; The trigger fires, if PUZZLE_COUNTS_COLLECTS doesn't hold it back until
+; everything's collected; unless it's PUZZLE_REUSABLE, it's marked PUZZLE_OFF
+; (before its action, so one whose action fails is spent all the same). Its
+; action, the flags' low nibble, gets the trigger's arguments (Y = the
+; trigger * 4, for trigger_arguments), the cell it's facing in work5 and the
+; direction in work4. Then front_x, front_y and front_cell are looked at
+; again.
+; In: A = the direction; X = the trigger; Y = the trigger * 4.
 .trigger_fires
     STA work4
     LDA trigger_flags, X
     STA work2
-    BIT bit6_mask                       ; only once everything's collected?
+    BIT bit6_mask                       ; PUZZLE_COUNTS_COLLECTS?
     BEQ trigger_once
     LDA to_collect
     BNE trigger_fails
     LDA work2
 .trigger_once
-    BIT bit4_mask                       ; may fire again?
+    BIT bit4_mask                       ; PUZZLE_REUSABLE?
     BNE trigger_action
-    ORA #&20                            ; fired
+    ORA #PUZZLE_OFF
     STA trigger_flags, X
 .trigger_action
-    AND #&0F                            ; the action
+    AND #TRIGGER_ACTION
     ASL A
     TAX
     LDA trigger_actions, X
@@ -5002,7 +5022,8 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     BCS trigger_fails
     BCC sound_trigger
 
-; An action that doesn't happen: the trigger didn't fire after all.
+; An action that doesn't happen, after it's pushed a byte or two (or with its
+; return address to drop): the trigger didn't fire after all.
 .trigger_fails_pop2
     PLA
 .trigger_fails_pop
