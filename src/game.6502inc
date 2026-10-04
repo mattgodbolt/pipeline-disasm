@@ -1,0 +1,247 @@
+; Constants for H.GAME (src/hidden_game.6502): its screen and pictures, what
+; the numbers in its data mean, and some OS numbers the shared includes don't
+; have yet. The game INCLUDEs this inside its own scope, after io.6502inc
+; (which brings leveldata.6502inc: CELL_*, DIRECTION_*, OBJECT_*, PUZZLE_* and
+; the rest of a level's shared names) and osconst.6502inc.
+
+; ---------------------------------------------------------------------------
+; OS numbers (candidates for osconst.6502inc).
+
+OSBYTE_WAIT_VSYNC         = &13   ; *FX19
+OSBYTE_ACKNOWLEDGE_ESCAPE = &7E
+OSBYTE_SERVICE_CALL       = &8F   ; X = the service call, Y its argument
+SERVICE_CLAIM_ABSOLUTE    = 1     ; claim absolute workspace
+SERVICE_CLAIM_PRIVATE     = 2     ; claim private workspace
+OSWORD_SOUND              = &07   ; YX: channel, amplitude, pitch, duration (2 bytes each)
+OSFILE_LOAD               = &FF
+
+; Where the OS keeps the envelopes ENVELOPE defines, 16 bytes each (a
+; candidate for os.6502inc).
+MOS_ENVELOPES = &08C0
+
+; The "output buffer empty" event: X is the buffer, and the sound channels'
+; buffers are 4-7.
+EVENT_OUTPUT_EMPTY = 0
+BUFFER_SOUND_0     = 4
+
+; Internal key numbers (osconst.6502inc has KEY_S; INKEY_TEST makes INKEY's).
+KEY_SHIFT = &00
+KEY_T     = &23
+KEY_SPACE = &62
+
+; VDU codes.
+VDU_TEXT_CURSOR   = 4     ; text at the text cursor
+VDU_ENABLE        = 6
+VDU_BACKSPACE     = 8
+VDU_RIGHT         = 9     ; cursor right: a space that doesn't paint
+VDU_COLOUR        = 17    ; COLOUR n; n + COLOUR_BACKGROUND for the background
+VDU_PALETTE       = 19    ; VDU 19, logical, physical, 0, 0, 0
+VDU_DISABLE       = 21
+VDU_MODE          = 22
+VDU_DEFINE        = 23    ; VDU 23, 0, register, value, 0...: a CRTC register
+VDU_RESET_WINDOWS = 26
+VDU_TAB           = 31    ; VDU 31, x, y
+VDU_DELETE        = 127   ; back a character and blank it
+COLOUR_BACKGROUND = &80
+
+; 6845 CRTC registers.
+CRTC_HORIZONTAL_DISPLAYED = 1
+CRTC_HSYNC_POSITION       = 2
+CRTC_VERTICAL_DISPLAYED   = 6
+CRTC_VSYNC_POSITION       = 7
+CRTC_CURSOR_START         = 10    ; bits 5-6 = 1: no cursor
+CRTC_START_HIGH           = 12    ; the screen's start address, in units of 8 bytes
+CRTC_START_LOW            = 13
+
+; Written to the system VIA's port B: addressable latch bit 5 (C1) clear.
+; With bit 4 set, as MODE 5 leaves it, the screen wraps round at 8K.
+SCREEN_WRAP_8K = &05
+
+; Opcodes the game looks for or writes.
+OPCODE_RTI            = &40
+OPCODE_LDX_IMMEDIATE  = &A2
+OPCODE_NOP            = &EA
+
+; ---------------------------------------------------------------------------
+; The screen: MODE 5 reprogrammed to 32 x 32 character cells in 8K, which the
+; hardware scrolls and wraps round. A character cell is 4 pixels across and 8
+; lines down, a byte a line; a character row is 32 of them.
+
+SCREEN         = &6000
+SCREEN_SIZE    = &2000
+SCREEN_END     = SCREEN + SCREEN_SIZE
+CHAR_BYTES     = 8
+ROW_BYTES      = &100
+SCREEN_COLUMNS = ROW_BYTES / CHAR_BYTES
+SCREEN_ROWS    = SCREEN_SIZE / ROW_BYTES
+ASSERT SCREEN_END = &8000         ; loops end when the high byte goes negative
+
+; Text goes through the OS, which still thinks the screen is MODE 5's: from
+; &5800, rows of 320 bytes, characters 16 bytes (two of the game's character
+; cells) across. So TAB(x, y) lands at OS_SCREEN + 320y + 16x, which on the
+; game's screen (starting at SCREEN, as on the title and backpack screens) is
+; a character row and column; a TAB to the OS's rows 0-6 would land below
+; SCREEN, in the map. TEXT_AT sends the TAB for a column and row of the
+; game's screen; only even columns can be reached.
+OS_SCREEN      = &5800
+OS_ROW_BYTES   = 320
+OS_CHAR_BYTES  = 16
+FUNCTION text_offset(column, row) = SCREEN - OS_SCREEN + row * ROW_BYTES + column * CHAR_BYTES
+MACRO TEXT_AT column, row
+    ASSERT text_offset(column, row) MOD OS_CHAR_BYTES = 0, "text can't start at column ", column
+    EQUB VDU_TAB, (text_offset(column, row) MOD OS_ROW_BYTES) DIV OS_CHAR_BYTES, text_offset(column, row) DIV OS_ROW_BYTES
+ENDMACRO
+
+; ---------------------------------------------------------------------------
+; The map's pictures (io.6502inc has the layout of IO, the mission, and
+; leveldata.6502inc the map's).
+
+; A map cell is drawn as a picture of 4 x 4 character cells, stored a column
+; at a time; an object's icon is 2 x 2, drawn in the middle of a floor
+; picture. The view is 8 map cells across and down, the player in the middle;
+; it's offset by half a cell, so half a cell more shows at each edge.
+CHARS_PER_CELL       = 4
+PLAYER_CHAR          = (SCREEN_COLUMNS - CHARS_PER_CELL) / 2 ; the player's top left, from the view's
+PICTURE_BYTES        = CHARS_PER_CELL * CHARS_PER_CELL * CHAR_BYTES
+PICTURE_COLUMN_BYTES = CHARS_PER_CELL * CHAR_BYTES
+ICON_BYTES           = PICTURE_BYTES / 4
+ICON_COLUMN_BYTES    = PICTURE_COLUMN_BYTES / 2
+VIEW_CELLS           = SCREEN_COLUMNS / CHARS_PER_CELL
+
+; Pictures by number from io_tiles: the cell types' (0-15), the object icons
+; four to a picture (16-19), the player facing each way (20-23), and the
+; second pictures of four cell types (24-27). The monsters are drawn with cell
+; type E's picture and the one after it (F's, which isn't otherwise shown).
+FUNCTION tile(type) = io_tiles + type * PICTURE_BYTES
+FUNCTION icon(n) = io_object_icons + n * ICON_BYTES
+FUNCTION player_facing(direction) = io_player + direction * PICTURE_BYTES
+EXIT_ICON       = 15
+FIRST_ALTERNATE = (io_alternates - io_tiles) DIV PICTURE_BYTES
+ALTERNATES      = 4       ; cell types with a second picture
+
+; ---------------------------------------------------------------------------
+; Directions are DIRECTION_* (0-3), as the player faces, monsters go and
+; direction_dx and _dy step. Those tables go on to the four diagonals (4-7),
+; which only an explosion steps to, and DIRECTION_NONE, no step at all. A
+; thrown object's direction is one of DIRECTION_* plus one, so that 0 can mean
+; nothing's in flight.
+DIRECTION_NONE = 8
+THROWN_NONE  = 0
+THROWN_LEFT  = DIRECTION_LEFT + 1
+THROWN_RIGHT = DIRECTION_RIGHT + 1
+THROWN_UP    = DIRECTION_UP + 1
+THROWN_DOWN  = DIRECTION_DOWN + 1
+
+; Offsets into the turns table: turned back, straight on, clockwise and
+; anticlockwise. A monster's turning preferences are four 2-bit fields, each
+; one of these divided by 4.
+TURN_BACK          = 0
+TURN_AHEAD         = 4
+TURN_CLOCKWISE     = 8
+TURN_ANTICLOCKWISE = 12
+
+; ---------------------------------------------------------------------------
+; The player's actions, as action_table has them. The action keys are tested
+; in this order, so the game keeps them in action_keys this way round.
+ACTION_NONE     = 0
+ACTION_PICK_UP  = 1     ; P
+ACTION_DROP     = 2     ; D
+ACTION_MAP      = 3     ; M
+ACTION_BACKPACK = 4     ; CTRL
+ACTION_THROW    = 5     ; T
+ACTION_USE      = 6     ; Return
+ACTION_LEFT     = 7     ; then ACTION_LEFT + each direction
+ACTION_RIGHT    = 8
+ACTION_UP       = 9
+ACTION_DOWN     = 10
+ACTION_STOP     = 11    ; a trigger stopped the player: nothing
+
+; The order MENU leaves its ten keys in, as negative INKEY numbers.
+MENU_KEY_LEFT     = 0
+MENU_KEY_RIGHT    = 1
+MENU_KEY_UP       = 2
+MENU_KEY_DOWN     = 3
+MENU_KEY_PICK_UP  = 4
+MENU_KEY_DROP     = 5
+MENU_KEY_USE      = 6
+MENU_KEY_THROW    = 7
+MENU_KEY_BACKPACK = 8
+MENU_KEY_MAP      = 9
+MENU_KEYS         = 10
+
+; ---------------------------------------------------------------------------
+; A level's monsters, objects and triggers, as the game keeps them.
+
+; Monsters (MONSTERS): x and y in character cells (4 to a map cell), a
+; direction, and turning preferences. A direction plus MONSTER_STUCK is a
+; monster that couldn't move; MONSTER_GONE and up, one that isn't out.
+MONSTER_BYTES = 4
+MONSTER_STUCK = 4
+MONSTER_GONE  = 8
+
+; Objects (OBJECTS): x, y (x OBJECT_ABSENT while carried or in flight), an
+; icon, and uses and flags. The game reads the uses as bits 0-5, so that
+; OBJECT_NO_CHARGES makes 32 or more, which never run out; OBJECT_NO_THROW's
+; object can still be thrown, but its triggers aren't tried when it lands.
+OBJECT_BYTES = 4
+OBJECT_USES  = &3F
+
+; The backpack: a slot holds an object's number, or is negative for empty.
+; On the backpack screen its slots are BACKPACK_SPACING characters apart.
+BACKPACK_SLOTS   = 4
+EMPTY_SLOT       = &FF
+BACKPACK_SPACING = 6
+
+; Triggers (the designer's puzzles: PUZZLES of them): a flags byte, a place,
+; and four arguments. Object n's triggers are n, n + OBJECTS, n + 2 * OBJECTS
+; and n + 3 * OBJECTS. The flags' low nibble is the action (PUZZLE_*, an index
+; into trigger_actions), the rest PUZZLE_REUSABLE and the like; IGNORE in a
+; place's x or y matches anywhere along it.
+TRIGGER_ACTION = &0F
+; The fourth argument is the condition.
+CONDITION_DIRECTION      = &80    ; facing (or thrown) the direction in...
+CONDITION_DIRECTION_BITS = &30    ; ...these bits
+CONDITION_CELL           = &40    ; facing (or landing against) the cell type in...
+CONDITION_CELL_BITS      = &0F    ; ...these bits
+
+START_LIVES = 3
+LEVEL_SETUP_BYTES = LEVEL_FIELD_SIZES[4]  ; a level's setup: start_x to alternate_cells
+
+; How far through a level the player is (stage).
+STAGE_COLLECTING = 0
+STAGE_EXIT_LIT   = 1    ; just lit: the time left is scored
+STAGE_ESCAPING   = 2    ; a few clock ticks to get clear
+STAGE_DONE       = 3
+
+; ---------------------------------------------------------------------------
+; Sound.
+
+SOUND_FLUSH  = &10        ; in a channel number: flush the queue first
+SOUND_SYNC_1 = &01        ; a channel number's high byte: wait for one other channel
+CHANNEL_NOISE   = 0
+CHANNEL_EFFECTS = 3
+
+; Envelopes 1 and 2 are the tune's (each voice's channel is also its
+; envelope); 3 and 4 the sound effects', which use 1 and 2 as well.
+ENVELOPE_VOICE_1 = 1
+ENVELOPE_VOICE_2 = 2
+ENVELOPE_TONE    = 3
+ENVELOPE_BEEP    = 4
+
+; The tune: pitches go up 4 to a semitone.
+TUNE_VOICE_BYTES = 32     ; a voice's notes...
+TUNE_NOTES       = 30     ; ...of which this many are played
+TUNE_LOWEST      = &21
+SEMITONE         = 4
+OCTAVE           = 12 * SEMITONE
+TRANSPOSE_FOURTH = 5 * SEMITONE
+
+; ---------------------------------------------------------------------------
+; While IO loads, this much of the game (from the NMI routine's page, where
+; the DFS's workspace was) is swapped out with the start of the screen.
+SWAP_START = MOS_NMI_ROUTINE
+SWAP_PAGES = &10
+SWAP_END   = SWAP_START + SWAP_PAGES * &100
+
+; The longest mission file name the title screen's L takes.
+FILENAME_LENGTH = 12
