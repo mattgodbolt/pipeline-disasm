@@ -20,12 +20,16 @@
 ;   command through OSWORD &7F, below DFS, and ignores the result, so it
 ;   doesn't care whether the marks are there - which is why the .ssd runs.
 ;
-; It also copes with this 40-track disc in an 80-track drive. A DFS can be
-; set to double-step its own reads, but OSWORD &7F's commands reach the 8271
-; as they are, a track per step. So it reads one sector ID off track 4, and
-; if the ID doesn't say 4 the drive has stepped half as far as asked: from
-; then on it seeks to twice each track and tells the 8271 which track it's
-; really on (see read_next_track).
+; It also copes with this 40-track disc in an 80-track drive. OSWORD &7F's
+; commands reach the 8271 as they are (DFS 1.2 passes them on unchanged),
+; and the 8271 steps the head one of the drive's tracks for each it counts.
+; So it reads one sector ID off track 4, and if the ID doesn't say 4 the
+; head has gone half as far into the disc as asked: from then on it seeks to
+; twice each track and tells the 8271 which track it's really on (see
+; read_next_track). Seen in jsbeeb, with the drive stepping as an 80-track
+; drive does: each stub sets double_step and reads its run correctly. DFS
+; 1.2 doesn't double-step its own reads, so with it the game goes on to fail
+; loading IO ("Disk fault 18"); this is presumably for a DFS that does.
 ;
 ; Parameter blocks for OSWORD &7F (8271 command) all have the same shape:
 ;   +0      drive (0 here: the stubs only ever load from drive 0)
@@ -36,8 +40,13 @@
 ;   +7..    the n parameters
 ;   +7+n    result, written back by the call (0 = all well)
 
-; I/O processor memory, as the top half of a 32-bit OSWORD &7F address.
+; The drive every block names: the stubs only ever load from drive 0.
+DRIVE = 0
+
+; I/O processor memory, as the top half of a 32-bit OSWORD &7F address, and
+; the address given to a command that moves no data.
 IO_PROCESSOR = &FFFF0000
+NO_DATA = &FFFFFFFF
 
 ; DFS single density: ten 256-byte sectors per track.
 SECTORS_PER_TRACK = 10
@@ -61,8 +70,9 @@ sectors_left = &72          ; sectors of the run not yet asked for
 ; Entry, at the stub's load address, from *RUN (MENU's */GAME, */GRAPHIC or
 ; */LEVDES). Never returns: ends by jumping into the program it loaded.
 .start
-    ; seek_track starts at 0, so this recalibrates: the head goes back to
-    ; track 0, and the probe below is a known number of steps.
+    ; seek_track starts at 0, so this recalibrates: a seek to track 0 steps
+    ; out until the drive signals track 0, so the probe below is a known
+    ; number of steps.
     JSR seek
     LDX #LO(read_id_block)
     LDY #HI(read_id_block)
@@ -149,22 +159,25 @@ sectors_left = &72          ; sectors of the run not yet asked for
     BNE read_next_track
     JMP hidden_entry
 
-; Seek drive 0's head to seek_track.
-; Clobbers A, X, Y (and whatever OSWORD does).
+; Seek drive 0's head.
+; In: seek_track = the track, as the 8271 counts them.
+; Clobbers: A, X, Y.
 .seek
     LDX #LO(seek_block)
     LDY #HI(seek_block)
     ; Fall through.
 
-; Issue the 8271 command whose parameter block is at YX; on return the
-; block's result byte says how it went.
-; Clobbers A, X, Y.
+; Issue an 8271 command through OSWORD &7F.
+; In: YX = its parameter block.
+; Out: the block's result byte says how it went.
+; Clobbers: A, X, Y.
 .disc_command
     LDA #OSWORD_DISC_COMMAND
     JMP OSWORD
 
-; Write track_register_value into the 8271's idea of drive 0's track.
-; Clobbers A, X, Y.
+; Tell the 8271 which track drive 0's head is on.
+; In: track_register_value = the track.
+; Clobbers: A, X, Y.
 .set_track_register
     LDX #LO(track_register_block)
     LDY #HI(track_register_block)
@@ -174,8 +187,8 @@ sectors_left = &72          ; sectors of the run not yet asked for
 
 ; Seek: one parameter, the track.
 .seek_block
-    EQUB 0
-    EQUD &FFFFFFFF
+    EQUB DRIVE
+    EQUD NO_DATA
     EQUB 1, FDC_SEEK
 .seek_track
     EQUB 0
@@ -183,8 +196,8 @@ sectors_left = &72          ; sectors of the run not yet asked for
 
 ; Write special register: the register number and its new value.
 .track_register_block
-    EQUB 0
-    EQUD &FFFFFFFF
+    EQUB DRIVE
+    EQUD NO_DATA
     EQUB 2, FDC_WRITE_SPECIAL, FDC_REG_TRACK_DRIVE_0
 .track_register_value
     EQUB 0
@@ -194,7 +207,7 @@ sectors_left = &72          ; sectors of the run not yet asked for
 ; buffer address's page is stepped on after each track, so the run lands
 ; contiguously from hidden_load.
 .read_block
-    EQUB 0
+    EQUB DRIVE
 .read_address
     EQUD IO_PROCESSOR + hidden_load
     EQUB 3, FDC_READ_DATA_AND_DELETED
@@ -210,7 +223,7 @@ sectors_left = &72          ; sectors of the run not yet asked for
 ; Read ID: track, a zero the 8271 expects, and how many IDs to read (one).
 ; Each ID is four bytes - track, head, sector, size code - into id_buffer.
 .read_id_block
-    EQUB 0
+    EQUB DRIVE
     EQUD IO_PROCESSOR + id_buffer
     EQUB 3, FDC_READ_ID
     EQUB PROBE_TRACK, 0, 1
