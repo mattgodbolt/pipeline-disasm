@@ -78,7 +78,7 @@ FUNCTION palette_entry(logical, physical) = logical * 16 + physical
 ; The screen: MODE 1 narrowed to 64 columns of 8 bytes (four pixels), so a
 ; character row is 512 bytes, and 32 rows fill &3000-&6FFF. A map cell is a
 ; column's byte by four scan lines, two cells to a character row.
-screen          = &3000
+screen          = MODE1_SCREEN
 SCREEN_COLUMNS  = 64
 SCREEN_ROWS     = 32
 SCREEN_ROW      = SCREEN_COLUMNS * 8
@@ -88,11 +88,10 @@ FUNCTION screen_address(column, row) = screen + row * SCREEN_ROW + column * 8
 ; The OS's text output still thinks the screen is MODE 1's 40 columns of 640
 ; bytes, so to print at a column and row of ours, TAB to the OS character
 ; that lands there.
-OS_ROW = 640
 FUNCTION os_tab(column, row)
     offset = row * SCREEN_ROW + column * 8
-    ASSERT offset MOD 16 == 0, "no OS character starts at ", column, ", ", row
-= {VDU_TAB, (offset MOD OS_ROW) DIV 16, offset DIV OS_ROW}
+    ASSERT offset MOD MODE1_CHAR_BYTES == 0, "no OS character starts at ", column, ", ", row
+= {VDU_TAB, (offset MOD MODE1_ROW_BYTES) DIV MODE1_CHAR_BYTES, offset DIV MODE1_ROW_BYTES}
 
 ; The message box: character rows 14-17 and columns 2-61. print_line1 and
 ; print_line2 print on its first and third rows, four columns in.

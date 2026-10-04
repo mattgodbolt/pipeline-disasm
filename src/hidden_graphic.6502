@@ -86,9 +86,10 @@ UPSIDE_DOWN    = &80            ; in animation_frames: show the frame turned ove
 ; The screen: MODE 5, where a character row is 40 cells of 8 bytes, each cell
 ; four pixels (a byte) across and eight lines down. A MODE 5 text character
 ; is two cells wide; the designer's own font is one.
-SCREEN = &5800
+SCREEN = MODE5_SCREEN
 CELL   = 8
-ROW    = 40 * CELL
+ROW    = MODE5_ROW_BYTES
+ASSERT ROW = 40 * CELL
 
 graphics      = &4000           ; the graphics set
 object_names  = graphics + SET_NAMES

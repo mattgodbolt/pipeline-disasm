@@ -24,9 +24,6 @@
 INCLUDE "os.6502inc"
 INCLUDE "osconst.6502inc"
 
-SCREEN_MODE1 = &3000        ; MODE 1 screen memory, to the end of RAM at &8000
-SCREEN_END = &8000
-
 ; Where the unpacker runs: the page below the screen, free: the menu's BASIC
 ; program and its variables (LOMEM reset to TOP) end well below it.
 RELOCATED_PAGE = &2F00
@@ -67,7 +64,7 @@ SECTION title, filename="TITLE", org=&6300, load=&6300, exec=&7900
 
 ; Assembled for where it runs, carried here.
 SECTION title_relocated, org=RELOCATED_PAGE + LO(P%)
-; Unpack the picture into the screen from SCREEN_MODE1, clear the bottom
+; Unpack the picture into the screen from MODE1_SCREEN, clear the bottom
 ; 2K, flush the keyboard and return to BASIC. X stays 0 for (packed,X) except
 ; while it counts a run.
 .unpack
@@ -78,7 +75,7 @@ SECTION title_relocated, org=RELOCATED_PAGE + LO(P%)
     STA screen_ptr
     LDA #HI(picture)
     STA packed+1
-    LDA #HI(SCREEN_MODE1)
+    LDA #HI(MODE1_SCREEN)
     STA screen_ptr+1
 .next_code
     LDA (packed, X)
@@ -131,7 +128,7 @@ SECTION title_relocated, org=RELOCATED_PAGE + LO(P%)
     BNE clear_byte
     INC clear_ptr+1
     LDA clear_ptr+1
-    CMP #HI(SCREEN_END)
+    CMP #HI(SCREEN_MEMORY_END)
     BNE clear_page
     LDA #OSBYTE_FLUSH_BUFFERS
     LDX #1                      ; the input buffer: no keys typed during this

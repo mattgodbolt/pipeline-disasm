@@ -15,17 +15,15 @@
 ; pixels, pixel p's colour taking bit 7-p as its high bit and bit 3-p as its
 ; low. The picture fills the top 27 character rows; the last five are blank.
 
-SCREEN_MODE5 = &5800
-SCREEN_END = &8000
-MODE5_ROW_BYTES = 320
+INCLUDE "osconst.6502inc"
 
-SECTION screen, filename="SCREEN", org=SCREEN_MODE5, load=&5800, exec=&5800
+SECTION screen, filename="SCREEN", org=MODE5_SCREEN, load=&5800, exec=&5800
 .loading_screen
 {
 .picture
     INCBIN "../data/screen.bin"
-    ASSERT P% = SCREEN_MODE5 + 27 * MODE5_ROW_BYTES
+    ASSERT P% = MODE5_SCREEN + 27 * MODE5_ROW_BYTES
 .blank_rows
-    SKIPTO SCREEN_END
+    SKIPTO SCREEN_MEMORY_END
 }
 ENDSECTION

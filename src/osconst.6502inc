@@ -194,6 +194,21 @@ CRTC_CURSOR_BLINK = &67         ; bits 5-6 11: blinking, from scan line 7, as MO
 ; clearing bit 5 with bit 4 set, as MODE 5 leaves it, wraps it at 8K.
 SCREEN_WRAP_8K = &05
 
+; Screen memory in the modes the pieces use: where it starts, and the bytes
+; in a character row and in a character (in these four-colour modes, two
+; bytes across and eight scan lines down, a column of eight bytes at a time).
+; Every mode's screen runs to SCREEN_MEMORY_END. These are addresses, but
+; they're kept out of os.6502inc: tools/dis6502.py would name every &3000
+; and &5800 operand after them, and most of those aren't the screen. Mode
+; 7's is MODE7_SCREEN, in teletext.6502inc.
+MODE1_SCREEN      = &3000
+MODE1_ROW_BYTES   = 640
+MODE1_CHAR_BYTES  = 16
+MODE5_SCREEN      = &5800
+MODE5_ROW_BYTES   = 320
+MODE5_CHAR_BYTES  = 16
+SCREEN_MEMORY_END = &8000
+
 ; 6502 opcodes the programs write or look for.
 OPCODE_BMI           = &30
 OPCODE_RTI           = &40
