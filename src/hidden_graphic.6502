@@ -3520,15 +3520,15 @@ PASS_CENTISECONDS = 2
 ; Where a pixel of the editing grid is on the screen.
 ; In:  X = pixel x, Y = pixel y
 ; Out: screen_ptr = its top line (four lines tall, one byte wide)
-; Clobbers: A
+; Clobbers: A, Y
 .grid_address
 {
     TYA
     PHA
-    AND #&FE
+    AND #&FE                        ; a word a pair of rows
     TAY
     TXA
-    ASL A
+    ASL A                           ; a cell a pixel
     ASL A
     ASL A
     CLC
@@ -3564,15 +3564,16 @@ PASS_CENTISECONDS = 2
     RTS
 }
 
-; The pixel cursor's four lines: the outer pixels' high bits, top and
-; bottom.
+; The pixel cursor's four lines: colour 2 in the outer pixels, top and bottom
+; (exclusive-ORed, so it shows on any colour).
 .cursor_shape
-    EQUB &90, &00, &00, &90
+    EQUB mode5_byte("2..2"), 0, 0, mode5_byte("2..2")
 
 ; Ask for the name of a file to save to. If it exists it must be a graphics
 ; set or an IO file (setting io_file), and the user is asked whether to
 ; replace it: Cancel abandons the command.
-; Out: input_buffer = the name; io_file bit 7 set for an IO file
+; Out: input_buffer = the name; osfile_block filled (file_info); io_file
+;      bit 7 set for an IO file
 ; Clobbers: A, X, Y, and as open_window
 .ask_save_name
 {
@@ -3595,11 +3596,19 @@ PASS_CENTISECONDS = 2
     RTS
 }
 
+; check_filing_system's X: each file command's place in the Environment
+; menu. The sprite commands need random access, which tape hasn't.
+FILE_LOAD_SPRITE = 0
+FILE_SAVE_SPRITE = 1
+FILE_LOAD_FILE   = 2
+FILE_SAVE_FILE   = 3
+
 ; Environment Save File (CTRL-f7): save the graphics set, &4000-&4F33, or
 ; write its three pieces into an IO file in place.
+; Clobbers: everything
 .cmd_save_file
 {
-    LDX #&03
+    LDX #FILE_SAVE_FILE
     JSR check_filing_system
     JSR ask_save_name
     BIT io_file
@@ -3607,17 +3616,17 @@ PASS_CENTISECONDS = 2
     LDY #&0F                        ; clear the block after the name
     LDA #&00
 .clear
-    STA osfile_block+2, Y
+    STA osfile_load, Y
     DEY
     BPL clear
     LDA #HI(graphics)               ; load and start address &4000...
-    STA osfile_block+3
-    STA osfile_block+11
+    STA osfile_load+1
+    STA osfile_start+1
     CLC
-    ADC #HI(graphics_end - graphics) ; ...end &4F34
-    STA osfile_block+15
+    ADC #HI(SET_SIZE)               ; ...end &4F34
+    STA osfile_end+1
     LDA #LO(graphics_end)
-    STA osfile_block+14
+    STA osfile_end
     LDA #OSFILE_SAVE
     JSR osfile_graphics
 .done
@@ -3640,12 +3649,17 @@ PASS_CENTISECONDS = 2
     JSR close_files
     JMP done
 }
+ASSERT LO(graphics) = 0 AND HI(graphics) + HI(SET_SIZE) = HI(graphics_end)
 
 ; Environment Save Sprite (CTRL-f9): write the selected sprite (and an
-; object's name) into its place in an existing graphics set or IO file.
+; object's name) into its place in an existing graphics set or IO file,
+; then redraw everything (start.redraw, so the selection goes back to
+; position 0).
+; In:  sprite
+; Clobbers: everything
 .cmd_save_sprite
 {
-    LDX #&01
+    LDX #FILE_SAVE_SPRITE
     JSR check_filing_system
     JSR ask_save_name
     JSR open_file.update
@@ -3654,11 +3668,11 @@ PASS_CENTISECONDS = 2
     JSR sprite_file_offset
     JSR sprite_last_byte
     INY
-    STY gbpb_block+5
+    STY gbpb_count
     LDA data_ptr
-    STA gbpb_block+1
+    STA gbpb_address
     LDA data_ptr+1
-    STA gbpb_block+2
+    STA gbpb_address+1
     JSR read_block.write
     LDA sprite_width
     CMP #SMALL_WIDTH
@@ -3671,6 +3685,8 @@ PASS_CENTISECONDS = 2
 
 ; The file to save to exists: check what it is, and ask whether to replace
 ; it. Cancel returns from the command that asked (ask_save_name's caller).
+; Out: as ask_save_name
+; Clobbers: A, X, Y, and as menu
 .file_exists
 {
     JSR ask_load_name.found
@@ -3678,7 +3694,7 @@ PASS_CENTISECONDS = 2
     LDY #HI(text_exists)
     LDA #WINDOW_QUESTION
     JSR menu
-    CMP #&02                        ; Replace
+    CMP #2                          ; Replace
     BNE cancel
     JMP ask_save_name.done
 .cancel
@@ -3693,7 +3709,7 @@ PASS_CENTISECONDS = 2
     JMP (FSCV)
 }
 
-; Point gbpb_block at the sprite's place in the file.
+; Point gbpb_block's file pointer at the sprite's place in the file.
 ; In:  data_ptr = the sprite's bytes; io_file
 ; Clobbers: A
 .sprite_file_offset
@@ -3701,32 +3717,32 @@ PASS_CENTISECONDS = 2
     LDA data_ptr
     SEC
     SBC #LO(graphics)
-    STA gbpb_block+9
+    STA gbpb_pointer
     LDA data_ptr+1
     SBC #HI(graphics)
-    STA gbpb_block+10
+    STA gbpb_pointer+1
     BIT io_file
     BMI io
     RTS
 .io
-    LDA gbpb_block+10
+    LDA gbpb_pointer+1
     CMP #HI(slot_28 - graphics)     ; the slot IO keeps apart
     BNE io_graphics
     LDA #HI(IO_SLOT_28_OFFSET)      ; (the low byte is the same)
-    STA gbpb_block+10
+    STA gbpb_pointer+1
     RTS
 .io_graphics
-    LDA gbpb_block+9
+    LDA gbpb_pointer
     CLC
     ADC #LO(IO_GRAPHICS_OFFSET)
-    STA gbpb_block+9
-    LDA gbpb_block+10
+    STA gbpb_pointer
+    LDA gbpb_pointer+1
     ADC #HI(IO_GRAPHICS_OFFSET)
-    STA gbpb_block+10
+    STA gbpb_pointer+1
     RTS
 }
 
-; Point gbpb_block at the object's name in the file.
+; Point gbpb_block's file pointer at the object's name in the file.
 ; In:  sprite = the object; io_file
 ; Out: Y = the name's offset in object_names
 ; Clobbers: A, X
@@ -3744,12 +3760,13 @@ PASS_CENTISECONDS = 2
     BCC store
     INX
 .store
-    STA gbpb_block+9
-    STX gbpb_block+10
+    STA gbpb_pointer
+    STX gbpb_pointer+1
     RTS
 }
 
-; Unused: read a file's pointer.
+; Unused: read a file's pointer into &8B-&8E (A isn't set here, though
+; OSARGS needs it 0 for that).
 .unused_read_ptr
 {
     LDY gbpb_block
@@ -3758,8 +3775,7 @@ PASS_CENTISECONDS = 2
 }
 
 ; Clear gbpb_block, and refuse a command the filing system can't do.
-; In:  X = 0 or 1 for the sprite commands, which need random access (not on
-;      tape), 2 or 3 for whole files
+; In:  X = the command, FILE_LOAD_SPRITE to FILE_SAVE_FILE
 ; Clobbers: A, Y
 .check_filing_system
 {
@@ -3774,10 +3790,10 @@ PASS_CENTISECONDS = 2
 .done
     RTS
 .tape
-    CPX #&02
+    CPX #FILE_LOAD_FILE             ; whole files will do
     BCS done
-    LDX #&78
-    LDY #&29
+    LDX #LO(text_not_available)
+    LDY #HI(text_not_available)
     JMP show_error
 }
 
@@ -3815,10 +3831,13 @@ PASS_CENTISECONDS = 2
 }
 
 ; Environment Load Sprite (CTRL-f8): read the selected sprite (and an
-; object's name) from its place in a graphics set or IO file.
+; object's name) from its place in a graphics set or IO file, then redraw
+; everything (start.redraw, so the selection goes back to position 0).
+; In:  sprite
+; Clobbers: everything
 .cmd_load_sprite
 {
-    LDX #&00
+    LDX #FILE_LOAD_SPRITE
     JSR check_filing_system
     JSR ask_load_name
     JSR open_file
@@ -3827,11 +3846,11 @@ PASS_CENTISECONDS = 2
     JSR sprite_file_offset
     JSR sprite_last_byte
     INY
-    STY gbpb_block+5
+    STY gbpb_count
     LDA data_ptr
-    STA gbpb_block+1
+    STA gbpb_address
     LDA data_ptr+1
-    STA gbpb_block+2
+    STA gbpb_address+1
     JSR read_block
     LDA sprite_width
     CMP #SMALL_WIDTH
@@ -3843,6 +3862,8 @@ PASS_CENTISECONDS = 2
 }
 
 ; Write the selected object's name to the file, unless it's the exit.
+; In:  sprite, gbpb_block's handle
+; Clobbers: A, X, Y
 .write_name
 {
     JSR name_transfer
@@ -3851,6 +3872,7 @@ PASS_CENTISECONDS = 2
 }
 
 ; Point gbpb_block at the selected object's name, in memory and in the file.
+; In:  sprite
 ; Out: carry set (and nothing done) for the exit, which has no name
 ; Clobbers: A, X, Y
 .name_transfer
@@ -3861,22 +3883,24 @@ PASS_CENTISECONDS = 2
     RTS
 .named
     JSR name_file_offset
-    LDA #12                         ; a name's length
-    STA gbpb_block+5
+    LDA #OBJECT_NAME_LENGTH
+    STA gbpb_count
     JSR name_offset
     TYA
     CLC
     ADC #LO(object_names)
-    STA gbpb_block+1
+    STA gbpb_address
     LDA #HI(object_names)
     ADC #&00
-    STA gbpb_block+2
+    STA gbpb_address+1
     CLC
 .done
     RTS
 }
 
 ; Read the selected object's name from the file, unless it's the exit.
+; In:  sprite, gbpb_block's handle
+; Clobbers: A, X, Y
 .read_name
 {
     JSR name_transfer
@@ -3897,6 +3921,7 @@ PASS_CENTISECONDS = 2
 }
 
 ; Close all open files.
+; Clobbers: A, Y
 .close_files
 {
     LDA #OSFIND_CLOSE
@@ -3905,10 +3930,10 @@ PASS_CENTISECONDS = 2
 }
 
 ; Ask for the name of a file to load from: it must exist ("No Such File")
-; and, on a disc, be a graphics set (loading at &40xx, &Fxx long) or an IO
-; file (&33xx long) - anything else is "Bad File".
-; Entry found: just check what the file is
-; Out: io_file bit 7 set for an IO file
+; and, on disc, be a graphics set (loading at &40xx, &Fxx long) or an IO
+; file (&33xx long); anything else is "Bad File". Also entered at found, to
+; check what an existing file is.
+; Out: osfile_block filled (file_info); io_file bit 7 set for an IO file
 ; Clobbers: A, X, Y, and as open_window
 .ask_load_name
 {
@@ -3930,33 +3955,39 @@ PASS_CENTISECONDS = 2
     BMI disc
     RTS
 .disc
-    LDA osfile_block+3              ; the load address's second byte
+    LDA osfile_load+1
     CMP #HI(graphics)
-    BNE not_graphics
-    LDA osfile_block+11
-    CMP #HI(SET_SIZE)               ; the length's
-    BNE not_graphics
+    BNE check_io_file
+    LDA osfile_start+1              ; the length's
+    CMP #HI(SET_SIZE)
+    BNE check_io_file
     RTS
 }
 
 ; Bit 7 set when the file being loaded or saved is IO, not a graphics set.
+; (It sits in the middle of ask_load_name.)
 .io_file
     EQUB &00
-.not_graphics
-    LDA osfile_block+11
-    CMP #HI(IO_LENGTH)              ; an IO file's length
+
+; ask_load_name's end: a file that isn't a graphics set had better be IO.
+.check_io_file
+{
+    LDA osfile_start+1              ; the length's
+    CMP #HI(IO_LENGTH)
     BEQ io
     JMP bad_file
 .io
     LDA #&FF
     STA io_file
     RTS
+}
 
 ; Environment Load File (CTRL-f6): load a graphics set, or the three pieces
-; of one from an IO file.
+; of one from an IO file, then redraw everything (start.redraw).
+; Clobbers: everything
 .cmd_load_file
 {
-    LDX #&02
+    LDX #FILE_LOAD_FILE
     JSR check_filing_system
     JSR ask_load_name
     BIT io_file
@@ -3971,26 +4002,29 @@ PASS_CENTISECONDS = 2
 }
 
 ; Point gbpb_block at one of the pieces of an IO file.
-; In:  X = 0, 6 or 12: the piece's entry in io_segments
+; In:  X = the piece's entry's offset in io_segments: 0, IO_SEGMENT or
+;      2 * IO_SEGMENT
 ; Clobbers: A
 .set_segment
 {
     LDA io_segments, X
-    STA gbpb_block+1
+    STA gbpb_address
     LDA io_segments+1, X
-    STA gbpb_block+2
+    STA gbpb_address+1
     LDA io_segments+2, X
-    STA gbpb_block+9
+    STA gbpb_pointer
     LDA io_segments+3, X
-    STA gbpb_block+10
+    STA gbpb_pointer+1
     LDA io_segments+4, X
-    STA gbpb_block+5
+    STA gbpb_count
     LDA io_segments+5, X
-    STA gbpb_block+6
+    STA gbpb_count+1
     RTS
 }
 
-; Load the graphics set's three pieces from an IO file.
+; Load the graphics set's three pieces from an IO file, then redraw
+; everything (start.redraw).
+; Clobbers: everything
 .load_io
 {
     JSR open_file
@@ -4018,9 +4052,12 @@ IO_SEGMENT = 6                  ; bytes an entry
     EQUW graphics, IO_GRAPHICS_OFFSET, IO_GRAPHICS_SIZE         ; slots &00-&27
 .io_segments_end
 
-; Read the catalogue entry of the file named in input_buffer (OSFILE 5).
+; Read the catalogue entry of the file named in input_buffer
+; (OSFILE_READ_INFO). On tape it does nothing, returning through
+; cmd_obj_name's RTS.
 ; Out: carry set if the filing system isn't a disc one (nothing read); else
-;      carry clear, A = the object type (1 for a file), osfile_block filled
+;      carry clear, A = the object type (OSFILE_TYPE_FILE for a file),
+;      osfile_block filled
 ; Clobbers: X, Y
 .file_info
 {
@@ -4035,18 +4072,19 @@ IO_SEGMENT = 6                  ; bytes an entry
 }
 
 ; OSFILE on the graphics set at &4000.
-; In:  A = OSFILE reason (0 save, &FF load, 5 read catalogue entry),
-;      osfile_block's name and, to save, its start and end
-; Out: carry clear
-; Clobbers: A, X, Y
+; In:  A = OSFILE_SAVE, OSFILE_LOAD or OSFILE_READ_INFO; osfile_block's name
+;      and, to save, its start and end
+; Out: carry clear; A as OSFILE leaves it (for OSFILE_READ_INFO, the
+;      object type)
+; Clobbers: X, Y
 .osfile_graphics
 {
     LDX #&00
-    STX osfile_block+6              ; exec address 0: load where we say
+    STX osfile_exec                 ; exec address 0: load where we say
     LDX #LO(graphics)
-    STX osfile_block+2
+    STX osfile_load
     LDX #HI(graphics)
-    STX osfile_block+3
+    STX osfile_load+1
     BIT disc_fs
     BMI call
     PHA
@@ -4062,6 +4100,7 @@ IO_SEGMENT = 6                  ; bytes an entry
 }
 
 ; The "Bad File" error.
+; Out: doesn't return
 .bad_file
 {
     LDX #LO(text_bad_file)
@@ -4070,6 +4109,8 @@ IO_SEGMENT = 6                  ; bytes an entry
 }
 
 ; OptionsA Obj name (CTRL-N): rename the selected object (not the exit).
+; In:  sprite
+; Clobbers: everything
 .cmd_obj_name
 {
     LDA sprite_width
@@ -4093,30 +4134,30 @@ IO_SEGMENT = 6                  ; bytes an entry
     STA object_names, Y
     INY
     INX
-    CPX #12
+    CPX #OBJECT_NAME_LENGTH
     BCC copy
     LDA #WINDOW_INPUT
     JSR close_window
     LDA sprite
-.show
     JMP show_selection
 }
 
 ; The line input_line edits: twelve characters, padded with spaces, and a
-; CR after the sixteen bytes it clears.
+; CR after the sixteen bytes it clears (which a filename stops at).
 .input_buffer
-    SKIP 12
+    SKIP OBJECT_NAME_LENGTH
     EQUB CR, CR, CR, CR, CR
 
 ; Read a line of up to input_limit characters into input_buffer, echoing
 ; it at screen_ptr. Delete rubs out a character, CTRL-U the lot; Return
-; ends it; Escape or a function key abandons the command.
+; ends it; Escape or a function key abandons the command
+; (pick_second_sprite.abandon_command).
 ; In:  screen_ptr = where to echo it (open_window leaves it after the text)
-; Out: input_buffer, Y = its length
+; Out: input_buffer, padded with spaces; Y = its length
 ; Clobbers: A, X, screen_ptr, aux_ptr
 .input_line
 {
-    LDY #12
+    LDY #OBJECT_NAME_LENGTH         ; the longest a name can be, file or object
     STY input_limit
     LDY #&00
     LDA #OSBYTE_FLUSH_BUFFERS       ; empty the keyboard buffer
@@ -4129,7 +4170,7 @@ IO_SEGMENT = 6                  ; bytes an entry
     BPL blank
     INY
 .read
-    LDA #ascii(" ")                 ; the end of the line, so far
+    LDA #ascii(" ")                 ; a space after the line: what a rub-out leaves
     STA input_buffer, Y
     JSR OSRDCH
     BCC got_key
@@ -4142,7 +4183,7 @@ IO_SEGMENT = 6                  ; bytes an entry
     BNE edit
     RTS
 .edit
-    AND #&7F
+    AND #&7F                        ; the cursor keys' codes become control codes, ignored
     CMP #ctrl("U")
     BNE not_wipe
     TYA
@@ -4181,13 +4222,21 @@ IO_SEGMENT = 6                  ; bytes an entry
     JMP read
 }
 
-; The longest line input_line takes.
+; The longest line input_line takes (always OBJECT_NAME_LENGTH).
 .input_limit
     EQUB &00
 
-; Paint: move the pixel cursor with Z X : /, accelerating as a key is held;
+; The pixel cursor's key repeat, in trips round key_delay's loop: it starts
+; at CURSOR_DELAY, and each move shortens it by CURSOR_DELAY_STEP down to
+; CURSOR_DELAY_MIN.
+CURSOR_DELAY      = &B9
+CURSOR_DELAY_STEP = 10
+CURSOR_DELAY_MIN  = 10
+
+; Paint: move the pixel cursor with Z X : /, faster as a key is held;
 ; choose the colour with 0-4; plot with Return or clear with Delete. Does
-; nothing while CTRL is held, for the shortcuts.
+; nothing while CTRL is held, for the shortcuts. Plotting draws the sprite
+; again on the sheet, which rubs out its selection box until it moves.
 ; Clobbers: A, X, Y, and as draw_sheet_sprite
 .edit_pixels
 {
@@ -4291,10 +4340,10 @@ IO_SEGMENT = 6                  ; bytes an entry
 .moved
     LDA repeat_delay
     SEC
-    SBC #&0A                        ; down to a minimum of 10
-    CMP #&0A
+    SBC #CURSOR_DELAY_STEP
+    CMP #CURSOR_DELAY_MIN
     BCS delay_ok
-    LDA #&0A
+    LDA #CURSOR_DELAY_MIN
 .delay_ok
     STA repeat_delay
     LDX cursor_x
@@ -4305,7 +4354,7 @@ IO_SEGMENT = 6                  ; bytes an entry
     JSR toggle_cursor               ; ...and rub it out at the old
     JMP plot_keys
 .still
-    LDA #&B9                        ; the delay before a held key first repeats
+    LDA #CURSOR_DELAY
     STA repeat_delay
 .plot_keys
     LDX #INKEY_TEST(KEY_DELETE)
@@ -4344,7 +4393,7 @@ IO_SEGMENT = 6                  ; bytes an entry
     JSR plot_pixel
     LDA sprite
     BNE not_background
-    JSR repeat_background           ; the background tile repeats every eight bytes
+    JSR repeat_background           ; position 0 repeats its 4x8 cell
 .not_background
     LDA sprite
     JSR draw_sheet_sprite
@@ -4352,13 +4401,16 @@ IO_SEGMENT = 6                  ; bytes an entry
     RTS
 }
 
-; Sheet position 0 is the background: a 4x8 pixel tile repeated. Copy the
-; eight bytes just changed through the whole sprite and redraw it.
+; Sheet position 0 shows slot 0, the floor; the game fills the floor round an
+; object's icon from that picture's first cell alone, so the designer keeps
+; it one 4x8 pixel cell repeated. Copy the cell just changed through the
+; whole sprite, and draw the grid again.
 ; In:  data_ptr = the byte plot_pixel changed
+; Clobbers: A, X, Y, and as redraw_grid
 .repeat_background
 {
     LDA data_ptr
-    AND #&F8
+    AND #&F8                        ; the start of its cell
     STA data_ptr
     LDY #&07
 .read
@@ -4366,11 +4418,11 @@ IO_SEGMENT = 6                  ; bytes an entry
     STA background_tile, Y
     DEY
     BPL read
-    LDY #&7F
+    LDY #LARGE_SPRITE_SIZE - 1
     LDX #&07
 .fill
     LDA background_tile, X
-    STA graphics, Y
+    STA graphics + SET_LARGE, Y     ; slot 0
     DEX
     TXA
     AND #&07
@@ -4381,14 +4433,14 @@ IO_SEGMENT = 6                  ; bytes an entry
     JMP redraw_grid
 }
 
-; The background tile's eight bytes.
+; The background tile's eight bytes: the cell repeat_background repeats.
 .background_tile
     EQUB &00, &00, &00, &00, &00, &00, &00, &00
 
-; The pixel cursor's key repeat: wait while the key is held, up to
-; repeat_delay * 256 trips round a loop.
+; The pixel cursor's key repeat: wait while the key is held, for up to
+; repeat_delay polls of it with a 256-trip spin between them.
 ; In:  X = INKEY_TEST() of the key
-; Clobbers: A, X, Y
+; Clobbers: A, X, Y, temp, count_x
 .key_delay
 {
     STX temp
@@ -4411,12 +4463,12 @@ IO_SEGMENT = 6                  ; bytes an entry
 
 ; The bits of each of the four pixels in a MODE 5 byte.
 .pixel_mask
-    EQUB &88, &44, &22, &11
+    EQUB mode5_byte("3..."), mode5_byte(".3.."), mode5_byte("..3."), mode5_byte("...3")
 
 ; Find a pixel of a sprite.
 ; In:  A = sprite, X = pixel x, Y = pixel y
 ; Out: data_ptr = its byte, A = mask = its bits
-; Clobbers: X, Y, pixel_x, pixel_y
+; Clobbers: X, Y, pixel_x, pixel_y, sprite_width
 .pixel_address
 {
     STX pixel_x
@@ -4426,7 +4478,7 @@ IO_SEGMENT = 6                  ; bytes an entry
     ASL A
     ASL A
     ASL A
-    TAY
+    TAY                             ; a column's bytes
     LDA pixel_x
     LSR A
     LSR A
@@ -4438,9 +4490,9 @@ IO_SEGMENT = 6                  ; bytes an entry
     CLC
     ADC data_ptr
     STA data_ptr
-    BCC column
+    BCC column                      ; always: no sprite crosses a page
 .got_column
-    LDA pixel_y
+    LDA pixel_y                     ; columns start at multiples of their size
     ORA data_ptr
     STA data_ptr
     LDA pixel_x
@@ -4453,7 +4505,7 @@ IO_SEGMENT = 6                  ; bytes an entry
 
 ; Set a pixel of a sprite to colour.
 ; In:  A = sprite, X = pixel x, Y = pixel y, colour
-; Clobbers: A, X, Y, data_ptr, temp, mask
+; Clobbers: A, X, Y, data_ptr, temp, mask, pixel_x, pixel_y, sprite_width
 .plot_pixel
 {
     JSR pixel_address
@@ -4472,7 +4524,7 @@ IO_SEGMENT = 6                  ; bytes an entry
 ; Read a pixel of a sprite.
 ; In:  A = sprite, X = pixel x, Y = pixel y
 ; Out: A = its colour, 0-3
-; Clobbers: X, Y, data_ptr, mask
+; Clobbers: X, Y, data_ptr, mask, pixel_x, pixel_y, sprite_width
 .read_pixel
 {
     JSR pixel_address
@@ -4496,7 +4548,7 @@ IO_SEGMENT = 6                  ; bytes an entry
     RTS
 }
 
-; Each menu's text, and the function key that opens it.
+; Each menu's text, and the function key that opens it, by window number.
 .menu_text
     EQUW text_options_a, text_options_b, text_environment, text_credits
 .menu_keys
@@ -4506,13 +4558,13 @@ IO_SEGMENT = 6                  ; bytes an entry
 ; key is pressed.
 ; Out: A = the command's number in command_table (menu * 8 + item), 0 for
 ;      the credits, or &FF for none
-; Clobbers: X, Y, and as menu
+; Clobbers: X, Y, temp, and as menu
 .read_command
 {
     LDX #INKEY_TEST(KEY_CTRL)
     JSR key_pressed
     BPL menus
-    LDA #24-1                       ; from the last of shortcut_keys
+    LDA #SHORTCUTS - 1              ; from the last of shortcut_keys
     STA temp
 .shortcut
     LDY temp
@@ -4530,7 +4582,7 @@ IO_SEGMENT = 6                  ; bytes an entry
     LDA temp
     RTS
 .menus
-    LDA #&03                        ; from the last menu, the credits
+    LDA #WINDOW_CREDITS             ; from the last menu, the credits
 .menu_key
     PHA
     TAY
@@ -4574,23 +4626,25 @@ IO_SEGMENT = 6                  ; bytes an entry
     EQUB INKEY_TEST({KEY_X, KEY_Y, KEY_DELETE, KEY_U, KEY_A, KEY_N}), NO_KEY, NO_KEY ; OptionsA
     EQUB INKEY_TEST({KEY_S, KEY_COPY, KEY_O}), NO_KEY, INKEY_TEST({KEY_R, KEY_B}), NO_KEY, NO_KEY ; OptionsB
     EQUB INKEY_TEST({KEY_F8, KEY_F9, KEY_F6, KEY_F7, KEY_C}), 0, 0, 0                ; Environment
+SHORTCUTS = P% - shortcut_keys
 
-; Which cursor key the selection last saw held.
+; Which cursor key the selection last saw held (INKEY_TEST() of it, or 0),
+; and a byte nothing uses.
 .key_held
     EQUB 0, 0
 ; Non-zero while picking a second sprite.
 .select_mode
     EQUB 0
-; The interval timer, as OSWORD 3 reads it.
+; The interval timer, as OSWORD_READ_INTERVAL_TIMER reads it.
 .timer_value
     EQUB 0, 0, 0, 0, 0
 
 ; While picking a second sprite or animating, f0-f3 count as Escape: raise
-; one (OSBYTE &7D) if any of them is pressed.
+; one if any of them is pressed.
 ; Clobbers: A, X, Y
 .menu_keys_escape
 {
-    LDA #&03
+    LDA #WINDOW_CREDITS             ; f3 down to f0
 .loop
     PHA
     TAY
