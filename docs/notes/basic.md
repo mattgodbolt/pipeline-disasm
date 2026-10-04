@@ -536,3 +536,15 @@ back to its prompt: both designers' runs load over it (from &1AB0 and
 designer ran into before its error wasn't traced. Whether the disc was
 sold write-protected isn't known; if it was, these saves would all fail
 instead.
+
+## 2026-10-04 12:53 — Readability pass: MISSION's `addr` is not `l0addr`
+
+- MISSION line 620 is `addr=&5800-numlev*size-grfs-attrs-miss-names`.
+  `src/io.6502inc`'s header (and the journal's 18:10 entry) quote it as
+  `l0addr=...`, which is the line record's header read as text: line 620
+  is &02 &6C, and &6C is `l`; the record length, &30, is `0`. So a text
+  search of the original disc finds `l0addr=&5800...`. The variable is
+  `addr`; io.6502inc should say so (a shared file, left for main).
+- The MRUN header had page 7 as BASIC's string buffer; it's BASIC's
+  keyboard input buffer (the string buffer is page 6), which is why the
+  `*E.!BOOT` MRUN types for BASIC turns up at &0700.

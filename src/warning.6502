@@ -10,18 +10,18 @@
 ; strictly prohibited." The file stops 16 characters into row 22, so the
 ; rest of the screen is left as MODE 7 cleared it.
 ;
-; MENU then clears rows 18-24 through a text window (its scroller takes
-; rows 17-24, and row 17 is blank already) and puts up the menu, which is
-; this same picture with the options inside the frame in place of the
-; warning (docs/img/menu.png). *LOAD runs nothing, so the catalogued exec
-; address is unused.
+; MENU then clears rows 18-24 through a text window (the scrolling message
+; it runs along the bottom of the menu takes rows 17-24, and row 17 is
+; blank already) and puts up the menu, which is this same picture with the
+; options inside the frame in place of the warning (docs/img/menu.png).
+; *LOAD runs nothing, so the catalogued exec address is unused.
 ;
 ; Written with tools/mode7.py: control codes by name, text as strings,
 ; graphics (sixel) characters in hex.
 
 INCLUDE "teletext.6502inc"
 
-SECTION warning, filename="WARNING", org=&7C00, load=&7C00, exec=&7C00
+SECTION warning, filename="WARNING", org=MODE7_SCREEN, load=&7C00, exec=&7C00
 .warning
 {
 .screen

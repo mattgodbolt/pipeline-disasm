@@ -1,13 +1,26 @@
 ; $.MENU: the PIPELINE menu, by Ian Holmes ("Originally: GUILDMASTER"),
-; CHAINed by !BOOT. A BASIC program, and past its end, in the same file,
-; what its DIMs hold:
+; CHAINed by !BOOT, which MRUN runs again to bring the menu back when the
+; designers or MISSION finish. A BASIC program at &1900 (PAGE on a B with a
+; disc filing system), and past its end, in the same file, what its DIMs
+; hold:
 ;
-;   &1900  the program: setup, the loading and warning pages, then the menu,
-;          which starts the game or the designers (through their loader
-;          stubs), redefines the keys, or CHAINs MISSION
-;   &2300  C%: the scroller (a vsync event handler) and its message
+;   &1900  the program: setup, the loading picture (SCREEN) and the warning
+;          page (WARNING), then the menu, which starts the game or the
+;          designers, redefines the keys, or CHAINs MISSION
+;   &2300  C%: the scroller, a vsync event handler that scrolls a long
+;          message through the bottom eight rows of the menu, and the
+;          message
 ;   &3200  S%: the top 16 rows of the menu screen, then leftovers, among
 ;          them a tune program at PAGE+&1C00
+;
+; The source follows the same order: lines 10-40 as EQUB records, the
+; BASIC block (lines 50-1020), then C% and S% as code and data.
+;
+; The game and the two designers are each started through a stub: the
+; small catalogued file GAME, GRAPHIC or LEVDES, which reads the real
+; program from sectors the disc's catalogue doesn't list
+; (hidden_loader.6502inc). Option 1 shows TITLE before */GAME. With W and T
+; held down as the menu starts, line 290 runs PL, a hidden cheat, instead.
 ;
 ; It leaves the game's ten keys in &50-&59.
 INCLUDE "os.6502inc"
@@ -24,15 +37,21 @@ SCROLL_RIGHT = 37
 
 ; The scroller's zero page. It runs on the vsync event, under whatever BASIC
 ; is doing, so it keeps to the user's area (&70-&8F) - except for &60, and
-; the character definition, which spills into &90-&93.
-scroll_phase        = &60   ; &49 or 0, flipped each frame: the column moves on as it becomes &49
-scroll_row_temp     = &70   ; (2) the row being set up, at start
+; the character definition, which spills into &90-&93. (A number in
+; brackets is a size in bytes.)
+;
+; Each pixel column of a character is drawn for two frames: scroll_phase
+; flips between 0 and &49 every frame, and the scroller moves on to the
+; next column on the frames it becomes &49. scroll_column_mask is the
+; column's bit in each row of the character's definition.
+scroll_phase        = &60   ; &49 or 0
+scroll_row_temp     = &70   ; (2) start's pointer into the row being set up
 scroll_text_ptr     = &72   ; (2) the character being scrolled in
-scroll_column_mask  = &74   ; which pixel of the character's rows is the next column
+scroll_column_mask  = &74   ; the pixel column being drawn, as a bit
 scroll_text_start   = &75   ; (2) set by line 300 to C%+&C9, the message
 scroll_handler_addr = &77   ; (2) set by line 300 to C%+&49, for EVNTV
-scroll_cell_ptrs    = &7B   ; (2 x 8) the right-hand cell of each row, top first
-char_definition     = &8B   ; OSWORD &0A's block: the character, then its rows
+scroll_cell_ptrs    = &7B   ; (2 x 8) each scroller row's right-hand cell, top first
+char_definition     = &8B   ; (9) OSWORD &0A's block: the character, then its 8 rows
 
 
 SECTION menu, filename="MENU", org=&1900, load=&1900, exec=&8023
@@ -73,16 +92,15 @@ BASIC
 ; a B reads the links only at power-on and CTRL+BREAK, and a plain BREAK
 ; keeps this. With memory cleared on BREAK (*FX200 2), Quit's reset (line
 ; 900), the BREAK key and PL's resets all stop at BASIC's prompt rather
-; than start PIPELINE again (tried in jsbeeb with links that make BREAK
-; boot: Quit reached BASIC, and with this line made a no-op it rebooted the
-; disc). A Master takes a BREAK that clears memory as a power-on and reloads
-; its configuration, so on one configured to BOOT, Quit restarts PIPELINE
-; regardless (seen in jsbeeb). Escape becomes an ordinary key (*FX229 1).
+; than start PIPELINE again. A Master takes a BREAK that clears memory as a
+; power-on and reloads its configuration, so on one configured to BOOT,
+; Quit restarts PIPELINE regardless. (docs/notes/basic.md has how the MOS
+; decides, and the tests.) Escape becomes an ordinary key (*FX229 1).
 ; Then keyboard defaults (*FX12 auto-repeat, *FX18 no function key strings,
 ; *FX4 1 cursor keys giving 136-139, *FX16 no ADC sampling), flash colours
 ; every frame, the disc filing system and directory $ (on the current
-; drive: *DISC doesn't go back to drive 0, seen in jsbeeb), no file
-; messages (*OPT), and *TV255 1: the picture one line up, interlace off.
+; drive: *DISC doesn't go back to drive 0), no file messages (*OPT), and
+; *TV255 1: the picture one line up, interlace off.
 130*FX255 8 247
 140*FX200 2
 150*FX229 1
@@ -97,7 +115,8 @@ BASIC
 230*OPT
 240*TV255 1
 ; The loading picture (MODE 5, cursor off, colour 3 magenta), for ten
-; seconds or a key.
+; seconds or a key; *FX15,1 first empties the keyboard buffer, so a key
+; pressed earlier doesn't cut it short.
 250MODE5:VDU23;8202;0;0;0;19,3,5;0;:*L.SCREEN
 260*FX15,1
 270I%=INKEY(1000):MODE7:VDU23;8202;0;0;0;
@@ -108,28 +127,30 @@ BASIC
 280RESTORE650:FORN%=&50TO&59:READ?N%:NEXT:?&FFFF7C00=128:?&7C00=0
 ; Line 290 holds two invisible raw bytes: VDU 21 just before the quote that
 ; ends "...re-load this program.", and VDU 6 after `*/PL "`. LIST shows
-; nothing between them, hiding the cheat (T and W held down here run PL),
-; and the line reads as if it printed the message and waited for a key.
-; The `":IFGET` belongs to the star command and DFS ignores it. Were the
-; second-processor test ever true, OSBYTE 151 would write &7F to the system
-; VIA's IER (&FE4E), turning off its interrupts, and the loop would hang.
+; nothing between them, hiding the cheat (with T and W held down here, the
+; line runs PL), and the line reads as if it printed the message and waited
+; for a key. The `":IFGET` belongs to the star command and DFS ignores it.
+; Were the second-processor test ever true, OSBYTE 151 would write &7F to
+; the system VIA's IER (&FE4E), turning off its interrupts, and the loop
+; would hang.
 290IF?&FFFF7C00>0PRINT''"Please turn off your Second Processor,  press Break, and re-load this program.":A%=151:X%=78:Y%=127:CALL&FFF4:REPEATUNTIL0ELSEIFINKEY-36ANDINKEY-34THEN*/PL "":IFGET
 ; The warning page (a Mode 7 screen loaded straight into screen memory),
-; then clear its text below the logo, draw the menu over the rest and start
-; the scroller: line 300 passes the message (C%+&C9) in &75/&76 and the
-; vsync handler (C%+&49) in &77/&78.
+; for ten seconds or a key, then clear its warning text (rows 18-24), draw
+; the menu over its top 16 rows and start the scroller: line 300 passes the
+; message (C%+&C9) in &75/&76 and the vsync handler (C%+&49) in &77/&78.
 295*L.WARNING
 296*FX15,1
 297I%=INKEY(1000):VDU28;24,39,18:CLS
 300PROCmenu:!&75=(C%+&49)*65536+C%+&C9:CALLC%
 ; The menu. A digit 1-6 lights its option (L%, 0 for none yet), the down
 ; and up cursor keys (138, 139) step the light round once one is lit, and
-; RETURN takes it; left and right do nothing (seen in jsbeeb). Options 1, 3,
-; 4 and 5, which leave the menu, first stop the scroller (*FX13 4 disables
-; the vsync event), let Escape work again, and set LOMEM=TOP, dropping C%
-; and S%: with them, BASIC's variables end above &3000, and option 1's
-; MODE 1 would stop with "Bad MODE" (tried in jsbeeb), which line 80's
-; handler turns into a hang. Option 6 skips all this: confirmed, it resets.
+; RETURN takes it; left and right do nothing. Options 1, 3, 4 and 5, which
+; leave the menu, first stop the scroller (*FX13 4 disables the vsync
+; event), let Escape work again, and set LOMEM=TOP, dropping C% and S%.
+; While those are allocated, BASIC's variables end above &3000, where MODE
+; 1's screen starts, so option 1's MODE 1 would stop with "Bad MODE", which
+; line 80's handler turns into a hang. Option 2 stays in the menu, and
+; option 6, once confirmed, resets the machine, so neither needs this.
 310REPEAT
 320L%=0:REPEAT
 330REPEATA%=GET:*FX15
@@ -140,9 +161,12 @@ BASIC
 380IFL%<>2ANDL%<>6THENLOMEM=TOP:*FX229
 390ONL%GOSUB910,690,970,980,990,860
 400PROCmenu:UNTIL0
-; PROCline: A% is the key. The highlight is a TT_NEW_BACKGROUND over the
-; space at column 11 of the option's row (window row L%+3); waiting for
-; vsync first keeps the change from tearing.
+; PROCline: moves the highlight for key A%: a digit lights that option, and
+; down and up (138, 139) light the next or previous one, wrapping round
+; (lines 430-440 turn them into digits); before anything is lit they do
+; nothing. Out: L% = the option lit. The highlight is a TT_NEW_BACKGROUND
+; over the space at column 11 of the option's row (window row L%+3);
+; waiting for vsync first keeps the change from tearing.
 410DEFPROCline
 420IFA%>137ANDL%=0ENDPROC
 430IFA%=138A%=L%+49:IFA%=55A%=49
@@ -174,7 +198,9 @@ BASIC
 600DEFPROCmenu
 610VDU28;16,39,6:CLS:FORN%=0TO&27CSTEP4:N%!HIMEM=N%!S%:NEXT:ENDPROC
 ; The default keys as negative INKEY numbers - Z, X, *, ?, P, D, RETURN,
-; T, CTRL, M - and the names of what they do, still Guildmaster's.
+; T, CTRL, M - and the names option 2 shows for them. The names are left
+; over from Guildmaster, the game this menu was adapted from, so they
+; don't describe what the keys do in PIPELINE.
 650DATA-98,-67,-73,-105,-56,-51,-74,-36,-2,-102
 660DATA MOVE WEST,MOVE EAST,MOVE NORTH,MOVE SOUTH,PICK UP OBJECT,DROP OBJECT,USE OBJECT,THROW OBJECT,VIEW BACKPACK,VIEW MAP
 ; Key names by internal key number (the first is INKEY -1, SHIFT). A blank
@@ -205,10 +231,10 @@ BASIC
 830UNTILN%=10:*FX15 1
 840PRINT'CHR$134"Are these keys correct?";
 850UNTILFNyes:RETURN
-; Option 6, quit: CALL !-4 goes through the 6502's reset vector at &FFFC,
-; which the MOS takes as a BREAK: with *FX200 2 memory is cleared, and line
-; 130's *FX255 keeps it from booting the disc, so the machine is left at
-; BASIC's prompt (seen in jsbeeb).
+; Option 6, quit: CALL !-4 calls the address in the 6502's reset vector
+; (BASIC reads !-4 as the word at &FFFC), which the MOS takes as a BREAK:
+; with *FX200 2 memory is cleared, and line 130's *FX255 keeps it from
+; booting the disc, so the machine is left at BASIC's prompt.
 860CLS:FORN%=1TO2
 870PRINTTAB(0,N%)CHR$141CHR$132CHR$157CHR$131"Exiting from Pipeline:  "CHR$156:NEXT
 880PRINT'CHR$134"Are you sure?";
@@ -217,7 +243,8 @@ BASIC
 ; Option 1, play: Escape without its side effects (*FX230 1) and no
 ; auto-repeat (*FX11) for the game, then TITLE draws its page in MODE 1
 ; with every colour black, and line 940 reveals it with the palette in line
-; 1000, for three seconds or a key.
+; 1000, for three seconds or a key. Then MODE 7, and */GAME runs the stub
+; that loads the game.
 910*FX230 1
 920*FX11
 930MODE1:FORN%=0TO3:VDU19,N%,0;0;:NEXT:VDU23;8202;0;0;0;:*RUN TITLE
@@ -246,11 +273,13 @@ ENDBASIC
 
 .scroller
 {
-; Starts the scroller (CALL C% in line 300). Marks the left of each
-; scroller row as separated cyan graphics, aims scroll_cell_ptrs at each
-; row's right-hand cell, points EVNTV at the handler and enables the vsync
-; event.
+; Starts the scroller (CALL C% in line 300). Writes the codes for
+; separated cyan graphics into columns 0 and 1 of each scroller row, aims
+; scroll_cell_ptrs at each row's right-hand cell, points EVNTV at the
+; handler and enables the vsync event.
 ; In: scroll_text_start = the message, scroll_handler_addr = the handler.
+; Out: scroll_text_ptr, scroll_column_mask and scroll_phase set for the
+;      message's first column.
 ; Clobbers: A, X, Y, scroll_row_temp, scroll_cell_ptrs - 2 (the spare slot).
 .start
     LDA #&80
@@ -454,8 +483,8 @@ shift_from = &100 - (SCROLL_RIGHT - SCROLL_LEFT)    ; Y counts up to zero
 ; HIMEM (the Mode 7 screen) to draw the menu, over a CLS of the text window
 ; (rows 6 to 16) that the redefine-keys page later prints in. PROCline
 ; highlights an option by writing TT_NEW_BACKGROUND over the space at
-; column 11 of its row: the background takes the blue in force there, up
-; to the TT_BLACK_BACKGROUND after the option's text.
+; column 11 of its row: the background becomes the colour in force there,
+; the pipe's blue, up to the TT_BLACK_BACKGROUND after the option's text.
 
 .menu_screen
 {

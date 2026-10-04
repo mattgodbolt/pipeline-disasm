@@ -9,11 +9,12 @@
 ;
 ; Keywords are single bytes from &80 (REM is &F4); a line number after
 ; GOTO, GOSUB, RESTORE or THEN is &8D and three bytes; REM and DATA, strings
-; and `*` commands are stored as typed. BASIC...ENDBASIC writes all of this
-; itself. basic_line() is for a line it can't take as source text: one
-; carrying bytes a source line can't hold (a newline) or that would make
-; the file invalid UTF-8 (top-bit-set bytes). ENDBASIC always ends the
-; program, so such lines can only come before the BASIC block.
+; and `*` commands are stored as typed. Baron's BASIC...ENDBASIC block
+; tokenises source text into this itself. basic_line() is for a line the
+; block can't take as source text: one carrying bytes a source line can't
+; hold (a newline) or that would make the file invalid UTF-8 (top-bit-set
+; bytes). ENDBASIC always ends the program, so such lines can only come
+; before the BASIC block.
 FUNCTION basic_line(number, text) = CONCAT({&0D, HI(number), LO(number), LEN(text) + 4}, CODES(text))
 
 BASIC_TOKEN_REM = &F4
