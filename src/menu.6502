@@ -129,10 +129,10 @@ BASIC
 ; ends "...re-load this program.", and VDU 6 after `*/PL "`. LIST shows
 ; nothing between them, hiding the cheat (with T and W held down here, the
 ; line runs PL), and the line reads as if it printed the message and waited
-; for a key.
-; The `":IFGET` belongs to the star command and DFS ignores it. Were the
-; second-processor test ever true, OSBYTE 151 would write &7F to the system
-; VIA's IER (&FE4E), turning off its interrupts, and the loop would hang.
+; for a key. The `":IFGET` belongs to the star command and DFS ignores it.
+; Were the second-processor test ever true, OSBYTE 151 would write &7F to
+; the system VIA's IER (&FE4E), turning off its interrupts, and the loop
+; would hang.
 290IF?&FFFF7C00>0PRINT''"Please turn off your Second Processor,  press Break, and re-load this program.":A%=151:X%=78:Y%=127:CALL&FFF4:REPEATUNTIL0ELSEIFINKEY-36ANDINKEY-34THEN*/PL "":IFGET
 ; The warning page (a Mode 7 screen loaded straight into screen memory),
 ; for ten seconds or a key, then clear its warning text (rows 18-24), draw
