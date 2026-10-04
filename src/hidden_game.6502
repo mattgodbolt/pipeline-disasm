@@ -6,6 +6,11 @@
 ; &0900-&23AC, sets up the screen and the sound event, and jumps to the game,
 ; which then loads the mission file IO over the loader (see io.6502inc).
 ;
+; Names for the game's screen, data and OS calls are in game.6502inc. Routine
+; headers say what a routine is for, then In:, Out: and Clobbers: (where
+; "everything" means the registers and whatever zero page the routines it
+; calls use). Text is printed through the OS, placed with TEXT_AT.
+;
 ; First drafted by tools/dis6502seg.py (hints/hidden_game.toml); edited by
 ; hand since, so don't regenerate over it.
 
@@ -86,7 +91,7 @@ work4 = &54
 work5 = &55
 start_x = &56                           ; the level's setup, copied from io_level_setup
 start_y = &57
-to_collect = &58                        ; cell 7s still to collect
+to_collect = &58                        ; sulphur still to collect
 time_left = &59                         ; the clock
 exit_x = &5A
 exit_y = &5B
@@ -518,7 +523,7 @@ SECTION low_code, org=&0400
     CMP #&10
     BCS icon_picture
 
-; A cell type: cell F holds an object, so draw its icon.
+; A cell type: an object cell (CELL_OBJECT) gets its object's icon.
 .cell_type_picture
     CMP #CELL_OBJECT
     BCC tile_picture
@@ -1476,13 +1481,13 @@ NEXT
     STA screen_high
     LDA #&FF                            ; &7F, &BF, &DF...: one bit clear, moving
     CLC                                 ; along, makes a diagonal hatch
-.redraw_view_stripes
+.redraw_view_hatch
     ROR A
     STA (screen), Y
     DEY
-    BNE redraw_view_stripes
+    BNE redraw_view_hatch
     INC screen_high
-    BPL redraw_view_stripes
+    BPL redraw_view_hatch
 .redraw_view_step
     LDA steps                           ; from the left, then the right
     LSR A

@@ -79,9 +79,10 @@ ASSERT SCREEN_END = &8000         ; loops end when the high byte goes negative
 ; Text goes through the OS, which still thinks the screen is MODE 5's: from
 ; &5800, rows of 320 bytes, characters 16 bytes (two of the game's character
 ; cells) across. So TAB(x, y) lands at OS_SCREEN + 320y + 16x, which on the
-; game's screen (when it starts at SCREEN) is a character row and column.
-; TEXT_AT sends the TAB for a column and row of the game's screen; only even
-; columns can be reached, and rows above 7 would land in the map at &5800.
+; game's screen (starting at SCREEN, as on the title and backpack screens) is
+; a character row and column; a TAB to the OS's rows 0-6 would land below
+; SCREEN, in the map. TEXT_AT sends the TAB for a column and row of the
+; game's screen; only even columns can be reached.
 OS_SCREEN      = &5800
 OS_ROW_BYTES   = 320
 OS_CHAR_BYTES  = 16
@@ -107,10 +108,10 @@ ICON_BYTES           = PICTURE_BYTES / 4
 ICON_COLUMN_BYTES    = PICTURE_COLUMN_BYTES / 2
 VIEW_CELLS           = SCREEN_COLUMNS / CHARS_PER_CELL
 
-; Pictures by number from io_tiles: the cell types' (0-15), four of object
-; icons, the player facing each way (20-23), and the second pictures of four
-; cell types (24-27). The monsters are drawn with cell type E's picture and the
-; one after it (F's, which isn't otherwise shown).
+; Pictures by number from io_tiles: the cell types' (0-15), the object icons
+; four to a picture (16-19), the player facing each way (20-23), and the
+; second pictures of four cell types (24-27). The monsters are drawn with cell
+; type E's picture and the one after it (F's, which isn't otherwise shown).
 FUNCTION tile(type) = io_tiles + type * PICTURE_BYTES
 FUNCTION icon(n) = io_object_icons + n * ICON_BYTES
 FUNCTION player_facing(direction) = io_player + direction * PICTURE_BYTES
