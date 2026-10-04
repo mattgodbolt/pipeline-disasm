@@ -513,3 +513,24 @@ Details in the newest sections of `docs/notes/loaders.md` and
   with a DFS that does.
 - On main: WARNING's rows 0-9 and MENU's menu screen rows 0-9 are now one
   include (`src/mode7_header.6502inc`).
+
+## 2026-10-03 23:15 — The journal's clock; jsbeeb's registry proposal
+
+- Correction: from 18:20 on, this journal's headings ran ahead of the clock,
+  by up to four and a half hours. The commits that went with them, by
+  `git log`: "MENU, and who loads what" 17:46; the merges of the boot chain
+  18:20, MENU and MISSION 18:24, the Level Designer 18:37, the Graphics
+  Designer 18:43, the game and IO 18:52; IO, DEFAULT and LEVEL1 from one
+  description 19:32; the reviews of the Level Designer 19:38, the Graphics
+  Designer 19:41 and the game 19:53; one definition per shared name 20:23;
+  the smaller pieces' second review 20:58 (headed 2026-10-04 01:30). Times
+  from here on come from `date`, and the agents' briefs say so too. The
+  notes files' headings drifted the same way; git has the real times.
+- Read jsbeeb's media registry proposal: the fingerprint matches all our
+  images, and the symbol sets need more for a disc of overlapping programs.
+  Details in `docs/symbols-feedback.md`; Matt has passed the comments on.
+- Three open questions are out to agents, one per program: why MENU forces
+  start-up option bit 3 (and why !BOOT puts NETV back), why a 12-character
+  filename fails to save without a word in the Level Designer, and what the
+  game's clipping thresholds &E2 and &F1 are (and the leftover at
+  &50AD-&50FF).

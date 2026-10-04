@@ -62,3 +62,38 @@ The listing (`build/listing.txt`) has what's needed: SECTION lines with
 their attributes, then `ADDR  .label` for each label, with `{`/`}` for named
 scopes. A small parser could build the per-section label tables from it, at
 the cost of depending on a human-oriented format.
+
+## jsbeeb's media registry proposal (read 2026-10-03)
+
+jsbeeb's `docs/media-registry-proposal.md` (with its design notes and
+findings, PR #1179) is where the symbols would plug in. A disc is
+recognised by a fingerprint, the record found for it names symbol sets, and
+a set's labels show only while its regions' anchors (a few bytes at known
+addresses) match memory. Matt passed these comments on to its author.
+
+- The fingerprint works for this disc. jsbeeb's `tools/registry/fingerprint.js`
+  gives one disc key, `dc7201d5fb5bfa137e302dade0b519da`, to the capture
+  `E447ED5E.hfe`, `original/pipeline.ssd`, and our rebuilt SSD and HFE (the
+  deleted marks don't count). The Stairway To Hell crack gets
+  `42e2a68ee9c4efd1e19093f7fe15de3b` and needs an alias. A disc the
+  designers have saved to gets a new key of its own.
+- Anchors can tell the programs apart: six bytes at each labelled
+  instruction give 570 candidates in H.GAME, 441 in H.LEVDES and 381 in
+  H.GRAPH, and none matches another program's bytes at the same address.
+  The three stubs differ in 6 bytes, and 8 of each one's 10 candidates are
+  shared by all three.
+- What the schema needed for this disc:
+  - a selector from a region into the dump (one JSON holds all 19 files);
+  - labels told apart from constants (in H.GAME's dump &80 has ten names,
+    one of them the variable `view_screen`);
+  - per-program names shown whenever the program is in (zero page, IO's
+    layout), which `globals` can be if each program is its own set;
+  - a matching region's labels winning over those at the same addresses
+    (start-up code that becomes data: &12A3 in the game, &25A1-&2FFF in the
+    Level Designer);
+  - regions cut where memory changes mid-run (the game swaps &0D00-&1CFF
+    out while IO loads), found from recorded writes, since the DFS and
+    `(zp),Y` copies are invisible to static analysis;
+  - a rule for when two regions both match;
+  - the same check for lookups from name to address (breakpoints by name);
+  - anchors chosen from a build's own output, not only a py8dis listing.
