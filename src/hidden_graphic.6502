@@ -26,58 +26,21 @@
 ;   &5000-&57FF  what the pop-up windows cover
 
 INCLUDE "os.6502inc"
+INCLUDE "osconst.6502inc"
+INCLUDE "io.6502inc"
 INCLUDE "sprites.6502inc"
+INCLUDE "graphics_designer.6502inc"
 
-; Keys, as the negative INKEY numbers OSBYTE &81 scans for.
-KEY_SHIFT  = 256-1
-KEY_CTRL   = 256-2
-KEY_3      = 256-18
-KEY_4      = 256-19
-KEY_F7     = 256-23
-KEY_LEFT   = 256-26
-KEY_F0     = 256-33
-KEY_0      = 256-40
-KEY_DOWN   = 256-42
-KEY_1      = 256-49
-KEY_2      = 256-50
-KEY_R      = 256-52
-KEY_U      = 256-54
-KEY_O      = 256-55
-KEY_UP     = 256-58
-KEY_A      = 256-66
-KEY_X      = 256-67
-KEY_Y      = 256-69
-KEY_COLON  = 256-73
-KEY_RETURN = 256-74
-KEY_S      = 256-82
-KEY_C      = 256-83
-KEY_N      = 256-86
-KEY_DELETE = 256-90
-KEY_Z      = 256-98
-KEY_SPACE  = 256-99
-KEY_B      = 256-101
-KEY_SLASH  = 256-105
-KEY_COPY   = 256-106
-KEY_F1     = 256-114
-KEY_F2     = 256-115
-KEY_F3     = 256-116
-KEY_F6     = 256-118
-KEY_F8     = 256-119
-KEY_F9     = 256-120
-KEY_RIGHT  = 256-122
-NO_KEY     = &57                ; in shortcut_keys: below &80, so not a key
+; In shortcut_keys, an entry below &80 isn't a key (an INKEY_TEST() value is
+; &80 or more).
+NO_KEY = &57
 
-; Codes OSRDCH returns: the cursor keys once OSBYTE 4,1 has made them
-; ordinary keys, and the function keys once OSBYTE &E1 has based them at &E0.
-CODE_LEFT  = &88
-CODE_RIGHT = &89
-CODE_DOWN  = &8A
-CODE_UP    = &8B
-CODE_F0    = &E0
+; The code f0 gives while a menu runs (OSBYTE_FUNCTION_KEY_BASE), f1-f9 the
+; codes after it.
+CODE_F0 = &E0
 
 ; Window text: a flag byte (MENU makes the lines after the first a list to
 ; pick from), then lines ending in CR, then TEXT_END.
-CR       = 13
 TEXT_END = &FF
 MENU     = &FF
 PLAIN    = 0
@@ -617,7 +580,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 }
 
 ; Is a key pressed?
-; In:  X = its negative INKEY number (KEY_...)
+; In:  X = INKEY_TEST() of the key
 ; Out: A = X = &FF and N set if it is, 0 and N clear if not
 ; Clobbers: Y
 .key_pressed
@@ -630,7 +593,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 }
 
 ; Wait until a key is released, so one press does one thing.
-; In:  X = its negative INKEY number
+; In:  X = INKEY_TEST() of the key
 ; Clobbers: A, Y
 .wait_key_release
 {
@@ -811,7 +774,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA #&0F                        ; flush the keyboard buffer
     LDX #&00
     JSR OSBYTE
-    LDX #KEY_RETURN
+    LDX #INKEY_TEST(KEY_RETURN)
     JSR wait_key_release
     LDX item
     INX
@@ -1443,7 +1406,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     PHA
     TYA
     PHA
-    LDX #KEY_SHIFT
+    LDX #INKEY_TEST(KEY_SHIFT)
     JSR key_pressed
     BPL not_ctrl
     STA escape_latch                ; A = &FF
@@ -2103,7 +2066,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA dispatch+2
 .dispatch
     JSR &1234                       ; the command (self-modified)
-    LDX #KEY_RETURN                 ; so a menu choice made with Return doesn't plot too
+    LDX #INKEY_TEST(KEY_RETURN)                 ; so a menu choice made with Return doesn't plot too
     JSR wait_key_release
 .command_done
     LDA saved_colour
@@ -2308,7 +2271,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BCC pixel
     DEC count_y
     BPL row
-    LDX #&BD                        ; the shortcut, to wait for
+    LDX #INKEY_TEST(KEY_X)          ; the shortcut, to wait for
 
     ; Show the sprite as changed, then wait for the key in X to be released so
     ; a shortcut acts once.
@@ -2345,7 +2308,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .cmd_flip_y
 {
     JSR flip_vertically
-    LDX #&BB
+    LDX #INKEY_TEST(KEY_Y)
     JMP cmd_flip_x.redraw
 }
 
@@ -2414,7 +2377,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR show_selection
     CLC
     JSR redraw_grid
-    LDX #&CA
+    LDX #INKEY_TEST(KEY_U)
     JMP wait_key_release
 }
 
@@ -2668,7 +2631,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 {
     LDA #WINDOW_PICK
     JSR open_window
-    LDX #KEY_RETURN                 ; the Return that chose the command
+    LDX #INKEY_TEST(KEY_RETURN)                 ; the Return that chose the command
     JSR wait_key_release
     LDA sprite
     PHA
@@ -2692,7 +2655,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR select_sprite               ; move the selection; function keys escape
     BIT MOS_ESCAPE_FLAG
     BMI abandon
-    LDX #KEY_RETURN
+    LDX #INKEY_TEST(KEY_RETURN)
     JSR key_pressed
     BPL select
     LDA sprite
@@ -3068,7 +3031,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR menu_keys_escape
     BIT MOS_ESCAPE_FLAG
     BMI stop
-    LDX #KEY_SPACE
+    LDX #INKEY_TEST(KEY_SPACE)
     JSR key_pressed
     BMI stop
     LDA #&13                        ; wait for the vsync
@@ -3132,7 +3095,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Read one of the cursor keys that move the selection, with auto-repeat:
 ; a press moves at once, then after twenty passes of the main loop every
 ; five.
-; In:  X = the key's negative INKEY number
+; In:  X = INKEY_TEST() of the key
 ; Out: Y = &FF (N set) to move now, else 0
 ; Clobbers: A, X
 .repeat_key
@@ -3169,7 +3132,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .select_sprite
 {
     STA select_mode
-    LDX #KEY_CTRL
+    LDX #INKEY_TEST(KEY_CTRL)
     JSR key_pressed
     BMI repeat_key.done             ; CTRL held: return N set (repeat_key's RTS)
     LDA sprite
@@ -3177,7 +3140,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA #&00
     STA key_held
     STA key_repeating
-    LDX #KEY_RIGHT
+    LDX #INKEY_TEST(KEY_RIGHT)
     JSR repeat_key
     BPL left
     JSR sheet_column                ; the last column of the row?
@@ -3191,7 +3154,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .wrap_right
     STA sprite
 .left
-    LDX #KEY_LEFT
+    LDX #INKEY_TEST(KEY_LEFT)
     JSR repeat_key
     BPL left_done
     JSR sheet_column
@@ -3205,7 +3168,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .wrap_left
     STA sprite
 .left_done
-    LDX #KEY_DOWN
+    LDX #INKEY_TEST(KEY_DOWN)
     JSR repeat_key
     BPL down_done
     JSR sheet_row
@@ -3229,7 +3192,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .store_down
     STA sprite
 .down_done
-    LDX #KEY_UP
+    LDX #INKEY_TEST(KEY_UP)
     JSR repeat_key
     BPL up_done
     JSR sheet_row
@@ -4070,7 +4033,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Clobbers: A, X, Y, and as draw_sheet_sprite
 .edit_pixels
 {
-    LDX #KEY_CTRL
+    LDX #INKEY_TEST(KEY_CTRL)
     JSR key_pressed
     BPL move
     RTS
@@ -4087,69 +4050,69 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA count_y
     DEC count_x
     DEC count_y
-    LDX #KEY_X
+    LDX #INKEY_TEST(KEY_X)
     JSR key_pressed
     BPL not_right
     LDX cursor_x
     CPX count_x
     BCS not_right
-    LDX #KEY_X
+    LDX #INKEY_TEST(KEY_X)
     JSR key_delay
     INC cursor_x
 .not_right
-    LDX #KEY_Z
+    LDX #INKEY_TEST(KEY_Z)
     JSR key_pressed
     BPL not_left
     LDX cursor_x
     BEQ not_left
-    LDX #KEY_Z
+    LDX #INKEY_TEST(KEY_Z)
     JSR key_delay
     DEC cursor_x
 .not_left
-    LDX #KEY_SLASH
+    LDX #INKEY_TEST(KEY_SLASH)
     JSR key_pressed
     BPL not_down
     LDY cursor_y
     CPY count_y
     BCS not_down
-    LDX #KEY_SLASH
+    LDX #INKEY_TEST(KEY_SLASH)
     JSR key_delay
     INC cursor_y
 .not_down
-    LDX #KEY_COLON
+    LDX #INKEY_TEST(KEY_COLON)
     JSR key_pressed
     BPL not_up
     LDY cursor_y
     BEQ not_up
-    LDX #KEY_COLON
+    LDX #INKEY_TEST(KEY_COLON)
     JSR key_delay
     DEC cursor_y
 .not_up
-    LDX #KEY_1
+    LDX #INKEY_TEST(KEY_1)
     JSR key_pressed
     BPL not_1
     LDA #&01
     STA colour
     JSR show_colour
 .not_1
-    LDX #KEY_2
+    LDX #INKEY_TEST(KEY_2)
     JSR key_pressed
     BPL not_2
     LDA #&02
     STA colour
     JSR show_colour
 .not_2
-    LDX #KEY_3
+    LDX #INKEY_TEST(KEY_3)
     JSR key_pressed
     BPL not_3
     LDA #&03
     STA colour
     JSR show_colour
 .not_3
-    LDX #KEY_4
+    LDX #INKEY_TEST(KEY_4)
     JSR key_pressed
     BMI colour_0
-    LDX #KEY_0
+    LDX #INKEY_TEST(KEY_0)
     JSR key_pressed
     BPL not_0
 
@@ -4187,7 +4150,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA #&B9                        ; the delay before a held key first repeats
     STA repeat_delay
 .plot_keys
-    LDX #KEY_DELETE
+    LDX #INKEY_TEST(KEY_DELETE)
     JSR key_pressed
     BPL not_delete
     LDA colour
@@ -4199,7 +4162,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA colour
     RTS
 .not_delete
-    LDX #KEY_RETURN
+    LDX #INKEY_TEST(KEY_RETURN)
     JSR key_pressed
     BPL done
 
@@ -4266,7 +4229,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 
 ; The pixel cursor's key repeat: wait while the key is held, up to
 ; repeat_delay * 256 trips round a loop.
-; In:  X = the key's negative INKEY number
+; In:  X = INKEY_TEST() of the key
 ; Clobbers: A, X, Y
 .key_delay
 {
@@ -4379,7 +4342,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .menu_text
     EQUW text_options_a, text_options_b, text_environment, text_credits
 .menu_keys
-    EQUB KEY_F0, KEY_F1, KEY_F2, KEY_F3
+    EQUB INKEY_TEST({KEY_F0, KEY_F1, KEY_F2, KEY_F3})
 
 ; Read a command: a CTRL shortcut, or a choice from the menu whose function
 ; key is pressed.
@@ -4388,7 +4351,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Clobbers: X, Y, and as menu
 .read_command
 {
-    LDX #KEY_CTRL
+    LDX #INKEY_TEST(KEY_CTRL)
     JSR key_pressed
     BPL menus
     LDA #24-1                       ; from the last of shortcut_keys
@@ -4450,9 +4413,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; The CTRL shortcuts, in command order from command 1; entries that aren't
 ; keys (below &80) have none.
 .shortcut_keys
-    EQUB KEY_X, KEY_Y, KEY_DELETE, KEY_U, KEY_A, KEY_N, NO_KEY, NO_KEY   ; OptionsA
-    EQUB KEY_S, KEY_COPY, KEY_O, NO_KEY, KEY_R, KEY_B, NO_KEY, NO_KEY    ; OptionsB
-    EQUB KEY_F8, KEY_F9, KEY_F6, KEY_F7, KEY_C, 0, 0, 0                  ; Environment
+    EQUB INKEY_TEST({KEY_X, KEY_Y, KEY_DELETE, KEY_U, KEY_A, KEY_N}), NO_KEY, NO_KEY ; OptionsA
+    EQUB INKEY_TEST({KEY_S, KEY_COPY, KEY_O}), NO_KEY, INKEY_TEST({KEY_R, KEY_B}), NO_KEY, NO_KEY ; OptionsB
+    EQUB INKEY_TEST({KEY_F8, KEY_F9, KEY_F6, KEY_F7, KEY_C}), 0, 0, 0                ; Environment
 
 ; Which cursor key the selection last saw held.
 .key_held
