@@ -1,16 +1,83 @@
-; H.GAME: PIPELINE itself (William Reeve & Ian Holmes, Superior Software 1988).
+; H.GAME: PIPELINE itself (William Reeve & Ian Holmes, Superior Software 1988):
+; the title screen, the four levels of a mission, and the screens between.
 ;
-; The GAME stub reads this from the hidden sectors &122-&142 to &3000 and jumps
-; to it. It's built to be loaded at &3000 but to run lower down: the loader at
-; the start copies the rest into the stack page, page 8, &0400-&07FF and
-; &0900-&23AC, sets up the screen and the sound event, and jumps to the game,
-; which then loads the mission file IO over the loader (see io.6502inc).
+; How it's reached: MENU runs GAME, a small stub loader (src/game.6502, with
+; hidden_loader.6502inc), which reads this file to &3000 from disc sectors
+; &122-&142 and jumps to it. No catalogue entry lists those sectors (the "H."
+; is for hidden), so copying the disc's files doesn't copy the game. It's
+; built to be loaded at &3000 but to run lower down: the loader at the start
+; copies the rest into the stack page, page 8, &0400-&07FF and &0900-&23AC,
+; sets up the screen and the sound event, and jumps to the game, which then
+; loads the mission file IO over the loader. A mission is four levels (from
+; the Level Designer) with their graphics (from the Graphics Designer),
+; object names and settings, as MISSION (the Mission Generator) packs them
+; into one file (io.6502inc has IO's layout).
+;
+; Memory while the game runs:
+;   &00-&9B      zero page: the variables below
+;   &0100-&0124  trigger_flags, keys_were_down and step_y, at the bottom of
+;                the stack page
+;   &0131-&0190  event_handler, feeding the tune to the OS's sound queues
+;   &037F-&03DF  the OS's extended vectors, saved while the game covers them
+;   &0400-&07FF  low_code: the map view's patterns, drawing the view, scrolling
+;   &0880-&08FF  sound_data: the tune, then the envelopes in the OS's store
+;   &0900-&23AC  main_code, the rest of the game; each level's objects are
+;                copied over game_start, which has run by then
+;   &236D-&242C  the level's trigger places and arguments: over main_code's
+;                last bytes (trigger_places) and just past it (trigger_args)
+;   &242D-&57FF  IO, the mission (io_start up to IO_END)
+;   &5800-&5FFF  map: the map of the level being played, which play changes
+;   &6000-&7FFF  the screen (game.6502inc)
+;
+; The file, in order: the variables; the loader, which runs at &3000; then
+; the pieces it copies, each a SECTION assembled at its run-time address:
+; event_handler, sound_data, low_code, and main_code. main_code runs, roughly:
+; the tune, drawing the player, sprites and the map view; reading and writing
+; map cells; text, numbers and the end-of-level and game-over effects;
+; game_start, the main loop, losing a life and finishing a level; the title
+; screen; setting up a level; a cycle of play and the player's turn; the
+; backpack and map screens; the player's actions; triggers and what they do;
+; monsters' thinking and the score; loading a mission and the error handler;
+; and the dispatch tables. Past what the loader copies, leftover bytes.
+;
+; Words used throughout:
+; - A map cell is one of a level's 64 x 64 squares, drawn as a picture 4 x 4
+;   character cells across (a character cell being 4 pixels across and 8
+;   lines down, a byte a line). Positions are in character cells where things
+;   move a character at a time (the view, monsters, a thrown object), and in
+;   map cells otherwise.
+; - The view is the part of the map on screen, 8 x 8 map cells round the
+;   player, scrolled by the hardware a character at a time (game.6502inc).
+; - A sprite is a picture drawn at any character position rather than in a
+;   map cell's place, clipped to the view (draw_sprite): monsters, a thrown
+;   object, and the pictures on the title and backpack screens. An icon is an
+;   object's small picture, drawn in the middle of a floor picture.
+; - A cycle is one turn of the main loop (play_cycle): the player acts, think
+;   decides where the monsters go, and everything that moves by itself moves
+;   a character in each of four frames (TV frames, 50 a second). A step is
+;   the player moving a map cell; a walk scrolls the view 4 characters for it.
+; - Sulphur (CELL_SULPHUR) is what the player collects; the exit, the stage,
+;   triggers and monsters are explained in game.6502inc; a pipe carries the
+;   player along it (pipe_move); the backpack holds what they carry.
+; - A cell type's second picture (an "alternate") is shown instead of its
+;   first on some squares of a checkerboard, as the level says.
 ;
 ; Names for the game's screen and data are in game.6502inc (the OS's in
 ; osconst.6502inc, a level's in leveldata.6502inc). Routine headers say what
 ; a routine is for, then In:, Out: and Clobbers: (where "everything" means
 ; the registers and whatever zero page the routines it calls use). Text is
 ; printed through the OS, placed with TEXT_AT.
+;
+; Tricks the code uses, met all through it: calls followed by inline data
+; that the routine steps over (copy_block, print_inline); jump tables
+; (action_table and walks, through jump_to; trigger_actions, through a
+; self-modified JSR); self-modified jumps and operands
+; (try_object_trigger_jump, trigger_action_call, draw_player_flipped_copy,
+; draw_map_view_copy); BIT tests against other instructions' operands
+; (bit4_mask, bit6_mask); routines that return from their caller by dropping
+; its return address (clip_sprite_out_of_view, selected_object,
+; drop_two_and_return); and tables laid over code that has already run
+; (objects) or over bytes the file happens to end with (trigger_places).
 ;
 ; First drafted by tools/dis6502seg.py (hints/hidden_game.toml); edited by
 ; hand since, so don't regenerate over it.
@@ -24,39 +91,51 @@ SECTION hidden_game, filename="H.GAME", org=&3000
 {
 INCLUDE "game.6502inc"                  ; in the scope: its names are the game's own
 
-; Zero page. The loader's block copy uses &00-&07 too (copy_return...).
-monster_x = &00                         ; MONSTERS of MONSTER_BYTES: x, y in character cells
+; Zero page, &00-&9B. The loader's block copy uses &00-&07 too (copy_return
+; and the rest, below), before the monsters are there.
+
+; The level's monsters (&00-&0F): MONSTERS of MONSTER_BYTES, copied from IO.
+monster_x = &00                         ; x and y in character cells
 monster_y = &01
-monster_direction = &02                 ; DIRECTION_*; + MONSTER_STUCK: stuck; MONSTER_GONE and up: not out
+monster_direction = &02                 ; DIRECTION_*, plus MONSTER_STUCK if it's stuck;
+                                        ; MONSTER_GONE or more if it's gone
 monster_turns = &03                     ; four 2-bit TURN_* fields, tried from the bottom
+
+; The thrown object, the player and the state of play (&10-&2E).
 thrown_x = &10                          ; a thrown object in flight, in character cells
 thrown_y = &11
 thrown_direction = &12                  ; THROWN_*: its direction + 1, or 0 for nothing in flight
 thrown_picture = &13                    ; its icon; once it lands, the cell type it hit
 thrown_picture_high = &14
-front_x = &15                           ; the cell in front of the player (or a thrown object hit)
+front_x = &15                           ; the cell in front of the player (or the cell a thrown object hit)
 front_y = &16
 action = &17                            ; ACTION_*: the action to do next
-frame_counter = &18                     ; +&20 a cycle; bit 7 picks the monsters' picture
-thrown_object = &19                     ; the object thrown; + &80 while it lands; then &FF
+frame_counter = &18                     ; goes up by &20 each cycle; bit 7 picks which of the
+                                        ; monsters' two pictures to draw
+thrown_object = &19                     ; the object in flight; &80 is added while its landing
+                                        ; triggers run, and it's &FF once it's down
 backpack_slot = &1A                     ; the selected slot
 throw_range = &1B                       ; cells the thrown object has left to fly
 started_late = &1C                      ; nonzero: the game didn't start on level 1
 pushes_left = &1D                       ; how many more crates the player may push
-clock_fraction = &1E                    ; io_time_rate is added each cycle
+clock_fraction = &1E                    ; io_time_rate is added each cycle; the clock ticks when it carries
 clip_position = &1F                     ; the sprite's x or y, being clipped to the view
 player_x = &20                          ; the player's map cell
 player_y = &21
 score = &22                             ; BCD: the low two digits
 score_high = &23                        ; and the high two
-backpack = &24                          ; BACKPACK_SLOTS: an object, or negative for empty
+backpack = &24                          ; BACKPACK_SLOTS bytes: an object's number, or
+                                        ; negative for an empty slot
 menu_key_left = &29                     ; the direction keys as MENU set them (the loader
 menu_key_right = &2A                    ; copies all ten here, but the rest are soon
 menu_key_up = &2B                       ; overwritten)
 menu_key_down = &2C
 empty_channel = &2D                     ; the sound channel the event says ran dry
 lives = &2E
-sound_channel = &30                     ; an OSWORD 7 block for sound effects
+
+; Two OSWORD 7 (SOUND) parameter blocks, "the sound effects' block" and "the
+; tune block" (&30-&3F), and where the tune has got to (&40-&44).
+sound_channel = &30                     ; the sound effects' block
 sound_channel_high = &31
 sound_amplitude = &32
 sound_amplitude_high = &33
@@ -64,7 +143,7 @@ sound_pitch = &34
 sound_pitch_high = &35
 sound_duration = &36
 sound_duration_high = &37
-tune_channel = &38                      ; an OSWORD 7 block for the tune
+tune_channel = &38                      ; the tune block
 tune_channel_high = &39
 tune_amplitude = &3A
 tune_amplitude_high = &3B
@@ -77,45 +156,58 @@ tune_position_2 = &41                   ; voice 2's
 tune_swap = &42                         ; which voice plays alone: 0 voice 1, 1 voice 2
 tune_transpose = &43                    ; 0 or TRANSPOSE_FOURTH
 tune_together = &44                     ; nonzero: both voices play
+
+; More of the state of play, and scratch (&48-&6F).
 triggers_fired = &48                    ; counts triggers that matched and acted
 level = &49                             ; 0-3
-draw_step = &4A                         ; drawing: cells to a picture's edge, a step from cell to cell, or flip the player
-draw_step_high = &4B
-monster_index = &4C
+draw_step = &4A                         ; three uses: character cells left to a picture's
+draw_step_high = &4B                    ; edge (draw_row_part, draw_column_part), the screen
+                                        ; step from one cell to the next (rub_out_trail), or
+                                        ; nonzero to draw the player upside down
+monster_index = &4C                     ; the monster move_things is moving
 picture_stride = &4E                    ; bytes from one column of a picture to the next
-picture_size = &4F                      ; negative: a whole picture; 1: an icon on the floor
+picture_size = &4F                      ; negative (&80) for a whole picture, 1 for an icon on the floor
 work0 = &50                             ; scratch, used for all sorts
 work1 = &51
 work2 = &52
 work3 = &53
 work4 = &54
 work5 = &55
-start_x = &56                           ; the level's setup, copied from io_level_setup
-start_y = &57
+start_x = &56                           ; the level's setup, copied from io_level_setup (LEVEL_*):
+start_y = &57                           ; the view's top-left map cell at the start
 to_collect = &58                        ; sulphur still to collect
 time_left = &59                         ; the clock
 exit_x = &5A
 exit_y = &5B
 monster_food = &5C                      ; low nibble: a cell monsters eat; high: what they leave
-alternate_cells = &5D                   ; 2 bits a cell type: which squares use its second picture
+alternate_cells = &5D                   ; 2 bits a cell type: which squares show its second picture
 player_dead = &5E                       ; nonzero: lose a life
-pipe_move = &5F                         ; inside a pipe: the move action that carries the player on
+pipe_move = &5F                         ; inside a pipe, the move action (ACTION_LEFT...)
+                                        ; carrying the player on; 0 on foot
 stage = &60                             ; STAGE_*
 furthest_level = &61                    ; the title screen's start level goes up to this
 front_cell = &62                        ; what's in the cell in front of the player
 fill_screen = &63                       ; nonzero: clear_screen fills with the floor pattern, not black
-tune_off = &64
-effects_off = &65
-action_keys = &66                       ; by action: P, D, M, CTRL, T, Return (actions 1-6)
-key_map = action_keys + ACTION_MAP - 1  ; M
-key_left = &6C                          ; this level's direction keys (actions 7-10)
+tune_off = &64                          ; nonzero: the tune is off
+effects_off = &65                       ; nonzero: the sound effects are off
+action_keys = &66                       ; the keys for actions 1-6, as MENU set them: by
+                                        ; default P, D, M, CTRL, T, Return
+key_map = action_keys + ACTION_MAP - 1  ; the map key (M by default)
+key_left = &6C                          ; this level's direction keys (actions 7-10),
+                                        ; which a trigger can swap
 key_right = &6D
 key_up = &6E
 key_down = &6F
+
+; The drawing variables (&70-&9B, with draw_step to picture_size and
+; clip_position above). Routine headers call picture, picture_size and
+; picture_stride "the picture variables", and sprite_columns to
+; sprite_skip_y with clip_position "the sprite variables".
 cell_x = &70                            ; the map cell being looked at or drawn
 cell_y = &71
-screen_start = &72                      ; the CRTC's start address
-screen_start_high = &73
+screen_start = &72                      ; the CRTC's start address, in its units of 8
+screen_start_high = &73                 ; bytes; in the map view, the low byte is the map
+                                        ; column at the left edge
 view_sub_x = &74                        ; the character column, within its map cell, being drawn
 view_sub_y = &75                        ; the character row, likewise
 picture = &76                           ; the picture being drawn
@@ -123,30 +215,33 @@ picture_high = &77
 screen = &78                            ; where it's being drawn
 screen_high = &79
 strip_cells = &7A                       ; map cells drawn along a row so far
-cell_low_nibble = &7B                   ; the cell is in its map byte's low nibble
-map_pointer = &7C
+cell_low_nibble = &7B                   ; 1 if the cell is in its map byte's low nibble
+                                        ; (an odd row), else 0
+map_pointer = &7C                       ; the map byte holding cell_x, cell_y (map_address)
 map_pointer_high = &7D
 strip_cells_down = &7E                  ; map cells drawn down a column so far
-steps = &7F
+steps = &7F                             ; a counter: a walk's character steps,
+                                        ; redraw_view's, burn_up's square
 view_screen = &80                       ; the screen address of the view's top left
 view_screen_high = &81
-count_across = &82
-count_down = &83
-player_screen = &84
+count_across = &82                      ; counters for draw_player_at (rows, despite the name),
+count_down = &83                        ; redraw_view and burn_up: see there
+player_screen = &84                     ; where draw_player_at and rub_out_trail are drawing
 player_screen_high = &85
 player_screen_base = &86                ; the player's top left on the screen
 player_screen_base_high = &87
-player_frame = &88                      ; +&20 a cell walked; bit 7 flips the player's picture
-facing = &89                            ; DIRECTION_*
+player_frame = &88                      ; goes up by &20 each cell walked; bit 7 draws the player upside down
+facing = &89                            ; the way the player faces: DIRECTION_*
 view_x = &8A                            ; the view's top left, in character cells (4 to a map cell)
 view_y = &8B
-sprite_columns = &8E                    ; character cells to draw, less 1
-sprite_rows = &8F
-sprite_column = &90
+sprite_columns = &8E                    ; the sprite's character cells to draw across, less 1
+sprite_rows = &8F                       ; and down
+sprite_column = &90                     ; counting them
 sprite_row = &91
-sprite_screen = &92
+sprite_screen = &92                     ; where the sprite is being drawn
 sprite_screen_high = &93
-view_cell_x = &94                       ; view_x DIV 4
+view_cell_x = &94                       ; the map cell at the view's top left (view_x
+                                        ; DIV 4, standing still)
 view_cell_y = &95
 temp = &96
 sprite = &97                            ; the picture being drawn
@@ -158,49 +253,55 @@ steps_since_drawn = &9B                 ; steps scrolled in a pipe since the pla
 ; Elsewhere.
 trigger_flags = &0100                   ; a byte per trigger, from io_level_trigger_flags
 keys_were_down = &0120                  ; a byte per direction key: 1 if it was down last time
-step_y = &0124                          ; step's scratch
-saved_extended_vectors = &037F          ; over the cassette filing system's workspace
-map = IO_END                            ; the level being played's map, copied from io_maps
+step_y = &0124                          ; step's scratch byte
+saved_extended_vectors = &037F          ; the OS's extended vectors (in the cassette filing system's
+                                        ; workspace, unused with a disc), for load_mission
+map = IO_END                            ; the map of the level being played, copied from io_maps
 
+; Before the game takes it over, the loader uses zero page for these.
 menu_keys = &50                         ; where MENU leaves the ten keys
-copy_return = &00
+copy_return = &00                       ; copy_block's
 copy_from = &02
 copy_to = &04
 copy_count = &06
 
-; A level's objects, OBJECT_BYTES each, laid over code that runs once.
+; The level's OBJECTS objects, OBJECT_BYTES each, copied by setup_level over
+; game_start, code that runs only once.
 objects = game_start
 object_x = objects + 0
 object_y = objects + 1
 object_icon = objects + 2
 object_flags = objects + 3
 
-; The triggers' places and arguments, laid over the end of the game's own
-; code by setup_level (trigger_places) and just past it.
-trigger_args = trigger_places + 2 * PUZZLES     ; 4 bytes a trigger
-trigger_condition = trigger_args + 3
+; The triggers' places and arguments, copied by setup_level over the end of
+; the game's own code (trigger_places) and just past it.
+trigger_args = trigger_places + 2 * PUZZLES     ; 4 bytes a trigger: three for its action, then
+trigger_condition = trigger_args + 3            ; its condition
 
-; Masks for BIT that are other instructions' operands.
+; BIT needs its mask in memory: these are operands of other instructions
+; that happen to hold the right bits.
 bit4_mask = show_map_centre + 1         ; the byte there is &10
 bit6_mask = fire_object_vanishes + 1    ; the byte there is &40
 
-; Entered from the GAME stub. Copies MENU's ten keys where the game wants
-; them, copies the game into place, sets up the screen and the sound event,
-; and starts the game.
+; Entered at &3000 from the GAME stub. Copies MENU's ten keys where the game
+; wants them, copies the game into place, sets up the screen and the sound
+; event, and starts the game. Never returns.
 ; In: menu_keys = the ten keys MENU set up, as negative INKEY numbers.
 .loader
-    LDX #&FF                            ; the event handler lives in the stack page
+    LDX #&FF                            ; a fresh stack, clear of the event handler below
     TXS
     LDY #MENU_KEYS - 1
 .copy_keys_loop
     LDX key_order, Y
     LDA menu_keys, X                    ; MENU's key
     STA menu_key_left, X                ; as MENU left it
-    STA action_keys, Y                  ; in the order the game tests its actions
+    STA action_keys, Y                  ; in the game's own order (key_order)
     DEY
     BPL copy_keys_loop
 
 ; Each copy_block call is followed by its source, destination and length.
+; First the OS's extended vectors, saved since the game's code is about to
+; cover them; then each piece of the game, to where it runs.
     JSR copy_block
     EQUW MOS_EXTENDED_VECTORS, saved_extended_vectors, &100 - LO(MOS_EXTENDED_VECTORS)
     JSR copy_block
@@ -234,7 +335,8 @@ bit6_mask = fire_object_vanishes + 1    ; the byte there is &40
     STA EVNTV + 1
     CLI
 
-; The game's screen is SCREEN to SCREEN_END, scrolled by the hardware.
+; Make the hardware wrap the screen round at 8K, so that the game's screen
+; runs from SCREEN to SCREEN_END and the hardware scroll wraps within it.
     LDA #SCREEN_WRAP_8K
     STA SYSVIA_ORB
     JMP game_start
@@ -248,8 +350,9 @@ bit6_mask = fire_object_vanishes + 1    ; the byte there is &40
     EQUB 0, 0, 0, 0, 0, 0, CRTC_CURSOR_OFF, CRTC_CURSOR_START, 0, VDU_DEFINE
 .cursor_off_vdu_end
 
-; For each of the action keys in the order the game tests them (action_keys),
-; then the direction keys (key_left...), which of MENU's ten it is.
+; For each of the action keys in the order the game keeps them (action_keys,
+; by ACTION_*), then the direction keys (key_left...), which of MENU's ten it
+; is.
 .key_order
     EQUB MENU_KEY_PICK_UP, MENU_KEY_DROP, MENU_KEY_MAP, MENU_KEY_BACKPACK
     EQUB MENU_KEY_THROW, MENU_KEY_USE
@@ -379,9 +482,9 @@ SECTION event_handler, org=&0131
 .event_handler_end
 ENDSECTION
 
-; The tune played during a level, in the printer buffer, and the four sound
-; envelopes, written straight into the OS's envelope store rather than with
-; OSWORD 8.
+; The tune played during a level, in the OS's printer buffer (nothing is
+; printed), and the four sound envelopes, written straight into the OS's
+; envelope store rather than with OSWORD 8.
 .sound_data_load
 SECTION sound_data, org=&0880
 .sound_data
@@ -413,7 +516,7 @@ ENDSECTION
 .sound_data_padding
     SKIP 32
 
-; Map view patterns and the code that scrolls the playing area.
+; The map view's patterns, and the code that draws and scrolls the view.
 .low_code_load
 SECTION low_code, org=&0400
 .low_code
@@ -422,15 +525,15 @@ SECTION low_code, org=&0400
 ; a byte (four MODE 5 pixels) a line. Then the player, facing each way.
 .map_view_patterns
     EQUB &00, &00, &00, &00             ; CELL_FLOOR
-    EQUB &10, &30, &70, &F0             ; 1-4: curved walls
+    EQUB &10, &30, &70, &F0             ; CELL_SE_CURVE to CELL_NW_CURVE: curved walls
     EQUB &80, &C0, &E0, &F0
     EQUB &F0, &70, &30, &10
     EQUB &F0, &E0, &C0, &80
-    EQUB &F0, &F0, &F0, &F0             ; 5: a wall
+    EQUB &F0, &F0, &F0, &F0             ; CELL_WALL_1
     EQUB &06, &69, &69, &06             ; CELL_CRATE
     EQUB &FF, &FF, &66, &66             ; CELL_SULPHUR
     EQUB &1F, &2F, &4F, &8F             ; CELL_WALL
-    EQUB &FF, &60, &60, &FF             ; 9: a wall
+    EQUB &FF, &60, &60, &FF             ; CELL_BARRICADE
     EQUB &60, &90, &90, &60             ; CELL_LAVA
     EQUB &06, &0F, &0F, &06             ; CELL_JUNCTION
     EQUB &00, &0F, &0F, &00             ; CELL_PIPE_ACROSS
@@ -478,7 +581,7 @@ SECTION low_code, org=&0400
 ; Program CRTC registers 1-9 from crtc_values, then the start address. R1 is
 ; last, so the display comes back on (blank_display turns it off with R1 = 0)
 ; once the rest is set.
-; Clobbers: A, X.
+; Clobbers: A, X, Y.
 .setup_crtc
     LDX #crtc_values_end - crtc_values
 .setup_crtc_loop
@@ -499,7 +602,7 @@ SECTION low_code, org=&0400
     LDY cell_y
     JSR cell_at_checked                 ; carry set: off the map
     BCC cell_picture_on_map
-    LDX #LO(io_alternates + 3 * PICTURE_BYTES) ; outside the map is lava (its second picture)
+    LDX #LO(io_alternates + 3 * PICTURE_BYTES) ; off the map: lava's second picture, io_alternates' fourth
     LDY #HI(io_alternates + 3 * PICTURE_BYTES)
     BCS cell_picture_found
 .cell_picture_on_map
@@ -621,9 +724,9 @@ SECTION low_code, org=&0400
     BMI draw_row_part_next
 
 ; Draw one character row of a map cell's picture across X character cells
-; from screen: the cell's whole width, or with X = ~2 its last two columns
-; (the view's left edge cuts the first cell in half). An icon is drawn with
-; the floor round it.
+; from screen: the cell's whole width, or with X = ~2 (2 EOR &FF) its last
+; two columns (the view's left edge cuts the first cell in half). An icon is
+; drawn with the floor round it.
 ; In: picture, picture_size (as cell_picture leaves them); view_sub_y = the
 ; row within the map cell; draw_step = the columns to the cell's right edge.
 ; Clobbers: A, X, Y, picture, screen, draw_step, picture_stride.
@@ -648,7 +751,7 @@ SECTION low_code, org=&0400
     LDA view_sub_y                      ; the row within the picture
     INY
     BMI draw_row_part_offset
-    LSR A                               ; (an icon's rows are 1 and 2: 0 and 1)
+    LSR A                               ; (an icon's rows 0-1 are the cell's rows 1-2)
 .draw_row_part_offset
     ASL A                               ; * CHAR_BYTES
     ASL A
@@ -737,8 +840,9 @@ SECTION low_code, org=&0400
 
 ; Point map_pointer at the byte holding map cell (cell_x, cell_y): the map is
 ; stored a column at a time, MAP_COLUMN_BYTES a column, two cells a byte.
-; Out: map_pointer; cell_low_nibble = 1 for an odd cell_y, in the low nibble.
-; Clobbers: A, Y.
+; Out: map_pointer; cell_low_nibble = 1 if cell_y is odd (the cell is in the
+; byte's low nibble), else 0; Y = 0.
+; Clobbers: A.
 .map_address
     LDA cell_x
     LDY #0
@@ -794,7 +898,7 @@ ASSERT MAP_COLUMN_BYTES = 1 << 5 AND LO(map) = 0
     LDA view_sub_x                      ; the column within the picture
     INY
     BMI draw_column_part_offset
-    LSR A                               ; (an icon's columns are 1 and 2: 0 and 1)
+    LSR A                               ; (an icon's columns 0-1 are the cell's 1-2)
 .draw_column_part_offset
     LSR A                               ; * PICTURE_COLUMN_BYTES
     ROR A
@@ -870,7 +974,7 @@ ASSERT MAP_COLUMN_BYTES = 1 << 5 AND LO(map) = 0
 
 ; Scroll the view a character cell right, left, up or down: move the CRTC's
 ; start address and the view's top left on the screen, wrapping round.
-; Clobbers: A, X.
+; Clobbers: A, X, Y.
 .scroll_right
     INC view_x                          ; the view moves right
     INC screen_start                    ; the CRTC starts a character on
@@ -949,11 +1053,11 @@ ASSERT MAP_COLUMN_BYTES = 1 << 5 AND LO(map) = 0
     BNE scroll_up_done
 
 ; Walk the player a cell down: scroll the view a character row at a time,
-; four times, drawing each new bottom row of map cells. The player, drawn on
-; the screen, would scroll with it, so each step rubs out their trail and
-; draws them back in the middle; and things that move by themselves move a
-; character a step.
-; Clobbers: A, X, Y and the drawing variables.
+; four times, drawing the row of character cells that comes into view at the
+; bottom each time. The player, drawn in screen memory, would scroll with it,
+; so each time their trail is rubbed out and they're drawn back in the
+; middle; and things that move by themselves move a character.
+; Clobbers: A, X, Y, monster_index and the drawing variables.
 .walk_down
     JSR next_player_frame               ; the player's walking picture
     LDA #2                              ; the new row is half way through a cell
@@ -991,6 +1095,7 @@ ASSERT MAP_COLUMN_BYTES = 1 << 5 AND LO(map) = 0
     RTS
 
 ; Walk a cell up, drawing each new top row.
+; Clobbers: as walk_down.
 .walk_up
     JSR next_player_frame
     LDA #1
@@ -1032,6 +1137,7 @@ ASSERT MAP_COLUMN_BYTES = 1 << 5 AND LO(map) = 0
     RTS
 
 ; Walk a cell right, drawing each new right-hand column.
+; Clobbers: as walk_down.
 .walk_right
     JSR next_player_frame
     LDA #2
@@ -1069,6 +1175,7 @@ ASSERT MAP_COLUMN_BYTES = 1 << 5 AND LO(map) = 0
     RTS
 
 ; Walk a cell left, drawing each new left-hand column.
+; Clobbers: as walk_down.
 .walk_left
     JSR next_player_frame
     LDA #1
@@ -1107,7 +1214,7 @@ ASSERT MAP_COLUMN_BYTES = 1 << 5 AND LO(map) = 0
 ; trap, the collectable, wall two and wall one, and alternate_cells has their
 ; bits in the reverse order, wall one at the top.
 .alternate_cell_types
-    EQUB CELL_LAVA, CELL_SULPHUR, CELL_WALL, 5
+    EQUB CELL_LAVA, CELL_SULPHUR, CELL_WALL, CELL_WALL_1
 ASSERT P% - alternate_cell_types = ALTERNATES
 
 ; Copied but never used.
@@ -1137,8 +1244,8 @@ SECTION main_code, org=&0900
 
 ; Play the next note of the voice on channel A, if that's the channel that
 ; ran dry. Channel 1 plays voice 1, an octave above voice 2 on channel 2; each
-; voice's last note is pitched nearly another octave up. The voice's channel
-; is also its envelope.
+; voice's last note is pitched another octave up. The voice's channel is also
+; its envelope.
 ; In: A = the channel (1 or 2), or 0 if the voice isn't playing.
 ; Clobbers: A, X, Y, the tune block.
 .play_voice
@@ -1181,7 +1288,7 @@ SECTION main_code, org=&0900
     LDX tune_position, Y                ; the voice's last note...
     CPX #TUNE_NOTES
     BNE play_voice_note
-    ADC #OCTAVE - 1                     ; ...a little under an octave up
+    ADC #OCTAVE - 1                     ; ...an octave up (the CPX set the carry)
 .play_voice_note
     STA tune_pitch
     PLA
@@ -1228,8 +1335,11 @@ SECTION main_code, org=&0900
 .alternate_pictures
     EQUB FIRST_ALTERNATE + 3, FIRST_ALTERNATE + 1, FIRST_ALTERNATE + 2, FIRST_ALTERNATE
 
-; CRTC registers 1-9: 32 characters across and 32 rows of 8 lines, the screen
-; centred.
+; CRTC registers 1-9: characters across, horizontal sync position, sync
+; widths, vertical total less 1, vertical adjust, rows, vertical sync
+; position, interlace, lines a row less 1. MODE 5's but for the first two:
+; 32 characters across instead of 40, and the horizontal sync moved from 49
+; to 45 to keep the narrower screen centred. 32 rows of 8 lines.
 .crtc_values
     EQUB SCREEN_COLUMNS, 45, 36, 38, 0, SCREEN_ROWS, 34, 1, 7
 .crtc_values_end
@@ -1263,8 +1373,9 @@ NEXT
     SEC
     JMP draw_sprite
 
-; Draw monster A: the monsters' two frames are cell types E's and F's
-; pictures, so the caller puts 0 or PICTURE_BYTES in sprite for the low byte.
+; Draw monster A: the monsters' two pictures are CELL_FIRE's and
+; CELL_OBJECT's, in one page, so the caller puts 0 or PICTURE_BYTES in
+; sprite for the low byte.
 ; Clobbers: A, X, Y and the sprite variables.
 .draw_monster
     JSR monster_position
@@ -1274,8 +1385,9 @@ NEXT
     JMP draw_sprite
 
 ; Draw the player in the middle of the view, facing their way. Every four
-; cells walked (player_frame's bit 7) the picture is drawn upside down, and
-; facing up or down the other of the two up and down pictures is used.
+; cells walked (player_frame's bit 7) the picture turns upside down or back,
+; and while it's upside down, facing up or down uses the other of the two up
+; and down pictures.
 ; Clobbers: A, X, Y, picture, player_screen, player_screen_base, draw_step,
 ; count_across, count_down, steps_since_drawn.
 .draw_player
@@ -1564,7 +1676,7 @@ NEXT
     RTS
 
 ; Move everything that moves by itself one character cell: a thrown object,
-; then each monster that's out, the way it's going (one that's stuck is drawn
+; then each monster in play, the way it's going (one that's stuck is drawn
 ; where it is).
 ; Clobbers: A, X, Y, monster_index and the drawing variables.
 .move_things
@@ -1621,7 +1733,7 @@ NEXT
     BEQ monster_right
     CMP #DIRECTION_UP
     BEQ monster_up
-    CMP #MONSTER_GONE                   ; not out
+    CMP #MONSTER_GONE                   ; gone
     BCS next_monster
     CMP #DIRECTION_DOWN
     BNE monster_stuck
@@ -1866,6 +1978,7 @@ NEXT
 ; down only to view_y + 28, so none hangs off the bottom at VIEW_PAST_END.)
 ; Out: sprite_skip_y, sprite_rows and sprite_screen_high (added to it); or
 ; returns from draw_sprite.
+; Clobbers: A, clip_position.
 .clip_sprite_y
     STY clip_position
     LDA view_y
@@ -1987,7 +2100,9 @@ NEXT
 .map_view_return
     RTS
 
-; Scroll the map view one column, drawing the column that comes into view.
+; Scroll the map view a column left (map_view_scroll_left) or right
+; (map_view_scroll_right), unless it's at the map's edge, drawing the column
+; that comes into view.
 ; Clobbers: as draw_map_view.
 .map_view_scroll_left
     LDA screen_start                    ; already at the left?
@@ -2053,7 +2168,7 @@ NEXT
     RTS
 
 ; Wait for the vsync, then point the CRTC at screen_start.
-; Clobbers: A, X.
+; Clobbers: A, X, Y.
 .set_screen_start
     JSR wait_vsync
     LDX #CRTC_START_HIGH
@@ -2064,7 +2179,8 @@ NEXT
     JMP set_crtc_register
 ASSERT CRTC_START_LOW = CRTC_START_HIGH + 1
 
-; Wait for the vertical sync. Preserves A.
+; Wait for the vertical sync.
+; Preserves A. Clobbers: X, Y (OSBYTE 19 changes them).
 .wait_vsync
     PHA
     LDA #OSBYTE_WAIT_VSYNC
@@ -2122,9 +2238,9 @@ ASSERT LO(map_view_patterns) = 0
     CPY exit_y
     BNE cell_at_checked
     JSR read_map_cell
-    CMP #CELL_OBJECT                    ; the exit's icon
-    BNE cell_at_exit                    ; a wall
-    LDA #CELL_WALL
+    CMP #CELL_OBJECT                    ; still showing the exit's icon?
+    BNE cell_at_exit                    ; no: it's been lit, and is fire
+    LDA #CELL_WALL                      ; yes: a wall
 .cell_at_exit
     CMP #0
     RTS
@@ -2148,6 +2264,7 @@ ASSERT LO(map_view_patterns) = 0
 
 ; Read map cell (X, Y), on the map.
 ; Out: A = the cell type, Z set if it's empty floor; carry clear.
+; Clobbers: X, Y, cell_x, cell_y, map_pointer, cell_low_nibble.
 .read_map_cell
     STX cell_x
     STY cell_y
@@ -2169,7 +2286,8 @@ ASSERT LO(map_view_patterns) = 0
 ; cells further on in the middle of it, and empty their cell: the start of a
 ; level, or a teleport. (X, Y) become where the level starts again after a
 ; life is lost, so a teleport moves that too.
-; Clobbers: A, X, Y, work0, cell_x, cell_y, map_pointer, cell_low_nibble.
+; Clobbers: A, X, Y, work0, cell_x, cell_y, map_pointer, cell_low_nibble,
+; front_x, front_y, front_cell.
 .place_player
     STX start_x
     STY start_y
@@ -2343,7 +2461,7 @@ ASSERT P% - turns = (TURN_ANTICLOCKWISE + 1) * TURN_ROW
     BPL draw_title_flame
     LDA #HI(player_facing(DIRECTION_UP)) ; the player
     STA sprite_high
-    LDX #16
+    LDX #16                             ; at character (16, 27), the bottom middle
     LDY #27
     SEC
     JMP draw_sprite
@@ -2438,7 +2556,7 @@ ASSERT OBJECT_NAME_LENGTH = 12
     BPL print_names_text
     RTS
 
-; The title and backpack screens' frame: a row of cell 5's picture (a wall)
+; The title and backpack screens' frame: a row of CELL_WALL_1's picture
 ; across the top and bottom of the view and a column down each side (the view
 ; is offset half a cell, so only half of each shows).
 ; Clobbers: A, X, Y, work2 and the sprite variables.
@@ -2469,9 +2587,9 @@ ASSERT OBJECT_NAME_LENGTH = 12
     ASL A
     TAY
 .draw_border_picture
-    LDA #LO(tile(5))
+    LDA #LO(tile(CELL_WALL_1))
     STA sprite
-    LDA #HI(tile(5))
+    LDA #HI(tile(CELL_WALL_1))
     STA sprite_high
     SEC
     JMP draw_sprite
@@ -2551,10 +2669,10 @@ ASSERT OBJECT_NAME_LENGTH = 12
     EQUS "Time:"
     NOP
     LDA time_left
-    CMP #10                             ; under 10...
+    CMP #10                             ; under 10, it stays in colour 3
     BCC print_status_time
     PHA
-    JSR print_inline                    ; ...stays in colour 3
+    JSR print_inline                    ; 10 or more: colour 2
     EQUB VDU_COLOUR, 2
     NOP
     PLA
@@ -2685,7 +2803,8 @@ ASSERT OBJECT_NAME_LENGTH = 12
     NOP
     RTS
 
-; Never called: the level after a TAB to the right of the title screen's.
+; Never called: print the level at column 24 of row 13, to the right of where
+; the title screen prints it.
 .print_level_at
     JSR print_inline
     TEXT_AT 24, 13
@@ -2829,10 +2948,10 @@ WELL_DONE_SHADOW = &0C
 ; the sprite variables.
 .burn_up
     JSR wait_a_second
-    LDA view_x                          ; on the player (a character higher)
-    CLC
+    LDA view_x                          ; the square starts at the player's top
+    CLC                                 ; left, a character higher
     ADC #PLAYER_CHAR
-    STA view_sub_x                      ; (the square's top left)
+    STA view_sub_x                      ; (view_sub_x and _y: its top left)
     LDA view_y
     CLC
     ADC #PLAYER_CHAR - 1
@@ -3010,8 +3129,9 @@ ASSERT P% - game_start = OBJECTS * OBJECT_BYTES
     JSR clear_screen
     DEC fill_screen
 
-; Lose a life. With none left, burn up and back to the title; if the exit
-; had been lit the level counts as done.
+; Lose a life. With none left, the player burns up and it's back to the
+; title. Otherwise the level starts again, unless the exit had been lit, in
+; which case it counts as done.
 .lose_life
     JSR flush_buffers
     JSR sound_trigger                   ; a sound
@@ -3022,7 +3142,7 @@ ASSERT P% - game_start = OBJECTS * OBJECT_BYTES
     JSR close_view
     JMP new_game
 .lose_life_again
-    LDX #COLOUR_RED + 8                 ; colour 0 flashes red and cyan
+    LDX #COLOUR_RED + 8                 ; colour 0 to physical 9: flashing red and cyan
     JSR vdu_palette
     JSR close_view
     LDA stage                           ; died after lighting the exit?
@@ -3032,7 +3152,7 @@ ASSERT P% - game_start = OBJECTS * OBJECT_BYTES
 ; The level's done: flash the palette, WELL DONE, 101 points (add_points).
 .level_complete
     JSR flush_buffers
-    LDA #5
+    LDA #5                              ; a noise
     JSR sound_effect_4
     JSR flash_palette                   ; flash
     JSR show_well_done
@@ -3113,8 +3233,8 @@ ASSERT P% - game_start = OBJECTS * OBJECT_BYTES
 .set_palette_entry
     LDX io_palettes, Y                  ; logical << 4 | physical
 
-; VDU 19, X >> 4, X, 0, 0, 0: logical colour X's high nibble is physical
-; colour X's low.
+; VDU 19, X >> 4, X, 0, 0, 0: logical colour X >> 4 becomes physical colour
+; X AND 15 (the OS ignores the physical colour's high nibble).
 ; Clobbers: A.
 .vdu_palette
     LDA #VDU_PALETTE
@@ -3160,7 +3280,7 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
 .resync_timer
     JSR wait_vsync
     SEI
-    LDY #9                              ; a little more
+    LDY #9                              ; and about 6 ms more
     JSR delay
     LDA SYSVIA_T1LL                     ; timer 1 from its latch
     STA SYSVIA_T1LL
@@ -3186,7 +3306,7 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     TEXT_AT 6, 11                       ; and above it the score
     NOP
     JSR print_score
-    LDX #1                              ; just the input buffers
+    LDX #1                              ; just the input buffer
     LDA #OSBYTE_FLUSH_BUFFERS
     JSR OSBYTE
 .title_screen_key
@@ -3315,7 +3435,7 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     STX clock_fraction
     LDX exit_x
     LDY exit_y
-    LDA #CELL_OBJECT                    ; the exit's icon on its cell
+    LDA #CELL_OBJECT                    ; the exit's icon on its cell (lit, it was fire)
     JSR set_cell
     LDA level
     ASL A
@@ -3328,7 +3448,8 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     LDY start_y
     JSR place_player
 
-; Forget which direction keys were down; also the do-nothing action.
+; Forget which direction keys were down. Also action_table's entry for
+; ACTION_NONE and ACTION_STOP, which do nothing more.
 ; Clobbers: A, X.
 .clear_keys_down
     LDX #3
@@ -3454,7 +3575,8 @@ ASSERT OBJECTS * OBJECT_BYTES = PUZZLES AND LO(io_maps) = 0 AND LO(IO_MAP_SIZE) 
     BNE set_monster_cells
 
 ; Move a thrown object on a cell, advance the frame counter, decide where each
-; monster goes next, and take the monsters off the map.
+; monster goes next, and take the monsters' fire cells off the map while they
+; move (play_cycle puts them back).
 ; Clobbers: everything.
 .think
     JSR fly_thrown                      ; a thrown object
@@ -3483,7 +3605,9 @@ ASSERT OBJECTS * OBJECT_BYTES = PUZZLES AND LO(io_maps) = 0 AND LO(IO_MAP_SIZE) 
     BPL think_monster
     LDA #CELL_FLOOR                     ; and take them off the map
 
-; Set the cells of the monsters that are out to type A.
+; Set the cells of the monsters in play to type A.
+; Clobbers: A, X, Y, work0, work4, work5, cell_x, cell_y, map_pointer,
+; cell_low_nibble.
 .set_monster_cells
     STA work5
     LDA #MONSTERS - 1
@@ -3493,7 +3617,7 @@ ASSERT OBJECTS * OBJECT_BYTES = PUZZLES AND LO(io_maps) = 0 AND LO(IO_MAP_SIZE) 
     ASL A
     ASL A
     TAX
-    LDA monster_direction, X            ; not out?
+    LDA monster_direction, X            ; gone?
     CMP #MONSTER_GONE
     BCS set_monster_cell_next
     JSR monster_cell
@@ -3531,8 +3655,8 @@ ASSERT OBJECTS * OBJECT_BYTES = PUZZLES AND LO(io_maps) = 0 AND LO(IO_MAP_SIZE) 
     STX lives
 .give_up_life
     INC player_dead
-    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE      ; also, as pipe_move, the player isn't
-    STA pipe_move                       ; drawn again
+    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE      ; stored as pipe_move too, so the player
+    STA pipe_move                       ; isn't drawn again
     JMP OSBYTE
 .player_turn_no_escape
     JSR find_front
@@ -3578,9 +3702,10 @@ ASSERT OBJECTS * OBJECT_BYTES = PUZZLES AND LO(io_maps) = 0 AND LO(IO_MAP_SIZE) 
     STA work1
     JMP (work0)
 
-; Action 4, CTRL: the backpack screen. The mission, the lives left, the
-; backpack's contents and the selected object's name, the time, level, score
-; and sound settings; see backpack_keys. Space goes back to the game.
+; ACTION_BACKPACK (CTRL): the backpack screen. The mission, the lives left,
+; the backpack's contents and the selected object's name, the time, level,
+; score and sound settings; see backpack_keys. Space goes back to the game.
+; Clobbers: everything.
 .backpack_screen
     JSR save_view                       ; remember where the view was
     LDA lives
@@ -3838,7 +3963,8 @@ ASSERT BACKPACK_SPACING = 6
 .draw_backpack_done
     RTS
 
-; Action 3, M: the map, on levels below io_map_levels.
+; ACTION_MAP (M): the map, on levels below io_map_levels.
+; Clobbers: everything.
 .map_screen
     LDA level
     CMP io_map_levels                   ; no map this level?
@@ -3930,14 +4056,15 @@ ASSERT SCREEN_COLUMNS / 2 = &10         ; for bit4_mask
     STA work5
     RTS
 
-; Actions 7-10: a step left, right, up or down. Turn that way, then step into
-; the next cell if it's empty, sulphur, or a pipe running this way, which
-; carries the player along until it ends; a crate is pushed if the player has
-; pushes left. Anything else stops the player: lava or fire kill. Inside a
-; pipe the step goes on whatever's ahead (check_underfoot steers). After a
-; step, the move ends the cycle (the walk moved everything four times
-; already).
+; ACTION_LEFT to ACTION_DOWN (the direction keys): a step left, right, up or
+; down. Turn that way, then step into the next cell if it's empty, sulphur,
+; or a pipe running this way, which carries the player along until it ends; a
+; crate is pushed if the player has pushes left. Anything else stops the
+; player: lava or fire kill. Inside a pipe the step goes on whatever's ahead
+; (check_underfoot steers). After a step, the move ends the cycle (the walk
+; moved everything four times already).
 ; In: Y = the action * 2; the carry clear.
+; Clobbers: everything.
 .move
     TYA                                 ; (action - ACTION_LEFT) * 2...
     SBC #2 * ACTION_LEFT - 1            ; (the carry's clear)
@@ -3970,7 +4097,7 @@ ASSERT DIRECTION_UP = 2 AND DIRECTION_DOWN = 3 AND CELL_PIPE_DOWN = CELL_PIPE_AC
     BCS move_on
     LDA front_cell
     JSR check_deadly                    ; something in the way: lava or fire kill
-    PLA                                 ; no step: drop the cell pushed
+    PLA                                 ; no step: drop the x and y pushed
     PLA
     JMP draw_player
 
@@ -4006,7 +4133,7 @@ ASSERT DIRECTION_UP = 2 AND DIRECTION_DOWN = 3 AND CELL_PIPE_DOWN = CELL_PIPE_AC
 .move_done
     PLA                                 ; two bytes off the stack: after a step,
     PLA                                 ; the return to play_cycle, so this ends the
-    JMP mark_monsters                   ; cycle; if stopped, the cell pushed
+    JMP mark_monsters                   ; cycle; if stopped, the x and y pushed
 
 ; The walk routines, by direction.
 .walks
@@ -4200,10 +4327,10 @@ ASSERT TURN_ANTICLOCKWISE - TURN_CLOCKWISE = TURN_CLOCKWISE - TURN_AHEAD AND TUR
     CLC
     RTS
 
-; Action 7: put monster A AND 3 in map cell (A DIV 4, Y DIV 4) (its position
-; in characters is A and Y with their low bits clear), going direction Y AND
-; 3 with turning preferences X, and move its fire cell there. A monster
-; that was gone comes back.
+; Trigger action 7, PUZZLE_PLACE_MONSTER: put monster A AND 3 in map cell
+; (A DIV 4, Y DIV 4) (its position in characters is A and Y with their low
+; bits clear), going direction Y AND 3 with turning preferences X, and move
+; its fire cell there. A monster that was gone comes back.
 .action_move_monster
     JSR trigger_arguments
     STX work0
@@ -4382,10 +4509,11 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     JSR delay
     JMP delay
 
-; All four levels done. If the last one was finished properly the palette goes
-; wild for a while. Then the last level's edit code, "Praise and
-; felicitations!", and for the locked (competition) mission played from the
-; start, an entry code; wait for Space.
+; All four levels done. If the last one was finished properly (got clear of
+; the lit exit) the palette goes wild for a while. Then the last level's edit
+; code, "Praise and felicitations!", and for a locked mission (io_locked, as
+; the shipped one is) played from the start, a competition entry code;
+; wait for Space.
 ; Clobbers: everything.
 .mission_done
     LDA #0
@@ -4427,12 +4555,12 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
 .mission_done_wait
     JMP wait_for_space
 
-; The entry code: the score, scrambled, and a checksum of the whole of the
-; mission's level data (io_attrs to the end of the maps) so the code shows
-; which mission was played, printed in the 1-9, A-W alphabet: ten
-; characters, in a box of background colour 2. In order: a digit of the
-; checksum's sum, the score's low byte (two), four more of the checksum, one
-; of the score mixed, and the score's high byte (two).
+; The entry code, for a player to send in: the score, scrambled, and a
+; checksum of the whole of the mission's level data (io_attrs to the end of
+; the maps) so the code shows which mission was played, printed in the 1-9,
+; A-W alphabet: ten characters, in a box of background colour 2. In order: a
+; digit of the checksum's sum, the score's low byte (two), four more of the
+; checksum, one of the score mixed, and the score's high byte (two).
 .show_entry_code
     JSR print_inline
     TEXT_AT 4, 19
@@ -4542,8 +4670,9 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     RTS
 
 ; After a level: the backpack screen with the edit code of the level just
-; finished (level is already the next level, and the codes are read from one
-; before io_edit_code_*).
+; finished, the code MISSION asks for before it will save an edited copy of
+; that level. (level is already the next level, so the codes are read from
+; one before io_edit_code_*.)
 ; In: A = the lives to show; the carry set to leave out the mission text.
 ; Clobbers: everything.
 .show_edit_code
@@ -4599,9 +4728,9 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
 .unused_jump
     JMP light_exit
 
-; Action 1, P: pick up the object in front into the selected slot, or the
-; last free one; with nothing to collect left, in front of the exit, light
-; it instead (light_exit).
+; ACTION_PICK_UP (P): pick up the object in front into the selected slot,
+; or if that's taken, the highest free one; with nothing to collect left, in
+; front of the exit, light it instead (light_exit).
 ; Clobbers: everything.
 .pick_up
     JSR light_exit
@@ -4634,7 +4763,8 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     LDA #CELL_FLOOR
     JMP set_cell_and_draw               ; and its cell's empty
 
-; Action 2, D: drop the selected object (or any) into the empty cell in front.
+; ACTION_DROP (D): drop the selected object (or any) into the empty cell in
+; front.
 ; Clobbers: everything.
 .drop
     LDY front_cell
@@ -4678,9 +4808,9 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
 .selected_object_done
     RTS
 
-; Action 5, T: throw the selected object from the empty cell in front, the
-; way the player faces, up to io_throw_distance cells (with 0, nothing can be
-; thrown). OBJECT_NO_THROW doesn't stop it: see fly_thrown.
+; ACTION_THROW (T): throw the selected object from the empty cell in front,
+; the way the player faces, up to io_throw_distance cells (with 0, nothing
+; can be thrown). OBJECT_NO_THROW doesn't stop it: see fly_thrown.
 ; Clobbers: everything.
 .throw
     JSR selected_object
@@ -4862,13 +4992,17 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
     SEC
     LDA #&80
     RTS
+
+; Try trigger A for an object: use_trigger or throw_trigger, whichever use or
+; fly_thrown last patched in.
+; Clobbers: everything.
 .try_object_trigger
     LDY #PUZZLE_USES_OBJECT             ; triggers fired by an object
 .try_object_trigger_jump
     JMP do_nothing                      ; self-modified: use_trigger or throw_trigger
 
-; Action 6, Return: use the selected object where the player stands, facing
-; the way they do.
+; ACTION_USE (Return): use the selected object where the player stands,
+; facing the way they do: try its triggers.
 ; Clobbers: everything.
 .use
     JSR selected_object
@@ -5027,7 +5161,9 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
 ; action, the flags' low nibble, gets the trigger's arguments (Y = the
 ; trigger * 4, for trigger_arguments), the cell it's facing in work5 and the
 ; direction in work4. Then front_x, front_y and front_cell are looked at
-; again.
+; again. The actions (action_*, by trigger_actions) take their arguments
+; with trigger_arguments and clobber everything; one that can't happen ends
+; at trigger_fails, or trigger_fails_pop or _pop2 to drop what it pushed.
 ; In: A = the direction; X = the trigger; Y = the trigger * 4.
 .trigger_fires
     STA work4
@@ -5055,7 +5191,8 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
     JSR do_nothing                      ; self-modified: the action
     JMP find_front                      ; and look again
 
-; Action 1: move the cell at (X, Y) a cell in direction A.
+; Trigger action 1, PUZZLE_MOVE_BLOCK: move the cell at (X, Y) a cell in
+; direction A (diagonals too).
 .action_move_cell
     JSR trigger_arguments
     JSR move_cell                       ; carry set: nothing moved
@@ -5073,8 +5210,8 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
 .light_exit_done
     RTS
 
-; Action 14: push the cell in front, direction A (a TURN_* times TURN_ROW)
-; turned from the way the player faces.
+; Trigger action 14, PUZZLE_MOVE_NEXT_BLOCK: push the cell in front, in the
+; direction A (a TURN_* times TURN_ROW) turned from the way the player faces.
 .action_push
     JSR front_blocked
     BCS trigger_fails_pop2
@@ -5107,7 +5244,7 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
     LDA #CELL_FIRE                      ; the exit is fire
     BNE set_front_cell
 
-; Action 2: the cell in front becomes type A.
+; Trigger action 2, PUZZLE_NEXT_BLOCK: the cell in front becomes type A.
 .action_set_front
     JSR front_blocked
     BCS trigger_fails_pop2
@@ -5118,9 +5255,10 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
     LDY front_y
     JMP set_cell_and_draw
 
-; Action 5: object A explodes, wherever it is: on the map, landing, or in the
-; backpack, which kills the player. The trigger's third argument is the
-; object * 4 (the Level Designer stores it so), its offset in objects.
+; Trigger action 5, PUZZLE_DETONATE_OBJECT: object A explodes, wherever it
+; is: on the map, landing, or in the backpack, which kills the player. The
+; trigger's third argument is the object * 4 (the Level Designer stores it
+; so), its offset in objects.
 .action_explode
     JSR trigger_arguments
     JSR find_carried                    ; carried or landing?
@@ -5170,19 +5308,19 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
     TAY
 .make_sound_done
     RTS
-.explode_in_flight
+.explode_landing
     LDX thrown_x                        ; where it landed
     LDY thrown_y
     BPL explode_at
 .explode_carried
-    BCC explode_in_flight
+    BCC explode_landing                 ; landing, not carried
     LDA #EMPTY_SLOT                     ; it's gone from the backpack...
     STA backpack, X
     LDX player_x                        ; ...where the player is
     LDY player_y
 
-; Empty the 9 cells round map cell (X, Y), and if the player's in one of
-; them, they die.
+; Empty map cell (X, Y) and the eight round it, and if the player's in one
+; of them, they die.
 ; Clobbers: A, X, Y, work0-work4 and the drawing variables.
 .blast
     LDA #DIRECTION_NONE                 ; the eight neighbours and the cell itself
@@ -5206,9 +5344,9 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
     BPL blast_cell
     RTS
 
-; Action 3: before the exit's lit, set the clock to X (unless A has
-; SET_LEVELS_KEEP_TIME) and the number to collect to Y (unless it has
-; SET_LEVELS_KEEP_COLLECTS).
+; Trigger action 3, PUZZLE_SET_LEVELS: before the exit's lit, set the clock
+; to X (unless A has SET_LEVELS_KEEP_TIME) and the number to collect to Y
+; (unless it has SET_LEVELS_KEEP_COLLECTS).
 ; Clobbers: everything.
 .action_set_clock
     JSR trigger_arguments
@@ -5247,21 +5385,21 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
 .action_fails
     JMP trigger_fails_pop
 
-; Action 0: map cell (X, Y) becomes type A.
+; Trigger action 0, PUZZLE_PLACE_BLOCK: map cell (X, Y) becomes type A.
 .action_set_cell
     JSR trigger_arguments
     JSR set_cell_and_draw
     JMP sound_trigger
 
-; Action 13: the player may push A crates.
+; Trigger action 13, PUZZLE_PUSH_CRATES: the player may push A crates.
 .action_set_pushes
     JSR trigger_arguments
     STA pushes_left
     LDA #&50
     BNE sound_tone
 
-; Action 15: swap the left and right keys, and up and down, for the rest of
-; the level.
+; Trigger action 15, PUZZLE_DISORIENTATE: swap the left and right keys, and
+; up and down, for the rest of the level.
 .action_swap_keys
     LDX key_down
     LDA key_up
@@ -5276,9 +5414,9 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
     LDA #&35
     BNE sound_tone
 
-; Action 12: give object A Y uses (unless it's the object landing, whose
-; triggers these are), and re-enable trigger A, the object's first; with a
-; flash.
+; Trigger action 12, PUZZLE_CHARGE_OBJECT: give object A Y uses (unless it's
+; the object landing, whose triggers these are), and re-enable trigger A, the
+; object's first; with a flash.
 .action_recharge
     JSR trigger_arguments
     JSR find_carried                    ; landing?
@@ -5288,7 +5426,7 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
     ASL A
     TAX
     STY work0
-    LDA object_flags, X                 ; Y uses, its flags (and NO_CHARGES) kept
+    LDA object_flags, X                 ; Y uses, keeping its flags (OBJECT_NO_CHARGES too)
     AND #OBJECT_NO_CHARGES OR OBJECT_VANISHES OR OBJECT_NO_THROW
     ORA work0
     STA object_flags, X
@@ -5299,7 +5437,7 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
     TAY
     BPL enable_trigger
 
-; Action 10: re-enable triggers A, X and Y.
+; Trigger action 10, PUZZLE_TURN_ON: re-enable triggers A, X and Y.
 .action_enable
     JSR trigger_arguments
     PHA
@@ -5336,7 +5474,7 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
 .find_carried_done
     RTS
 
-; Action 11: disable triggers A, X and Y.
+; Trigger action 11, PUZZLE_TURN_OFF: disable triggers A, X and Y.
 .action_disable
     JSR trigger_arguments
     PHA
@@ -5352,8 +5490,9 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
     STA trigger_flags, Y
     RTS
 
-; Action 6: monster X / 4 goes direction A: MONSTER_GONE or more takes it off
-; the map, for 26 points (score_monster). X = &10 means all four, but only
+; Trigger action 6, PUZZLE_MOVE_MONSTER (it sets which way a monster moves):
+; monster X / 4 goes direction A; MONSTER_GONE or more takes it off the map,
+; for 26 points (score_monster). X = &10 means all four, but only
 ; monster 3 gets A: set_monster_direction leaves A changed, and the loop
 ; passes the next monster its predecessor's X, so monsters 2 and 1 get 12 and
 ; 8 (gone) and monster 0 gets 4, stuck going left, which it soon moves out
@@ -5367,7 +5506,7 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
     LDY monster_direction, X            ; its old direction
     STA monster_direction, X
     TYA
-    EOR #MONSTER_GONE                   ; was out and now isn't?
+    EOR #MONSTER_GONE                   ; was in play and now gone?
     AND monster_direction, X
     CMP #MONSTER_GONE
     BCC set_monster_done
@@ -5387,7 +5526,8 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
     BNE set_all_monsters
     RTS
 
-; Action 9: the cell in front changes from type A to X, or X to A.
+; Trigger action 9, PUZZLE_SWAP_NEXT: the cell in front changes from type A
+; to X, or X to A.
 ; In: Y = the trigger * 4.
 .action_toggle
     INY
@@ -5408,8 +5548,8 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
     PLA
     JMP set_cell_and_draw
 
-; Action 4: throw object A (carried) Y cells, from the empty cell in front,
-; and stop the player's step.
+; Trigger action 4, PUZZLE_THROW_OBJECT: throw object A (carried) Y cells,
+; from the empty cell in front, and stop the player's step.
 .action_launch
     LDA work5                           ; the cell in front must be empty
     BNE action_toggle_fails
@@ -5426,9 +5566,9 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
     LDX #ENVELOPE_TONE
     JMP sound_effect
 
-; Action 8: teleport the view's top left to cell (X, Y), so the player to
-; (X + 4, Y + 4), which is also where the level restarts from now, with a
-; flash; and stop the player's step.
+; Trigger action 8, PUZZLE_TELEPORT: put the view's top left at cell (X, Y),
+; and so the player at (X + 4, Y + 4), which is also where the level restarts
+; after a life is lost, with a flash; and stop the player's step.
 .action_teleport
     LDA #ACTION_STOP
     STA action
@@ -5493,9 +5633,10 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
 
 ; Decide where a monster goes next. If its fire cell has gone (something's
 ; been put there, or the level's map never had it: level 2's monster 0 goes
-; at the first think), it's gone, for 26 points. Otherwise it tries up to four
-; ways, each a 2-bit field of its turns (from the bottom) picking from turns:
-; back, ahead, clockwise or anticlockwise. It goes into an empty cell or an
+; at the first call of think), it's gone, for 26 points. Otherwise it tries up
+; to four ways, each a 2-bit field of monster_turns (the lowest first)
+; picking a row of the turns table: back, ahead, clockwise or anticlockwise
+; from the way it was going. It goes into an empty cell or an
 ; object's; if the cell is what it eats (monster_food) it turns that into
 ; what it leaves, and is gone. If it can't go anywhere it's stuck.
 ; At the map's edge the way off it is lava (cell_at), so a monster that eats
@@ -5510,7 +5651,7 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
 .monster_think
     LDA work2
     CMP #MONSTER_GONE
-    BCS monster_think_done              ; not out?
+    BCS monster_think_done              ; gone: nothing to decide
     AND #3                              ; stuck or not, the way it was going
     STA work2
     LDA #DIRECTION_NONE                 ; its own cell
@@ -5688,8 +5829,8 @@ NEXT
 ; through the extended vector entry at &0DD5. Once the game is swapped back,
 ; its code fills that entry, so the next OSWORD 0 (ask_for_mission's, which
 ; calls NETV after the line) jumps into the game and ends on its error screen;
-; title-screen L can never load a mission there (seen in jsbeeb with Econet
-; fitted, docs/notes/loaders.md). Without Econet the NFS stays asleep.
+; title-screen L can never load a mission there (docs/notes/loaders.md has
+; the evidence). Without Econet the NFS stays asleep.
     LDA #OSBYTE_SERVICE_CALL
     LDX #SERVICE_CLAIM_ABSOLUTE
     LDY #&0E                            ; (the page the claims start from)
@@ -5815,7 +5956,8 @@ ASSERT P% - mission_filename = FILENAME_LENGTH + 1
     TXS
     JMP new_game
 
-; The triggers' actions, by the low nibble of their flags (PUZZLE_*).
+; The triggers' actions, by the low nibble of their flags (PUZZLE_*), called
+; by trigger_fires.
 .trigger_actions
     EQUW action_set_cell
     EQUW action_move_cell
@@ -5837,7 +5979,8 @@ ASSERT P% - trigger_actions = 2 * (PUZZLE_ACTION + 1)
 
 ; The player's actions, by action number (ACTION_*): nothing, P, D, M, CTRL,
 ; T, Return, the four directions, and nothing again when a trigger has
-; stopped the player.
+; stopped the player. player_turn jumps to them (jump_to) with Y = the action
+; * 2, and they clobber everything.
 .action_table
     EQUW clear_keys_down
     EQUW pick_up

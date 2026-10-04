@@ -24,9 +24,9 @@ ASSERT SCREEN_END = SCREEN_MEMORY_END    ; &8000: loops end when the high byte g
 ; &5800, rows of 320 bytes, characters 16 bytes (two of the game's character
 ; cells) across. So TAB(x, y) lands at MODE5_SCREEN + 320y + 16x, which on the
 ; game's screen (starting at SCREEN, as on the title and backpack screens) is
-; a character row and column; a TAB to the OS's rows 0-6 would land below
-; SCREEN, in the map. TEXT_AT sends the TAB for a column and row of the
-; game's screen; only even columns can be reached.
+; a character row and column; a TAB to the OS's rows 0-6 would land at
+; addresses below SCREEN, in the map. TEXT_AT sends the TAB for a column and
+; row of the game's screen; only even columns can be reached.
 FUNCTION text_offset(column, row) = SCREEN - MODE5_SCREEN + row * ROW_BYTES + column * CHAR_BYTES
 MACRO TEXT_AT column, row
     ASSERT text_offset(column, row) MOD MODE5_CHAR_BYTES = 0, "text can't start at column ", column
@@ -42,7 +42,7 @@ ENDMACRO
 ; picture. The view is 8 map cells across and down, the player in the middle;
 ; it's offset by half a cell, so half a cell more shows at each edge.
 CHARS_PER_CELL       = 4
-PLAYER_CHAR          = (SCREEN_COLUMNS - CHARS_PER_CELL) / 2 ; the player's top left, from the view's
+PLAYER_CHAR          = (SCREEN_COLUMNS - CHARS_PER_CELL) / 2 ; the player's top left, in characters from the view's
 PICTURE_BYTES        = CHARS_PER_CELL * CHARS_PER_CELL * CHAR_BYTES
 PICTURE_COLUMN_BYTES = CHARS_PER_CELL * CHAR_BYTES
 ICON_BYTES           = PICTURE_BYTES / 4
@@ -57,13 +57,13 @@ MAP_CHARS = MAP_SIZE * CHARS_PER_CELL
 ASSERT MAP_CHARS = &100
 
 ; The views the game makes. Standing still, the view is half a cell into a
-; map cell (place_player) and the player PLAYER_CHAR characters into the view;
-; the player never leaves the map (stepping into lava or fire kills without
-; the step, and a pipe kills with lava ahead), so the view goes from
-; VIEW_FIRST, -PLAYER_CHAR (the player in the map's first column or row), up
-; through 0 to VIEW_LAST (its last), passing through every value between
-; while walking: &F2-&FF and &00-&EE, but never &EF-&F1. The title and
-; backpack screens put it at CHARS_PER_CELL / 2.
+; map cell (place_player) and the player PLAYER_CHAR characters into the view.
+; The player never leaves the map (stepping into lava or fire kills without
+; the step, and a pipe kills with lava ahead), so view_x (and view_y) runs
+; from VIEW_FIRST, which is -PLAYER_CHAR as a byte (the player in the map's
+; first column or row), up through 0 to VIEW_LAST (the player in its last).
+; Walking passes through every value between: &F2-&FF and &00-&EE, but never
+; &EF-&F1. The title and backpack screens put it at CHARS_PER_CELL / 2.
 VIEW_FIRST = MAP_CHARS - PLAYER_CHAR
 VIEW_LAST  = MAP_CHARS - CHARS_PER_CELL - PLAYER_CHAR
 
@@ -98,8 +98,10 @@ ASSERT SCREEN_ROWS = SCREEN_COLUMNS      ; the same numbers serve view_y
 
 ; Pictures by number from io_tiles: the cell types' (0-15), the object icons
 ; four to a picture (16-19), the player facing each way (20-23), and the
-; second pictures of four cell types (24-27). The monsters are drawn with cell
-; type E's picture and the one after it (F's, which isn't otherwise shown).
+; second pictures of four cell types (24-27), which some squares show instead
+; of the first (see alternate_cells in hidden_game.6502). The monsters are
+; drawn with CELL_FIRE's picture and the one after it, CELL_OBJECT's, which
+; isn't otherwise shown (an object cell shows the object's icon).
 FUNCTION tile(type) = io_tiles + type * PICTURE_BYTES
 FUNCTION icon(n) = io_object_icons + n * ICON_BYTES
 FUNCTION player_facing(direction) = io_player + direction * PICTURE_BYTES
@@ -107,12 +109,13 @@ FIRST_ALTERNATE = (io_alternates - io_tiles) DIV PICTURE_BYTES
 ALTERNATES      = 4       ; cell types with a second picture
 
 ; ---------------------------------------------------------------------------
-; Directions are DIRECTION_LEFT to DIRECTION_DOWN (0-3), as the player faces,
-; monsters go and direction_dx and _dy step. Those tables go on to the four
-; diagonals (4-7), which explosions and Move block step to, and
-; DIRECTION_NONE, no step at all (the same number as MONSTER_GONE, but the
-; game's own, for those tables). A thrown object's direction is one of
-; DIRECTION_* plus one, so that 0 can mean nothing's in flight.
+; Directions are DIRECTION_LEFT to DIRECTION_DOWN (0-3): the way the player
+; faces, the way a monster goes, and the steps the tables direction_dx and
+; direction_dy give. Those tables go on to the four diagonals (4-7), which
+; blast and trigger action PUZZLE_MOVE_BLOCK step to, and DIRECTION_NONE, no
+; step at all (the same number as MONSTER_GONE, but the game's own, for those
+; tables). A thrown object's direction is one of DIRECTION_* plus one, so
+; that 0 can mean nothing's in flight.
 DIRECTION_NONE = DIRECTION_DOWN_RIGHT + 1
 THROWN_NONE  = 0
 THROWN_LEFT  = DIRECTION_LEFT + 1
@@ -125,8 +128,10 @@ THROWN_DOWN  = DIRECTION_DOWN + 1
 TURN_ROW = 4
 
 ; ---------------------------------------------------------------------------
-; The player's actions, as action_table has them. The action keys are tested
-; in this order, so the game keeps them in action_keys this way round.
+; The player's actions, by the numbers action_table dispatches on. The game
+; keeps the keys for actions 1-6 in action_keys in this order, and read_keys
+; tests them from ACTION_USE down. (Triggers have actions of their own, the
+; PUZZLE_* numbers: see trigger_actions.)
 ACTION_NONE     = 0
 ACTION_PICK_UP  = 1     ; P
 ACTION_DROP     = 2     ; D
@@ -138,9 +143,10 @@ ACTION_LEFT     = 7     ; then ACTION_LEFT + each direction
 ACTION_RIGHT    = 8
 ACTION_UP       = 9
 ACTION_DOWN     = 10
-ACTION_STOP     = 11    ; a trigger stopped the player: nothing
+ACTION_STOP     = 11    ; set by a trigger to cancel the player's step; does nothing
 
-; The order MENU leaves its ten keys in, as negative INKEY numbers.
+; The order MENU leaves its ten keys in at menu_keys, as negative INKEY
+; numbers (MENU lets the player redefine them).
 MENU_KEY_LEFT     = 0
 MENU_KEY_RIGHT    = 1
 MENU_KEY_UP       = 2
@@ -157,16 +163,21 @@ MENU_KEYS         = 10
 ; A level's monsters, objects and triggers, as the game keeps them.
 
 ; Monsters (MONSTERS of MONSTER_BYTES): x and y in character cells (4 to a
-; map cell), a direction, and turning preferences. A direction plus
-; MONSTER_STUCK is a monster that couldn't move; MONSTER_GONE and up, one
-; that isn't out.
+; map cell), a direction, and turning preferences. A monster is a wandering
+; flame that marks its map cell as CELL_FIRE, so walking into it kills. A
+; direction plus MONSTER_STUCK is a monster in play that couldn't move;
+; MONSTER_GONE or more, one that's gone from the map for good (unless a
+; trigger brings it back). Routines that take a monster in X take its offset
+; in the table, the monster's number times MONSTER_BYTES: hence "monster
+; X / 4" in their headers.
 MONSTER_STUCK = 4
 
-; Objects (OBJECTS of OBJECT_BYTES): x, y (x OBJECT_ABSENT while carried or
-; in flight), an icon, and uses and flags. The game reads the uses with
-; OBJECT_NO_CHARGES as well as OBJECT_CHARGES, so that it makes 32 or more,
-; which never run out; OBJECT_NO_THROW's object can still be thrown, but its
-; triggers aren't tried when it lands.
+; Objects (OBJECTS of OBJECT_BYTES): x, y (x is OBJECT_ABSENT while it's
+; carried or in flight), an icon, and uses and flags. The game reads the uses
+; as OBJECT_CHARGES and OBJECT_NO_CHARGES together (OBJECT_USES), so an
+; object with OBJECT_NO_CHARGES has 32 or more uses, and those never run out.
+; An OBJECT_NO_THROW object can still be thrown, but its triggers aren't
+; tried when it lands.
 OBJECT_USES  = OBJECT_CHARGES OR OBJECT_NO_CHARGES
 
 ; The backpack: a slot holds an object's number, or is negative for empty.
@@ -175,27 +186,35 @@ BACKPACK_SLOTS   = 4
 EMPTY_SLOT       = &FF
 BACKPACK_SPACING = 6
 
-; Triggers (the designer's puzzles: PUZZLES of them): a flags byte, a place,
-; and four arguments. Object n's triggers are n, n + OBJECTS, n + 2 * OBJECTS
-; and n + 3 * OBJECTS. The flags' PUZZLE_ACTION is the action (PUZZLE_*, an
-; index into trigger_actions), the rest PUZZLE_REUSABLE and the like; IGNORE
-; in a place's x or y matches anywhere along it. The fourth argument is the
-; condition (CONDITION_*): facing (or thrown) a direction, facing (or landing
-; against) a cell type.
+; Triggers (PUZZLES of them; the Level Designer calls them puzzles) are a
+; level's scripted events. Each has a place on the map and an action (set a
+; cell, move a monster, teleport the player...): it fires when the player
+; walks onto the place, or, for one marked PUZZLE_USES_OBJECT, when an object
+; is used there or thrown to land there, and its condition holds. A trigger
+; is a flags byte, a place, and four arguments. Object n's triggers are n,
+; n + OBJECTS, n + 2 * OBJECTS and n + 3 * OBJECTS. The flags' PUZZLE_ACTION
+; bits are the action (PUZZLE_*, an index into trigger_actions), the rest
+; PUZZLE_REUSABLE and the like; IGNORE in a place's x or y matches anywhere
+; along it. The fourth argument is the condition (CONDITION_*): the player
+; facing (or the object thrown) a given direction, or facing (or landing
+; against) a given cell type.
 
 START_LIVES = 3
 
-; How far through a level the player is (stage).
+; How far through a level the player is (stage). To finish a level the
+; player collects all its sulphur, then presses P facing the exit, which
+; "lights" it: the exit turns to fire, and the player must get clear of it
+; before the clock runs out.
 STAGE_COLLECTING = 0
-STAGE_EXIT_LIT   = 1    ; just lit: the time left is scored
-STAGE_ESCAPING   = 2    ; a few clock ticks to get clear
-STAGE_DONE       = 3
+STAGE_EXIT_LIT   = 1    ; just lit: game_loop scores the time left and moves on
+STAGE_ESCAPING   = 2    ; a few clock ticks to get 5 cells from the exit, across or down
+STAGE_DONE       = 3    ; got clear: the level is finished
 
 ; ---------------------------------------------------------------------------
 ; Sound.
 
-CHANNEL_EFFECTS = 3       ; the sound effects' channel (SOUND_FLUSH and the rest
-                          ; are in osconst.6502inc)
+CHANNEL_EFFECTS = 3       ; the tone channel for sound effects (the noise channel,
+                          ; SOUND_FLUSH and the rest are in osconst.6502inc)
 
 ; Envelopes 1 and 2 are the tune's (each voice's channel is also its
 ; envelope); 3 and 4 the sound effects', which use 1 and 2 as well.
@@ -207,14 +226,16 @@ ENVELOPE_BEEP    = 4
 ; The tune: pitches go up 4 to a semitone.
 TUNE_VOICE_BYTES = 32     ; a voice's notes...
 TUNE_NOTES       = 30     ; ...of which this many are played
-TUNE_LOWEST      = &21
+TUNE_LOWEST      = &21    ; the pitch of semitone 0 in voice 2 (voice 1 plays an octave up)
 SEMITONE         = 4
 OCTAVE           = 12 * SEMITONE
 TRANSPOSE_FOURTH = 5 * SEMITONE
 
 ; ---------------------------------------------------------------------------
-; While IO loads, this much of the game (from the NMI routine's page, where
-; the DFS's workspace was) is swapped out with the start of the screen.
+; While IO loads, this much of the game is swapped with the start of the
+; screen, so that the DFS has its pages back: page &0D (the NMI routine and
+; the extended vectors) and the DFS's workspace at &0E00-&10FF, which the
+; game's code covers, and more.
 SWAP_START = MOS_NMI_ROUTINE
 SWAP_PAGES = &10
 SWAP_END   = SWAP_START + SWAP_PAGES * &100
