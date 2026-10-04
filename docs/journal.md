@@ -695,3 +695,10 @@ Details in the newest sections of `docs/notes/game.md` and
   "used disc" point in the jsbeeb PR comment (level saves) understates it.
 - Unverified: whether DFS rewrites the hidden sectors' deleted marks as
   normal ones (an .ssd can't show it).
+
+## 2026-10-04 11:54 — Follow-up on jsbeeb PR #1215
+
+Posted a short correction to the used-disc point: one mission save takes
+all of H.GAME and one graphics save its loader, so after either the game
+won't start, and the example should drop "hasn't changed" rather than say
+"one level saved". docs/symbols-feedback.md has it.

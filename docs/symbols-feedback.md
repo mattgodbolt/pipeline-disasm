@@ -116,3 +116,7 @@ discs without a record. Commented on the PR:
   is in (or, in ROM, the nearest return address on the stack).
 - A disc with levels saved to it keeps H.GAME intact for one save only (the
   second lands on its first eight sectors).
+- Followed up (2026-10-04): MISSION's saves land on the same disc with no
+  prompt, and one mission (all of H.GAME) or one graphics set (H.GAME's
+  loader) stops the game, so the example should drop "hasn't changed"
+  rather than say "one level saved".
