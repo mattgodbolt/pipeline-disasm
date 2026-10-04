@@ -1,23 +1,67 @@
 ; H.LEVDES: the PIPELINE Level Designer, by Ian Holmes and William Reeve.
 ;
-; Hidden in sectors &16D-&18B; the LEVDES stub reads it to &1100 and jumps
-; to entry (&2E21). Entry moves three pieces of the file to where they run
-; (initial zero page, the low code at &0880 and the font at &0400), loads
-; WDATA (windows and messages) and LDATA (the title screen), and waits for
-; Space. After that &25A1-&2FFF, where those pieces and entry itself were, is
-; the level being edited (src/level.6502inc).
+; MENU's Level Designer option runs */LEVDES. The file the catalogue calls
+; LEVDES is only a stub: a &D9-byte loader at &0900 (hidden_loader.6502inc)
+; that reads this program to &1100 from sectors &16D-&18B, a "hidden run"
+; that no catalogue entry mentions, and jumps to entry (&2E21). Entry moves
+; three pieces of the file to where they run (initial zero page, the low
+; code at &0880 and the font at &0400), loads WDATA (the windows and
+; messages, at &7000) and LDATA (the title picture, straight onto the
+; screen), and waits for Space. After that &25A1-&2FFF, where those pieces
+; and entry itself were, holds the level being edited (src/level.6502inc).
+; Leaving goes back to the PIPELINE menu by *RUNning /MRUN.
+;
+; Memory while it runs:
+;   &0000-&0021  pointers to the menus' handler tables (menu_tables)
+;   &0040-&0089  variables (below)
+;   &0400-&07FF  the font, glyphs 0-63
+;   &0880-&0CBF  the low code: drawing the map, windows, menus and the
+;                message box, with a jump table at its start
+;   &1100-&25A0  the rest of the program
+;   &25A1-&2FFF  the level being edited, its map from &2800
+;   &3000-&6FFF  the screen
+;   &7000-&7C4D  WDATA
 ;
 ; The screen is MODE 1 narrowed to 64 columns, so each of the 64x64 map cells
 ; is one byte of four pixels by four scan lines and the map fills it. Menus
-; are windows drawn over the map with the program's own font and then
-; repaired from the map when closed; prompts go in a message box drawn the
-; same way and printed into with the OS's text output.
+; are windows: boxes drawn over the map with the program's own font from
+; definitions in WDATA, a title and then a menu of items, and repaired from
+; the map when closed. Prompts go in a message box drawn the same way and
+; printed into with the OS's text output.
 ;
-; Keys: Z X : / move the cursor, Return plots the current block, Delete
-; blanks the cell, 0-9 and A-F choose a block (the block menu's items, by
-; number), S switches the simulator, f0-f4 are the commands (block menu,
-; Options, Files, Help, About). Leaving goes back to the menu by *RUNning
-; /MRUN.
+; The designer's words: a block is what a map cell holds, the game's cell
+; types (CELL_*; level.6502inc lists the block menu's names for them). A
+; puzzle is what the game calls a trigger: something that happens when the
+; player walks onto a place or uses an object. Each has a type (what it
+; does), three effect bytes (the details) and a condition. The brush is the
+; block Return plots. A marker is block F, which marks the start, the finish
+; and the objects in the map; the designer marks monsters with block E, the
+; S.Monster.
+;
+; Keys: Z X : / move the cursor, Return plots the brush, Delete blanks the
+; cell, 0-9 and A-F choose the brush (the block menu's items, by number), and
+; f0-f4 are the commands (block menu, Options, Files, Help, About). S
+; switches the simulator: with it on, the cursor moves as the player would,
+; walking, travelling along pipes and losing lives, to test the level.
+;
+; The file, in order:
+;   &1100  the first jump table, then the routines everything uses: menus
+;          (choose_from_window), Escape and errors (brk_handler), keys and
+;          input (rdchv_filter, input_number, input_text, get_key) and the
+;          cursor, with the simulator (move_cursor, simulate_travel)
+;   &15D0  main, its loop and the commands (do_command)
+;   &16E5  the Options menu's editors: start and finish, objects, monsters,
+;          collectables, time, graphics and puzzles (name, type, status and
+;          conditions)
+;   &1D54  the Files menu: load, edit code and save
+;   &1E60  the puzzle effect editors, by type
+;   &2124  Help's Find puzzle, Clear, then the tables: block_menu_map and
+;          the menus' handlers
+;   &234D  the second jump table; new_level; printing messages, finding
+;          windows and reading and writing the map
+;   &2500  pixel art: glyphs 64-69 and the map's blocks
+;   &25A1  the three pieces entry moves: zero page, the low code and the font
+;   &2E21  entry, then junk to the end of the last sector
 ;
 ; A fragment of the authors' BASIC assembler source survives in MENU's tail
 ; (docs/notes/basic.md), giving a few original labels: sel0, sure, wind,
@@ -33,7 +77,10 @@ INCLUDE "wdata.6502inc"
 ; jump_to_handler's number for a handler table, from its pointer in zero page.
 FUNCTION handlers(p) = (p - menu_tables) / 2 + 1
 
-; Zero page. The low code's variables are its own; the rest is the editor's.
+; Zero page. &00-&3F are the handler tables' pointers (menu_tables, near the
+; end of this file); the editor's variables follow. The low code keeps its
+; own, from &72, which the routines' Clobbers lines call "the low code's
+; zero page".
 input_buffer    = &40           ; OSWORD 0's line, 16 bytes (12 characters
                                 ; at most, then a Return)
 cursor_x        = &50           ; the map cursor, 0-63 across
@@ -52,18 +99,22 @@ record          = &5B           ; the object, monster or puzzle being edited,
 puzzle          = &5C           ; the puzzle being edited
 kept_window     = &5D           ; a window to keep on screen while the cursor
                                 ; moves, or negative
-choices         = &5E           ; four two-bit fields, unpacked: a monster
-                                ; pattern's turns, or the level's sprites
-arg             = &62           ; a message number, offset or field in hand
+choices         = &5E           ; four two-bit fields, unpacked a byte each:
+                                ; a monster pattern's turns, or the four
+                                ; choices of level_sprites
+arg             = &62           ; a message number, an offset or a field
+                                ; being worked on
 number          = &63           ; the number being asked for
 effect_window   = &64           ; the effect editor's window
 effect_table    = &65           ; and its handler table
 unused_66       = &66           ; set to &C0 at startup, never read
 loading         = &67           ; nonzero while a level loads, so an error
                                 ; clears what was half loaded
-simulate_window = &68           ; W_SIMULATE+1 while the simulator is on, else
-                                ; 0: less 1, the window the main loop keeps
-direction       = &69           ; the simulated player's way (MOVE_*)
+simulate_window = &68           ; W_SIMULATE + 1 while the simulator is on,
+                                ; else 0; less 1, it's the window the main
+                                ; loop keeps on screen (negative for none)
+direction       = &69           ; the way the simulated player is going
+                                ; (MOVE_*)
 travelling      = &6A           ; nonzero while it travels along pipes
 in_main_loop    = &6B           ; &FF while the main loop waits for a key, so
                                 ; function keys come back as keys rather than
@@ -75,7 +126,7 @@ glyph_ptr       = &74           ; also a second screen pointer
 window_ptr      = &76           ; into a window definition or message
 byte_count      = &78           ; bytes across a window, or cells in a run
 line_count      = &79           ; lines (or menu items) to go
-saved_x         = &7A           ; draw_map_run's first cell
+saved_x         = &7A           ; draw_map_run's first cell's x
 nibble_mask     = &7B           ; &F0 or &0F: which half of a map byte
 run_length      = &7C           ; close_window's width
 map_ptr         = &7E           ; also draw_window's line start
@@ -90,8 +141,9 @@ window_height   = &87           ; its number of menu items
 window_flags    = &88           ; its y byte, for SPACE_STAYS (bit 7)
 menu_first_item = &89           ; the item window_menu started on
 
+; The message box's top left on the screen, and the columns either side of
+; its bottom row, where its side lines start.
 message_box     = screen_address(MESSAGE_BOX_COLUMN, MESSAGE_BOX_ROW)
-; The columns either side of its bottom row, where its side lines start.
 box_bottom      = MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS - 1
 box_left_side   = screen_address(MESSAGE_BOX_COLUMN - 1, box_bottom)
 box_right_side  = screen_address(MESSAGE_BOX_COLUMN + MESSAGE_BOX_COLUMNS, box_bottom)
@@ -234,7 +286,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 ; cleared rather than kept. A lower-case "i" leaves for BASIC instead, with
 ; the error pointer in ptr, if the startup options (the keyboard links) read
 ; DEVELOPERS_LINKS: the authors' way out. get_key forces Caps Lock on and
-; Shift doesn't undo it, so it takes Caps Lock then I (seen in jsbeeb).
+; Shift doesn't undo it, so typing that "i" means pressing Caps Lock first.
 .brk_handler
     LDX #&FF
     TXS
@@ -311,7 +363,8 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .basic_command
     EQUS "BASIC", CR
 ; Wait for a key, ignoring any typed ahead; Escape is acknowledged and
-; ignored, and (through rdchv_filter) a function key abandons the wait.
+; ignored, and while rdchv_filter is RDCHV (everywhere but brk_handler) a
+; function key abandons the wait.
 ; Out: A = the key.
 ; Clobbers: X, Y.
 .wait_for_key
@@ -362,7 +415,8 @@ saved_rdchv = rdchv_filter + 1
 ; the map redrawn, and its command run from the main loop (f5 has none, so it
 ; only abandons).
 ; In: A = a key.
-; Out: A preserved, if it wasn't a function key.
+; Out: A preserved, if it wasn't a function key; nothing else is touched.
+; If it was, this doesn't return.
 .check_function_key
     PHA
     EOR #KEYCODE_F0
@@ -411,7 +465,7 @@ saved_rdchv = rdchv_filter + 1
 ; Ask which object, monster or puzzle, until the answer is 1 to A.
 ; In: A = how many there are; X = the question's message.
 ; Out: record = (the answer - 1) * 4.
-; Clobbers: A, X, Y, ptr, work, the input buffer.
+; Clobbers: A, X, Y, ptr, work, the input buffer, the low code's zero page.
 .choose_record
     STX work
     STA record
@@ -435,7 +489,7 @@ saved_rdchv = rdchv_filter + 1
 ; In: X = the prompt's message.
 ; Out: X = 0 and A = the number; X = 1 if nothing was typed; X = 3 if it was
 ; over 255. (X = 2 would be a number 256 digits long.)
-; Clobbers: Y, ptr, the input buffer.
+; Clobbers: Y, ptr, window_ptr, the input buffer.
 .input_number
     LDA #'0'
     STA input_min_char
@@ -476,9 +530,9 @@ saved_rdchv = rdchv_filter + 1
     INX
     RTS
 
-; Place monster window, OK: put back the copies the window's items worked on,
-; the position with the monster's number and direction in the bottom bits,
-; and close it as below.
+; Place monster window, OK: store what the window's items set (they work on
+; copies: see place_monster_number), the cursor's x and y with the monster's
+; number and direction in their bottom two bits, and close it as below.
 .place_monster_ok
     LDY record
     LDA cursor_x
@@ -599,8 +653,9 @@ saved_rdchv = rdchv_filter + 1
     EQUB ERROR_ESCAPE_KEY
     EQUS "Escape key pressed", 0
 ; get_key's loop while travelling: each pass takes a step the way it's going.
-; With no key it goes round again; with one, it carries on from the S key
-; (the movement keys don't steer it) and so usually returns the key.
+; With no key it goes round again; with one, it skips the movement keys
+; (they don't steer it), checks the rest from S on, and so usually returns
+; the key.
 .get_key_travelling
     ASL A                       ; C set if no key came
     BCC get_key_step
@@ -810,7 +865,7 @@ saved_rdchv = rdchv_filter + 1
 ; In: Y = a direction, MOVE_*.
 ; Out: C clear and X, Y = the new position if it moved. Going into a pipe it
 ; doesn't return: it finishes the cursor_* routine that called it and goes
-; on in get_key.
+; on in get_key from the S key, skipping any movement keys not yet checked.
 ; Clobbers: A, ptr, work, screen_ptr, the low code's zero page.
 .move_cursor
     TYA
@@ -882,7 +937,8 @@ saved_rdchv = rdchv_filter + 1
     RTS
 
 ; The simulated player died: say so and stop travelling, leaving the cursor
-; where it was.
+; where it was. This and simulate_travel are the rest of move_cursor, entered
+; with its direction on the stack, and return from it.
 .simulate_lose_life
     PLA
     JSR hide_cursor
@@ -944,8 +1000,9 @@ saved_rdchv = rdchv_filter + 1
     TAY
     BPL simulate_set_direction
 ; Try direction Y (0-3 after masking) from the junction: a pipe running that
-; way there is taken, returning from simulate_junction's caller with C clear
-; and X, Y the cursor; otherwise this returns, with Y the direction tried.
+; way there is taken, returning from move_cursor (which simulate_junction is
+; part of) with C clear and X, Y the cursor; otherwise this returns, with Y
+; the direction tried.
 .simulate_try_turn
     TYA
     AND #3
@@ -991,7 +1048,11 @@ saved_rdchv = rdchv_filter + 1
     JMP OSWRCH
 
 ; The editor proper, after the title: a blank level, then commands for ever.
-; Errors come back to main_reset_input, which puts rdchv_filter back.
+; Each time round, get_key moves the cursor and plots until another key
+; comes; hex_key handles that key if it's 0-9, A-F or cursor up or down (all
+; choosing the brush), and do_command if it's a function key. Errors come back to main_reset_input, which puts
+; rdchv_filter back; a function key pressed anywhere else comes back to
+; main_dispatch (check_function_key).
 .main
     JSR new_level
 .main_reset_input
@@ -1001,7 +1062,7 @@ saved_rdchv = rdchv_filter + 1
     LDA #HI(rdchv_filter)
     STA RDCHV+1
 .main_loop
-    DEC in_main_loop
+    DEC in_main_loop            ; &FF while get_key waits
     LDA #1                      ; plotting allowed
     LDX simulate_window         ; keep the Simulate window up if it's on
     DEX
@@ -1128,8 +1189,8 @@ saved_rdchv = rdchv_filter + 1
     JMP &FFA6                   ; the handler, filled in above
 handler_address = jump_to_handler_jmp + 1
 
-; f2: the Files menu, after checking the user is sure. The fragment of Ian's
-; source in MENU is this routine.
+; f2: the Files menu; any item but OK asks whether the user is sure before
+; it's done. The fragment of Ian's source in MENU is this routine.
 .files_menu
     LDA #W_FILES
     JSR choose_from_window
@@ -1190,11 +1251,12 @@ handler_address = jump_to_handler_jmp + 1
     LDA #W_SIMULATE
     STA kept_window
     JMP open_window
-; Options menu, Start and Finish: Define lets the user put the start or
-; finish with the cursor; Display just moves the cursor there. The start is
-; kept 4 less than where it's put in each direction (the game keeps the top
-; left of its 8x8 view, the player being 4 cells in). The position is marked
-; in the map with a marker block.
+; Options menu, Start and Finish: Define lets the user move the cursor and
+; press Return to put the start or finish there (Space leaves it); Display
+; just moves the cursor there. The start is kept 4 less than where it's put
+; in each direction (the game keeps the top left of its view, 8 cells by 8,
+; with the player 4 cells in). The position is marked in the map with a
+; marker block.
 .option_start
     LDY #level_start_x - level_start_x
     BEQ edit_marker
@@ -1268,10 +1330,12 @@ handler_address = jump_to_handler_jmp + 1
 
 ; Options menu, Object: which one, then its window until OK.
 ;
-; This and the other editing windows run their menus through handler tables
-; (see options_handlers): each handler works on the record (and puzzle)
-; being edited, may clobber A, X, Y and the scratch bytes, and returns to
-; the window's loop, which goes round again; the OK handler pops out of it.
+; This and the other editing windows (monster, puzzle, status, conditions
+; and the effects) run their menus through handler tables (see
+; options_handlers): each handler works on the record (and puzzle) being
+; edited, may clobber A, X, Y and the scratch bytes, and returns to the
+; window's loop, which goes round again; the OK handler (menu_ok or
+; menu_ok_drop_choice) pops out of it.
 .option_object
     LDX #M_WHICH_OBJECT
     LDA #OBJECTS
@@ -1286,8 +1350,9 @@ handler_address = jump_to_handler_jmp + 1
     PLA
     BPL option_object_loop
 
-; Object window, Position: put it with the cursor, marked in the map with a
-; marker block.
+; Object window, Position: the user moves the cursor and presses Return to
+; put the object there (Space leaves it), marked in the map with a marker
+; block.
 .object_position
     JSR vector_close_window
     LDY record
@@ -1462,8 +1527,9 @@ handler_address = jump_to_handler_jmp + 1
     PLA
     BPL option_monster_loop
 
-; Monster window, Position: put it with the cursor, marked in the map with an
-; S.Monster block (the game marks a monster's cell with it, as fire).
+; Monster window, Position: put the monster with the cursor, as for an
+; object, marked in the map with an S.Monster block (the game's fire, which
+; marks a monster's cell).
 .monster_position
     JSR vector_close_window
     LDY record
@@ -1655,9 +1721,9 @@ direction_menu = {DIRECTION_UP, DIRECTION_DOWN, DIRECTION_RIGHT,
 .pattern_presets_end
 
 ; Monster window, Killed by and Result: the block that kills monsters and
-; the block a dead one leaves, for every monster in the level (the game:
+; the block a dead one leaves, for every monster in the level. In the game,
 ; a monster moving into a cell of the first kind turns it into the second
-; and is gone).
+; and is gone.
 .monster_killed_by
     LDA level_monster_rules
     AND #&0F
@@ -1787,7 +1853,7 @@ direction_menu = {DIRECTION_UP, DIRECTION_DOWN, DIRECTION_RIGHT,
 ; allowed.
 ; Out: A = the value.
 ; Clobbers: X, Y, ptr, arg, number, plot_enabled (borrowed for the maximum),
-; the input buffer.
+; the input buffer, the low code's zero page.
 .ask_number
     SEC
     LDY #255
@@ -1891,15 +1957,16 @@ direction_menu = {DIRECTION_UP, DIRECTION_DOWN, DIRECTION_RIGHT,
     STA choices, X
     BPL option_graphics_next
 ; The code for each item of the sprites menu (Sprite A, Sprite B, Patterned,
-; and a fourth it hasn't got), and the item for each code. ALTERNATE_EVEN's
-; item is past the end, so the menu starts at the top for it.
+; and a fourth item the menu doesn't have), and the item for each code.
+; ALTERNATE_EVEN's item is past the menu's end, so the menu starts at the top
+; for it.
 sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
 .sprite_codes
     EQUB sprites_menu
 .sprite_items
     EQUB FIND(sprites_menu, ALTERNATE_NONE..ALTERNATE_ALL)
-; Options menu, Puzzle: which one, then its window for ever (its OK pops
-; back out of here). Help's Find puzzle comes in at edit_puzzle.
+; Options menu, Puzzle: which one, then its window until OK (whose handler
+; pops back out of here). Help's Find puzzle comes in at edit_puzzle.
 .option_puzzle
     LDA #PUZZLES
     LDX #M_WHICH_PUZZLE
@@ -1924,10 +1991,10 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     JSR jump_to_handler
     JMP edit_puzzle_loop
 
-; Puzzle window, Type. A swap next block puzzle looks at the next block
-; itself (block A becomes B, or B A), so its own next-block check is cleared
-; here, and the Conditions window then shows Check next: ticked and won't
-; change it or the block.
+; Puzzle window, Type. The next block is the cell in front of the player. A
+; swap next block puzzle checks that itself (block A becomes B, or B A), so
+; its condition's next-block check is cleared here, and the Conditions
+; window then shows Check next: ticked and won't change it or the block.
 .puzzle_type
     LDA #W_PUZZLE_TYPES
     JSR open_window
@@ -2161,7 +2228,8 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     STA level_puzzle_effects+3, Y
     RTS
 
-; Conditions window, Check X: and Check Y:, the flags in the position.
+; Conditions window, Check X: and Check Y:, which flip the IGNORE flag in the
+; puzzle's x or y (ticked while it's clear).
 .condition_check_x
     CLC
     BCC condition_toggle_position
@@ -2192,8 +2260,8 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     STA (ptr), Y
     RTS
 
-; Conditions window, Next block: which block must be next, which also turns
-; the check on.
+; Conditions window, Next block: which block must be in front of the player,
+; which also turns the check on.
 .condition_next_block
     JSR unless_swap_next
     LDY record
@@ -2240,8 +2308,8 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     LDA #W_CONDITIONS
     JMP open_window
 
-; Conditions window, Position: where the puzzle is, with the cursor. The
-; position's IGNORE flags stay as they are.
+; Conditions window, Position: where the puzzle is, put with the cursor as
+; for an object. The position's IGNORE flags stay as they are.
 .condition_position
     JSR vector_close_window
     LDA puzzle
@@ -2419,18 +2487,18 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     BPL ask_filename_block
     RTS
 
-; Room for a filename of 12 characters, with an author's mark in it until
-; then. A 12-character name's Return lands on osfile_block, which
+; Room for a filename of 12 characters, holding an author's mark until one
+; is typed. A 12-character name's Return lands on osfile_block, which
 ; ask_filename then fills in, leaving the name followed by "0" and &1E (the
 ; low and high bytes of this address). The longest DFS name, ":0.$.ABCDEFG",
 ; is 12 characters, so typed in full its leaf gains an eighth character, the
 ; "0", and DFS refuses it: Save and Load level show "Error 204 has occurred !"
-; and "Bad name" (seen in jsbeeb) and nothing is written; a Load also loses
-; the level being edited, as any failed load does. 11 characters are safe.
+; and "Bad name" and nothing is written; a Load also loses the level being
+; edited, as any failed load does. 11 characters are safe.
 .filename
     EQUS "_Ian Holmes_"
 .filename_end
-; OSFILE's control block, filled in from the template before use (left over
+; OSFILE's control block, filled in from the template before use (stray
 ; bytes until then).
 .osfile_block
     EQUB &00, &00, &A1, &25, &00, &00, &23, &A5
@@ -2441,8 +2509,9 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
 .osfile_template
     EQUW filename
     EQUD level                  ; load address
-    EQUD &8380                  ; exec address; loading, nonzero means load the
-                                ; file at its own address
+    EQUD &8380                  ; exec address; when loading, its low byte
+                                ; being nonzero tells OSFILE to load the file
+                                ; at its own load address
     EQUD level                  ; start of the data to save
     EQUD level_end              ; and its end
 .osfile_template_end
@@ -2450,9 +2519,14 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
 ; its details in the puzzle's first three effect bytes (the fourth is the
 ; conditions); see each editor below. Most run a window of their own until
 ; its OK.
+;
+; Below, +0, +1 and +2 are those three bytes, level_puzzle_effects + record
+; + n: what the game calls a trigger's A, X and Y (PUZZLE_* in
+; leveldata.6502inc says what each type does with them).
 
-; Place monster: +0 x * 4 + monster number (0-3), +1 pattern, +2 y * 4 +
-; direction (DIRECTION_*, one of the four).
+; Place monster: +0 is the x times 4 plus the monster's number (0-3), +1 its
+; pattern, and +2 the y times 4 plus its direction (DIRECTION_*, one of the
+; four).
 .effect_place_monster
     JSR vector_close_window
     LDY record
@@ -2475,28 +2549,30 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     LDA #W_PLACE_MONSTER
     LDY #handlers(place_monster_handlers_ptr)
     BNE effect_editor
-; Move monster: +0 direction (DIRECTION_*, or MONSTER_GONE), +1 monster number
-; * 4, the fifth item, All monsters, making it 16.
+; Move monster: +0 is the direction (DIRECTION_*, or MONSTER_GONE) and +1
+; the monster's number times 4, where the fifth item, All monsters, makes it
+; 16.
 .effect_move_monster
     LDA #W_MOVE_MONSTER
     LDY #handlers(move_monster_handlers_ptr)
     BNE effect_editor
-; Charge object: +0 object number, +2 charges.
+; Charge object: +0 is the object's number and +2 its charges.
 .effect_charge_object
     LDA #W_CHARGE_OBJECT
     LDY #handlers(charge_handlers_ptr)
     BNE effect_editor
-; Throw object: +0 object number, +2 distance.
+; Throw object: +0 is the object's number and +2 how far it goes.
 .effect_throw_object
     LDA #W_THROW_OBJECT
     LDY #handlers(throw_handlers_ptr)
     BNE effect_editor
-; Move block: +0 direction (DIRECTION_*, any of the eight), +1 x, +2 y.
+; Move block: +0 is the direction (DIRECTION_*, any of the eight), and +1
+; and +2 the block's x and y.
 .effect_move_block
     LDA #W_MOVE_BLOCK
     LDY #handlers(move_block_handlers_ptr)
     BNE effect_editor
-; Place block: +0 block, +1 x, +2 y.
+; Place block: +0 is the block, and +1 and +2 the cell's x and y.
 .effect_place_block
     LDA #W_PLACE_BLOCK
     LDY #handlers(place_block_handlers_ptr)
@@ -2535,15 +2611,19 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     JSR wait_for_key
     JMP vector_close_window
 
-; Place and move block windows, Block position: +1 x, +2 y.
+; Place and move block windows, Block position: +1 and +2, x and y.
 .effect_block_position
     LDA #0
     BEQ effect_position
-; Teleport: +1 and +2 where to, kept 4 less as the start is.
+; Teleport: +1 and +2 are where to, kept 4 less in each direction, as the
+; start is.
 .effect_teleport
     LDA #4
-; Put the effect's position with the cursor (Space leaves it as it was).
-; In: arg = what's kept less: 0, or 4 for the view's top left.
+; Put the effect's position (+1 and +2) with the cursor: Return puts it
+; there, Space leaves it as it was.
+; In: arg = how much less than the cell the position is kept: 0, or 4 for
+; the top left of the game's view.
+; Clobbers: A, X, Y, ptr, work, screen_ptr, the low code's zero page.
 .effect_position
     STA arg
     JSR vector_close_window
@@ -2577,7 +2657,8 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
 .effect_position_done
     RTS
 
-; Next block, and the place block window's Block type: +0 block (CELL_*).
+; Next block, and the place block window's Block type: +0 is the block
+; (CELL_*).
 .effect_block_type
     LDX record
     LDY level_puzzle_effects, X
@@ -2587,8 +2668,10 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     STA level_puzzle_effects, Y
     RTS
 
-; Set levels: +0 SET_LEVELS_KEEP_TIME and SET_LEVELS_KEEP_COLLECTS, +1 the
-; new time, +2 the new number of collectables needed.
+; Set levels: +0 holds the flags SET_LEVELS_KEEP_TIME and
+; SET_LEVELS_KEEP_COLLECTS, +1 the new time and +2 the new number of
+; collectables needed. The window ticks "Change:" while a value's KEEP flag
+; is clear.
 .effect_set_levels
     LDA #W_SET_LEVELS
     JSR open_window
@@ -2613,6 +2696,7 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     LDY #handlers(set_levels_handlers_ptr)
     JSR jump_to_handler
     JMP effect_set_levels_loop
+; Set levels window, the Change: items: flip the value's KEEP flag.
 .levels_change_time
     LDA #SET_LEVELS_KEEP_TIME
     BMI levels_toggle_flag
@@ -2623,7 +2707,8 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     EOR level_puzzle_effects, Y
     STA level_puzzle_effects, Y
     RTS
-; Giving a new value also turns its change on.
+; Set levels window, Time and Collects.: ask for the new value. Giving one
+; also turns its change on.
 .levels_time
     LDY record
     LDX level_puzzle_effects+1, Y
@@ -2646,7 +2731,8 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     STA level_puzzle_effects, Y
     RTS
 
-; Swap next block: +0 block A, +1 block B (an item's number is its byte).
+; Swap next block: +0 is block A and +1 block B (so each item's number is
+; the offset of its byte).
 .effect_swap_next
     LDA #0
     PHA
@@ -2675,7 +2761,7 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
 .effect_swap_next_done
     JMP vector_close_window
 
-; Move block window, Direction: +0, one of eight.
+; Move block window, Direction: +0, any of the eight.
 .effect_block_direction
     LDY record
     LDA level_puzzle_effects, Y
@@ -2714,7 +2800,7 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     EQUB DIRECTION_DOWN_LEFT, DIRECTION_DOWN_RIGHT
 .compass_codes_end
 
-; Detonate object: +0 object number, +2 the same times 4.
+; Detonate object: +0 is the object's number, and +2 the same times 4.
 .effect_detonate_object
     JSR choose_object_number
     ASL A
@@ -2722,9 +2808,11 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     STA level_puzzle_effects+2, Y
     RTS
 
-; Throw and charge object windows, Object no., and Detonate object: +0,
-; asked 1-8, kept 0-7.
-; Out: A = it; Y = record.
+; Throw and charge object windows, Object no., and Detonate object: +0, the
+; object's number, asked as 1-8 and kept as 0-7.
+; Out: A = the number kept; Y = record.
+; Clobbers: X, ptr, arg, number, plot_enabled, the input buffer, the low
+; code's zero page.
 .choose_object_number
     CLC
     LDA #M_OBJECT_NUMBER
@@ -2739,10 +2827,10 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     STA level_puzzle_effects, Y
     RTS
 
-; Throw object window, Distance: +2, 1-63.
+; Throw object window, Distance: +2, 1-63 cells.
 .throw_distance
     LDA #M_DISTANCE
-    LDX #1                      ; the first value offered
+    LDX #1                      ; offered when the old value is 0
     LDY #MAP_SIZE - 1           ; the most (and a mask for the old value)
     CLC
     BNE effect_ask_amount
@@ -2752,7 +2840,8 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     LDX #0
     LDY #OBJECT_CHARGES
     SEC
-; Ask for +2 with ask_number_limited, a masked old value of 0 offered as X.
+; Ask for a new value of +2 with ask_number_limited, offering its old value
+; masked by Y, or X if that's 0.
 ; In: A = the message; X = the value offered for 0; Y = the most, also the
 ; mask; C set if 0 is allowed.
 .effect_ask_amount
@@ -2771,8 +2860,8 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     STA level_puzzle_effects+2, Y
     RTS
 
-; Turn on and turn off puzzle: +0, +1, +2 puzzles A, B and C, asked 1-32 and
-; kept 0-31. "Single:" is ticked when they're all the same, and choosing it
+; Turn on and turn off puzzle: +0, +1 and +2 are puzzles A, B and C, asked
+; as 1-32 and kept as 0-31. "Single:" is ticked when they're all the same, and choosing it
 ; makes them so (B and C copy A); choosing it again does nothing.
 .effect_turn_puzzle
     LDA #0
@@ -2827,7 +2916,7 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     PLA
     BPL effect_turn_puzzle_loop
 
-; Push crates: +0 how many (0-255).
+; Push crates: +0 is how many (0-255).
 .effect_push_crates
     LDY record
     LDX level_puzzle_effects, Y
@@ -2837,7 +2926,7 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     STA level_puzzle_effects, Y
     RTS
 
-; Move monster window, Monster no.: +1 the item * 4.
+; Move monster window, Monster no.: +1 is the item's number times 4.
 .move_monster_number
     LDY record
     LDA level_puzzle_effects+1, Y
@@ -2860,8 +2949,8 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     STA level_puzzle_effects, Y
     RTS
 
-; Move next block: +0 a turn (TURN_*) times 4, the way the game indexes its
-; turns.
+; Move next block: +0 is a turn (TURN_*) times 4, the way the game indexes
+; its turns.
 .effect_move_next_block
     LDY record
     LDA level_puzzle_effects, Y
@@ -2875,7 +2964,7 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     RTS
 
 ; Place monster window: Monster no., Position and Direction work on copies
-; (arg, the cursor and work+1) until OK (place_monster_ok) puts them back;
+; (arg, the cursor and work+1) until OK (place_monster_ok) stores them;
 ; Pattern goes straight into +1.
 .place_monster_number
     LDA #M_MONSTER_NUMBER
@@ -2923,7 +3012,7 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     STA level_puzzle_effects+1, Y
     RTS
 
-; help_find_puzzle's next puzzle down, or give up.
+; help_find_puzzle: on to the next puzzle down, or give up after the first.
 .find_puzzle_next
     DEC record
     BPL find_puzzle_compare
@@ -3213,9 +3302,9 @@ block_menu = {CELL_FLOOR, CELL_SE_CURVE, CELL_SW_CURVE, CELL_NE_CURVE,
     DEC ptr
     BNE new_level_monsters
     ; Every byte of the objects &A0, so absent; and of the puzzles, from the
-    ; types to the effects, the same: a place block puzzle needing its object
-    ; and turned off, at x 32 with neither coordinate checked, and a
-    ; condition of going north.
+    ; types to the effects, the same: a place block puzzle, turned off and
+    ; tried by using its object, at (32, 32) with neither coordinate checked,
+    ; and a condition of going north.
     LDA #PUZZLE_USES_OBJECT OR PUZZLE_OFF OR PUZZLE_PLACE_BLOCK
     ASSERT (PUZZLE_USES_OBJECT OR PUZZLE_OFF) == (OBJECT_ABSENT OR MAP_SIZE / 2)
     LDX #OBJECTS * 4 - 1
@@ -3240,7 +3329,7 @@ block_menu = {CELL_FLOOR, CELL_SE_CURVE, CELL_SW_CURVE, CELL_NE_CURVE,
     BPL set_level_palette_loop
     RTS
 
-; In: A < 40, C clear.
+; In: A < 40.
 ; Out: A less 10 if it was 10 or more (call three times for A mod 10).
 .reduce_mod_10
     CMP #10
@@ -3260,7 +3349,8 @@ MACRO EDITING_CODE digits
     EQUB code_byte(digits[0..1]), code_byte(digits[2..3]), code_byte(digits[4..5])
 ENDMACRO
 
-; A monster at a cell, going a direction.
+; A monster's record: its cell, kept in quarter cells (times 4), the
+; direction it's going and its pattern.
 MACRO MONSTER x, y, direction, pattern
     EQUB x * 4, y * 4, direction, pattern
 ENDMACRO
@@ -3275,7 +3365,8 @@ ENDMACRO
     EQUB 0                      ; collectables needed
     EQUB 250                    ; time
     EQUB MAP_SIZE / 2, MAP_SIZE / 2             ; finish
-    EQUB CELL_LAVA * 16 + CELL_LAVA             ; monsters die in fatal traps
+    EQUB CELL_LAVA * 16 + CELL_LAVA             ; monsters die in fatal traps,
+                                                ; leaving the trap
     EQUB ALTERNATE_NONE         ; sprites: the first picture for all four
 ; Each monster: in the middle, dead, back and forth.
 .default_monster
@@ -3286,7 +3377,7 @@ line2_tab = os_tab(MESSAGE_LEFT, MESSAGE_LINE_2)
 ; Print a message on the message box's second line (print_line2), its first
 ; (print_line1), or wherever the text cursor is (print_message). The OS
 ; thinks the screen is 40 columns of 640 bytes, so the lines' TAB(34,12) and
-; TAB(10,11) land two rows apart in our 64 columns, both 4 columns in.
+; TAB(10,11) land two rows apart in our 64 columns, both at column 4.
 ; In: A = the message number.
 ; Clobbers: A, X, Y, window_ptr.
 .print_line2
@@ -3515,8 +3606,9 @@ SECTION zero_page_init, org=&0000
     SKIP &40 - (zero_page_spare - menu_tables)
 .zero_page_init_end
 ENDSECTION
-; The low code: drawing the map, windows, menus and the message box. entry
-; moves it to &0880.
+; The low code: drawing the map, windows, menus and the message box, with
+; its variables at &72-&89. entry moves it to &0880, where it's assembled to
+; run; the rest of the program calls it through the jump table at its start.
 .low_code_load
 SECTION low_code, org=&0880
 .low_code
@@ -3722,8 +3814,8 @@ SECTION low_code, org=&0880
     BNE draw_map_run_loop
     RTS
 
-; The message box: character rows 14-17, columns 2-61, in colour 1 with a
-; colour 3 line round it; the OS prints into it.
+; Draw the message box: character rows 14-17, columns 2-61, in colour 1 with
+; a colour 3 line round it; the OS prints into it.
 ; Clobbers: A, X, Y, screen_ptr, glyph_ptr.
 .open_message_box
     LDA #LO(message_box)
@@ -3806,8 +3898,10 @@ SECTION low_code, org=&0880
 ; Draw a window from WDATA (format in wdata.6502inc): x and width in screen
 ; columns, y in character rows, height+1 lines of glyphs two columns wide.
 ; It's filled in colour 1 with a colour 3 line down the right and along the
-; bottom, and the title line inverted. Relative windows go on the other side
-; of the screen from the cursor.
+; bottom, and the title line inverted. A window without bit 7 of x set (FIXED
+; in wdata.6502) moves out of the cursor's way: to the right half of the
+; screen when the cursor is in the left half, and to the bottom half when
+; it is in the top half.
 ; In: X, Y = the window's address.
 ; Out: window_x, window_y (in cells, so doubled), window_width and
 ; window_height describe it, for close_window and the menu.
@@ -3983,6 +4077,7 @@ SECTION low_code, org=&0880
     BPL draw_window_line
     RTS
 
+; Step window_ptr on a byte.
 .next_window_byte
     INC window_ptr
     BNE next_window_byte_done
@@ -4092,8 +4187,9 @@ SECTION low_code, org=&0880
 .tick_line_glyph
     CLC
     ADC #GLYPH_X
-; Draw a glyph: 0-63 from the font, 64-69 from font_digits. Bit 6 picks the
-; page-aligned table, bits 4-5 the page in it, bits 0-3 the 16 bytes.
+; Draw a glyph: 0-63 from the font, 64-69 from font_digits. Each glyph is 16
+; bytes and both tables start a page, so bit 6 picks the table, bits 4-5 the
+; page in it and bits 0-3 the 16 bytes in the page.
 ; In: A = the glyph (bit 7 is ignored); screen_ptr = where.
 ; Out: screen_ptr moved on a glyph.
 ; Clobbers: A, Y, glyph_ptr.
@@ -4231,6 +4327,8 @@ SECTION low_code, org=&0880
     CLC
     RTS
 
+; Put the cursor keys back as window_menu found them.
+; Clobbers: A, X, Y.
 .restore_cursor_key_mode
     LDA #OSBYTE_CURSOR_EDITING
     LDX saved_cursor_key_mode
@@ -4383,7 +4481,7 @@ entry_font_to = entry_copy_font_store + 1
     STA menu_tables, X
     DEX
     BPL entry_copy_zero_page
-    TXS
+    TXS                         ; X = &FF: an empty stack
     LDA #&C0
     STA unused_66
     INX
@@ -4401,8 +4499,8 @@ entry_font_to = entry_copy_font_store + 1
     LDA #SCREEN_COLUMNS         ; X = 1, CRTC_HORIZONTAL_DISPLAYED
     JSR vector_crtc_write
     INX
-    LDA #90                     ; X = 2, CRTC_HSYNC_POSITION: moved to centre
-    JSR vector_crtc_write       ; them
+    LDA #90                     ; X = 2, CRTC_HSYNC_POSITION: 8 less than
+    JSR vector_crtc_write       ; MODE 1's 98, centring the 16 fewer columns
     JSR vector_cursor_off
     LDA #OSBYTE_AUTO_REPEAT_PERIOD
     LDX #4                      ; fast: 4 centiseconds
