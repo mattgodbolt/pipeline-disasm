@@ -205,3 +205,160 @@ different order (`tile_menu_map`).
 - No character literal: `asc("i")` is a one-line FUNCTION over `CODES`.
 - No line continuation, so the level's 32 names and 64 map rows are built as
   groups of eight and joined with CONCAT.
+
+## 2026-10-03 19:37 — Review: corrections, and what's newly understood
+
+A second pass over `src/hidden_levdes.6502` and WDATA, checking each claim
+against the code and, where it mattered, in jsbeeb.
+
+### The block numbers were wrong
+
+The designer's block table (`block_menu_map`, at &21BF; it was
+`tile_menu_map`) is two tables in one, a nibble each:
+
+- indexed by block, the top nibble is that block's item in the block menu;
+- indexed by menu item, the bottom nibble is that item's block.
+
+The keys 0-9 and A-F pick menu items by number (`hex_key` reads the bottom
+nibble at the key's value). The first pass read the table as key-to-block,
+which named blocks 6, 8, 9, A, B, E and F wrongly; `level.6502inc`'s
+`TILE_*`, its comment on them, leveldata's `MAP_KEY` note on 9 and
+`level1.6502`'s comments carry the mistake. Correctly:
+
+| Block | Menu item | Designer's name | Game's name (CELL_*) |
+|---|---|---|---|
+| 0 | 0 | Blank | CELL_FLOOR |
+| 1 | 1 | SE curve | (a wall shape) |
+| 2 | 2 | SW curve | (a wall shape) |
+| 3 | 3 | NE curve | (a wall shape) |
+| 4 | 4 | NW curve | (a wall shape) |
+| 5 | 5 | Wall 1 | (a wall) |
+| 6 | 10 | Crate | CELL_CRATE |
+| 7 | 7 | Collectable | CELL_SULPHUR |
+| 8 | 6 | Wall 2 | CELL_WALL |
+| 9 | 15 | Barricade | (a wall) |
+| A | 8 | Fatal trap | CELL_LAVA |
+| B | 14 | Junction | CELL_JUNCTION |
+| C | 12 | Horz.Pipe | CELL_PIPE_ACROSS |
+| D | 13 | Vert.Pipe | CELL_PIPE_DOWN |
+| E | 9 | S.Monster | CELL_FIRE |
+| F | 11 | Marker | CELL_OBJECT |
+
+The table's bytes are `00 11 22 33 44 55 A8 77 6A FE 86 EF CC DD 9B B9`; the
+source now builds them from the menu's list of blocks with `FIND`. So the
+designer's names agree with the game's meanings; there's no mismatch to
+explain. Confirmed in jsbeeb: key 6 sets the brush (&59) to 8 and f0's menu
+highlights "Wall 2"; choosing "Crate" from the menu sets 6; key 9 gives E
+with "S.Monster" highlighted; keys B and F give F and 9; and with the
+simulator on, key 8 (a fatal trap, block A) plotted next to the cursor and
+walked into gives "You have lost one life." The code agrees throughout:
+
+- The simulator loses a life on A and E (fatal trap, S.Monster) and off the
+  map; walks onto blanks and collectables; bounces off curves, walls,
+  crates, barricades and markers; and at a junction (B), not an S.Monster,
+  turns into the first pipe running its way, trying left, right, then
+  straight on, else back.
+- The start, finish and objects are marked in the map with a marker (F),
+  monsters with an S.Monster (E), not a junction and a barricade.
+- The Graphics window's four sprites are for wall one, wall two,
+  collectable and fatal trap: cells 5, 8, 7 and A, the game's cells with
+  second pictures.
+- A new level's monster rule is A, A: monsters die in fatal traps and leave
+  one.
+
+### Other corrections
+
+- WDATA's x and width are screen columns (of the 64; a glyph is two), y and
+  height character rows; not glyph columns and half rows.
+- WDATA's messages wrote their VDU 31 positions with whatever name or
+  character had the right value (`TAB, TAB, 2` is TAB(31,2); `TAB, "#",
+  VDU_CLS` is TAB(35,12), no CLS in it). They're `os_tab(column, row)` in our
+  64 columns now; e.g. "Press any key..." is at column 8, row 17.
+- The back door at an error needs a lower-case "i", and `get_key` forces
+  Caps Lock on with OSBYTE &CA (Y=&4F, X=&20), which also clears bit 7, so
+  Shift doesn't reverse it. With &028F = &CF: Caps Lock then I reaches
+  BASIC (seen in jsbeeb, `PRINT 6*7` works); Shift+I goes back to the map.
+- The puzzle status window's digit is the puzzle's object, puzzle mod 8
+  plus 1, printed over the 1 of "Use object 1:" (puzzle 13 shows "Use object
+  5:" in jsbeeb). The game tries object n's puzzles n, n + 8, n + 16 and
+  n + 24, so the type byte's bit 7 is "fired by using or throwing its
+  object", not "needs object 1".
+- A swap next block puzzle shows Check next ticked in the Conditions window
+  while its flag is kept clear (the Type editor clears it); Next block and
+  Check next do nothing for it. The game's swap compares the cell in front
+  itself.
+- The Time option, like `ask_number`, allows 0-255, not 1-255.
+- `rdchv_filter` is RDCHV from `main` on (out while an error shows), not
+  only during line input; it lets everything through unless `input_line`
+  has narrowed the range, and turns function keys into commands everywhere.
+- OBJECT_NO_CHARGES (bit 5) means the uses never run out (the game treats
+  32 and up as unlimited); the object window's "Charges:" is ticked when
+  it's clear, and setting a number of charges clears it.
+- The sprites byte's two bits per block say which squares of a checkerboard
+  show the block's second picture (the game's `alternate_cells`): Sprite A
+  is 0 (none), Sprite B 3 (all), Patterned 1 (odd squares); 2 isn't offered.
+- The start is kept 4 less than the cursor because the game keeps the top
+  left of its 8x8 view, the player 4 cells in (as Teleport's arguments).
+- `unused_read_key` isn't "INKEY with a long time limit": it's OSBYTE &81
+  with Y = &81.
+- Baron: list literals may span lines, so nothing needs building eight at a
+  time with CONCAT; and `ascii()` is in `osconst.6502inc` (the local `asc()`
+  is gone).
+
+### Newly understood
+
+- An Escape from a menu (`menu_select`) restarts the main loop without
+  resetting the stack, so each leaves a few bytes on it; the stack wraps in
+  its page, so it's harmless. BRKs and function keys reset it.
+- Loading a level loads it over the one being edited before checking the
+  code, so a wrong code loses both (a new level replaces it).
+- A 12-character filename doesn't save: its Return lands on the first byte
+  of `osfile_block`, which `ask_filename` then fills from the template, so
+  OSFILE sees the name followed by "0" and &1E (`filename`'s address). In
+  jsbeeb, Save level to ":0.$.ABCDEFG" left the catalogue unchanged;
+  ":0.$.ABCDEF" saved.
+- The program calls between its parts mostly through three jump tables (at
+  &1100, the low code's &0880 and before `new_level`), as if they were
+  assembled separately.
+- Ian's labels from MENU's fragment, now noted at their routines: sel0
+  `choose_from_window`, sure `confirm`, wind `open_window`, table
+  `jump_to_handler`, key3 `help_menu` (f3), help `help_menu_show`, simt...
+  `help_simulate`, canc the RTS at `hex_key_done` that `files_menu` uses to
+  cancel, t2 `work` (&54). The fragment is `files_menu` and the start of
+  `help_menu`.
+- Confirmed in jsbeeb: *FX229 is 1 during the title and 0 after, so entry's
+  "X is still 1" after *OPT holds.
+
+### Names, and where they should live
+
+`src/levdes.6502inc` is new: the designer's (and WDATA's) names that no
+shared include has. To move when the shared includes can take them:
+
+- leveldata.6502inc: CELL_SE_CURVE, CELL_SW_CURVE, CELL_NE_CURVE,
+  CELL_NW_CURVE, CELL_WALL_1, CELL_BARRICADE (cells the game doesn't name);
+  DIRECTION_UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT (4-7, Move block's
+  diagonals); MONSTER_DEAD (8); TURN_BACK, FORWARDS, RIGHT, LEFT (pattern
+  fields); COORDINATE_BITS, POSITION_FLAGS; OBJECT_CHARGES (&1F),
+  OBJECT_KINDS (15); PUZZLE_TYPE (&0F); NAME_HEAD (8); CONDITION_BLOCK,
+  CONDITION_DIRECTION, CONDITION_CHECK_BLOCK, CONDITION_CHECK_DIRECTION;
+  SET_LEVELS_KEEP_TIME, SET_LEVELS_KEEP_COLLECTS; SPRITES_A, SPRITES_ODD,
+  SPRITES_EVEN, SPRITES_B; palette_entry().
+- osconst.6502inc: OSBYTE_AUTO_REPEAT_PERIOD (&0C), OSBYTE_WAIT_VSYNC
+  (&13), OSBYTE_ACKNOWLEDGE_ESCAPE (&7E), OSBYTE_OPT (&8B),
+  OSBYTE_KEYBOARD_STATUS (&CA), OSBYTE_BELL_DURATION (&D6),
+  OSBYTE_SOFT_KEY_BASE (&E1), OSFILE_SAVE, OSFILE_LOAD, CURSOR_KEYS_EDIT and
+  CURSOR_KEYS_SOFT (*FX4 0 and 2), ESC, DEL, the VDU codes (VDU_COLOUR,
+  VDU_PALETTE, VDU_MODE, VDU_TAB, VDU_CLS, VDU_RESET_WINDOWS,
+  VDU_TEXT_WINDOW, VDU_RIGHT, VDU_NOTHING), CRTC register numbers
+  (CRTC_HORIZ_DISPLAYED, CRTC_HORIZ_SYNC, CRTC_CURSOR_START), and internal
+  key numbers KEY_SHIFT, KEY_X, KEY_COLON, KEY_RETURN, KEY_DELETE, KEY_Z,
+  KEY_SLASH (the Graphics Designer defines some of these locally as INKEY
+  values instead).
+- Designer-only, staying in levdes.6502inc: the screen geometry and
+  `os_tab()`, the message box, `mode1_byte()`, the soft key codes,
+  CURSOR_NONE/CURSOR_BLINK, DEVELOPERS_LINKS, ERROR_ESCAPE_KEY.
+- In wdata.6502inc: WINDOW_HEIGHT, MESSAGE_END, HIGHLIGHT, and the menu
+  items the designer acts on (I_*, with `item_line()`).
+- In hidden_levdes.6502: MOVE_LEFT/UP/RIGHT/DOWN, the cursor's own
+  directions (0 left, 1 up, 2 right, 3 down: clockwise, so EOR 2 reverses),
+  deliberately not DIRECTION_*, whose order differs.
