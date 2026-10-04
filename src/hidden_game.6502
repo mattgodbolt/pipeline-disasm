@@ -3681,9 +3681,10 @@ ASSERT OBJECTS * OBJECT_BYTES = PUZZLES AND LO(io_maps) = 0 AND LO(IO_MAP_SIZE) 
     STA work1
     JMP (work0)
 
-; Action 4, CTRL: the backpack screen. The mission, the lives left, the
-; backpack's contents and the selected object's name, the time, level, score
-; and sound settings; see backpack_keys. Space goes back to the game.
+; ACTION_BACKPACK (CTRL): the backpack screen. The mission, the lives left,
+; the backpack's contents and the selected object's name, the time, level,
+; score and sound settings; see backpack_keys. Space goes back to the game.
+; Clobbers: everything.
 .backpack_screen
     JSR save_view                       ; remember where the view was
     LDA lives
@@ -3941,7 +3942,8 @@ ASSERT BACKPACK_SPACING = 6
 .draw_backpack_done
     RTS
 
-; Action 3, M: the map, on levels below io_map_levels.
+; ACTION_MAP (M): the map, on levels below io_map_levels.
+; Clobbers: everything.
 .map_screen
     LDA level
     CMP io_map_levels                   ; no map this level?
@@ -4033,14 +4035,15 @@ ASSERT SCREEN_COLUMNS / 2 = &10         ; for bit4_mask
     STA work5
     RTS
 
-; Actions 7-10: a step left, right, up or down. Turn that way, then step into
-; the next cell if it's empty, sulphur, or a pipe running this way, which
-; carries the player along until it ends; a crate is pushed if the player has
-; pushes left. Anything else stops the player: lava or fire kill. Inside a
-; pipe the step goes on whatever's ahead (check_underfoot steers). After a
-; step, the move ends the cycle (the walk moved everything four times
-; already).
+; ACTION_LEFT to ACTION_DOWN (the direction keys): a step left, right, up or
+; down. Turn that way, then step into the next cell if it's empty, sulphur,
+; or a pipe running this way, which carries the player along until it ends; a
+; crate is pushed if the player has pushes left. Anything else stops the
+; player: lava or fire kill. Inside a pipe the step goes on whatever's ahead
+; (check_underfoot steers). After a step, the move ends the cycle (the walk
+; moved everything four times already).
 ; In: Y = the action * 2; the carry clear.
+; Clobbers: everything.
 .move
     TYA                                 ; (action - ACTION_LEFT) * 2...
     SBC #2 * ACTION_LEFT - 1            ; (the carry's clear)
@@ -4303,10 +4306,10 @@ ASSERT TURN_ANTICLOCKWISE - TURN_CLOCKWISE = TURN_CLOCKWISE - TURN_AHEAD AND TUR
     CLC
     RTS
 
-; Action 7: put monster A AND 3 in map cell (A DIV 4, Y DIV 4) (its position
-; in characters is A and Y with their low bits clear), going direction Y AND
-; 3 with turning preferences X, and move its fire cell there. A monster
-; that was gone comes back.
+; Trigger action 7, PUZZLE_PLACE_MONSTER: put monster A AND 3 in map cell
+; (A DIV 4, Y DIV 4) (its position in characters is A and Y with their low
+; bits clear), going direction Y AND 3 with turning preferences X, and move
+; its fire cell there. A monster that was gone comes back.
 .action_move_monster
     JSR trigger_arguments
     STX work0
@@ -4702,9 +4705,9 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
 .unused_jump
     JMP light_exit
 
-; Action 1, P: pick up the object in front into the selected slot, or the
-; last free one; with nothing to collect left, in front of the exit, light
-; it instead (light_exit).
+; ACTION_PICK_UP (P): pick up the object in front into the selected slot,
+; or if that's taken, the highest free one; with nothing to collect left, in
+; front of the exit, light it instead (light_exit).
 ; Clobbers: everything.
 .pick_up
     JSR light_exit
@@ -4737,7 +4740,8 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     LDA #CELL_FLOOR
     JMP set_cell_and_draw               ; and its cell's empty
 
-; Action 2, D: drop the selected object (or any) into the empty cell in front.
+; ACTION_DROP (D): drop the selected object (or any) into the empty cell in
+; front.
 ; Clobbers: everything.
 .drop
     LDY front_cell
@@ -4781,9 +4785,9 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
 .selected_object_done
     RTS
 
-; Action 5, T: throw the selected object from the empty cell in front, the
-; way the player faces, up to io_throw_distance cells (with 0, nothing can be
-; thrown). OBJECT_NO_THROW doesn't stop it: see fly_thrown.
+; ACTION_THROW (T): throw the selected object from the empty cell in front,
+; the way the player faces, up to io_throw_distance cells (with 0, nothing
+; can be thrown). OBJECT_NO_THROW doesn't stop it: see fly_thrown.
 ; Clobbers: everything.
 .throw
     JSR selected_object
@@ -4970,8 +4974,8 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
 .try_object_trigger_jump
     JMP do_nothing                      ; self-modified: use_trigger or throw_trigger
 
-; Action 6, Return: use the selected object where the player stands, facing
-; the way they do.
+; ACTION_USE (Return): use the selected object where the player stands,
+; facing the way they do: try its triggers.
 ; Clobbers: everything.
 .use
     JSR selected_object
@@ -5130,7 +5134,9 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
 ; action, the flags' low nibble, gets the trigger's arguments (Y = the
 ; trigger * 4, for trigger_arguments), the cell it's facing in work5 and the
 ; direction in work4. Then front_x, front_y and front_cell are looked at
-; again.
+; again. The actions (action_*, by trigger_actions) take their arguments
+; with trigger_arguments and clobber everything; one that can't happen ends
+; at trigger_fails, or trigger_fails_pop or _pop2 to drop what it pushed.
 ; In: A = the direction; X = the trigger; Y = the trigger * 4.
 .trigger_fires
     STA work4
@@ -5158,7 +5164,8 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
     JSR do_nothing                      ; self-modified: the action
     JMP find_front                      ; and look again
 
-; Action 1: move the cell at (X, Y) a cell in direction A.
+; Trigger action 1, PUZZLE_MOVE_BLOCK: move the cell at (X, Y) a cell in
+; direction A (diagonals too).
 .action_move_cell
     JSR trigger_arguments
     JSR move_cell                       ; carry set: nothing moved
@@ -5176,8 +5183,8 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
 .light_exit_done
     RTS
 
-; Action 14: push the cell in front, direction A (a TURN_* times TURN_ROW)
-; turned from the way the player faces.
+; Trigger action 14, PUZZLE_MOVE_NEXT_BLOCK: push the cell in front, in the
+; direction A (a TURN_* times TURN_ROW) turned from the way the player faces.
 .action_push
     JSR front_blocked
     BCS trigger_fails_pop2
@@ -5210,7 +5217,7 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
     LDA #CELL_FIRE                      ; the exit is fire
     BNE set_front_cell
 
-; Action 2: the cell in front becomes type A.
+; Trigger action 2, PUZZLE_NEXT_BLOCK: the cell in front becomes type A.
 .action_set_front
     JSR front_blocked
     BCS trigger_fails_pop2
@@ -5221,9 +5228,10 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
     LDY front_y
     JMP set_cell_and_draw
 
-; Action 5: object A explodes, wherever it is: on the map, landing, or in the
-; backpack, which kills the player. The trigger's third argument is the
-; object * 4 (the Level Designer stores it so), its offset in objects.
+; Trigger action 5, PUZZLE_DETONATE_OBJECT: object A explodes, wherever it
+; is: on the map, landing, or in the backpack, which kills the player. The
+; trigger's third argument is the object * 4 (the Level Designer stores it
+; so), its offset in objects.
 .action_explode
     JSR trigger_arguments
     JSR find_carried                    ; carried or landing?
@@ -5309,9 +5317,9 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
     BPL blast_cell
     RTS
 
-; Action 3: before the exit's lit, set the clock to X (unless A has
-; SET_LEVELS_KEEP_TIME) and the number to collect to Y (unless it has
-; SET_LEVELS_KEEP_COLLECTS).
+; Trigger action 3, PUZZLE_SET_LEVELS: before the exit's lit, set the clock
+; to X (unless A has SET_LEVELS_KEEP_TIME) and the number to collect to Y
+; (unless it has SET_LEVELS_KEEP_COLLECTS).
 ; Clobbers: everything.
 .action_set_clock
     JSR trigger_arguments
@@ -5350,21 +5358,21 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
 .action_fails
     JMP trigger_fails_pop
 
-; Action 0: map cell (X, Y) becomes type A.
+; Trigger action 0, PUZZLE_PLACE_BLOCK: map cell (X, Y) becomes type A.
 .action_set_cell
     JSR trigger_arguments
     JSR set_cell_and_draw
     JMP sound_trigger
 
-; Action 13: the player may push A crates.
+; Trigger action 13, PUZZLE_PUSH_CRATES: the player may push A crates.
 .action_set_pushes
     JSR trigger_arguments
     STA pushes_left
     LDA #&50
     BNE sound_tone
 
-; Action 15: swap the left and right keys, and up and down, for the rest of
-; the level.
+; Trigger action 15, PUZZLE_DISORIENTATE: swap the left and right keys, and
+; up and down, for the rest of the level.
 .action_swap_keys
     LDX key_down
     LDA key_up
@@ -5379,9 +5387,9 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
     LDA #&35
     BNE sound_tone
 
-; Action 12: give object A Y uses (unless it's the object landing, whose
-; triggers these are), and re-enable trigger A, the object's first; with a
-; flash.
+; Trigger action 12, PUZZLE_CHARGE_OBJECT: give object A Y uses (unless it's
+; the object landing, whose triggers these are), and re-enable trigger A, the
+; object's first; with a flash.
 .action_recharge
     JSR trigger_arguments
     JSR find_carried                    ; landing?
@@ -5402,7 +5410,7 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
     TAY
     BPL enable_trigger
 
-; Action 10: re-enable triggers A, X and Y.
+; Trigger action 10, PUZZLE_TURN_ON: re-enable triggers A, X and Y.
 .action_enable
     JSR trigger_arguments
     PHA
@@ -5439,7 +5447,7 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
 .find_carried_done
     RTS
 
-; Action 11: disable triggers A, X and Y.
+; Trigger action 11, PUZZLE_TURN_OFF: disable triggers A, X and Y.
 .action_disable
     JSR trigger_arguments
     PHA
@@ -5455,8 +5463,9 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
     STA trigger_flags, Y
     RTS
 
-; Action 6: monster X / 4 goes direction A: MONSTER_GONE or more takes it off
-; the map, for 26 points (score_monster). X = &10 means all four, but only
+; Trigger action 6, PUZZLE_MOVE_MONSTER (it sets which way a monster moves):
+; monster X / 4 goes direction A; MONSTER_GONE or more takes it off the map,
+; for 26 points (score_monster). X = &10 means all four, but only
 ; monster 3 gets A: set_monster_direction leaves A changed, and the loop
 ; passes the next monster its predecessor's X, so monsters 2 and 1 get 12 and
 ; 8 (gone) and monster 0 gets 4, stuck going left, which it soon moves out
@@ -5490,7 +5499,8 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
     BNE set_all_monsters
     RTS
 
-; Action 9: the cell in front changes from type A to X, or X to A.
+; Trigger action 9, PUZZLE_SWAP_NEXT: the cell in front changes from type A
+; to X, or X to A.
 ; In: Y = the trigger * 4.
 .action_toggle
     INY
@@ -5511,8 +5521,8 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
     PLA
     JMP set_cell_and_draw
 
-; Action 4: throw object A (carried) Y cells, from the empty cell in front,
-; and stop the player's step.
+; Trigger action 4, PUZZLE_THROW_OBJECT: throw object A (carried) Y cells,
+; from the empty cell in front, and stop the player's step.
 .action_launch
     LDA work5                           ; the cell in front must be empty
     BNE action_toggle_fails
@@ -5529,9 +5539,9 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
     LDX #ENVELOPE_TONE
     JMP sound_effect
 
-; Action 8: teleport the view's top left to cell (X, Y), so the player to
-; (X + 4, Y + 4), which is also where the level restarts from now, with a
-; flash; and stop the player's step.
+; Trigger action 8, PUZZLE_TELEPORT: put the view's top left at cell (X, Y),
+; and so the player at (X + 4, Y + 4), which is also where the level restarts
+; after a life is lost, with a flash; and stop the player's step.
 .action_teleport
     LDA #ACTION_STOP
     STA action
@@ -5918,7 +5928,8 @@ ASSERT P% - mission_filename = FILENAME_LENGTH + 1
     TXS
     JMP new_game
 
-; The triggers' actions, by the low nibble of their flags (PUZZLE_*).
+; The triggers' actions, by the low nibble of their flags (PUZZLE_*), called
+; by trigger_fires.
 .trigger_actions
     EQUW action_set_cell
     EQUW action_move_cell
@@ -5940,7 +5951,8 @@ ASSERT P% - trigger_actions = 2 * (PUZZLE_ACTION + 1)
 
 ; The player's actions, by action number (ACTION_*): nothing, P, D, M, CTRL,
 ; T, Return, the four directions, and nothing again when a trigger has
-; stopped the player.
+; stopped the player. player_turn jumps to them (jump_to) with Y = the action
+; * 2, and they clobber everything.
 .action_table
     EQUW clear_keys_down
     EQUW pick_up
