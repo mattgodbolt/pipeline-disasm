@@ -277,7 +277,10 @@ BASIC
 1500ENDPROC
 1510:
 ; PROCsavegrf: puts the names back after the graphics and saves the lot to
-; reload at &4000, where the Graphics Designer works.
+; reload at &4000, where the Graphics Designer works. Onto the PIPELINE
+; disc it goes after the last catalogued file, &114-&123, and its last
+; two sectors are H.GAME's first, the loader: the game then hangs as it
+; starts (seen in jsbeeb; docs/notes/basic.md).
 1520DEFPROCsavegrf
 1530X%=G%+grfs
 1540FORA%=0TOnames-4STEP4
@@ -309,7 +312,9 @@ BASIC
 ; 0-2; any other goes quietly back to the menu (seen in jsbeeb with IO's
 ; level 1: 677637 returns, 677636 carries on). The puzzle names aren't kept
 ; in a mission, so they are reset to "Puzzle 1" and on. Saved to reload ending at &3000, exec
-; &8380, as the Level Designer saves a level.
+; &8380, as the Level Designer saves a level. As with the designer's, the
+; first saved onto the PIPELINE disc fits at &114-&11E, short of H.GAME's
+; hidden sectors, and a second goes over H.GAME's first eight.
 1760DEFPROCsavelev
 1770S%=FNlevel
 1780IFL%?-1PRINT:IFFNn<>L%?S%*65536+L%?(S%+4)*256+L%?(S%+8)ENDPROC
@@ -338,6 +343,16 @@ BASIC
 ; PROCsavemss: places the two halves of the text (VDU 31,18,16 and VDU
 ; 31,14,17), refuses a locked mission (quietly, before asking for a name),
 ; sets the lock byte to I% and saves to reload at addr, ending at &5800.
+; Nothing asks for another disc first, and on the PIPELINE disc the save
+; destroys the hidden programs, as DFS counts the sectors past the last
+; catalogued file as free. The first mission (&34 sectors) lands at
+; &114-&147, over all of H.GAME and H.GRAPH's first three sectors: the
+; GAME stub then enters the mission's own bytes at &3000, and the Graphics
+; Designer loses its logo, its sheet order and part of its font. A second
+; (&148-&17B) takes the rest of H.GRAPH and half of H.LEVDES, and a third
+; the rest of H.LEVDES before it runs off the 40 formatted tracks. A name
+; already on the disc is refused ("Locked": every file there is). Seen in
+; jsbeeb; docs/notes/basic.md.
 2000DEFPROCsavemss
 2010N%=F%+names
 2020?N%=31:N%?1=18:N%?2=16
@@ -418,7 +433,9 @@ BASIC
 2650IFERR=17 PROCquit:ENDPROC
 2660PROCreport
 2670ENDPROC
-; PROCquit: on tape a reset; on disc, back to the menu through MRUN.
+; PROCquit: on tape a reset; on disc, back to the menu through MRUN. Asking
+; for the PIPELINE disc back is as near as the program comes to saying its
+; files belong on another disc (see PROCsavemss).
 2680DEFPROCquit
 2690PROCw:REPEAT:CLS
 2700A$=LEFT$(FNinput("Are you sure (Y/N) ? ",3,68,90),1)
