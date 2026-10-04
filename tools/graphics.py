@@ -3,8 +3,9 @@
 
     graphics.py png FILE OUT.png [--sheet]   draw the set: every sprite by slot,
                                              or (--sheet) laid out as the designer shows it
-    graphics.py asm FILE SECTION             baron source for the set, pictures as text,
-                                             SECTION being the SECTION line to use
+
+(It once also wrote a set out as baron source, which is how DEFAULT became
+source; src/default.6502inc is that, rewritten in the notation IO shares.)
 
 A graphics set is &F34 bytes, loaded at &4000:
 
@@ -35,7 +36,6 @@ NAMES_OFFSET = 0xE80
 NAME_LENGTH = 12
 NAME_COUNT = 15
 FILE_LENGTH = 0xF34
-PIXELS = ".123"
 # The designer's palette (its Def. Colour can change it): black, blue, yellow, red.
 PALETTE = [(0, 0, 0), (0, 0, 255), (255, 255, 0), (255, 0, 0)]
 
@@ -107,84 +107,11 @@ def render(data, sheet):
     return [[px for px in row for _ in range(2 * scale)] for row in canvas for _ in range(scale)]
 
 
-# What each large sprite in DEFAULT shows, for the comments in its source.
-DESCRIPTIONS = {
-    0x00: "the background tile, also repeated behind everything",
-    0x01: "left half of a chequered peak",
-    0x02: "right half of the peak",
-    0x03: "left half of a chequered funnel",
-    0x04: "right half of the funnel",
-    0x05: "chequered wall",
-    0x06: "red crate",
-    0x07: "blue drum",
-    0x08: "chequered frame round a dark red panel",
-    0x09: "yellow disc",
-    0x0A: "red and blue wreckage",
-    0x0B: "yellow pipe with a red valve",
-    0x0C: "yellow pipe, across",
-    0x0D: "yellow pipe, down",
-    0x0E: "flames, first frame (animates with &0F)",
-    0x0F: "flames, second frame",
-    0x20: "yellow and red machine, first frame (animates with &21)",
-    0x21: "the machine, second frame",
-    0x22: "the machine, third frame (animates with &23)",
-    0x23: "the machine, fourth frame",
-    0x24: "chequered block with a black star",
-    0x25: "yellow drum",
-    0x26: "red and yellow rubble",
-    0x27: "red and yellow strata",
-    0x28: "red drum in a yellow pool",
-    0x1F: "the man (the only small sprite without a name)",
-}
-
-
-def source(data, path, section):
-    spr = sprites(data)
-    nm = names(data)
-    name = Path(path).stem.upper()
-    out = [f"; {name}: a PIPELINE graphics set, written out by tools/graphics.py. The",
-           "; Graphics Designer loads it at &4000 and saves &4000-&4F33 back; MISSION",
-           "; packs the sprites and names into the game's IO file.",
-           ";",
-           ";   &000  large sprites, slots &00-&0F (16x32 pixels, &80 bytes each)",
-           ";   &800  small sprites, slots &10-&1F (8x16, &20 bytes each)",
-           ";   &A00  large sprites, slots &20-&28",
-           ";   &E80  the names of small sprites &10-&1E, 12 characters each",
-           ";",
-           "; Each picture is rows of logical colours . 1 2 3 (the designer shows",
-           "; black, blue, yellow, red); sprites.6502inc stores them a column at a",
-           "; time, as the designer and the game expect. The designer's sheet shows",
-           "; the large slots in its own order (slot_of_position in H.GRAPH).",
-           'INCLUDE "sprites.6502inc"', "", section]
-    for first, count, offset, (w, h) in BLOCKS:
-        kind = "large" if w == 16 else "small"
-        out.append("")
-        out.append(f"; Slots &{first:02X}-&{first + count - 1:02X}: {kind} sprites, {w}x{h} pixels.")
-        for slot in range(first, first + count):
-            w, h, rows = spr[slot]
-            note = DESCRIPTIONS.get(slot)
-            if 0x10 <= slot < 0x10 + NAME_COUNT:
-                note = f'object {slot - 0x0F}, "{nm[slot - 0x10].strip()}"'
-            out.append("")
-            out.append(f".slot_{slot:02X}" + (f"                      ; {note}" if note else ""))
-            out.append(f"    {kind.upper()}_SPRITE {{")
-            out += [f'        "{"".join(PIXELS[p] for p in row)}",' for row in rows]
-            out.append("    }")
-    out.append("")
-    out.append("; The small sprites' names, 12 characters each, for slots &10-&1E.")
-    out.append(".object_names")
-    out += [f'    OBJECT_NAME "{n}"' for n in nm]
-    out.append("ENDSECTION")
-    return "\n".join(out) + "\n"
-
-
 def main():
     args = sys.argv[1:]
     if len(args) >= 3 and args[0] == "png":
         data = Path(args[1]).read_bytes()
         write_png(args[2], render(data, "--sheet" in args))
-    elif len(args) == 3 and args[0] == "asm":
-        sys.stdout.write(source(Path(args[1]).read_bytes(), args[1], args[2]))
     else:
         raise SystemExit(__doc__)
 
