@@ -1,10 +1,11 @@
-; Teletext (Mode 7) control codes, as the SAA5050 sees them, for writing
-; Mode 7 screens as source. Each takes a character cell (shown as a space,
+; Teletext (Mode 7) control codes, as screen memory holds them, for writing
+; Mode 7 screens as source. The SAA5050 sees only the low seven bits of each
+; byte, so &81 is its code 1. Each takes a character cell (shown as a space,
 ; or as held graphics) and changes how the rest of the row is drawn.
 ; tools/mode7.py names bytes from this file.
 ;
-; Bytes from &A0 up are characters with bit 7 set; the SAA5050 ignores bit 7
-; for them, and in a graphics colour they're the 2x3 block "sixel" shapes
+; Bytes from &A0 up are the characters &20-&7F with bit 7 set, which the
+; SAA5050 doesn't see; in a graphics colour they're the 2x3 block "sixel" shapes
 ; (bit 0 top left, 1 top right, 2 middle left, 3 middle right, 4 bottom left,
 ; 6 bottom right; bit 5 is always set). Mode 7 screen code tends to store
 ; those as &A0-&FF, so in a graphics run they're written in hex.
