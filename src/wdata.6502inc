@@ -3,19 +3,25 @@
 ; A table of 2-byte pointers at &7000, ended by a zero word; entry n-1 is
 ; window or message n, so numbering starts at 1.
 ;
-; A window: x, y, width, height (glyph columns and half-character rows), then
-; height+1 lines, the title first and then one per menu item. Each line is a
-; length byte, bit 7 set to start it at the left rather than centre it, and
-; that many glyph codes (see glyphs below). With bit 7 of x set the window
-; stays where it says; clear, it moves out of the cursor's way, measured from
-; the right when the cursor is in the left half and from the bottom when it
-; is in the top half. Space in a window's menu picks its last item (usually
-; OK), or with bit 7 of y set, the item the menu started on.
+; A window: x, y, width, height, then height+1 lines, the title first and
+; then one per menu item. x and width are in screen columns (of the 64; a
+; glyph is two wide), y in character rows, and height counts the items. Each
+; line is a length byte, bit 7 set to start it at the left rather than
+; centre it, and that many glyph codes (see glyphs below). With bit 7 of x
+; set the window stays where it says; clear, it moves out of the cursor's
+; way, measured from the right when the cursor is in the left half and from
+; the bottom when it is in the top half. Space in a window's menu picks its
+; last item (usually OK), or with bit 7 of y set, the item the menu started
+; on.
 ;
-; A message: VDU codes and text ended by "|"; &FF switches to highlighted
-; colours. A message without the "|" runs on into the next.
+; A message: VDU codes and text ended by "|" (MESSAGE_END); HIGHLIGHT
+; switches to highlighted colours. A message without the "|" runs on into
+; the next.
 
 wdata = &7000
+WINDOW_HEIGHT = 3               ; where a window's height is in its header
+MESSAGE_END = CODES("|")[0]
+HIGHLIGHT = &FF
 
 ; Glyph codes in a window line, by position in this string. "*" stands for
 ; the tick, glyph 68. Codes from 64 come from the program (font_digits)
@@ -100,3 +106,31 @@ M_RESET_WINDOWS     = 73
 W_MONSTER_NUMBER    = 74
 M_INSERT_DISC       = 75
 M_NOTHING           = 76
+
+; Menu items the designer tests or ticks by number, 0 being the item under
+; the title; tick_line wants the item's line, item_line(item).
+FUNCTION item_line(item) = item + 1
+I_OBJECT_EXISTS         = 1     ; W_OBJECT
+I_OBJECT_CHARGES        = 4
+I_OBJECT_VANISH         = 5
+I_OBJECT_THROW          = 6
+I_DIRECTION_DEAD        = 4     ; W_DIRECTION, after the four ways
+I_PRIORITIES_OK         = 4     ; W_PRIORITIES
+I_GRAPHICS_COLOURS      = 4     ; W_GRAPHICS: four sprites, then four colours
+I_GRAPHICS_OK           = 8
+I_STATUS_USE_OBJECT     = 0     ; W_PUZZLE_STATUS
+I_STATUS_TURNED_ON      = 1
+I_STATUS_REUSABLE       = 2
+I_CHECK_X               = 1     ; W_CONDITIONS
+I_CHECK_Y               = 2
+I_CHECK_NEXT            = 4
+I_CHECK_DIRECTION       = 6
+I_CONDITION_COLLECTS    = 7
+I_FILES_OK              = 4     ; W_FILES, after the four commands
+I_TIME_CHANGE           = 1     ; W_SET_LEVELS
+I_COLLECTS_CHANGE       = 3
+I_SWAP_NEXT_OK          = 2     ; W_SWAP_NEXT, after blocks A and B
+I_DEFINE_DISPLAY_OK     = 2     ; W_DEFINE_DISPLAY, after Define and Display
+I_SINGLE                = 3     ; W_SELECT_PUZZLES, after puzzles A, B, C
+I_SELECT_PUZZLES_OK     = 4
+I_HELP_SIMULATE         = 1     ; W_HELP

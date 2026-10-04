@@ -1063,7 +1063,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .files_menu
     LDA #W_FILES
     JSR choose_from_window
-    CMP #4                      ; OK, after the four handled items
+    CMP #I_FILES_OK
     BEQ hex_key_done
     STA work
     JSR confirm
@@ -1082,11 +1082,11 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .help_simulate
     SEC                         ; leave the Simulate window to the main loop
     JSR switch_simulate
-    LDA #1
+    LDA #I_HELP_SIMULATE
 .help_menu_show
     PHA
     LDA simulate_window
-    LDY #2
+    LDY #item_line(I_HELP_SIMULATE)
     JSR vector_tick_line
     PLA
     TAY
@@ -1133,7 +1133,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     STY record
     LDA #W_DEFINE_DISPLAY
     JSR choose_from_window
-    CMP #2                      ; OK
+    CMP #I_DEFINE_DISPLAY_OK
     BEQ switch_simulate_done
     PHA
     LDY record
@@ -1250,24 +1250,24 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     LDA #1
 .show_object_exists
     EOR #1
-    LDY #2                      ; Exists ?
+    LDY #item_line(I_OBJECT_EXISTS)
     JSR vector_tick_line
     LDY record
     LDA level_objects+3, Y
     AND #&20
     EOR #&20
-    LDY #5                      ; Charges:
+    LDY #item_line(I_OBJECT_CHARGES)
     JSR vector_tick_line
     LDY record
     LDA level_objects+3, Y
     PHA
     AND #&40
-    LDY #6                      ; Vanish:
+    LDY #item_line(I_OBJECT_VANISH)
     JSR vector_tick_line
     PLA
     AND #&80
     EOR #&80
-    LDY #7                      ; Throw:
+    LDY #item_line(I_OBJECT_THROW)
     JMP vector_tick_line
 
 ; Object window, Charge: how many charges, 0-31 (which gives it charges).
@@ -1440,15 +1440,14 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     STA level_monsters+2, Y
     BPL show_monster_window
 
-; Choose a direction from the north, south, east, west, dead menu.
-; In: X = the current direction code (0 west, 1 east, 2 north, 3 south, 8 or
-; anything over 4 dead).
-; Out: A = the code chosen; Y = record.
+; Choose a monster's direction from the north, south, east, west, dead menu.
+; In: X = the current direction (COMPASS_*; 4 and up count as dead).
+; Out: A = the direction chosen (MONSTER_DEAD for dead); Y = record.
 ; Clobbers: X, ptr.
 .choose_direction
-    CPX #5
+    CPX #direction_items_end - direction_items
     BCC choose_direction_menu
-    LDX #4
+    LDX #direction_items_end - direction_items - 1
 .choose_direction_menu
     LDY direction_items, X
     LDA #W_DIRECTION
@@ -1457,11 +1456,16 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     LDA direction_codes, Y
     LDY record
     RTS
-; The code for each item of the direction menu, and the item for each code.
+; The direction for each item of the direction menu, and the item for each
+; direction (west, east, north, south, then dead).
+direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
+    MONSTER_DEAD}
 .direction_codes
-    EQUB 2, 3, 1, 0, 8          ; north, south, east, west, dead
+    EQUB direction_menu
 .direction_items
-    EQUB 3, 2, 0, 1, 4          ; west, east, north, south, dead
+    EQUB FIND(direction_menu, {COMPASS_WEST, COMPASS_EAST, COMPASS_NORTH,
+        COMPASS_SOUTH, MONSTER_DEAD})
+.direction_items_end
 
 ; Monster window, Pattern.
 .monster_pattern
@@ -1512,7 +1516,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     BPL choose_pattern_print
     PLA
     JSR menu_select
-    CMP #4                      ; OK
+    CMP #I_PRIORITIES_OK
     BEQ choose_pattern_done
     PHA
     EOR #3                      ; the first priority is the last field
@@ -1757,16 +1761,16 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     JSR open_window
     PLA
     JSR menu_select
-    CMP #8                      ; OK
+    CMP #I_GRAPHICS_OK
     BNE option_graphics_choice
     JSR pack_priorities
     STA level_sprites
     JMP vector_close_window
 .option_graphics_choice
     PHA
-    CMP #4
+    CMP #I_GRAPHICS_COLOURS
     BCC option_graphics_sprite
-    SBC #4                      ; first to fourth colour
+    SBC #I_GRAPHICS_COLOURS     ; first to fourth colour
     STA work
     TAY
     ASL A
@@ -1943,17 +1947,17 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     LDA level_puzzle_types, Y
     PHA
     AND #&80
-    LDY #1                      ; Use object 1:
+    LDY #item_line(I_STATUS_USE_OBJECT)
     JSR vector_tick_line
     PLA
     PHA
     AND #&20
     EOR #&20
-    LDY #2                      ; Turned on:
+    LDY #item_line(I_STATUS_TURNED_ON)
     JSR vector_tick_line
     PLA
     AND #&10
-    LDY #3                      ; Re-usable:
+    LDY #item_line(I_STATUS_REUSABLE)
     JSR vector_tick_line
     LDA work+1
     JSR menu_select
@@ -1995,14 +1999,14 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     LDA level_puzzle_positions, Y
     AND #&80
     EOR #&80
-    LDY #2                      ; Check X:
+    LDY #item_line(I_CHECK_X)
     JSR vector_tick_line
     PLA
     TAY
     LDA level_puzzle_positions+1, Y
     AND #&80
     EOR #&80
-    LDY #3                      ; Check Y:
+    LDY #item_line(I_CHECK_Y)
     JSR vector_tick_line
     LDY record
     LDA level_puzzle_effects+3, Y
@@ -2016,16 +2020,16 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     PHA
     AND #&40
 .puzzle_conditions_check_next
-    LDY #5                      ; Check next:
+    LDY #item_line(I_CHECK_NEXT)
     JSR vector_tick_line
     PLA
     AND #&80
-    LDY #7                      ; Check dir.:
+    LDY #item_line(I_CHECK_DIRECTION)
     JSR vector_tick_line
     LDY puzzle
     LDA level_puzzle_types, Y
     AND #&40
-    LDY #8                      ; Collects.:
+    LDY #item_line(I_CONDITION_COLLECTS)
     JSR vector_tick_line
     LDA work+1
     JSR menu_select
@@ -2085,7 +2089,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     JSR vector_window_address
     STX ptr
     STY ptr+1
-    LDY #3                      ; the height
+    LDY #WINDOW_HEIGHT
     PLA
     STA (ptr), Y
     RTS
@@ -2482,12 +2486,12 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     PHA
     AND #&80
     EOR #&80
-    LDY #2                      ; time Change:
+    LDY #item_line(I_TIME_CHANGE)
     JSR vector_tick_line
     PLA
     AND #1
     EOR #1
-    LDY #4                      ; collectables Change:
+    LDY #item_line(I_COLLECTS_CHANGE)
     JSR vector_tick_line
     PLA
     JSR menu_select
@@ -2537,7 +2541,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     JSR open_window
     PLA
     JSR menu_select
-    CMP #2                      ; OK
+    CMP #I_SWAP_NEXT_OK
     BEQ effect_swap_next_done
     PHA
     ADC record
@@ -2668,15 +2672,15 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .effect_turn_puzzle_tick
     STX ptr
     TXA
-    LDY #4                      ; Single:
+    LDY #item_line(I_SINGLE)
     JSR vector_tick_line
     PLA
     JSR menu_select
-    CMP #4                      ; OK
+    CMP #I_SELECT_PUZZLES_OK
     BCC effect_turn_puzzle_single
     JMP vector_close_window
 .effect_turn_puzzle_single
-    CMP #3
+    CMP #I_SINGLE
     BCC effect_turn_puzzle_choose
     LDX ptr
     BNE effect_turn_puzzle_loop
@@ -2684,7 +2688,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     LDA level_puzzle_effects, Y
     STA level_puzzle_effects+1, Y
     STA level_puzzle_effects+2, Y
-    LDA #3
+    LDA #I_SINGLE
     BNE effect_turn_puzzle_loop
 .effect_turn_puzzle_choose
     PHA
@@ -3171,9 +3175,9 @@ line2_tab = os_tab(MESSAGE_LEFT, MESSAGE_LINE_2)
 .print_message_loop
     LDY #0
     LDA (window_ptr), Y
-    CMP #ascii("|")
+    CMP #MESSAGE_END
     BEQ print_message_done
-    CMP #&FF
+    CMP #HIGHLIGHT
     BEQ print_message_highlight
     JSR OSWRCH
 .print_message_next
