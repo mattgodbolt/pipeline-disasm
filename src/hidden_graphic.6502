@@ -89,7 +89,7 @@ CELL   = 8
 ROW    = MODE5_ROW_BYTES
 ASSERT ROW = 40 * CELL
 
-graphics      = &4000           ; the graphics set
+graphics      = SET_LOAD_ADDRESS    ; the graphics set
 object_names  = graphics + SET_NAMES
 graphics_end  = graphics + SET_SIZE
 slot_28       = graphics + SET_NAMES - LARGE_SPRITE_SIZE    ; the last slot, which IO keeps apart

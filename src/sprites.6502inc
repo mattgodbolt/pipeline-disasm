@@ -21,6 +21,8 @@ OBJECT_KINDS       = 15
 OBJECT_NAME_LENGTH = 12
 EXIT_ICON          = OBJECT_KINDS
 
+SET_LOAD_ADDRESS = &4000        ; where the Graphics Designer keeps a set, and saves it from
+
 SET_LARGE      = &000           ; large slots &00-&0F
 SET_SMALL      = &800           ; small slots &10-&1F
 SET_MORE_LARGE = &A00           ; large slots &20-&28
