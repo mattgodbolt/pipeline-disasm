@@ -1,0 +1,208 @@
+; A PIPELINE level: what's in one, the notation the disc's levels are written
+; in here, and how their bytes are laid out. The Level Designer edits a level
+; and saves it as a level file (LEVEL1 is one; level.6502inc has where it
+; keeps the parts); MISSION packs four into a mission (IO is one; io.6502inc
+; has its layout), and the game plays them from there. Each level is
+; described once, in src/level1.6502inc to src/level4.6502inc, and both
+; src/level1.6502 and src/io.6502 make their bytes from those descriptions
+; with level_names_bytes, level_fields and level_map_bytes below.
+;
+; A level is 11 fields, with the sizes MISSION gives them (its DATA 2090),
+; and a map:
+;
+;   field  bytes
+;   0-2    1 each  the editing code, two digits a field
+;   3      4       the palette: logical colour * 16 + physical, for VDU 19
+;   4      8       the setup (LEVEL_* below)
+;   5      32      8 objects, 4 bytes each
+;   6      16      4 monsters, 4 bytes each
+;   7      32      a byte for each of 32 triggers: its action and flags
+;   8      64      where each trigger is: x, y
+;   9      64      triggers 0-15's arguments, 4 bytes each
+;   10     64      triggers 16-31's
+;   map    &800    64 x 64 cells of a nibble
+;
+; A level file is the 32 triggers' names (the designer's, which a mission
+; doesn't keep: 8 characters each, then the last 2 of each), the fields in
+; order, then the map. A mission keeps each field of all four levels
+; together, then the four maps.
+;
+; The designer calls triggers puzzles, and the game's cell types blocks (with
+; names of its own: TILE_* in level.6502inc).
+
+LEVEL_FIELD_SIZES = {1, 1, 1, 4, 8, 32, 16, 32, 64, 64, 64}
+; Where each field starts among a level's fields (MISSION's pnt): the
+; running total of the sizes before it.
+LEVEL_FIELD_OFFSETS = SUM(LEVEL_FIELD_SIZES * ((0..10) < ZIP(0..10)), 1)
+LEVEL_FIELDS_SIZE = SUM(LEVEL_FIELD_SIZES)
+ASSERT LEVEL_FIELDS_SIZE = &11F
+
+; The setup's bytes.
+LEVEL_START_X     = 0   ; the view's top left cell: the player starts 4 cells
+LEVEL_START_Y     = 1   ; further in each way
+LEVEL_TO_COLLECT  = 2   ; things to collect before the exit opens
+LEVEL_TIME        = 3   ; the clock's starting value
+LEVEL_EXIT_X      = 4
+LEVEL_EXIT_Y      = 5
+LEVEL_MONSTER_FOOD = 6  ; low nibble: a cell monsters eat; high: what they leave
+LEVEL_ANIMATE     = 7   ; which squares show cells' second pictures
+
+; The map: 64 x 64 cells of a nibble, stored a column at a time (32 bytes per
+; x, top to bottom), the even y in the top nibble.
+MAP_SIZE         = 64
+MAP_COLUMN_BYTES = MAP_SIZE / 2
+MAP_BYTES        = MAP_SIZE * MAP_COLUMN_BYTES
+
+; What the game makes of the cell types: 1-5, 8 and 9 are walls of different
+; shapes, and the rest are these. Off the map counts as lava.
+CELL_FLOOR        = 0
+CELL_CRATE        = 6     ; pushed, while the player has pushes left
+CELL_SULPHUR      = 7     ; to be collected, by stepping on it
+CELL_WALL         = 8     ; also what the exit counts as
+CELL_LAVA         = &A    ; deadly
+CELL_JUNCTION     = &B    ; pipes: a junction...
+CELL_PIPE_ACROSS  = &C    ; ...a pipe left and right...
+CELL_PIPE_DOWN    = &D    ; ...and up and down
+CELL_FIRE         = &E    ; deadly: monsters mark their cells with it
+CELL_OBJECT       = &F    ; an object (or the exit): see the level's objects
+
+; Maps are drawn a character a cell, a string a row, with these for cell types
+; 0-F: the floor ".", walls filling the bottom right "r", bottom left "7",
+; top right "L" and top left "J" (the corners of the box-drawing shapes), a
+; wall "#", a crate "c", sulphur "o", a wall "=", a wall "@" (the designer's
+; marker, which triggers often look for), lava "~", a pipe junction "+",
+; pipes across "-" and down "|", fire "*" and an object "$". (The pictures for
+; them are in default.6502inc.)
+MAP_KEY = ".r7LJ#co=@~+-|*$"
+
+; Objects: x, y, icon, and uses and flags (bits 0-4 how many uses; these
+; flags). x and y have bit 7 set when the object isn't in the level.
+OBJECTS           = 8
+OBJECT_ABSENT     = &80
+OBJECT_NO_CHARGES = &20   ; uses never run out
+OBJECT_VANISHES   = &40   ; gone when used up
+OBJECT_NO_THROW   = &80   ; does nothing when thrown
+
+; Monsters: x and y in quarter cells, a direction (DIRECTION_*; the game adds
+; 4 while one's stuck, and 8 is off the map) and four choices of which way to
+; try at a junction, first in bits 0-1: 0 back, 1 on, 2 right, 3 left. The
+; designer offers four by name.
+MONSTERS          = 4
+DIRECTION_LEFT    = 0
+DIRECTION_RIGHT   = 1
+DIRECTION_UP      = 2
+DIRECTION_DOWN    = 3
+PATTERN_BACK_AND_FORTH = %10110001
+PATTERN_FOLLOW_EDGES = %00111001
+PATTERN_LEFT_WALL = %00100111
+PATTERN_RIGHT_WALL = %00110110
+
+; Triggers. The flags byte: bits 0-3 the action (PUZZLE_*, the designer's
+; names, in the order of its "Puzzle types" menu), and PUZZLE_REUSABLE,
+; PUZZLE_OFF, PUZZLE_COUNTS_COLLECTS and PUZZLE_USES_OBJECT. Where it is: x
+; and y, bit 7 set (IGNORE) for anywhere along that axis. Its arguments A, X
+; and Y say what the action does (the game's trigger_action and the
+; designer's effect editors), and a fourth byte is a condition: bit 7, the
+; player (or a thrown object) must be facing direction bits 4-5; bit 6, the
+; cell in front must be type bits 0-3.
+PUZZLES         = 32
+NAME_LENGTH     = 10
+
+PUZZLE_PLACE_BLOCK      = 0     ; cell (X, Y) becomes A
+PUZZLE_MOVE_BLOCK       = 1     ; cell (X, Y) moves a cell in direction A
+PUZZLE_NEXT_BLOCK       = 2     ; the cell in front becomes A
+PUZZLE_SET_LEVELS       = 3     ; the clock becomes X (unless A bit 7), things to collect Y (unless A bit 0)
+PUZZLE_THROW_OBJECT     = 4     ; object A is thrown Y cells
+PUZZLE_DETONATE_OBJECT  = 5     ; object A blows up
+PUZZLE_MOVE_MONSTER     = 6     ; monster X / 4 (&10: all) goes direction A
+PUZZLE_PLACE_MONSTER    = 7     ; monster A AND 3 to (A DIV 4, Y DIV 4) going Y AND 3, turns X
+PUZZLE_TELEPORT         = 8     ; the player to (X + 4, Y + 4)
+PUZZLE_SWAP_NEXT        = 9     ; the cell in front swaps between A and X
+PUZZLE_TURN_ON          = 10    ; triggers A, X and Y can fire again
+PUZZLE_TURN_OFF         = 11    ; triggers A, X and Y can't
+PUZZLE_CHARGE_OBJECT    = 12    ; object A has Y uses, and trigger A can fire again
+PUZZLE_PUSH_CRATES      = 13    ; the player can push A crates
+PUZZLE_MOVE_NEXT_BLOCK  = 14    ; the cell in front is pushed, turned A from the way the player faces
+PUZZLE_DISORIENTATE     = 15    ; left and right, and up and down, swap keys
+
+PUZZLE_REUSABLE = &10           ; it can fire again
+PUZZLE_OFF      = &20           ; it can't fire (set once it has, unless reusable)
+PUZZLE_COUNTS_COLLECTS = &40    ; only once everything's collected
+PUZZLE_USES_OBJECT = &80        ; fired by using or throwing an object, not walking on
+IGNORE          = &80
+
+; Physical colours, for the palette.
+COLOUR_BLACK    = 0
+COLOUR_RED      = 1
+COLOUR_GREEN    = 2
+COLOUR_YELLOW   = 3
+COLOUR_BLUE     = 4
+COLOUR_MAGENTA  = 5
+COLOUR_CYAN     = 6
+COLOUR_WHITE    = 7
+
+; An editing code from its six digits. Each pair of digits is packed as BCD,
+; then adjacent bits are swapped and the byte rotated right one place.
+FUNCTION code_pair(s) = (CODES(s)[0] - CODES("0")[0]) * 16 + CODES(s)[1] - CODES("0")[0]
+FUNCTION code_swap(b) = ((b AND &55) << 1) OR ((b AND &AA) >> 1)
+FUNCTION code_byte(s) = (code_swap(code_pair(s)) >> 1) OR ((code_swap(code_pair(s)) AND 1) << 7)
+; A level is written as a list of its parts:
+;
+;   {
+;       the editing code, six digits as a string,
+;       the palette: logical colours 0-3's physical colours (COLOUR_*),
+;       the setup: the player's start x and y, things to collect, the clock,
+;           the exit's x and y, the monster food byte and the second
+;           pictures byte (as LEVEL_* above, but the start is the player's
+;           own cell),
+;       the objects: 8 of {x, y, icon, uses + OBJECT_* flags},
+;       the monsters: 4 of {x, y (in cells), DIRECTION_*, turns},
+;       the triggers: 32 of {name, PUZZLE_* action + flags, x, y, A, X, Y,
+;           condition},
+;       the map: 64 rows of 64 MAP_KEY characters
+;   }
+;
+; and these turn one into bytes. Triggers are numbered 0-31 here, as the
+; game counts them (the designer shows them one more); object n can fire
+; triggers n, n + 8, n + 16 and n + 24.
+
+; A level file's trigger names: the first 8 characters of each, then the
+; last 2 of each.
+FUNCTION level_names_bytes(level)
+    names = CODES(level[5][.., 0])
+    ASSERT RANK(names) = 2 AND LEN(names[0]) = NAME_LENGTH, "a level file's trigger names are 10 characters"
+= CONCAT(FLATTEN(names[.., 0..7]), FLATTEN(names[.., 8..9]))
+
+; The 11 fields' bytes, a list for each.
+FUNCTION level_fields(level)
+    code = level[0]
+    triggers = level[5]
+    ASSERT LEN(level[3]) = OBJECTS, "a level has 8 objects"
+    ASSERT LEN(level[4]) = MONSTERS, "a level has 4 monsters"
+    ASSERT LEN(triggers) = PUZZLES, "a level has 32 triggers"
+= {
+    code_byte(code[0..1]), code_byte(code[2..3]), code_byte(code[4..5]),
+    (0..3) * 16 + level[1],
+    level[2] - {4, 4, 0, 0, 0, 0, 0, 0},
+    FLATTEN(level[3]),
+    FLATTEN(level[4] * {4, 4, 1, 1}),
+    triggers[.., 1],
+    FLATTEN(triggers[.., 2..3]),
+    FLATTEN(triggers[0..15, 4..7]),
+    FLATTEN(triggers[16..31, 4..7])
+}
+
+; Map rows' cell types.
+FUNCTION map_cells(rows) = FIND(CODES(MAP_KEY), CODES(rows))
+
+; Packing the map's rows in pairs gives a row of 64 bytes for each pair;
+; this is where each byte of the map, which goes a column at a time, is
+; among those.
+FUNCTION map_column_order() = ((0..MAP_BYTES-1) MOD MAP_COLUMN_BYTES) * MAP_SIZE + (0..MAP_BYTES-1) DIV MAP_COLUMN_BYTES
+
+; The map's bytes: the even rows' cells in the high nibbles and the odd rows'
+; in the low, gathered a column at a time.
+FUNCTION level_map_bytes(level)
+    ASSERT LEN(level[6]) = MAP_SIZE AND RANK(CODES(level[6])) = 2, "a map is 64 rows of 64 cells"
+    ASSERT LEN(level[6][0]) = MAP_SIZE, "a map is 64 rows of 64 cells"
+= FLATTEN(map_cells(level[6][0..2..]) * 16 + map_cells(level[6][1..3..]))[map_column_order()]
