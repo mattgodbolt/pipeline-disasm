@@ -140,3 +140,30 @@ look for), A Fatal trap (lava), B Junction, E S.Monster (fire), F Marker (an
 object). The TILE_* names are gone; level.6502inc lists the menu names
 against CELL_*, and the level comments now say barricade where they said
 marker. See docs/notes/levdes.md.
+
+## 2026-10-04 12:54 - Readability pass: what the comments had wrong
+
+Every trigger comment in level1-4.6502inc was checked against a decoder
+written from the game's trigger actions (`trigger_action` and the
+`action_*` routines): all 128 agree. Corrections elsewhere:
+
+- The floor picture (slot &00) was said to be repeated by the Graphics
+  Designer "behind every sprite". It isn't: Backing (OptionsB) fills a
+  sprite's colour 0 from the floor only when asked. What the designer does
+  is keep the floor one 4 x 8 pixel block repeated (`repeat_background`),
+  because the game fills the floor round an object's icon, and the whole
+  screen in `clear_screen`, from that first block alone.
+- default.6502inc called a large picture "4 x 4 character cells". In MODE 5
+  terms a 16 x 32 pixel picture is 2 x 4 character cells; it's 4 x 4 of the
+  game's own cells (8 bytes, 4 pixels across), which game.6502inc defines.
+  io.6502inc's "4 x 4 character cells of 8 bytes in MODE 5" and "2 x 2
+  cells" for icons mean the game's cells too, and could say so.
+- Level 2's monster 0 was said to stay gone "until trigger 14, 15 or 28 puts
+  it out": those triggers put it back on the map (Place monster).
+- IO's lock byte: the game shows the competition entry code only when it's
+  negative (MISSION's h key; i stores 1) and the mission was played from
+  level 1 (`started_late` clear), not just after "the last level".
+- forceabs.6502inc said its macros are where the original used absolute
+  addressing of zero page; nothing in src/ uses them (as the journal's
+  first entries found). They're for the disassemblers' drafts and
+  tests/test_dis6502.py.
