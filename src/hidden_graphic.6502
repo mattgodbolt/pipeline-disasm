@@ -3738,11 +3738,11 @@ ASSERT LO(graphics) = 0 AND HI(graphics) + HI(SET_SIZE) = HI(graphics_end)
 .io
     LDA gbpb_pointer+1
     CMP #HI(slot_28 - graphics)     ; the slot IO keeps apart
-    BNE io_graphics
+    BNE in_io_graphics              ; the rest are among IO's graphics
     LDA #HI(IO_SLOT_28_OFFSET)      ; (the low byte is the same)
     STA gbpb_pointer+1
     RTS
-.io_graphics
+.in_io_graphics
     LDA gbpb_pointer
     CLC
     ADC #LO(IO_GRAPHICS_OFFSET)
