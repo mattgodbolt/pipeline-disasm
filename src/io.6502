@@ -1,13 +1,22 @@
-; IO, the mission file: the four levels PIPELINE plays and the pictures to
-; draw them with, as the Mission Generator (MISSION) puts it together and
-; saves it, from a graphics file and level files: the graphics file's names,
-; the mission's name and attributes, the four levels' fields interleaved and
-; their maps, and the graphics. The game loads it at io_start so that it ends
-; at &5800. src/io.6502inc has the layout, computed from MISSION's own sizes,
-; and what each part means, shared with the game.
+; IO, the mission file: everything the game needs to play a mission - its
+; four levels, the pictures to draw them with and the objects' names - as
+; the Mission Generator (MISSION) builds it from a graphics file and four
+; level files and saves it. The game (H.GAME) loads it with OSFILE at
+; io_start, &242D, worked out so that the file ends at &5800, where the game
+; keeps the map of the level being played. In the file and in memory:
 ;
-; Nothing in it is described here: the graphics and their names are the
-; default set (src/default.6502inc, which DEFAULT is too) and the levels are
+;   &242D  names         the end of the graphics file: the picture for an
+;                        object cell with no object, then the object names
+;   &2561  mission_text  the mission's name
+;   &257F  attrs         the mission's five settings
+;   &2584  levels        the four levels' fields, interleaved field by field
+;   &2A00  maps          the four levels' maps, &800 bytes each
+;   &4A00  graphics      the start of the graphics file, up to &57FF
+;
+; src/io.6502inc has the layout, computed from MISSION's own sizes, and what
+; each part means; the game includes it too. Only the mission's name and
+; settings are written here. The graphics and names are the default set
+; (src/default.6502inc, which DEFAULT is made from too) and the levels are
 ; src/level1.6502inc (LEVEL1's too) to src/level4.6502inc.
 
 INCLUDE "osconst.6502inc"
@@ -18,8 +27,9 @@ INCLUDE "level2.6502inc"
 INCLUDE "level3.6502inc"
 INCLUDE "level4.6502inc"
 
-; The mission's name is two halves, each a VDU_TAB and 12 characters, the
-; spaces stored as VDU_RIGHT so the picture behind them shows.
+; Half the mission's name, as MISSION stores it: a VDU_TAB to text column x,
+; row y, then the 12 characters of text, each space stored as VDU_RIGHT
+; (cursor right) so that it doesn't paint over the picture behind it.
 FUNCTION mission_name_half(x, y, text)
     ASSERT LEN(text) = IO_MISSION_SIZE / 2 - 3, "half a mission name is 12 characters"
     spaces = CODES(text) = ' '
@@ -29,25 +39,39 @@ SECTION io, filename="IO", org=io_start, load=io_start, exec=0
 .io
 {
 .names
-    ; MISSION's names, the end of the graphics file it was given (DEFAULT):
-    ; a picture for an object cell with no object, then the object names.
+    ; What MISSION calls the names: the last &134 bytes of the graphics file
+    ; it was given (DEFAULT), a picture for an object cell with no object
+    ; in it, then the object names.
     EQUB default_names()
     ASSERT names = io_no_object_picture
     ASSERT names + 128 = io_object_names
 
-; The mission's name, printed on the backpack screen (CTRL) as the goal.
-; MISSION always puts the halves at (18, 16) and (14, 17).
+; The mission's name, which the game prints as the goal on its backpack
+; screen (the one CTRL brings up). MISSION always puts the halves at text
+; positions (18, 16) and (14, 17).
 .mission_text
     EQUB mission_name_half(18, 16, "Collect the ")
     EQUB mission_name_half(14, 17, "  Sulphur!  ")
     ASSERT mission_text = io_mission_text
 
+; The mission's settings, as MISSION's "change features" page sets them
+; (its names for them in quotes):
+; - "Time consumption", which MISSION shows 6 less: each cycle of play adds
+;   it to a counter, and the level's clock ticks down when that carries;
+; - "Mapping ability": the game's map (the M key) works on levels below it;
+; - "Backpack size", shown one more: the number of the backpack's last slot;
+; - "Throwing distance": how far a thrown object flies, in cells;
+; - the lock, set by keys MISSION's menu doesn't mention (h for this &FF,
+;   i for 1). Locked, MISSION won't save the mission again or give up one
+;   of its levels without that level's editing code; negative, the game
+;   also shows a competition entry code for the mission played through
+;   from level 1.
 .attrs
-    EQUB 15                                  ; the clock's rate (MISSION shows it less 6: 9)
+    EQUB 15                                  ; the clock's rate (MISSION shows 9)
     EQUB 4                                   ; the map works on levels 1 to 4
     EQUB 2                                   ; the backpack holds 3
     EQUB 6                                   ; objects can be thrown 6 cells
-    EQUB &FF                                 ; locked: the last level shows an entry code
+    EQUB &FF                                 ; locked, with an entry code
     ASSERT attrs = io_attrs
 
 ; The four levels, as MISSION packs them: for each of a level's 11 fields
@@ -60,7 +84,7 @@ SECTION io, filename="IO", org=io_start, load=io_start, exec=0
     ASSERT maps = io_maps
 
 ; The graphics, the start of DEFAULT: the map cells' pictures, the object
-; icons, the player and the cells' second pictures.
+; icons, the player and the second pictures some cell types can show.
 .graphics
     EQUB default_graphics()
     ASSERT graphics = io_graphics
