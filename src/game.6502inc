@@ -11,11 +11,6 @@
 ; candidate for os.6502inc).
 MOS_ENVELOPES = &08C0
 
-; Internal key numbers (osconst.6502inc has KEY_S; INKEY_TEST makes INKEY's).
-KEY_SHIFT = &00
-KEY_T     = &23
-KEY_SPACE = &62
-
 ; VDU codes.
 VDU_TEXT_CURSOR   = 4     ; text at the text cursor
 VDU_ENABLE        = 6

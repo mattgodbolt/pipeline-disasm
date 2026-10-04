@@ -13,7 +13,7 @@
 ;   goes further, restoring every vector but BRKV the same way.
 ; - CHAIN"MENU" runs the BASIC menu.
 
-CR = 13     ; *EXEC lines end with a carriage return, as typed
+INCLUDE "osconst.6502inc"   ; CR: *EXEC lines end with one, as typed
 
 SECTION boot, filename="!BOOT", org=0, load=&FFFFFFFF, exec=&FFFFFFFF
     EQUS "*| PIPELINE/B 1.01", CR

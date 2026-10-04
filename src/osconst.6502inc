@@ -90,18 +90,63 @@ EVENT_ESCAPE       = 6
 
 ; Internal key numbers (the keyboard matrix), and the byte INKEY wants to
 ; test one: INKEY -(k+1).
-KEY_I = &25
-KEY_O = &36
-KEY_S = &51
-KEY_N = &55
+KEY_SHIFT  = &00
+KEY_CTRL   = &01
+KEY_3      = &11
+KEY_4      = &12
+KEY_F7     = &16
+KEY_LEFT   = &19
+KEY_F0     = &20
+KEY_T      = &23
+KEY_I      = &25
+KEY_0      = &27
+KEY_DOWN   = &29
+KEY_1      = &30
+KEY_2      = &31
+KEY_R      = &33
+KEY_U      = &35
+KEY_O      = &36
+KEY_UP     = &39
+KEY_A      = &41
+KEY_X      = &42
+KEY_Y      = &44
+KEY_COLON  = &48
+KEY_RETURN = &49
+KEY_S      = &51
+KEY_C      = &52
+KEY_N      = &55
+KEY_DELETE = &59
+KEY_Z      = &61
+KEY_SPACE  = &62
+KEY_B      = &64
+KEY_SLASH  = &68
+KEY_COPY   = &69
+KEY_F1     = &71
+KEY_F2     = &72
+KEY_F3     = &73
+KEY_F6     = &75
+KEY_F8     = &76
+KEY_F9     = &77
+KEY_RIGHT  = &79
 FUNCTION INKEY_TEST(key) = &FF - key
 
-; Characters with no name of their own in a string.
-BEL = 7
-CR = 13
+; The codes OSRDCH returns for the cursor keys after *FX4,1
+; (CURSOR_KEYS_CODES). With *FX4,2 they're function keys 12-15 instead, and
+; give whatever *FX225 made of those.
+KEYCODE_LEFT  = &88
+KEYCODE_RIGHT = &89
+KEYCODE_DOWN  = &8A
+KEYCODE_UP    = &8B
 
 ; A character's code, as a value: ascii("A") is &41.
 FUNCTION ascii(c) = CODES(c)[0]
+
+; Characters with no name of their own in a string, and CTRL with a letter.
+BEL = 7
+CR  = 13
+ESC = &1B                       ; what OSBYTE &81 gives in Y on Escape
+DEL = &7F
+FUNCTION ctrl(c) = ascii(c) AND &1F
 
 ; OSWORD &7F: hand a raw command to the 8271 floppy disc controller via DFS.
 OSWORD_DISC_COMMAND = &7F

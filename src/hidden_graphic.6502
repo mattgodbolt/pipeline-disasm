@@ -39,7 +39,7 @@ NO_KEY = &57
 
 ; The code f0 gives while a menu runs (OSBYTE_FUNCTION_KEY_BASE), f1-f9 the
 ; codes after it. menu counts any code from FUNCTION_KEY_CODES up as one.
-CODE_F0            = &E0
+KEYCODE_F0         = &E0
 FUNCTION_KEY_CODES = &C8
 
 ; Window text: a flag byte (MENU makes the lines after the first a list to
@@ -719,7 +719,7 @@ ASSERT window_size - window_address = 2 * WINDOWS
 }
 
 ; Open a window and let the user pick from it: a menu. While it runs, the
-; cursor keys give codes and the function keys CODE_F0 up; leaving with Space,
+; cursor keys give codes and the function keys KEYCODE_F0 up; leaving with Space,
 ; Escape or another function key puts the function keys back to strings, but
 ; picking with Return doesn't.
 ; In:  A = window number, X/Y = its text; if the text's flag is MENU the lines
@@ -753,8 +753,8 @@ ASSERT window_size - window_address = 2 * WINDOWS
     LDA #OSBYTE_CURSOR_EDITING      ; the cursor keys give codes
     LDX #CURSOR_KEYS_CODES
     JSR OSBYTE
-    LDA #OSBYTE_FUNCTION_KEY_BASE   ; f0-f9 give CODE_F0 up
-    LDX #CODE_F0
+    LDA #OSBYTE_FUNCTION_KEY_BASE   ; f0-f9 give KEYCODE_F0 up
+    LDX #KEYCODE_F0
     LDY #&00
     JSR OSBYTE
 .read_key
@@ -788,9 +788,9 @@ ASSERT window_size - window_address = 2 * WINDOWS
     BEQ chosen
     BIT mask
     BPL read_key
-    CMP #CODE_DOWN
+    CMP #KEYCODE_DOWN
     BEQ down
-    CMP #CODE_UP
+    CMP #KEYCODE_UP
     BNE read_key
     LDA item
     BEQ read_key
@@ -2899,8 +2899,8 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     LDA #OSBYTE_CURSOR_EDITING      ; the cursor keys give codes
     LDX #CURSOR_KEYS_CODES
     JSR OSBYTE
-    LDA #OSBYTE_FUNCTION_KEY_BASE   ; f0-f9 give CODE_F0 up
-    LDX #CODE_F0
+    LDA #OSBYTE_FUNCTION_KEY_BASE   ; f0-f9 give KEYCODE_F0 up
+    LDX #KEYCODE_F0
     LDY #&00
     JSR OSBYTE
     LDA #OSBYTE_FLUSH_BUFFERS       ; empty the keyboard buffer
@@ -2920,20 +2920,20 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     JMP show_palette.done
 .got_key
     LDY item
-    CMP #CODE_F0
+    CMP #KEYCODE_F0
     BCS done
     CMP #CR
     BEQ done
     CMP #ascii(" ")
     BEQ done
-    CMP #CODE_DOWN
+    CMP #KEYCODE_DOWN
     BNE not_down
     LDX item
     CPX #&03                        ; logical colours 0-3
     BEQ not_down
     INC item
 .not_down
-    CMP #CODE_UP
+    CMP #KEYCODE_UP
     BNE moved
     LDX item
     BEQ moved
@@ -2944,10 +2944,10 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     JSR palette_highlight
     PLA
     LDX #&01                        ; right: the next physical colour
-    CMP #CODE_RIGHT
+    CMP #KEYCODE_RIGHT
     BEQ change
     LDX #&FF                        ; left: the one before
-    CMP #CODE_LEFT
+    CMP #KEYCODE_LEFT
     BNE read_key
 .change
     STX colour_step
@@ -4195,7 +4195,7 @@ IO_SEGMENT = 6                  ; bytes an entry
 .abandon
     JMP pick_second_sprite.abandon_command
 .got_key
-    CMP #CODE_F0
+    CMP #KEYCODE_F0
     BCS abandon
     CMP #CR
     BNE edit

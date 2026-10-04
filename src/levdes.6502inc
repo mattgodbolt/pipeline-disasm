@@ -120,21 +120,12 @@ MESSAGE_LEFT        = MESSAGE_BOX_COLUMN + 2
 FUNCTION pixel_colours(s) = FIND(CODES(" .#o"), CODES(s))
 FUNCTION mode1_byte(s) = SUM((pixel_colours(s) >> 1) * {128, 64, 32, 16} + (pixel_colours(s) AND 1) * {8, 4, 2, 1})
 
-; What the keys give with *FX225,128 and *FX4,2.
+; What the keys give with the designer's *FX225,128 and *FX4,2
+; (CURSOR_KEYS_SOFT): the cursor keys are function keys then, so these
+; aren't osconst.6502inc's KEYCODE_DOWN and KEYCODE_UP, which are *FX4,1's.
 KEYCODE_F0          = &80       ; f0-f9: &80-&89
-KEYCODE_CURSOR_DOWN = &8E       ; soft key 14
-KEYCODE_CURSOR_UP   = &8F       ; soft key 15
-ESC = &1B                       ; what OSBYTE &81 gives in Y on Escape
-DEL = &7F
-
-; Internal key numbers, for INKEY_TEST().
-KEY_SHIFT  = &00
-KEY_X      = &42
-KEY_COLON  = &48
-KEY_RETURN = &49
-KEY_DELETE = &59
-KEY_Z      = &61
-KEY_SLASH  = &68
+KEYCODE_CURSOR_DOWN = &8E       ; function key 14
+KEYCODE_CURSOR_UP   = &8F       ; function key 15
 
 ; 6845 CRTC registers.
 CRTC_HORIZ_DISPLAYED = 1
