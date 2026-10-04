@@ -1441,9 +1441,12 @@ ASSERT LO(LARGE_SPRITE_HEIGHT/8 * ROW) = 0
     RTS
 }
 
-; The event handler, for Escape (event 6): sets the Escape flag, and the
-; latch too when SHIFT is held, so that a SHIFT-Escape is still seen after
-; the OS acknowledges it.
+; The event handler, for Escape (event 6). With the event enabled the MOS
+; leaves setting the Escape flag to the handler (it sets it itself only
+; when the event is disabled), so this sets it; and when SHIFT is held, the
+; latch too. A menu or prompt that sees the Escape acknowledges it, so plain
+; Escape there just cancels; the latch makes SHIFT-Escape cancel and then
+; offer to leave as well. Other events aren't passed on.
 ; In:  A = event number
 ; Clobbers: nothing
 .escape_event
@@ -1451,16 +1454,16 @@ ASSERT LO(LARGE_SPRITE_HEIGHT/8 * ROW) = 0
     PHP
     CMP #EVENT_ESCAPE
     BNE other_event
-    ROR MOS_ESCAPE_FLAG                 ; carry is set (A >= 6): bit 7 of the Escape flag
+    ROR MOS_ESCAPE_FLAG             ; carry is set from the CMP: bit 7 of the flag
     TXA
     PHA
     TYA
     PHA
     LDX #INKEY_TEST(KEY_SHIFT)
     JSR key_pressed
-    BPL not_ctrl
+    BPL not_shift
     STA escape_latch                ; A = &FF
-.not_ctrl
+.not_shift
     PLA
     TAY
     PLA
@@ -1494,13 +1497,14 @@ LAYOUT_END = &EA
     EQUB LAYOUT_END
 
 ; The names of the physical colours, eight characters each, for the palette
-; window (seven are shown).
+; window (it shows seven of each).
 .colour_names
     EQUS "Black   Red     Green   Yellow  Blue    Magenta Cyan    White   "
 
 ; Window text. The first byte is the flag (MENU or PLAIN), then lines ending
 ; CR; TEXT_END ends it. The windows that ask for a second sprite leave their
-; title line empty: pick_second_sprite draws the first sprite there.
+; title line empty, and pick_second_sprite draws the first sprite to the
+; right of the short lines below it.
 .text_copy
     EQUB PLAIN, CR
     EQUS "Select sprite", CR, "to", CR, "copy", CR, "this", CR, "onto", CR
@@ -1561,7 +1565,8 @@ LAYOUT_END = &EA
     NEXT
     EQUB TEXT_END
 ; The palette window: show_palette writes the colour names into the blank
-; lines.
+; lines, PALETTE_LINE bytes apart.
+PALETTE_LINE = 8
 .text_palette
     EQUB MENU
     EQUS "Colour ", CR
@@ -1586,6 +1591,8 @@ LAYOUT_END = &EA
     EQUB MENU
     EQUS "Exists", CR, "Cancel", CR, "Replace", CR
     EQUB TEXT_END
+; The prompts for a file name (whole files and single sprites alike) and an
+; object's name; input_line echoes the reply after the colon.
 .text_load_name
     EQUB PLAIN
     EQUS "Load Sprite File", CR, CR, " Enter Filename", CR, CR, " :"
@@ -1603,13 +1610,14 @@ LAYOUT_END = &EA
     EQUS "E  R  R  O  R  !", CR, CR, "Not available", CR, "with this", CR, "filing system", CR
     EQUB TEXT_END
 ; error_handler copies the error's message into the error window's text,
-; breaking its lines and ending it.
+; breaking its lines and ending it. Until an error has, the text runs on to
+; text_escape's flag byte, which is also TEXT_END. (A message too long for
+; the buffer would run on over text_escape; the filing systems' are short.)
 .text_error
     EQUB PLAIN
     EQUS "E  R  R  O  R  !", CR, CR
 .error_message
     EQUB REPEATED(61, ascii(" "))
-; The Escape window's flag byte doubles as the end of the error message.
 .text_escape
     EQUB MENU
     EQUS "Escape?", CR, "No", CR, "Yes", CR
@@ -1619,12 +1627,12 @@ LAYOUT_END = &EA
     EQUS " Return to menu", CR, " Please insert", CR, " Pipeline disc", CR, "and press SPACE", CR
     EQUB TEXT_END
 
-; Draw every sprite in the sheet, positions &28 down to 0 (&10-&1F being the
-; small sprites).
+; Draw every sprite in the sheet, from the last position down to 0 (the
+; small sprites, &10-&1F, among them).
 ; Clobbers: A, X, Y, screen_ptr, data_ptr, count_x, count_y, sprite_width
 .draw_sheet
 {
-    LDA #&28                        ; the last sheet position
+    LDA #LAST_SPRITE
 .loop
     PHA
     JSR draw_sheet_sprite
@@ -1635,12 +1643,13 @@ LAYOUT_END = &EA
     RTS
 }
 
-; Mark the selected sprite in the sheet with a box in colour 2, and show its
-; number and name under the editing grid if it is an object (a small sprite),
-; or blank them if not.
-; In:  A = sprite number (the selection box is drawn over the sprite; drawing
-;      the sprite again removes it)
-; Clobbers: A, X, Y, screen_ptr, aux_ptr, count_y, sprite_width
+; Mark the selected sprite in the sheet with a box in colour 2, drawn over
+; the sprite (drawing the sprite again removes it); and under the editing
+; grid show its number and name if it is an object (a small sprite), or
+; blank them if not. The exit's "name" is the "Finish Block" that start
+; writes after the names.
+; In:  A = sprite = the selected sprite (the name comes from sprite)
+; Clobbers: A, X, Y, screen_ptr, data_ptr, aux_ptr, count_y, sprite_width
 .show_selection
 {
     JSR sprite_class
@@ -1650,7 +1659,8 @@ LAYOUT_END = &EA
     LDA sprite_width
     STA count_y
 
-    ; Down each character row: the rightmost pixel of the last cell, the leftmost of the first.
+    ; Down each character row: the rightmost pixel of the last cell, the
+    ; leftmost of the first.
 .column
     LDA sprite_width
     ASL A
@@ -1658,22 +1668,22 @@ LAYOUT_END = &EA
     ASL A
     TAY
     LDX #&07
-.left
+.right_edge
     DEY
     LDA (screen_ptr), Y
-    AND #&EE                        ; pixel 3 becomes colour 2
-    ORA #&10
+    AND #mode5_byte("333.")         ; pixel 3 becomes colour 2
+    ORA #mode5_byte("...2")
     STA (screen_ptr), Y
     DEX
-    BPL left
+    BPL right_edge
     LDY #&07
-.right
+.left_edge
     LDA (screen_ptr), Y
-    AND #&77                        ; pixel 0 becomes colour 2
-    ORA #&80
+    AND #mode5_byte(".333")         ; pixel 0 becomes colour 2
+    ORA #mode5_byte("2...")
     STA (screen_ptr), Y
     DEY
-    BPL right
+    BPL left_edge
     DEC count_y
     LDA count_y
     BEQ bottom
@@ -1692,7 +1702,7 @@ LAYOUT_END = &EA
     CMP #SMALL_WIDTH
     BEQ small
     TXA                             ; X is 0 here: blank the name box
-    LDY #15*CELL-1
+    LDY #NAME_BOX_CELLS*CELL-1
 .clear_name
     STA name_box, Y
     DEY
@@ -1706,9 +1716,9 @@ LAYOUT_END = &EA
     STA screen_ptr
     LDA #HI(name_box)
     STA screen_ptr+1
-    LDX #ascii(" ")              ; objects 1-9: no tens
+    LDX #ascii(" ")                 ; objects 1-9: no tens
     LDA sprite
-    CMP #&19
+    CMP #FIRST_SMALL + 9
     BCC tens
     LDX #ascii("1")
 .tens
@@ -1717,10 +1727,10 @@ LAYOUT_END = &EA
     JSR print_char_advance
     LDA sprite
     SEC
-    SBC #&0F
-    CMP #&0A
+    SBC #FIRST_SMALL - 1
+    CMP #10
     BCC units
-    SBC #&0A
+    SBC #10
 .units
     SEC                             ; carry set: store the characters
     ORA #ascii("0")
@@ -1729,7 +1739,7 @@ LAYOUT_END = &EA
     SEC
     JSR print_char_advance
     JSR name_offset
-    LDX #12-1
+    LDX #OBJECT_NAME_LENGTH - 1
 .name
     LDA object_names, Y
     SEC
@@ -1739,17 +1749,18 @@ LAYOUT_END = &EA
     BPL name
     RTS
 }
+NAME_BOX_CELLS = 3 + OBJECT_NAME_LENGTH     ; "16:" and the name
 
-; Draw a horizontal edge of the selection box: line Y of each cell across
-; the sprite, in colour 2.
-; In:  Y = line within the character row, screen_ptr = the row
+; Draw a horizontal edge of the selection box in colour 2: line Y of each
+; cell across the sprite.
+; In:  Y = the line within the character row, screen_ptr = the row
 ; Out: X = 0
 ; Clobbers: A, Y
 .selection_edge
 {
     LDX sprite_width
 .loop
-    LDA #&F0
+    LDA #mode5_byte("2222")
     STA (screen_ptr), Y
     TYA
     CLC
@@ -1760,9 +1771,10 @@ LAYOUT_END = &EA
     RTS
 }
 
-; Where an object's name is in object_names.
-; In:  sprite = the small sprite (or, at of_a, A)
-; Out: A = Y = (sprite AND &0F) * 12
+; Where an object's name is in object_names. Also entered at of_a with the
+; sprite in A.
+; In:  sprite = the small sprite
+; Out: A = Y = (sprite AND &0F) * OBJECT_NAME_LENGTH
 ; Clobbers: nothing else
 .name_offset
 {
@@ -1779,9 +1791,10 @@ LAYOUT_END = &EA
 .times_4
     EQUB &00
 }
+ASSERT OBJECT_NAME_LENGTH = 12
 
 ; Unused copies of down_a_row, width_times_32 and clear_rows: nothing
-; calls these three.
+; calls these three. This clear_rows has its RTS.
 .unused_down_a_row
 {
     LDA screen_ptr
@@ -1810,7 +1823,7 @@ LAYOUT_END = &EA
 {
     STA count_y
 .row
-    LDY #&47
+    LDY #9*CELL-1
     LDA #&00
 .byte
     STA (screen_ptr), Y
@@ -1822,13 +1835,14 @@ LAYOUT_END = &EA
     RTS
 }
 
-; Fill the colour swatch with the current colour.
+; Fill the colour swatch, two cells, with the current colour.
+; In:  colour
 ; Clobbers: A, X, Y
 .show_colour
 {
     LDX colour
     LDA colour_byte, X
-    LDY #2*CELL-1                   ; two cells
+    LDY #2*CELL-1
 .loop
     STA colour_swatch, Y
     DEY
@@ -1836,21 +1850,23 @@ LAYOUT_END = &EA
     RTS
 }
 
-; The stack pointer when the designer first started (bit 7 set once it has
-; been saved), for the main loop to reset the stack to.
+; The stack pointer when the designer first started, for the main loop to
+; reset the stack to. It starts 0, and a stack pointer is never that low,
+; so bit 7 set also says it has been saved.
 .stack_pointer
     EQUB &00
 
-; Bit 7 set once the graphics area has been cleared and DEFAULT loaded,
-; so starting again after an error keeps the user's work.
+; Bit 7 set once the graphics area has been cleared (and on disc DEFAULT
+; loaded), so starting again after an error keeps the user's work.
 .graphics_loaded
     EQUB &00
 
-; Bit 7 set if the filing system is a disc one (number 4 or more); the
-; other three bytes are the physical colours for logical 1-3 (blue, yellow,
-; red).
+; Bit 7 set if the filing system is a disc one (FS_DISC up).
 .disc_fs
     EQUB 0
+
+; The physical colours for logical 1-3 (blue, yellow, red); 0 stays black.
+.palette_colours
     EQUB COLOUR_BLUE, COLOUR_YELLOW, COLOUR_RED
 
 ; The graphics set to start with, and the command that goes back to the menu.
@@ -1954,7 +1970,7 @@ LAYOUT_END = &EA
 .palette
     PHA
     TAX
-    LDA disc_fs, X                  ; the physical colour for logical colour X
+    LDA palette_colours-1, X
     JSR write_palette
     PLA
     SEC
@@ -2905,9 +2921,9 @@ LAYOUT_END = &EA
 {
     LDA #&03
     STA osfile_block
-    LDA #LO(palette_lines+3*8)
+    LDA #LO(palette_lines + 3*PALETTE_LINE)
     STA save_ptr
-    LDA #HI(palette_lines+3*8)
+    LDA #HI(palette_lines + 3*PALETTE_LINE)
     STA save_ptr+1
 .entry
     LDA osfile_block
