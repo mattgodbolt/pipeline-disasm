@@ -455,3 +455,28 @@ Details in `docs/notes/game.md` (section 2026-10-03 19:52).
 - Next: one pass moving the names all three programs define locally (OSBYTE
   and OSWORD numbers, internal key numbers, VDU and CRTC codes, the graphics
   set's layout) into the shared includes.
+
+## 2026-10-04 00:40 — Merged: one definition per shared name
+
+Details in `docs/notes/names.md`; CLAUDE.md's new "Where names live" says
+which include holds what.
+
+- OS call numbers, settings, keys, characters, VDU/PLOT codes, CRTC
+  registers, screen memory and opcodes are all in `osconst.6502inc` now
+  (screen memory too, though they're addresses, so the disassembler doesn't
+  name every &3000 or &5800 after them); `os.6502inc` keeps addresses only.
+  The graphics set's format heads `sprites.6502inc`; the level format's
+  shared names (all 16 cell types, diagonal directions, turns, conditions,
+  alternates) are in `leveldata.6502inc`; PL reads the level file through
+  `level.6502inc` instead of its own addresses.
+- Where programs disagreed, one name won (e.g. `MONSTER_GONE`,
+  `PUZZLE_ACTION`, `TURN_*` as 0-3 with the game multiplying by its own
+  `TURN_ROW`); where they number something differently on purpose (the
+  Level Designer's `MOVE_*`, each designer's own function-key base) the
+  names stay separate with a comment.
+- Baron: a scope may silently shadow a name from outside it (now a test,
+  `tests/test_symbols.py`, which caught one case); a file of FUNCTIONs can be
+  included only once per program. Both in `docs/baron-feedback.md`.
+- The symbol dump grew from 744 KB to 797 KB: each file's dump lists every
+  constant its includes define, and osconst is in 15 of the 19 sources. The
+  `@` entries didn't grow.

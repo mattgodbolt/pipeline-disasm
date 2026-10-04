@@ -30,5 +30,13 @@ issues say they're from Claude acting for Matt. Symbol-dump points are in
   long tables this was wanted for. Parentheses don't (`x = (1 +` newline
   `2)` is "Malformed expression"), so long expressions get wrapped in
   `FLATTEN({...})` or split into named steps.
+- **Shadowing is silent**: a scope may bind a name its file already binds
+  outside it, and the inner one wins without a word. We hit it once (a
+  Graphics Designer label hid IO's `io_graphics`); `tests/test_symbols.py`
+  now fails on it. An opt-in warning (`--warn 2`) would do the same job.
+- **A file of FUNCTIONs can be INCLUDEd only once per program** ("Duplicate
+  function arity"), while constants may be rebound to the same value. With
+  no include guard, each program has to reach each include by exactly one
+  path, which shapes how the includes nest.
 - **A gotcha, not a bug**: `1..2..` steps by 1 (the second element sets the
   step), so every other element from 1 is `1..3..`.
