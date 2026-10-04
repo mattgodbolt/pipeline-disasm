@@ -34,10 +34,11 @@
 ; event_handler, sound_data, low_code, and main_code. main_code runs, roughly:
 ; the tune, drawing the player, sprites and the map view; reading and writing
 ; map cells; text, numbers and the end-of-level and game-over effects;
-; game_start, the main loop and a level's end; the title, backpack and map
-; screens; the player's actions; triggers and what they do; monsters'
-; thinking and the score; loading a mission and the error handler; and the
-; dispatch tables. Past what the loader copies, leftover bytes.
+; game_start, the main loop, losing a life and finishing a level; the title
+; screen; setting up a level; a cycle of play and the player's turn; the
+; backpack and map screens; the player's actions; triggers and what they do;
+; monsters' thinking and the score; loading a mission and the error handler;
+; and the dispatch tables. Past what the loader copies, leftover bytes.
 ;
 ; Words used throughout:
 ; - A map cell is one of a level's 64 x 64 squares, drawn as a picture 4 x 4
