@@ -3415,14 +3415,14 @@ PASS_CENTISECONDS = 2
     CMP #LAST_SPRITE                ; no small sprite below the last large one
     BEQ down_done
     CMP #&0F                        ; &0F, at the start of row 3, has &24 below it...
-    BNE not_a
+    BNE down_not_0f
     LDA #&24
-    BNE store_down
-.not_a
+    BNE store_down                  ; always
+.down_not_0f
     CMP #&0A                        ; ...and &0A has &0F
     BNE step_down
     LDA #&0F
-    BNE store_down
+    BNE store_down                  ; always
 .step_down
     CLC
     ADC row_down_step, X
@@ -3437,14 +3437,14 @@ PASS_CENTISECONDS = 2
     BEQ up_done
     LDA sprite
     CMP #&0F                        ; the same two, upwards
-    BNE not_f
+    BNE up_not_0f
     LDA #&0A
-    BNE store_up
-.not_f
+    BNE store_up                    ; always
+.up_not_0f
     CMP #&24
     BNE step_up
     LDA #&0F
-    BNE store_up
+    BNE store_up                    ; always
 .step_up
     SEC
     LDA sprite
