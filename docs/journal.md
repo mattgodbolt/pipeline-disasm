@@ -426,3 +426,32 @@ Details in `docs/notes/graphic.md`.
   VDU and PLOT codes, the graphics set's layout and slot roles) belong in
   shared includes; that consolidation waits for the game review, so it's
   done once across all three programs.
+
+## 2026-10-04 00:05 — Merged: the game review; phase 2's reviews are in
+
+Details in `docs/notes/game.md` (section 2026-10-03 19:52).
+
+- Corrections, checked in jsbeeb: `add_points` falls into `add_point`, so it
+  adds one more than asked: a monster scores 26, a level 101, the time bonus
+  is the time left plus one. The competition entry code prints the score's
+  low byte first. The player picture flips every four cells walked, not
+  every other step. The tune plays during levels, not on the title screen.
+  WELL DONE has a shadow; the map view's odd and even rows were the wrong
+  way round in the comments.
+- The game prints through the OS, which still believes it's in MODE 5
+  (&350 holds &5800 and a 320-byte row), so TAB(x, y) lands at &5800 + 320y
+  + 16x on the game's 256-byte rows from &6000: every TAB is now
+  `TEXT_AT column, row`, matching screenshots.
+- New: a teleport moves the restart point (lose a life and you come back at
+  the destination). Action 6's "all four monsters" is an original bug: only
+  monster 3 gets the direction, 2 and 1 are sent off the map (gone) and
+  monster 0 carries on; the shipped mission never uses it. A one-shot
+  trigger is used up before its action runs, so it's spent even if the
+  action fails. An OBJECT_NO_THROW object can still be thrown; only its
+  landing triggers are skipped.
+- `src/game.6502inc` holds the game's own names, included inside the `game`
+  scope. ASSERTs now pin the layout tricks: the objects over run-once code,
+  trigger data running exactly up to IO, the BIT-mask operands.
+- Next: one pass moving the names all three programs define locally (OSBYTE
+  and OSWORD numbers, internal key numbers, VDU and CRTC codes, the graphics
+  set's layout) into the shared includes.
