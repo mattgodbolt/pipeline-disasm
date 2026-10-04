@@ -90,6 +90,10 @@ window_flags    = &88           ; its y byte, for SPACE_STAYS (bit 7)
 menu_first_item = &89           ; the item window_menu started on
 
 message_box     = screen_address(MESSAGE_BOX_COLUMN, MESSAGE_BOX_ROW)
+; The columns either side of its bottom row, where its side lines start.
+box_bottom      = MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS - 1
+box_left_side   = screen_address(MESSAGE_BOX_COLUMN - 1, box_bottom)
+box_right_side  = screen_address(MESSAGE_BOX_COLUMN + MESSAGE_BOX_COLUMNS, box_bottom)
 
 ; The cursor's directions, for moving it and the simulated player:
 ; clockwise from left, so EOR 2 turns about.
@@ -3035,7 +3039,8 @@ block_menu = {CELL_FLOOR, CELL_SE_CURVE, CELL_SW_CURVE, CELL_NE_CURVE,
 .block_menu_map
     EQUB FIND(block_menu, 0..15) * 16 + block_menu
 
-; Each menu's handlers, one per item (zero page points at these tables).
+; Each menu's handlers, one per item: jump_to_handler finds a table by its
+; number (handlers()) among the pointers in zero page, menu_tables.
 .options_handlers
     EQUW option_start, option_finish, option_object, option_monster
     EQUW option_puzzle, option_collects, option_graphics, option_time
@@ -3058,7 +3063,7 @@ block_menu = {CELL_FLOOR, CELL_SE_CURVE, CELL_SW_CURVE, CELL_NE_CURVE,
     EQUW condition_check_direction, condition_collects, menu_ok
 .files_handlers
     EQUW files_load, files_save, files_edit_code, files_exit
-; By puzzle type.
+; By puzzle type, PUZZLE_*.
 .effect_handlers
     EQUW effect_place_block, effect_move_block, effect_block_type
     EQUW effect_set_levels, effect_throw_object, effect_detonate_object
@@ -3088,12 +3093,13 @@ block_menu = {CELL_FLOOR, CELL_SE_CURVE, CELL_SW_CURVE, CELL_NE_CURVE,
 .cursor_handlers
     EQUW cursor_left, cursor_up, cursor_right, cursor_down
 
-; Spare, all zero but for one stray byte.
+; Spare, all zero but for one stray byte, up to the second jump table.
 .unused_space
     SKIP 115
     EQUB &20
     SKIP 76
-; Entry points at fixed addresses.
+; Entry points at fixed addresses: the second jump table (see the first, at
+; the start).
 .vector_text_colours
     JMP text_colours
 .vector_set_level_palette
@@ -3114,8 +3120,8 @@ block_menu = {CELL_FLOOR, CELL_SE_CURVE, CELL_SW_CURVE, CELL_NE_CURVE,
     JMP write_map
 
 ; Start a new level: blank map, default names "Puzzle  1 " to "Puzzle 32 ",
-; the default header, four dead monsters, no objects, and puzzles that do
-; nothing; then clear the screen and set the level's palette.
+; the default header, four dead monsters, no objects, and every puzzle turned
+; off; then clear the screen and set the level's palette.
 ; Clobbers: A, X, Y, ptr.
 .new_level
     LDA #HI(level_map)
@@ -3254,12 +3260,12 @@ block_menu = {CELL_FLOOR, CELL_SE_CURVE, CELL_SW_CURVE, CELL_NE_CURVE,
 .default_monster
     MONSTER MAP_SIZE / 2, MAP_SIZE / 2, MONSTER_DEAD, PATTERN_BACK_AND_FORTH
 
+line1_tab = os_tab(MESSAGE_LEFT, MESSAGE_LINE_1)
+line2_tab = os_tab(MESSAGE_LEFT, MESSAGE_LINE_2)
 ; Print a message on the message box's second line (print_line2), its first
 ; (print_line1), or wherever the text cursor is (print_message). The OS
 ; thinks the screen is 40 columns of 640 bytes, so the lines' TAB(34,12) and
 ; TAB(10,11) land two rows apart in our 64 columns, both 4 columns in.
-line1_tab = os_tab(MESSAGE_LEFT, MESSAGE_LINE_1)
-line2_tab = os_tab(MESSAGE_LEFT, MESSAGE_LINE_2)
 ; In: A = the message number.
 ; Clobbers: A, X, Y, window_ptr.
 .print_line2
@@ -3321,11 +3327,12 @@ line2_tab = os_tab(MESSAGE_LEFT, MESSAGE_LINE_2)
     RTS
 ; Four-byte VDU sequences, sent last byte first.
 .colour_sequences
-.normal_colours
-    EQUB 2, 17, 129, 17         ; COLOUR 129 : COLOUR 2
-    EQUB 12, 128, 17            ; VDU 0, COLOUR 128 : CLS (with the next
-.highlight_colours              ; byte; unused)
-    EQUB 0, 17, 131, 17         ; COLOUR 131 : COLOUR 0
+.normal_colours                 ; COLOUR 129 : COLOUR 2, yellow on blue
+    EQUB REVERSE({VDU_COLOUR, 128 + 1, VDU_COLOUR, 2})
+.unused_colours                 ; with the next byte, VDU 0 : COLOUR 128 : CLS
+    EQUB REVERSE({VDU_COLOUR, 128, VDU_CLS})
+.highlight_colours              ; COLOUR 131 : COLOUR 0, black on red
+    EQUB REVERSE({VDU_COLOUR, 128 + 3, VDU_COLOUR, 0})
 
 ; Find a window or message in WDATA.
 ; In: A = its number.
@@ -3433,8 +3440,9 @@ MACRO TILE r0, r1, r2, r3
 ENDMACRO
 
 ; Glyphs 64 to 69, past the end of the font (draw_glyph takes them from
-; here).
+; here, so they start a page).
 .font_digits
+    ASSERT LO(font_digits) == 0
     GLYPH ".######.", ".....##.", "....##..", "...##...", "..##....", "..##....", "..##....", "........"   ; 64: 7
     GLYPH "..####..", ".##..##.", ".##..##.", "..####..", ".##..##.", ".##..##.", "..####..", "........"   ; 65: 8
     GLYPH "..####..", ".##..##.", ".##..##.", "..#####.", ".....##.", "....##..", "..###...", "........"   ; 66: 9
@@ -3733,13 +3741,14 @@ SECTION low_code, org=&0880
     TAX
     BCS open_message_box_edges
     ; And the sides, from the bottom row up.
-    LDA #LO(screen_address(1, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS - 1))
+    LDA #LO(box_left_side)
     STA screen_ptr
-    LDX #HI(screen_address(1, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS - 1))
+    LDX #HI(box_left_side)
     STX screen_ptr+1
-    INX
+    INX                         ; the right side's page is the next one
+    ASSERT HI(box_right_side) == HI(box_left_side) + 1
     STX glyph_ptr+1
-    LDA #LO(screen_address(62, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS - 1))
+    LDA #LO(box_right_side)
     STA glyph_ptr
     LDX #MESSAGE_BOX_ROWS
 .open_message_box_sides
@@ -4062,7 +4071,8 @@ SECTION low_code, org=&0880
 .tick_line_glyph
     CLC
     ADC #GLYPH_X
-; Draw a glyph: 0-63 from the font, 64-69 from font_digits.
+; Draw a glyph: 0-63 from the font, 64-69 from font_digits. Bit 6 picks the
+; page-aligned table, bits 4-5 the page in it, bits 0-3 the 16 bytes.
 ; In: A = the glyph (bit 7 is ignored); screen_ptr = where.
 ; Out: screen_ptr moved on a glyph.
 ; Clobbers: A, Y, glyph_ptr.
@@ -4205,7 +4215,8 @@ SECTION low_code, org=&0880
     LDX saved_cursor_key_mode
     JMP OSBYTE
 
-; (Unused: INKEY with a long time limit.)
+; (Unused: OSBYTE &81, INKEY, with Y = &81 and the caller's X, returning
+; the X it gives back.)
 .unused_read_key
     LDA #OSBYTE_INKEY
     TAY
@@ -4322,23 +4333,27 @@ ENDSECTION
     LDX #4                      ; half a page, then four pages
 .entry_copy_code
     LDA low_code_load - &80, Y
-.entry_copy_code_store
+entry_code_from = entry_copy_code + 1           ; (the operands step a page
+.entry_copy_code_store                          ; at a time)
     STA low_code - &80, Y
+entry_code_to = entry_copy_code_store + 1
     INY
     BNE entry_copy_code
-    INC entry_copy_code+2
-    INC entry_copy_code_store+2
+    INC entry_code_from+1
+    INC entry_code_to+1
     DEX
     BPL entry_copy_code
     LDX #(64 * 16) DIV 256 - 1  ; four pages
 .entry_copy_font
     LDA font_load, Y
+entry_font_from = entry_copy_font + 1
 .entry_copy_font_store
     STA font, Y
+entry_font_to = entry_copy_font_store + 1
     INY
     BNE entry_copy_font
-    INC entry_copy_font+2
-    INC entry_copy_font_store+2
+    INC entry_font_from+1
+    INC entry_font_to+1
     DEX
     BPL entry_copy_font
     LDX #zero_page_init_end - menu_tables - 1
