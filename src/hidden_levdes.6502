@@ -91,6 +91,13 @@ menu_first_item = &89           ; the item window_menu started on
 
 message_box     = screen_address(MESSAGE_BOX_COLUMN, MESSAGE_BOX_ROW)
 
+; The cursor's directions, for moving it and the simulated player:
+; clockwise from left, so EOR 2 turns about.
+DIR_LEFT  = 0
+DIR_UP    = 1
+DIR_RIGHT = 2
+DIR_DOWN  = 3
+
 SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 
 ; Entry points at fixed addresses, with two pointers the startup code uses.
@@ -600,12 +607,15 @@ saved_rdchv = rdchv_filter + 1
 ; Wait for a key, meanwhile flashing the cursor and doing the editing keys
 ; themselves: Z X : / move the cursor (with the simulator's rules when it's
 ; on), S switches the simulator, and if plotting is enabled Delete blanks the
-; cursor's cell and Return plots the brush there. Held keys repeat. A window
-; can be kept on screen meanwhile, moving out of the cursor's way.
-; get_key_no_plot doesn't plot.
+; cursor's cell and Return plots the brush there. Once a key comes it tests
+; which of those are held rather than reading them, so several act at once
+; (diagonally, say) and a held one repeats at the auto-repeat rate. A window
+; can be kept on screen meanwhile, moving out of the cursor's way. Caps Lock
+; is forced on every time round. get_key_no_plot doesn't plot.
 ; In: A = nonzero to enable plotting; X = a window to keep, or negative.
-; Out: A = the key that isn't an editing key.
-; Clobbers: X, Y, ptr, work; function keys and Escape don't return.
+; Out: A = the key read, once a pass finds none of the editing keys held.
+; Clobbers: X, Y, ptr, work, screen_ptr, the low code's zero page. Escape
+; doesn't return, nor does a function key except in the main loop.
 .get_key_no_plot
     LDA #0
 .get_key
@@ -630,13 +640,13 @@ saved_rdchv = rdchv_filter + 1
     JSR OSBYTE
     PHP                         ; C set: no key
     STX key_pressed
-    LDA in_main_loop
+    LDA in_main_loop            ; the main loop takes function keys as keys
     BNE get_key_got
     TXA
     JSR check_function_key
 .get_key_got
     PLP
-    ROR A
+    ROR A                       ; bit 7: no key
     CPY #ESC
     BEQ escape_pressed
     LDY travelling
@@ -705,26 +715,27 @@ saved_rdchv = rdchv_filter + 1
     LDA key_pressed
     RTS
 
-; Move the cursor a cell (cursor_handlers). Crossing the middle of the screen
-; moves the kept window to the other side.
-; Out: C set if the cursor couldn't move.
-; Clobbers: A, X, Y, ptr, work.
+; Move the cursor a cell (and these are cursor_handlers, by DIR_*). Crossing
+; the middle of the screen moves the kept window to the other side.
+; Out: C set if the cursor didn't move (though a bounce in a pipe can leave
+; it clear).
+; Clobbers: A, X, Y, ptr, work, screen_ptr, the low code's zero page.
 .cursor_left
-    LDY #0
+    LDY #DIR_LEFT
     JSR move_cursor
     BCS cursor_move_done
     CPX #MAP_SIZE/2 - 1
     BEQ reopen_window
     RTS
 .cursor_right
-    LDY #2
+    LDY #DIR_RIGHT
     JSR move_cursor
     BCS cursor_move_done
     CPX #MAP_SIZE/2
     BEQ reopen_window
     RTS
 .cursor_up
-    LDY #1
+    LDY #DIR_UP
     JSR move_cursor
     BCS cursor_move_done
     CPY #MAP_SIZE/2 - 1
@@ -732,25 +743,26 @@ saved_rdchv = rdchv_filter + 1
 .cursor_move_done
     RTS
 .cursor_down
-    LDY #3
+    LDY #DIR_DOWN
     JSR move_cursor
     BCS cursor_move_done
     CPY #MAP_SIZE/2
     BNE cursor_move_done
-; Close the kept window and draw it again, wherever it now goes.
+; Close the window last drawn and draw the kept one again, wherever it now
+; goes, if there is one.
 .reopen_window
     LDA kept_window
     BMI cursor_move_done
     JSR vector_close_window
     LDA kept_window
-; Draw window A.
-; Clobbers: A, X, Y.
+; Draw window A. Ian's wind.
+; Clobbers: A, X, Y, the low code's zero page.
 .open_window
     JSR vector_window_address
     JMP vector_draw_window
 
 ; Is a key held down?
-; In: X = its INKEY number, negated.
+; In: X = INKEY_TEST(its internal key number).
 ; Out: Z set if it is.
 ; Clobbers: A, X, Y.
 .test_key
@@ -761,7 +773,7 @@ saved_rdchv = rdchv_filter + 1
     RTS
 
 ; The cell next to the cursor.
-; In: Y = direction, 0 left, 1 up, 2 right, 3 down.
+; In: Y = a direction, DIR_*.
 ; Out: X, Y = its position.
 ; Clobbers: A.
 .neighbour
@@ -785,17 +797,20 @@ saved_rdchv = rdchv_filter + 1
 ; the map; with the simulator on it moves like the player: it walks onto
 ; blank cells and collectables, loses a life in a fatal trap, an S.Monster or
 ; off the map's edge, and enters a pipe that runs its way, which starts it
-; travelling until it comes out. Anything else stops it. Shift
-; lets it go anywhere on the map regardless, and stops any travelling.
-; In: Y = direction, 0 left, 1 up, 2 right, 3 down.
-; Out: C clear and X, Y = the new position if it moved.
-; Clobbers: A, ptr, work.
+; travelling until it comes out. Anything else stops it. Shift lets it go
+; anywhere on the map regardless, and stops any travelling. While travelling
+; it takes a step of that instead (simulate_travel).
+; In: Y = a direction, DIR_*.
+; Out: C clear and X, Y = the new position if it moved. Going into a pipe it
+; doesn't return: it finishes the cursor_* routine that called it and goes
+; on in get_key.
+; Clobbers: A, ptr, work, screen_ptr, the low code's zero page.
 .move_cursor
     TYA
     PHA
     JSR neighbour
-    JSR vector_read_map         ; negative off the map
-    BMI move_into_tile
+    JSR vector_read_map         ; negative off the map, where Shift doesn't
+    BMI move_into_tile          ; help
     PHA
     LDX #INKEY_TEST(KEY_SHIFT)
     JSR test_key
@@ -859,7 +874,8 @@ saved_rdchv = rdchv_filter + 1
     CLC
     RTS
 
-; The simulated player died: say so and stop travelling.
+; The simulated player died: say so and stop travelling, leaving the cursor
+; where it was.
 .simulate_lose_life
     PLA
     JSR hide_cursor
@@ -897,7 +913,7 @@ saved_rdchv = rdchv_filter + 1
     BCC move_to_neighbour       ; the two pipes
 .simulate_bounce
     PLA
-    EOR #2                      ; the opposite direction
+    EOR #2                      ; the opposite direction (DIR_*)
     STA direction
     RTS
 .simulate_collect
@@ -909,17 +925,20 @@ saved_rdchv = rdchv_filter + 1
     PLA
     JSR move_push
     LDY direction
-    DEY
+    DEY                         ; turning left...
     JSR simulate_try_turn
     INY
-    INY
+    INY                         ; ...right...
     JSR simulate_try_turn
-    DEY
+    DEY                         ; ...or straight on
     JSR simulate_try_turn
     TYA
-    EOR #2
+    EOR #2                      ; none: back the way it came
     TAY
     BPL simulate_set_direction
+; Try direction Y (0-3 after masking) from the junction: a pipe running that
+; way there is taken, returning from simulate_junction's caller with C clear
+; and X, Y the cursor; otherwise this returns, with Y the direction tried.
 .simulate_try_turn
     TYA
     AND #3
@@ -944,8 +963,8 @@ saved_rdchv = rdchv_filter + 1
     LDY cursor_y
     RTS
 ; VDU 19: set a logical colour's physical colour.
-; In: A = logical colour * 16 + physical colour (the OS ignores the top
-; nibble of the physical colour).
+; In: A = palette_entry(logical, physical), which goes out whole as the
+; physical colour (the OS ignores the top nibble).
 ; Clobbers: A, X.
 .set_palette_entry
     TAX
@@ -965,6 +984,7 @@ saved_rdchv = rdchv_filter + 1
     JMP OSWRCH
 
 ; The editor proper, after the title: a blank level, then commands for ever.
+; Errors come back to main_reset_input, which puts rdchv_filter back.
 .main
     JSR new_level
 .main_reset_input
@@ -988,25 +1008,28 @@ saved_rdchv = rdchv_filter + 1
     JSR do_command
     JMP main_loop
 
-; In the main loop, 0-9 and A-F choose the brush directly, and the cursor up
-; and down keys open the block menu, going on to move its bar.
+; In the main loop, 0-9 and A-F choose the brush, the block menu's item of
+; that number, with a beep; and the cursor up and down keys open the block
+; menu, the key put back for it to move the bar.
 ; In: A = the key.
-; Clobbers: A, X, Y.
+; Clobbers: A, X, Y, ptr, the low code's zero page.
 .hex_key
     CMP #ascii("0")
     BCC hex_key_done
     CMP #ascii("F") + 1
     BCS hex_key_cursor
     CMP #ascii("9") + 1
-    BCC hex_key_tile
+    BCC hex_key_item
     SBC #ascii("A")
     BCC hex_key_cursor
     ADC #ascii("9")             ; A-F follow 0-9 (the carry adds one)
-.hex_key_tile
+.hex_key_item
     TAY
     LDA block_menu_map - ascii("0"), Y
-    AND #&0F
+    AND #&0F                    ; the item's block
     STA brush
+; Beep (VDU 7, made short by *FX214,2).
+; Clobbers: A.
 .beep
     LDA #BEL
     JMP OSWRCH
@@ -1020,7 +1043,8 @@ saved_rdchv = rdchv_filter + 1
     LDX #BUFFER_KEYBOARD
     LDA #OSBYTE_INSERT_BUFFER   ; put the key back for the menu to read
     JSR OSBYTE
-; f0: choose the brush from the block menu.
+; f0: choose the brush from the block menu, stopping the simulator as every
+; command does.
 .select_brush
     LDA #0
     STA simulate_window
@@ -1029,7 +1053,7 @@ saved_rdchv = rdchv_filter + 1
     LDY brush
     JSR choose_from_window_at
     STA brush
-.hex_key_done
+.hex_key_done                   ; Ian's canc, for files_menu
     RTS
 
 ; Run a command: 0 the block menu, 1 Options, 2 Files, 3 Help, 4 About.
@@ -1071,8 +1095,9 @@ saved_rdchv = rdchv_filter + 1
     LDA #W_OPTIONS
     JSR choose_from_window
     LDY #handlers(options_handlers_ptr)
-; Jump to the handler for a menu item.
+; Jump to the handler for a menu item. Ian's table.
 ; In: A = the item; Y = the handler table's number (handlers()).
+; Clobbers: A, Y, ptr; what the handler does.
 .jump_to_handler
     PHA
     TYA
@@ -1088,14 +1113,16 @@ saved_rdchv = rdchv_filter + 1
     ASL A
     TAY
     LDA (ptr), Y
-    STA jump_to_handler_jmp+1
+    STA handler_address
     INY
     LDA (ptr), Y
-    STA jump_to_handler_jmp+2
+    STA handler_address+1
 .jump_to_handler_jmp
     JMP &FFA6                   ; the handler, filled in above
+handler_address = jump_to_handler_jmp + 1
 
-; f2: the Files menu, after checking the user is sure.
+; f2: the Files menu, after checking the user is sure. The fragment of Ian's
+; source in MENU is this routine.
 .files_menu
     LDA #W_FILES
     JSR choose_from_window
@@ -1108,7 +1135,7 @@ saved_rdchv = rdchv_filter + 1
     BNE jump_to_handler
 
 ; f3: the Help menu, which shows whether the simulator is on and stays up
-; until OK.
+; while Simulate is chosen. Ian's key3, and help_menu_show is his help.
 .help_menu
     LDA #W_HELP
     JSR open_window
@@ -1130,9 +1157,10 @@ saved_rdchv = rdchv_filter + 1
     LDY #handlers(help_handlers_ptr)
     BNE jump_to_handler
 
-; Switch the simulator on or off. With C clear (the S key) the Simulate
-; window is kept on screen while it's on.
-; Clobbers: A, X, Y.
+; Switch the simulator on or off. With C clear (the S key, in get_key) the
+; Simulate window opens or closes too, as get_key's kept window; with C set
+; (Help) the main loop's get_key sees to it.
+; Clobbers: A, X, Y, the low code's zero page.
 .switch_simulate
     LDA simulate_window
     EOR #W_SIMULATE + 1
@@ -1211,7 +1239,7 @@ saved_rdchv = rdchv_filter + 1
 ; Mark a position in the map: put block A at the cursor, and blank the old
 ; position if it has the same block.
 ; In: A = the block; work = the old position.
-; Clobbers: A, X, Y, ptr.
+; Clobbers: A, X, Y, ptr, work, screen_ptr.
 .plot_marker
     PHA
     LDX work
@@ -1232,6 +1260,11 @@ saved_rdchv = rdchv_filter + 1
     JMP vector_write_map
 
 ; Options menu, Object: which one, then its window until OK.
+;
+; This and the other editing windows run their menus through handler tables
+; (see options_handlers): each handler works on the record (and puzzle)
+; being edited, may clobber A, X, Y and the scratch bytes, and returns to
+; the window's loop, which goes round again; the OK handler pops out of it.
 .option_object
     LDX #M_WHICH_OBJECT
     LDA #OBJECTS
@@ -1273,7 +1306,8 @@ saved_rdchv = rdchv_filter + 1
     STA level_objects+1, Y
     LDA #CELL_OBJECT
     JSR plot_marker
-; Open the object window with ticks showing the object's flags.
+; Open the object window with ticks showing the object's flags
+; (show_object_ticks just redraws the ticks).
 .show_object_window
     LDA #W_OBJECT
     JSR show_record_window
@@ -1456,10 +1490,10 @@ saved_rdchv = rdchv_filter + 1
     JSR plot_marker
 .show_monster_window
     LDA #W_MONSTER
-; Open an object's, monster's or puzzle's window with its number in the
-; title.
+; Open an object's or monster's window, its number (record / 4 + 1, one
+; digit) after the title.
 ; In: A = the window.
-; Clobbers: A, X, Y.
+; Clobbers: A, X, Y, the low code's zero page.
 .show_record_window
     JSR open_window
     LDA #M_RECORD_NUMBER
@@ -1518,7 +1552,7 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
 ; of which way to turn made one by one.
 ; In: A = the current pattern.
 ; Out: A = the new one; Y = record.
-; Clobbers: X, ptr, choices.
+; Clobbers: X, ptr, choices, the low code's zero page.
 .choose_pattern
     STA ptr+1
     LDY #0
@@ -1539,8 +1573,8 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     RTS
 .choose_pattern_special
     LDA ptr+1
-    JSR unpack_priorities
-    PHA
+    JSR unpack_choices
+    PHA                         ; 0: the menu starts on the first priority
 .choose_pattern_special_loop
     LDA #W_PRIORITIES
     JSR open_window
@@ -1572,12 +1606,11 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     BPL choose_pattern_special_loop
 
 ; Choose forwards, backwards, left or right.
-; In: A = the current one as a pattern field (0 backwards, 1 forwards, 2
-; right, 3 left).
-; Out: A = the one chosen, likewise.
-; Clobbers: X, Y, ptr.
+; In: A = the current turn, TURN_*.
+; Out: A = the turn chosen.
+; Clobbers: X, Y, ptr, the low code's zero page.
 .choose_relative_direction
-    EOR #1                      ; field to menu item and back
+    EOR #1                      ; the menu's order: turn to item and back
     TAY
     LDA #W_RELATIVE_DIRECTION
     JSR choose_from_window_at
@@ -1590,18 +1623,19 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
 ; Pack choices into a byte, choices+0 in the top two bits.
 ; Out: A = the byte.
 ; Clobbers: X.
-.pack_priorities
+.pack_choices
     LDA #0
     TAX
-.pack_priorities_loop
+.pack_choices_loop
     ASL A
     ASL A
     ORA choices, X
     INX
     CPX #4
-    BCC pack_priorities_loop
+    BCC pack_choices_loop
     RTS
 
+; A letter for each turn, TURN_*.
 .priority_letters
     EQUS "BFRL"                 ; backwards, forwards, right, left
 ; The named patterns, in the order of their menu; the first choice is in
@@ -1614,7 +1648,9 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
 .pattern_presets_end
 
 ; Monster window, Killed by and Result: the block that kills monsters and
-; the block a dead one leaves, for every monster in the level.
+; the block a dead one leaves, for every monster in the level (the game:
+; a monster moving into a cell of the first kind turns it into the second
+; and is gone).
 .monster_killed_by
     LDA level_monster_rules
     AND #&0F
@@ -1647,10 +1683,11 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
 
 ; Unpack a byte into choices, its top two bits into choices+0.
 ; In: A = the byte.
-; Clobbers: A, X.
-.unpack_priorities
+; Out: A = 0.
+; Clobbers: X.
+.unpack_choices
     LDX #3
-.unpack_priorities_loop
+.unpack_choices_loop
     PHA
     AND #3
     STA choices, X
@@ -1658,9 +1695,10 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     LSR A
     LSR A
     DEX
-    BPL unpack_priorities_loop
+    BPL unpack_choices_loop
     RTS
 
+; Count another collectable, in work (16 bits).
 .count_collectable
     INC work
     BNE count_collectable_done
@@ -1668,7 +1706,8 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
 .count_collectable_done
     RTS
 ; Options menu, Collects: count the collectables in the map, then ask how many
-; the player must collect.
+; the player must collect. The count shows as 250 if it's 256 or more; any
+; number up to 255 is accepted.
 .option_collects
     LDY #0
     STY ptr
@@ -1726,7 +1765,7 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
 .option_collects_done
     JMP vector_close_message_box
 
-; Options menu, Time: the time allowed, 1-255.
+; Options menu, Time: the time allowed, 0-255.
 .option_time
     LDA #M_INITIAL_TIME
     LDX level_time
@@ -1735,12 +1774,13 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     RTS
 
 ; Ask for a new value of a number, showing the old one, until it's in range.
-; Return keeps the old one; one out of range starts at 1.
-; ask_number allows 0-255.
+; Return keeps the old one; an old value out of range (or 0 where 0 isn't
+; allowed) is offered as 1. ask_number allows 0-255.
 ; In: A = the message; X = the old value; Y = the maximum; C set if 0 is
 ; allowed.
 ; Out: A = the value.
-; Clobbers: X, Y, ptr, arg, number, plot_enabled (borrowed for the maximum).
+; Clobbers: X, Y, ptr, arg, number, plot_enabled (borrowed for the maximum),
+; the input buffer.
 .ask_number
     SEC
     LDY #255
@@ -1788,12 +1828,13 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     PLA
     RTS
 
-; Options menu, Graphics: the sprite for walls one and two, the collectable
-; and the fatal trap, and the level's four colours.
+; Options menu, Graphics: the sprites for walls one and two, the collectable
+; and the fatal trap (which squares show each one's second picture), and the
+; level's four colours, set as they're chosen.
 .option_graphics
     LDA level_sprites
-    JSR unpack_priorities
-    LDA #0
+    JSR unpack_choices
+    LDA #0                      ; (it is already)
 .option_graphics_loop
     PHA
     LDA #W_GRAPHICS
@@ -1802,7 +1843,7 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     JSR menu_select
     CMP #I_GRAPHICS_OK
     BNE option_graphics_choice
-    JSR pack_priorities
+    JSR pack_choices
     STA level_sprites
     JMP vector_close_window
 .option_graphics_choice
@@ -2945,10 +2986,10 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
 .input_max_char
     EQUB &FF
 
-; The pipe a direction (0 left, 1 up, 2 right, 3 down) can go into.
+; The pipe each direction (DIR_*) can go into.
 .pipe_across
     EQUB CELL_PIPE_ACROSS, CELL_PIPE_DOWN, CELL_PIPE_ACROSS, CELL_PIPE_DOWN
-; A direction's step: dy for direction n is at direction_dy+n, dx at
+; A direction's step: dy for DIR_* n is at direction_dy+n, dx at
 ; direction_dx+n, the two tables overlapping.
 .direction_dy
     EQUB 0
