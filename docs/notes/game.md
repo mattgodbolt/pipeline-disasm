@@ -606,3 +606,34 @@ Comments now say this at `cell_at`, `cell_at_checked`, `set_cell`,
 `monster_think` and `monster_eats`, and at level 2's monsters in
 `src/level2.6502inc`. No shared file needed a change: leveldata.6502inc
 already says that off the map counts as lava.
+
+## 2026-10-04 12:57 — A readability pass over H.GAME's comments
+
+Rewrote comments in `src/hidden_game.6502` and `src/game.6502inc` for a
+reader who hasn't seen these notes: a file header with the memory map, the
+file's layout and the words used throughout; zero page in named groups;
+the player's actions (ACTION_*) told apart from the triggers' (PUZZLE_*).
+Two comments were wrong, both checked in jsbeeb:
+
+- A tune voice's last note is a whole octave up, not "a little under". The
+  `CPX #TUNE_NOTES` that finds it leaves the carry set, so `ADC #OCTAVE - 1`
+  adds 48. Logging &094F (play_voice_note) for a level's first pass through
+  the tune: voice 1's notes 28 and 29 are both semitone 5, and play as &65
+  and &95.
+
+      node tools/play.mjs --disc build/pipeline.ssd 'game; wait 7; bkey SPACE; wait 2; log 094F; wait 14'
+
+- `wait_vsync` (OSBYTE 19) changes X and Y, so `set_screen_start`,
+  `setup_crtc` and the scroll routines clobber Y as well as A and X. From
+  BASIC, `A%=19:X%=&55:Y%=&AA:PRINT ~USR(&FFF4)` prints 31040713: X came
+  back 7 and Y 4. The game never relies on Y surviving them (it keeps what
+  it needs in A or memory round each wait).
+
+Also checked: VDU 19 keeps only the low nibble of the physical colour
+(`VDU 19,1,&12,0,0,0` reads back as 2 with OSWORD 11), which `vdu_palette`
+relies on when it sends a whole io_palettes entry; and the game's CRTC
+values differ from MODE 5's (the MOS's table at &C486) only in R1 (32
+characters, not 40) and R2 (horizontal sync at 45, not 49).
+
+One rename: `explode_in_flight` is `explode_landing`, since what it blows
+up is the object whose landing triggers are running.

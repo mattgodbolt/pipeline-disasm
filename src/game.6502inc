@@ -24,9 +24,9 @@ ASSERT SCREEN_END = SCREEN_MEMORY_END    ; &8000: loops end when the high byte g
 ; &5800, rows of 320 bytes, characters 16 bytes (two of the game's character
 ; cells) across. So TAB(x, y) lands at MODE5_SCREEN + 320y + 16x, which on the
 ; game's screen (starting at SCREEN, as on the title and backpack screens) is
-; a character row and column; a TAB to the OS's rows 0-6 would land below
-; SCREEN, in the map. TEXT_AT sends the TAB for a column and row of the
-; game's screen; only even columns can be reached.
+; a character row and column; a TAB to the OS's rows 0-6 would land at
+; addresses below SCREEN, in the map. TEXT_AT sends the TAB for a column and
+; row of the game's screen; only even columns can be reached.
 FUNCTION text_offset(column, row) = SCREEN - MODE5_SCREEN + row * ROW_BYTES + column * CHAR_BYTES
 MACRO TEXT_AT column, row
     ASSERT text_offset(column, row) MOD MODE5_CHAR_BYTES = 0, "text can't start at column ", column
