@@ -153,7 +153,8 @@ PUZZLE_NEXT_BLOCK       = 2     ; the cell in front becomes A
 PUZZLE_SET_LEVELS       = 3     ; the clock becomes X, things to collect Y (but see SET_LEVELS_KEEP_*)
 PUZZLE_THROW_OBJECT     = 4     ; object A is thrown Y cells
 PUZZLE_DETONATE_OBJECT  = 5     ; object A blows up
-PUZZLE_MOVE_MONSTER     = 6     ; monster X DIV 4 (or all of them, for X = &10) heads in direction A
+PUZZLE_MOVE_MONSTER     = 6     ; monster X DIV 4 heads in direction A; X = &10 means all
+                                ; four, which the game gets wrong (its action_set_monster)
 PUZZLE_PLACE_MONSTER    = 7     ; monster A AND 3 goes to cell (A DIV 4, Y DIV 4), heading in
                                 ; direction Y AND 3, with turns X
 PUZZLE_TELEPORT         = 8     ; the player to (X + 4, Y + 4)

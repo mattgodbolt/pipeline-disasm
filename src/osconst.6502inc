@@ -14,7 +14,7 @@ OSBYTE_AUTO_REPEAT_PERIOD = &0C ; *FX12: X centiseconds between repeats
 OSBYTE_DISABLE_EVENT      = &0D ; X = event number
 OSBYTE_ENABLE_EVENT       = &0E ; X = event number
 OSBYTE_FLUSH_BUFFERS      = &0F ; *FX15: X=0 all buffers, 1 just input
-OSBYTE_WAIT_VSYNC         = &13 ; *FX19: wait for the next vertical sync
+OSBYTE_WAIT_VSYNC         = &13 ; *FX19: wait for the next vertical sync (X and Y come back changed)
 OSBYTE_RAISE_ESCAPE       = &7D ; set the Escape flag, as the key would (no event)
 OSBYTE_ACKNOWLEDGE_ESCAPE = &7E ; clear an Escape; X = &FF if there was one, else 0
 OSBYTE_INKEY              = &81 ; X, Y = INKEY's argument; for a key test, X = Y = &FF if it's down

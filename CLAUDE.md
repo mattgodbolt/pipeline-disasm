@@ -186,6 +186,12 @@ DEFAULT, LEVEL1 and IO are all emitted from these.
 
 - `docs/journal.md` is append-only and timestamped: discoveries, decisions,
   dead ends. Correct with a later entry, don't rewrite history.
+- `docs/overview.md` is the reader's guide to the code: how the programs
+  hand over, what's where in memory while each runs, and the routines to
+  read first, with addresses. `tests/test_symbols.py` checks those addresses
+  against the build, so renaming or moving a routine it lists means
+  updating it. The README's "How the code works" stays a paragraph or two
+  and points there.
 - Use subagents in git worktrees for independent pieces (their own source
   files, so merges don't fight). Each subagent leaves `make test` passing at
   every commit on its branch, and writes what it learns to

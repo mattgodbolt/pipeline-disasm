@@ -702,3 +702,42 @@ Posted a short correction to the used-disc point: one mission save takes
 all of H.GAME and one graphics save its loader, so after either the game
 won't start, and the example should drop "hasn't changed" rather than say
 "one level saved". docs/symbols-feedback.md has it.
+
+## 2026-10-04 13:04 — Readability pass, and a guide to the code
+
+Five agents went through every source file for comments a reader new to the
+repo couldn't follow, and I did the shared includes on main. Each file now
+starts by saying what the piece is, where it sits in memory and how it's
+reached, and defines the words its comments use (stub, hidden run, slot,
+sheet, block, puzzle, cycle, view...). Telegraphic comments became
+sentences, and asides about how things were found ("seen in jsbeeb") became
+statements about the code, with docs/notes/ for the evidence. Not a byte
+changed.
+
+Comments the code contradicted, now fixed (docs/notes/ has the details):
+
+- The game: a voice's last note is an octave up, not a little under one.
+  OSBYTE 19 changes X and Y, which wait_vsync's callers didn't say.
+  `read_keys` tests the action keys in the reverse of the order three
+  comments gave. SWAP's note put the DFS's workspace in the NMI page.
+  `explode_in_flight` is now `explode_landing`: the object it blows up has
+  landed.
+- The Graphics Designer: `key_held` is a flag, not an INKEY number.
+  `select_sprite`'s `not_a`/`not_f` are now `down_not_0f`/`up_not_0f`.
+- The Level Designer: a dozen, mostly where a routine returns to and what
+  it clobbers through the message box.
+- MRUN's page 7 is BASIC's keyboard buffer, not its string buffer, and
+  MISSION leaves through MRUN too. PL packs the editing code's digits last
+  pair first.
+- The stubs: it's LDA, NOP and JMP that fill the seven bytes.
+  forceabs.6502inc's macros are used only by the disassemblers' drafts.
+- Correcting the 2026-10-03 18:10 entry: MISSION's variable is `addr`, not
+  `l0addr`. "l0" is line 620's record header read as text (&6C is `l`, and
+  the record length &30 is `0`).
+
+docs/overview.md is new. It covers how the programs hand over (boot, menu,
+stubs, MRUN), each program's memory while it runs, how it runs, the
+routines to read first with their addresses, and what to know before
+reading. It was written from the agents' reports. tests/test_symbols.py
+checks its 94 addresses against the build. The README gained a short "How
+the code works" that points to it.
