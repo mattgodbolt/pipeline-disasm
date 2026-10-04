@@ -97,3 +97,22 @@ addresses) match memory. Matt passed these comments on to its author.
   - a rule for when two regions both match;
   - the same check for lookups from name to address (breakpoints by name);
   - anchors chosen from a build's own output, not only a py8dis listing.
+
+## jsbeeb PR #1215, the revised symbol sets (read 2026-10-04)
+
+The revision answers the list above: sets in the registry's own format, one
+per program, regions with their own `symbols`, globals the converter picks,
+regions winning over globals, cuts at known copies and swaps, a build check
+that overlapping regions' anchors disagree, and an index of anchors for
+discs without a record. Commented on the PR:
+
+- The check can be met for every overlapping pair here, but the three stubs
+  differ at only one labelled instruction, `read_whole_run` (&0916), so each
+  stub's set must anchor there.
+- Globals leak from leftovers: the GRAPHIC stub stays at &0900 through the
+  Graphics Designer's run and back to the menu, so its region keeps
+  matching and its zero page (&70, &72) would show beside the designer's own
+  names for those addresses. Suggested: globals follow the program the PC
+  is in (or, in ROM, the nearest return address on the stack).
+- A disc with levels saved to it keeps H.GAME intact for one save only (the
+  second lands on its first eight sectors).

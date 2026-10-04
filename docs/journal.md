@@ -614,3 +614,17 @@ Details in the newest sections of `docs/notes/game.md` and
 - Noticed by the agent, not chased: monsters eat lava, and off the map reads
   as lava, so a monster walking into the map's edge in level 1 eats its way
   out and is gone for 26 points.
+
+## 2026-10-04 08:27 — jsbeeb's revised symbol sets (PR #1215)
+
+- The revision takes all of our feedback (docs/symbols-feedback.md has the
+  summary). Its PIPELINE facts check out: the swap's bounds, `load_mission`
+  outside them (the source ASSERTs it), the stubs' six differing bytes.
+- New, measured in jsbeeb: after `*/GRAPHIC` the stub stays intact at &0900
+  (only its read block and ID buffer, &09C0-&09D8, change) through the
+  Graphics Designer's run and back to the menu. Under "globals show while any
+  region matches", its zero page would name &70 and &72 beside the designer's
+  `sprite_width` and `old_sprite`. Commented on the PR, suggesting globals
+  follow the running program.
+- Of the stubs' labelled instructions, only `read_whole_run` (&0916) tells
+  them apart, so it is the one anchor each stub's set must have.
