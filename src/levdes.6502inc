@@ -140,6 +140,7 @@ CURSOR_KEYS_SOFT = 2            ; COPY and the cursor keys are soft keys 11-15
 KEYCODE_F0          = &80       ; f0-f9: &80-&89
 KEYCODE_CURSOR_DOWN = &8E       ; soft key 14
 KEYCODE_CURSOR_UP   = &8F       ; soft key 15
+ESC = &1B                       ; what OSBYTE &81 gives in Y on Escape
 DEL = &7F
 
 ; Internal key numbers, for INKEY_TEST().

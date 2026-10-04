@@ -19,11 +19,11 @@
 ; the menu by *RUNning /MRUN.
 
 INCLUDE "os.6502inc"
+INCLUDE "osconst.6502inc"
 INCLUDE "level.6502inc"
 INCLUDE "levdes.6502inc"
 INCLUDE "wdata.6502inc"
 
-FUNCTION asc(s) = CODES(s)[0]  ; a character's code, as BASIC's ASC
 ; jump_to_handler's number for a handler table, from its pointer in zero page.
 FUNCTION handlers(p) = (p - menu_tables) / 2 + 1
 
@@ -79,8 +79,6 @@ window_width    = &86
 window_height   = &87           ; also its number of menu items
 window_flags    = &88           ; its y byte with bit 7
 menu_first_item = &89
-
-error_ptr       = &FD           ; the OS's pointer to the last error
 
 message_box     = screen_address(MESSAGE_BOX_COLUMN, MESSAGE_BOX_ROW)
 
@@ -165,7 +163,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     JSR vector_menu_select
     BCC choose_done
 .menu_select_escaped
-    LDA #&7E                    ; acknowledge Escape
+    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE
     JSR OSBYTE
     TXA
     BEQ menu_select_escaped
@@ -179,7 +177,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     JSR cursor_off
     JSR allow_any_key
     JSR vector_draw_map
-    LDX #&FF                    ; INKEY -1: Shift
+    LDX #INKEY_TEST(KEY_SHIFT)
     JSR test_key
     BNE choose_done
 .confirm_and_exit
@@ -198,7 +196,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     JSR OSCLI
     RTS
 .mrun_command
-    EQUS "/MRUN", 13
+    EQUS "/MRUN", CR
 
 ; BRKV: report an error in the message box, wait for a key and go back to
 ; the main loop. A level half loaded is cleared rather than kept. Typing "i"
@@ -213,9 +211,9 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     JSR new_level
     DEC loading
 .brk_handler_report
-    LDA error_ptr
+    LDA MOS_ERROR_PTR
     STA work
-    LDA error_ptr+1
+    LDA MOS_ERROR_PTR+1
     STA work+1
     JSR hide_cursor
     JSR cursor_off
@@ -227,7 +225,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     JSR vector_open_message_box
     LDY #0
     LDA (work), Y               ; the error number
-    CMP #&1B                    ; Escape: just the message
+    CMP #ERROR_ESCAPE_KEY       ; Escape: just the message
     BNE brk_handler_numbered
     LDA #M_PRESS_ANY_KEY
     JSR vector_print_message
@@ -255,37 +253,37 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .brk_handler_wait
     JSR wait_for_key
     INC in_main_loop
-    CMP #asc("i")
+    CMP #ascii("i")
     BEQ debug_exit_check
 .restart_main_loop
     JSR vector_draw_map
     JMP main_reset_input
 .debug_exit_check
     LDA MOS_STARTUP_OPTIONS
-    CMP #&CF
+    CMP #DEVELOPERS_LINKS
     BNE restart_main_loop
     JSR hide_cursor
     JSR cursor_on
     JSR cursor_on
-    LDA #&0C                    ; *FX12,2: auto-repeat period
-    LDX #2
+    LDA #OSBYTE_AUTO_REPEAT_PERIOD
+    LDX #2                      ; centiseconds
     JSR OSBYTE
-    LDA error_ptr
+    LDA MOS_ERROR_PTR
     STA ptr
-    LDA error_ptr+1
+    LDA MOS_ERROR_PTR+1
     STA ptr+1
     LDX #LO(basic_command)
     LDY #HI(basic_command)
     JSR OSCLI
 .basic_command
-    EQUS "BASIC", 13
+    EQUS "BASIC", CR
 ; Wait for a key, ignoring any typed ahead.
 ; Out: A = the key.
 ; Clobbers: X, Y.
 .wait_for_key
     JSR flush_input
 .wait_for_key_loop
-    LDA #&7E                    ; acknowledge any Escape
+    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE
     JSR OSBYTE
     JSR OSRDCH
     BCS wait_for_key_loop
@@ -293,8 +291,8 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 
 ; Clobbers: A, X, Y.
 .flush_input
-    LDA #&0F                    ; *FX15,1: flush the input buffer
-    LDX #1
+    LDA #OSBYTE_FLUSH_BUFFERS
+    LDX #1                      ; just the input buffer
     JMP OSBYTE
 
 ; RDCHV while input_line runs: OSWORD 0 sees only Return, Delete and keys
@@ -307,9 +305,9 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     BCS do_nothing
     PHP
     JSR check_function_key
-    CMP #13
+    CMP #CR
     BEQ rdchv_filter_accept
-    CMP #&7F
+    CMP #DEL
     BEQ rdchv_filter_accept
     CMP input_min_char
     BCC rdchv_filter_retry
@@ -327,7 +325,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 ; Out: A preserved, unless it doesn't return.
 .check_function_key
     PHA
-    EOR #&80
+    EOR #KEYCODE_F0
     CMP #6
     BCC abort_to_command
     PLA
@@ -353,7 +351,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     LDA cursor_shown
     EOR #1
     STA cursor_shown
-    LDA #&13                    ; wait for vertical sync
+    LDA #OSBYTE_WAIT_VSYNC
     JSR OSBYTE
     LDX cursor_x
     LDY cursor_y
@@ -399,9 +397,9 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 ; over 255. (X = 2 would be a number 256 digits long.)
 ; Clobbers: Y, ptr, the input buffer.
 .input_number
-    LDA #asc("0")
+    LDA #ascii("0")
     STA input_min_char
-    LDA #asc("9")
+    LDA #ascii("9")
     STA input_max_char
     LDA #3
     JSR input_line
@@ -411,7 +409,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     PHA
     LDA input_buffer, Y
     SEC
-    SBC #asc("0")
+    SBC #ascii("0")
     BCC input_number_not_digit  ; the Return
     STA input_buffer, Y
     PLA
@@ -475,9 +473,9 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .confirm_loop
     JSR wait_for_key
     ORA #&20                    ; lower case
-    CMP #asc("n")
+    CMP #ascii("n")
     BEQ menu_ok
-    CMP #asc("y")
+    CMP #ascii("y")
     BNE confirm_loop
     JMP vector_close_window
 
@@ -489,16 +487,16 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 ; padded with spaces.
 ; Clobbers: A, X, Y.
 .input_text
-    LDY #&20
+    LDY #ascii(" ")
     STY input_min_char
-    LDY #&7E
+    LDY #ascii("~")
     STY input_max_char
 .input_line
     STA input_max_length
     TXA
     JSR vector_print_line2
     JSR cursor_on
-    LDA #asc(" ")
+    LDA #ascii(" ")
     JSR OSWRCH
     LDY #15
 .input_line_clear
@@ -507,7 +505,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     BNE input_line_clear
     LDX #LO(input_block)
     LDY #HI(input_block)
-    LDA #0                      ; OSWORD 0: read a line
+    LDA #OSWORD_READ_LINE
     JSR OSWORD
     STY ptr
     JSR allow_any_key
@@ -518,16 +516,16 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 ; editing (*FX4,2: they act as f11-f15, &8B-&8F); or on and editing.
 ; Clobbers: A, X, Y.
 .cursor_off
-    LDA #&20                    ; cursor start register: no cursor
+    LDA #CURSOR_NONE
     JSR crtc_set_cursor_start
-    LDX #2
+    LDX #CURSOR_KEYS_SOFT
     BNE set_cursor_key_mode
 .cursor_on
-    LDA #&67                    ; blinking, from line 7
+    LDA #CURSOR_BLINK
     JSR crtc_set_cursor_start
-    LDX #0
+    LDX #CURSOR_KEYS_EDIT
 .set_cursor_key_mode
-    LDA #4
+    LDA #OSBYTE_CURSOR_EDITING
     JMP OSBYTE
 
 ; Clobbers: X.
@@ -540,7 +538,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 
 ; In: A = the value for CRTC register 10 (cursor start), or X for the register.
 .crtc_set_cursor_start
-    LDX #10
+    LDX #CRTC_CURSOR_START
 .crtc_write
     STX CRTC_ADDR
     STA CRTC_DATA
@@ -549,7 +547,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .escape_pressed
     JSR escape_reset
     BRK
-    EQUB &1B
+    EQUB ERROR_ESCAPE_KEY
     EQUS "Escape key pressed", 0
 ; get_key's loop while the simulator is running: no key means take another
 ; step the way it's going.
@@ -582,15 +580,15 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     JSR open_window
 .get_key_poll
     JSR toggle_cursor
-    LDX #&20                    ; caps lock on, shift lock off
-    LDY #&4F
-    LDA #&CA                    ; keyboard status byte
+    LDX #&20                    ; Caps Lock on, Shift Lock off, and Shift
+    LDY #&4F                    ; doesn't reverse Caps Lock
+    LDA #OSBYTE_KEYBOARD_STATUS
     JSR OSBYTE
     LDX simulating              ; a centisecond a step when simulating,
     BNE get_key_inkey
     LDX #20                     ; else flash every fifth of a second
 .get_key_inkey
-    LDA #&81                    ; INKEY
+    LDA #OSBYTE_INKEY
     LDY #0
     STY keys_acted_on
     JSR OSBYTE
@@ -603,7 +601,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .get_key_got
     PLP
     ROR A
-    CPY #&1B
+    CPY #ESC
     BEQ escape_pressed
     LDY simulating
     BNE get_key_simulating
@@ -612,31 +610,31 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     ; A key came: now see which keys are held, so a held key repeats at the
     ; keyboard's rate without the buffer filling.
     JSR flush_input
-    LDX #&9E                    ; INKEY -98: Z
+    LDX #INKEY_TEST(KEY_Z)
     JSR test_key
     BNE get_key_check_right
     INC keys_acted_on
     JSR cursor_left
 .get_key_check_right
-    LDX #&BD                    ; X
+    LDX #INKEY_TEST(KEY_X)
     JSR test_key
     BNE get_key_check_up
     INC keys_acted_on
     JSR cursor_right
 .get_key_check_up
-    LDX #&B7                    ; :
+    LDX #INKEY_TEST(KEY_COLON)
     JSR test_key
     BNE get_key_check_down
     INC keys_acted_on
     JSR cursor_up
 .get_key_check_down
-    LDX #&97                    ; /
+    LDX #INKEY_TEST(KEY_SLASH)
     JSR test_key
     BNE get_key_check_simulate
     INC keys_acted_on
     JSR cursor_down
 .get_key_check_simulate
-    LDX #&AE                    ; S
+    LDX #INKEY_TEST(KEY_S)
     JSR test_key
     BNE get_key_check_plot
     INC keys_acted_on
@@ -645,14 +643,14 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .get_key_check_plot
     LDA plot_enabled
     BEQ get_key_handled
-    LDX #&A6                    ; Delete
+    LDX #INKEY_TEST(KEY_DELETE)
     JSR test_key
     BNE get_key_check_return
     INC keys_acted_on
     LDA #CELL_FLOOR
     JSR plot_at_cursor
 .get_key_check_return
-    LDX #&B6                    ; Return
+    LDX #INKEY_TEST(KEY_RETURN)
     JSR test_key
     BNE get_key_handled
     INC keys_acted_on
@@ -721,7 +719,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 ; Clobbers: A, X, Y.
 .test_key
     LDY #&FF
-    LDA #&81
+    LDA #OSBYTE_INKEY
     JSR OSBYTE
     INX
     RTS
@@ -763,7 +761,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     JSR vector_read_map         ; negative off the map
     BMI move_into_tile
     PHA
-    LDX #&FF                    ; Shift
+    LDX #INKEY_TEST(KEY_SHIFT)
     JSR test_key
     PLA
     DEX
@@ -915,7 +913,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 ; Clobbers: A, X.
 .set_palette_entry
     TAX
-    LDA #19
+    LDA #VDU_PALETTE
     JSR OSWRCH
     TXA
     LSR A
@@ -949,7 +947,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     PHA
     JSR hex_key
     PLA
-    EOR #&80                    ; function keys f0-f4 are commands 0-4
+    EOR #KEYCODE_F0             ; function keys f0-f4 are commands 0-4
 .main_dispatch
     JSR do_command
     JMP main_loop
@@ -959,32 +957,32 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 ; In: A = the key.
 ; Clobbers: A, X, Y.
 .hex_key
-    CMP #asc("0")
+    CMP #ascii("0")
     BCC hex_key_done
-    CMP #asc("F") + 1
+    CMP #ascii("F") + 1
     BCS hex_key_cursor
-    CMP #asc("9") + 1
+    CMP #ascii("9") + 1
     BCC hex_key_tile
-    SBC #asc("A")
+    SBC #ascii("A")
     BCC hex_key_cursor
-    ADC #asc("9")               ; A-F follow 0-9 (the carry adds one)
+    ADC #ascii("9")             ; A-F follow 0-9 (the carry adds one)
 .hex_key_tile
     TAY
-    LDA block_menu_map - asc("0"), Y
+    LDA block_menu_map - ascii("0"), Y
     AND #&0F
     STA brush
 .beep
-    LDA #7
+    LDA #BEL
     JMP OSWRCH
 .hex_key_cursor
-    CMP #&8E                    ; cursor down
+    CMP #KEYCODE_CURSOR_DOWN
     BEQ hex_key_cursor_flush
-    CMP #&8F                    ; cursor up
+    CMP #KEYCODE_CURSOR_UP
     BNE hex_key_done
 .hex_key_cursor_flush
     TAY
-    LDX #0
-    LDA #&8A                    ; put the key back for the menu to read
+    LDX #BUFFER_KEYBOARD
+    LDA #OSBYTE_INSERT_BUFFER   ; put the key back for the menu to read
     JSR OSBYTE
 ; f0: choose the brush from the block menu.
 .select_brush
@@ -1156,9 +1154,9 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .edit_marker_define
     LDX #W_OPTIONS_LOCATION
     JSR get_key_no_plot
-    CMP #asc(" ")
+    CMP #ascii(" ")
     BEQ switch_simulate_done
-    CMP #13
+    CMP #CR
     BNE edit_marker_define
     LDY record
     TYA
@@ -1228,9 +1226,9 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .object_position_define
     LDX #W_OBJECT_LOCATION
     JSR get_key_no_plot
-    CMP #asc(" ")
+    CMP #ascii(" ")
     BEQ show_object_window
-    CMP #13
+    CMP #CR
     BNE object_position_define
     LDY record
     LDA cursor_x                ; which also makes it exist
@@ -1362,11 +1360,11 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     BNE print_digit_out
     DEC ptr+1
     BEQ print_digit_out         ; always print the units
-    LDA #-asc("0")              ; a leading zero: VDU 0
+    LDA #-ascii("0")            ; a leading zero: VDU 0
     DEY
 .print_digit_out
     INY
-    ADC #asc("0")
+    ADC #ascii("0")
     JMP OSWRCH
 
 ; Options menu, M.Monster: which one, then its window until OK.
@@ -1402,9 +1400,9 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .monster_position_define
     LDX #W_MONSTER_LOCATION
     JSR get_key_no_plot
-    CMP #asc(" ")
+    CMP #ascii(" ")
     BEQ show_monster_window
-    CMP #13
+    CMP #CR
     BNE monster_position_define
     LDY record
     LDA cursor_x
@@ -1430,7 +1428,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     LDA record
     LSR A
     LSR A
-    ADC #asc("1")
+    ADC #ascii("1")
     JSR OSWRCH
     JMP vector_text_colours
 
@@ -1920,9 +1918,9 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 ; Out: A = the character there, the Return as a space.
 .name_char
     LDA input_buffer, X
-    CMP #asc(" ")
+    CMP #ascii(" ")
     BCS name_char_done
-    LDA #asc(" ")
+    LDA #ascii(" ")
 .name_char_done
     RTS
 
@@ -1936,7 +1934,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     LDA puzzle
     AND #7
     CLC
-    ADC #asc("1")
+    ADC #ascii("1")
     JSR OSWRCH
     LDA #0
     STA work+1
@@ -2155,9 +2153,9 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .condition_position_define
     LDX #W_PUZZLE_LOCATION
     JSR get_key_no_plot
-    CMP #asc(" ")
+    CMP #ascii(" ")
     BEQ open_conditions_window
-    CMP #13
+    CMP #CR
     BNE condition_position_define
     LDA puzzle
     ASL A
@@ -2181,7 +2179,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     JSR vector_print_line1
     JSR input_editing_code
     INC loading                 ; an error now clears the level
-    LDA #&FF                    ; OSFILE &FF: load
+    LDA #OSFILE_LOAD
     JSR level_file
     DEC loading
     LDX #2
@@ -2208,9 +2206,9 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 ; Out: ptr+1 to ptr+3 = the code.
 ; Clobbers: A, X, Y, ptr, the input buffer.
 .input_editing_code
-    LDA #asc("0")
+    LDA #ascii("0")
     STA input_min_char
-    LDA #asc("9")
+    LDA #ascii("9")
     STA input_max_char
     LDA #6
     LDX #M_ENTER_CODE
@@ -2220,11 +2218,11 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .input_editing_code_pair
     LDA input_buffer+1, X
     SEC
-    SBC #asc("0")
+    SBC #ascii("0")
     STA ptr
     LDA input_buffer, X
     SEC
-    SBC #asc("0")
+    SBC #ascii("0")
     ASL A
     ASL A
     ASL A
@@ -2265,7 +2263,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .files_save
     LDA #M_SAVING
     JSR ask_filename
-    LDA #0                      ; OSFILE 0: save
+    LDA #OSFILE_SAVE
     JSR level_file
     JMP vector_close_message_box
 
@@ -2296,7 +2294,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     JSR vector_open_message_box
     PLA
     JSR vector_print_line1
-    LDA #12
+    LDA #filename_end - filename
     LDX #M_ENTER_FILENAME
     JSR input_text
     LDY ptr
@@ -2316,6 +2314,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 ; Room for a filename of 12 characters, with an author's mark in it.
 .filename
     EQUS "_Ian Holmes_"
+.filename_end
 ; OSFILE's control block, filled in from the template before use (left over
 ; bytes until then).
 .osfile_block
@@ -2444,9 +2443,9 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .effect_position_define
     LDX #W_PUZZLE_LOCATION
     JSR get_key_no_plot
-    CMP #asc(" ")
+    CMP #ascii(" ")
     BEQ effect_position_done
-    CMP #13
+    CMP #CR
     BNE effect_position_define
     LDY record
     LDA cursor_x
@@ -2774,9 +2773,9 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .place_monster_position_loop
     LDX #W_MONSTER_LOCATION
     JSR get_key_no_plot
-    CMP #13
+    CMP #CR
     BEQ place_monster_position_keep
-    CMP #asc(" ")
+    CMP #ascii(" ")
     BNE place_monster_position_loop
     PLA
     STA cursor_y
@@ -2810,7 +2809,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 ; Clobbers: A, Y.
 .pad_input
     LDY ptr
-    LDA #asc(" ")
+    LDA #ascii(" ")
 .pad_input_loop
     STA input_buffer, Y
     INY
@@ -3020,24 +3019,24 @@ block_menu = {CELL_FLOOR, CELL_SE_CURVE, CELL_SW_CURVE, CELL_NE_CURVE,
     ; The eighth character of each name is the tens digit: space for 1-9,
     ; then 1, 2 and 3. Fill three overlapping runs and let "Puzzle " below
     ; overwrite the rest.
-    LDA #asc("3")
+    LDA #ascii("3")
     STA level_names + 29*8 + 7
     STA level_names + 30*8 + 7
     STA level_names + 31*8 + 7
     LDX #79
 .new_level_tens
-    LDA #asc(" ")
+    LDA #ascii(" ")
     STA level_names, X
-    LDA #asc("1")
+    LDA #ascii("1")
     STA level_names + 9*8, X
-    LDA #asc("2")
+    LDA #ascii("2")
     STA level_names + 19*8, X
     DEX
     BPL new_level_tens
     ; The last two are the units digit and a space.
     LDX #(PUZZLES - 1) * 2
 .new_level_units
-    LDA #asc(" ")
+    LDA #ascii(" ")
     STA level_name_ends+1, X
     TXA
     LSR A
@@ -3046,7 +3045,7 @@ block_menu = {CELL_FLOOR, CELL_SE_CURVE, CELL_SW_CURVE, CELL_NE_CURVE,
     JSR reduce_mod_10
     JSR reduce_mod_10
     CLC
-    ADC #asc("0")
+    ADC #ascii("0")
     STA level_name_ends, X
     DEX
     DEX
@@ -3139,26 +3138,28 @@ block_menu = {CELL_FLOOR, CELL_SE_CURVE, CELL_SW_CURVE, CELL_NE_CURVE,
 
 ; Print a message on the message box's second line (print_line2), its first
 ; (print_line1), or wherever the text cursor is (print_message). The OS
-; thinks the screen is 40 columns of 640 bytes, so TAB(34,12) and TAB(10,11)
-; are two rows down from each other in the 64-column screen, 4 columns in.
+; thinks the screen is 40 columns of 640 bytes, so the lines' TAB(34,12) and
+; TAB(10,11) land two rows apart in our 64 columns, both 4 columns in.
+line1_tab = os_tab(MESSAGE_LEFT, MESSAGE_LINE_1)
+line2_tab = os_tab(MESSAGE_LEFT, MESSAGE_LINE_2)
 ; In: A = the message number.
 ; Clobbers: A, X, Y, window_ptr.
 .print_line2
     JSR window_address
-    LDA #31
+    LDA #line2_tab[0]
     JSR OSWRCH
-    LDA #34
+    LDA #line2_tab[1]
     JSR OSWRCH
-    LDA #12
+    LDA #line2_tab[2]
     JSR OSWRCH
     JMP print_message_at
 .print_line1
     JSR window_address
-    LDA #31
+    LDA #line1_tab[0]
     JSR OSWRCH
-    LDA #10
+    LDA #line1_tab[1]
     JSR OSWRCH
-    LDA #11
+    LDA #line1_tab[2]
     JSR OSWRCH
     JMP print_message_at
 .print_message
@@ -3170,7 +3171,7 @@ block_menu = {CELL_FLOOR, CELL_SE_CURVE, CELL_SW_CURVE, CELL_NE_CURVE,
 .print_message_loop
     LDY #0
     LDA (window_ptr), Y
-    CMP #asc("|")
+    CMP #ascii("|")
     BEQ print_message_done
     CMP #&FF
     BEQ print_message_highlight
@@ -3365,6 +3366,7 @@ SECTION zero_page_init, org=&0000
 .cursor_handlers_ptr        EQUW cursor_handlers
 .zero_page_spare
     SKIP &40 - (zero_page_spare - menu_tables)
+.zero_page_init_end
 ENDSECTION
 ; The low code: drawing the map, windows, menus and the message box. entry
 ; moves it to &0880.
@@ -3584,7 +3586,7 @@ SECTION low_code, org=&0880
     LDX #MESSAGE_BOX_ROWS
 .open_message_box_fill
     LDY #0
-    LDA #&0F                    ; four pixels of colour 1
+    LDA #mode1_byte("....")
 .open_message_box_page
     STA (screen_ptr), Y
     DEY
@@ -3602,7 +3604,7 @@ SECTION low_code, org=&0880
     ; Lines along the bottom and the top, each in two halves.
     LDX #30 * 8
 .open_message_box_edges
-    LDA #&FF                    ; four pixels of colour 3
+    LDA #mode1_byte("oooo")
     STA screen_address(2, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS), X
     STA screen_address(31, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS), X
     STA screen_address(2, MESSAGE_BOX_ROW - 1) + 7, X
@@ -3625,10 +3627,10 @@ SECTION low_code, org=&0880
 .open_message_box_sides
     LDY #7
 .open_message_box_side
-    LDA #&11                    ; the rightmost pixel of the column left of
-    ORA (screen_ptr), Y         ; the box, in colour 3
+    LDA #mode1_byte("   o")     ; the rightmost pixel of the column left of
+    ORA (screen_ptr), Y         ; the box
     STA (screen_ptr), Y
-    LDA #&88                    ; the leftmost of the column right of it
+    LDA #mode1_byte("o   ")     ; the leftmost of the column right of it
     ORA (glyph_ptr), Y
     STA (glyph_ptr), Y
     DEY
@@ -3640,16 +3642,16 @@ SECTION low_code, org=&0880
     DEX
     BNE open_message_box_sides
     ; The corners.
-    LDA #&11
+    LDA #mode1_byte("   o")
     ORA screen_address(1, MESSAGE_BOX_ROW - 1) + 7
     STA screen_address(1, MESSAGE_BOX_ROW - 1) + 7
-    LDA #&11
+    LDA #mode1_byte("   o")
     ORA screen_address(1, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS)
     STA screen_address(1, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS)
-    LDA #&88
+    LDA #mode1_byte("o   ")
     ORA screen_address(62, MESSAGE_BOX_ROW - 1) + 7
     STA screen_address(62, MESSAGE_BOX_ROW - 1) + 7
-    LDA #&88
+    LDA #mode1_byte("o   ")
     ORA screen_address(62, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS)
     STA screen_address(62, MESSAGE_BOX_ROW + MESSAGE_BOX_ROWS)
     RTS
@@ -3730,7 +3732,7 @@ SECTION low_code, org=&0880
     STA line_count
     PHA
 .draw_window_row
-    LDA #&0F
+    LDA #mode1_byte("....")
     LDY byte_count
 .draw_window_fill
     STA (screen_ptr), Y
@@ -3739,8 +3741,8 @@ SECTION low_code, org=&0880
     LDY #7
 .draw_window_right_edge
     LDA (glyph_ptr), Y          ; its leftmost pixel in colour 3
-    AND #&77
-    ORA #&88
+    AND #mode1_byte(" ooo")
+    ORA #mode1_byte("o   ")
     STA (glyph_ptr), Y
     DEY
     BPL draw_window_right_edge
@@ -3754,15 +3756,15 @@ SECTION low_code, org=&0880
     STA line_count
     INY
     LDA (glyph_ptr), Y          ; the corner
-    AND #&77
-    ORA #&88
+    AND #mode1_byte(" ooo")
+    ORA #mode1_byte("o   ")
     STA (glyph_ptr), Y
     LDA byte_count
     SEC
     SBC #7
     TAY
 .draw_window_bottom
-    LDA #&FF                    ; the top line of the row below
+    LDA #mode1_byte("oooo")     ; the top line of the row below
     STA (screen_ptr), Y
     TYA
     SEC
@@ -3812,12 +3814,12 @@ SECTION low_code, org=&0880
     LDA line_count
     CMP window_height
     BCC draw_window_next_line
-    LDY byte_count              ; the title: colours 1 and 3 swapped with 0
-    LDX byte_count              ; and 2
+    LDY byte_count              ; the title: flipping each pixel's top bit
+    LDX byte_count              ; makes yellow on blue black on red
 .draw_window_title
     DEY
     LDA (map_ptr), Y
-    EOR #&F0
+    EOR #mode1_byte("####")
     STA (map_ptr), Y
     DEX
     BNE draw_window_title
@@ -3892,7 +3894,7 @@ SECTION low_code, org=&0880
     LDY #3
 .invert_cell_loop
     LDA (screen_ptr), Y
-    EOR #&FF
+    EOR #mode1_byte("oooo")     ; colour c becomes 3 - c
     STA (screen_ptr), Y
     DEY
     BPL invert_cell_loop
@@ -4003,23 +4005,23 @@ SECTION low_code, org=&0880
     LDA menu_item
     STA menu_shown_item
     JSR highlight_item
-    LDA #4                      ; cursor keys give &8B-&8F
-    LDX #2
+    LDA #OSBYTE_CURSOR_EDITING  ; cursor keys give &8B-&8F
+    LDX #CURSOR_KEYS_SOFT
     JSR OSBYTE
     STX saved_cursor_key_mode
 .window_menu_key
-    LDA #&13                    ; wait for vertical sync
+    LDA #OSBYTE_WAIT_VSYNC
     JSR OSBYTE
     JSR OSRDCH
     BCC window_menu_down
-    LDA #4
+    LDA #OSBYTE_CURSOR_EDITING
     LDX saved_cursor_key_mode
     JSR OSBYTE
     SEC
     LDA #&FF
     RTS
 .window_menu_down
-    CMP #&8E                    ; cursor down
+    CMP #KEYCODE_CURSOR_DOWN
     BNE window_menu_up
     INC menu_item
     LDA menu_item
@@ -4030,7 +4032,7 @@ SECTION low_code, org=&0880
     STA menu_item
     JMP window_menu_moved
 .window_menu_up
-    CMP #&8F                    ; cursor up
+    CMP #KEYCODE_CURSOR_UP
     BNE window_menu_highlight
     DEC menu_item
     BPL window_menu_moved
@@ -4052,12 +4054,12 @@ SECTION low_code, org=&0880
     STA menu_shown_item
 .window_menu_check
     PLA
-    CMP #13
+    CMP #CR
     BEQ window_menu_return
-    CMP #asc(" ")
+    CMP #ascii(" ")
     BEQ window_menu_space
-    LDA #&0F                    ; flush the input buffer
-    JSR OSBYTE
+    LDA #OSBYTE_FLUSH_BUFFERS   ; (X is left over: the input buffer or all
+    JSR OSBYTE                  ; of them)
     JMP window_menu_key
 .window_menu_space
     LDA window_flags
@@ -4081,13 +4083,13 @@ SECTION low_code, org=&0880
     RTS
 
 .restore_cursor_key_mode
-    LDA #4
+    LDA #OSBYTE_CURSOR_EDITING
     LDX saved_cursor_key_mode
     JMP OSBYTE
 
 ; (Unused: INKEY with a long time limit.)
 .unused_read_key
-    LDA #&81
+    LDA #OSBYTE_INKEY
     TAY
     JSR OSBYTE
     TXA
@@ -4107,7 +4109,7 @@ SECTION low_code, org=&0880
     LDY byte_count
 .highlight_item_loop
     LDA (screen_ptr), Y
-    EOR #&FF
+    EOR #mode1_byte("oooo")     ; yellow on blue becomes blue on yellow
     STA (screen_ptr), Y
     DEY
     CPY #&FF
@@ -4221,7 +4223,7 @@ ENDSECTION
     INC entry_copy_font_store+2
     DEX
     BPL entry_copy_font
-    LDX #&3F
+    LDX #zero_page_init_end - menu_tables - 1
 .entry_copy_zero_page
     LDA zero_page_init_load, X
     STA menu_tables, X
@@ -4237,28 +4239,28 @@ ENDSECTION
     STX brush
     STX loading
     STX in_main_loop
-    LDA #22                     ; MODE 1
+    LDA #VDU_MODE
     JSR OSWRCH
     INX
-    TXA
+    TXA                         ; MODE 1
     JSR OSWRCH
-    LDA #64                     ; 64 columns displayed (R1)
+    LDA #SCREEN_COLUMNS         ; X = 1, CRTC_HORIZ_DISPLAYED
     JSR vector_crtc_write
     INX
-    LDA #90                     ; and the sync moved to centre them (R2)
-    JSR vector_crtc_write
+    LDA #90                     ; X = 2, CRTC_HORIZ_SYNC: moved to centre
+    JSR vector_crtc_write       ; them
     JSR vector_cursor_off
-    LDA #&0C                    ; *FX12,4: fast auto-repeat
-    LDX #4
+    LDA #OSBYTE_AUTO_REPEAT_PERIOD
+    LDX #4                      ; fast: 4 centiseconds
     JSR OSBYTE
-    LDA #&C8                    ; *FX200,2: Break clears memory
-    LDX #2
+    LDA #OSBYTE_BREAK_EFFECT
+    LDX #2                      ; Break clears memory
     JSR osbyte_y0
-    LDA #&D6                    ; *FX214,2: a short beep
-    LDX #2
+    LDA #OSBYTE_BELL_DURATION
+    LDX #2                      ; a short beep
     JSR osbyte_y0
-    LDA #&E1                    ; *FX225,128: f0-f9 give &80-&89
-    LDX #&80
+    LDA #OSBYTE_SOFT_KEY_BASE
+    LDX #KEYCODE_F0
     JSR osbyte_y0
     LDY #3
 .entry_palette
@@ -4271,7 +4273,7 @@ ENDSECTION
     STA ptr
     LDA rdchv_filter_operand_address+1
     STA ptr+1
-    LDA #31                     ; the cursor in the middle of the map
+    LDA #MAP_SIZE / 2 - 1       ; the cursor in the middle of the map
     STA cursor_x
     STA cursor_y
     LDY #1
@@ -4280,10 +4282,11 @@ ENDSECTION
     DEY
     LDA RDCHV
     STA (ptr), Y
-    LDA #&8B                    ; *OPT 1,0: no filing system messages
+    LDA #OSBYTE_OPT             ; *OPT 1,0: no filing system messages
     LDX #1
     JSR OSBYTE
-    LDA #&E5                    ; *FX229,1 (X is still 1): Escape is just a key
+    LDA #OSBYTE_ESCAPE_KEY      ; *FX229,1 (X is still 1): Escape is just
+                                ; a key
     JSR OSBYTE
     SEI
     LDX #LO(load_wdata_command)
@@ -4293,15 +4296,15 @@ ENDSECTION
     LDY #HI(load_ldata_command)
     JSR OSCLI
     CLI
-    LDA #&8B                    ; *OPT 0,0
+    LDA #OSBYTE_OPT             ; *OPT 0,0
     LDX #0
     LDY #0
     JSR OSBYTE
 .entry_wait_space
     JSR OSRDCH
-    CMP #asc(" ")
+    CMP #ascii(" ")
     BNE entry_wait_space
-    LDA #&E5                    ; *FX229,0: Escape back on
+    LDA #OSBYTE_ESCAPE_KEY      ; *FX229,0: Escape back on
     JSR OSBYTE
     JSR vector_text_colours
     LDA brk_handler_address
@@ -4317,11 +4320,12 @@ ENDSECTION
 
 ; Black, blue, yellow and red for the title, as set_palette_entry wants them.
 .title_palette
-    EQUB 3 * 16 + 1, 2 * 16 + 3, 1 * 16 + 4, 0 * 16 + 0
+    EQUB palette_entry(3, RED), palette_entry(2, YELLOW)
+    EQUB palette_entry(1, BLUE), palette_entry(0, BLACK)
 .load_wdata_command
-    EQUS "L.WDATA", 13
+    EQUS "L.WDATA", CR
 .load_ldata_command
-    EQUS "L.LDATA", 13
+    EQUS "L.LDATA", CR
 
 ; The rest of the last sector: bytes from H.GRAPH, the Graphics Designer, at
 ; the same place in its file (code that ran at &38CF there). The level
