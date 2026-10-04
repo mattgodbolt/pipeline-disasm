@@ -3248,6 +3248,19 @@ block_menu = {CELL_FLOOR, CELL_SE_CURVE, CELL_SW_CURVE, CELL_NE_CURVE,
 .default_puzzle_name
     EQUS "Puzzle "
 .default_puzzle_name_end
+; The designer writes a new level's code and monsters with these. (They're
+; here rather than in level.6502inc, which LEVEL1 and PL include too, because
+; a macro that calls a FUNCTION leaves entries in the symbol dump of every
+; file that includes it, called or not.)
+MACRO EDITING_CODE digits
+    EQUB code_byte(digits[0..1]), code_byte(digits[2..3]), code_byte(digits[4..5])
+ENDMACRO
+
+; A monster at a cell, going a direction.
+MACRO MONSTER x, y, direction, pattern
+    EQUB x * 4, y * 4, direction, pattern
+ENDMACRO
+
 ; A new level's code, palette, start, collectables, time, finish, monster
 ; rules and sprites.
 .default_header
