@@ -1,7 +1,7 @@
 ; The layout of IO, the mission file: everything the game knows about a
 ; mission's four levels, packed to end at &5800 where the game keeps the map
 ; of the level being played. MISSION (the Mission Generator) saves it with
-;   l0addr=&5800-numlev*size-grfs-attrs-miss-names
+;   addr=&5800-numlev*size-grfs-attrs-miss-names
 ; and the sizes below are its numlev, size, grfs, attrs, miss and names; a
 ; level's fields and map are as leveldata.6502inc has them.
 ; H.GAME loads it with OSFILE and reads it at these addresses, so they're
@@ -67,8 +67,9 @@ io_level_trigger_args_1 = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[10] ; 64 e
 io_maps = io_levels + IO_LEVELS * IO_LEVEL_FIELDS
 
 ; The graphics, as the Graphics Designer saves them (DEFAULT's first &E00
-; bytes). Each 128-byte picture is 4 x 4 character cells of 8 bytes in MODE 5,
-; stored a column at a time; the object icons are 2 x 2 cells.
+; bytes). Each 128-byte picture is 16 x 32 MODE 5 pixels: 4 x 4 of the game's
+; character cells (a byte across and 8 lines down, half a MODE 5 character;
+; game.6502inc), stored a column at a time. The object icons are 2 x 2.
 io_graphics      = io_maps + IO_LEVELS * IO_MAP_SIZE
 io_tiles         = io_graphics + SET_LARGE      ; 16 pictures, one per map cell type
 io_object_icons  = io_graphics + SET_SMALL      ; 16 icons of 32 bytes

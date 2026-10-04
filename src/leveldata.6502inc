@@ -41,7 +41,7 @@ LEVEL_SETUP_BYTES = LEVEL_FIELD_SIZES[4]
 ; The setup's bytes.
 LEVEL_START_X     = 0   ; the view's top left cell: the player starts 4 cells
 LEVEL_START_Y     = 1   ; further in each way
-LEVEL_TO_COLLECT  = 2   ; things to collect before the exit opens
+LEVEL_TO_COLLECT  = 2   ; things to collect before the exit can be lit
 LEVEL_TIME        = 3   ; the clock's starting value
 LEVEL_EXIT_X      = 4
 LEVEL_EXIT_Y      = 5
@@ -50,7 +50,7 @@ LEVEL_ANIMATE     = 7   ; which squares show cells' second pictures
 
 ; LEVEL_ANIMATE has two bits for each cell type with a second picture (cell
 ; type 5 in the top two bits, then 8, 7 and A): they say which squares of a
-; checkerboard show the second picture. The designer's menu offers Sprite A,
+; checkerboard show the second picture, a square being odd when its x + y is. The designer's menu offers Sprite A,
 ; Patterned and Sprite B.
 ALTERNATE_NONE    = 0   ; Sprite A: the first picture everywhere
 ALTERNATE_ODD     = 1   ; Patterned: the second on the odd squares

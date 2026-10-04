@@ -98,7 +98,7 @@ const TOURS = {
         ...menu(0, 6), "key Escape 3", "wait 1", "key Enter 3", "wait 1",
         ...menu(0, 6), ...typed("ABCDEFGHIJKLMN"), "key Enter 3", "wait 1",
         ...menu(0, 1), ...menu(0, 2), ...menu(0, 3), ...menu(0, 4), ...menu(0, 5), "wait 1", "key Space 3",
-        // The last small sprite (the man) has no name.
+        // The last small sprite (the exit's icon) has no name.
         ...hold("ArrowRight", 4), ...hold("ArrowDown", 4), ...menu(0, 6), shot(t, "man"),
         ...menu(0, 3), ...menu(0, 4),
         // Leave a menu by Space, by another menu's key, and step over its ends.
