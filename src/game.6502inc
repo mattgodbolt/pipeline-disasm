@@ -1,15 +1,10 @@
-; Constants for H.GAME (src/hidden_game.6502): its screen and pictures, what
-; the numbers in its data mean, and some OS numbers the shared includes don't
-; have yet. The game INCLUDEs this inside its own scope, after io.6502inc
-; (which brings leveldata.6502inc: CELL_*, DIRECTION_*, OBJECT_*, PUZZLE_* and
-; the rest of a level's shared names) and osconst.6502inc.
-
-; ---------------------------------------------------------------------------
-; OS numbers (candidates for osconst.6502inc).
-
-; Where the OS keeps the envelopes ENVELOPE defines, 16 bytes each (a
-; candidate for os.6502inc).
-MOS_ENVELOPES = &08C0
+; Constants for H.GAME (src/hidden_game.6502): its screen and pictures, and
+; what the numbers in its data mean. The game INCLUDEs this inside its own
+; scope, after os.6502inc, osconst.6502inc and io.6502inc (which brings
+; leveldata.6502inc: CELL_*, DIRECTION_*, OBJECT_*, PUZZLE_* and the rest of
+; a level's shared names). Baron lets a scope define a name the file has
+; already defined outside it, silently, so nothing here may repeat a name
+; from those.
 
 ; ---------------------------------------------------------------------------
 ; The screen: MODE 5 reprogrammed to 32 x 32 character cells in 8K, which the
