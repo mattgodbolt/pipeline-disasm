@@ -322,8 +322,10 @@ keys; `--boot no` for BASIC-level tests). Corrections first.
 - **The names block** (&134) is the graphics set's last slot (SLOT_NO_OBJECT,
   &28: the picture for an object cell with no object) and the 15 object
   names; the 18:10 table called its first &80 bytes "look like graphics".
-- The mission text: the game prints it on the backpack screen (CTRL), as
-  stored (io.6502inc, `draw_backpack_screen`).
+- The mission text: the game prints it as stored, through the OS, on its
+  backpack screen (`draw_backpack_screen`), which is also the screen
+  between levels with the edit code; the end-of-mission screen leaves it
+  out.
 
 ### Checked against io.6502inc and leveldata.6502inc
 
