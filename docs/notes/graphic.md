@@ -271,3 +271,30 @@ ends with (docs/notes/game.md). The hidden files were written whole sectors
 at a time from one buffer, H.GAME, H.GRAPH, then H.LEVDES, each ending with
 what the one before left there. Checked by comparing the files' tails:
 H.GRAPH equals H.GAME from &202C, and both equal LDATA from &206D.
+
+## 2026-10-04 12:54 - Readability pass
+
+A pass over src/hidden_graphic.6502 for a reader who hasn't read these
+notes: the header now says how the designer is reached and left, defines
+the words the comments use (slot, sheet, sprite number, object, floor,
+window, frame, on tape), maps zero page with the rest of memory, and lists
+the file's parts in order with their addresses.
+
+Comments the code contradicted:
+
+- `key_held` said it held the INKEY number of the cursor key held. It holds
+  key_pressed's result, &FF, so it's only a "held this pass" flag (jsbeeb:
+  &FF while a cursor key is down, 0 after).
+- `sheet_address` said it returns A = Y = the sprite number. Y always is,
+  but for a small sprite A is left as the screen address's high byte. No
+  caller uses A.
+- `sheet_row` said its last two bytes double as select_sprite's exit. The
+  shared exit is `return_negative` (LDA #&80 : RTS, three bytes), in the
+  middle of the routine.
+
+Renames: select_sprite's `.not_a` (reached when the selection isn't &0F)
+is `.down_not_0f`, and its upward twin `.not_f` is `.up_not_0f`.
+
+Correction to the 19:40 entry: src/graphics_designer.6502inc no longer
+exists. The names it held went to the shared includes (osconst.6502inc for
+the OS's, sprites.6502inc for the set's layout and slots).

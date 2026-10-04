@@ -1,31 +1,99 @@
-; H.GRAPH: the PIPELINE Graphics Designer.
+; H.GRAPH: the PIPELINE Graphics Designer, option 3 on the disc's menu.
 ;
-; The GRAPHIC stub reads this from sectors &145-&165, which no catalogue entry
-; mentions, to &1AB0 and jumps to start. It edits a graphics set - the game's
-; pictures and the names of its objects - kept at &4000 (src/default.6502 is
-; one; sprites.6502inc names its layout), and goes back to the menu
-; by running /MRUN (on tape it resets the machine instead).
+; It edits a graphics set: every picture the game draws, and the names of the
+; objects the player can pick up. A set is &F34 bytes, kept at &4000 while the
+; designer runs; DEFAULT, on the disc, is the set the game comes with
+; (sprites.6502inc has the layout, default.6502inc the pictures). It can also
+; load and save the copy of a set inside IO, the mission file that the
+; Mission Generator (MISSION) builds and the game loads (io.6502inc).
 ;
-; The screen is MODE 5 at &5800. On the left, the selected sprite magnified
-; four times into an editing grid, and under it the current colour and, for
-; an object, its number and name. On the right, the sprite sheet: a 5x5 grid
-; of large sprites (16x32 pixels) and under it a 4x4 grid of small ones
-; (8x16), then the PIPELINE logo. Menus, prompts and errors pop up in windows
-; that keep what they cover at &5000.
+; How it's reached: MENU, the BASIC menu the disc boots into, runs the GRAPHIC
+; stub (*/GRAPHIC), a small loader in the disc's catalogue. The stub reads
+; this program to &1AB0 from sectors &145-&165, a run of sectors that no
+; catalogue entry mentions, so that copying the disc's files leaves it behind
+; (hidden_loader.6502inc has the details), and jumps to start (&2BAE).
+; H.GRAPH is only the build's name for those sectors. Escape offers to leave:
+; on disc that runs /MRUN, a small program that undoes the designer's changes
+; to the OS and runs the boot file again to bring the menu back; on tape it
+; resets the machine.
 ;
-; Keys: Z X : / move the pixel cursor, 0-3 pick a colour (4 is 0 again),
-; Return plots and Delete clears; the cursor keys pick a sprite; f0-f3 open
-; the menus (OptionsA, OptionsB, Environment and the credits) and CTRL with a
-; key is a shortcut for a menu item; Escape offers to leave.
+; Words used throughout:
+;   slot     a sprite's place in the graphics set, &00-&28. &10-&1F are small
+;            sprites, the rest large. sprites.6502inc's SLOT_* say what the
+;            game uses each for.
+;   sheet    every sprite at once, on the right of the screen, where the
+;            cursor keys move the selection.
+;   sprite number  how the code names a sprite: its position on the sheet,
+;            which isn't its slot (see "Sprite numbers" below); or, while
+;            by_slot is set, a slot.
+;   object   one of the 15 kinds of thing the player can pick up. Small slots
+;            &10-&1E are their icons; each has a 12-character name, which the
+;            designer numbers 1-15. Small slot &1F is the icon the game draws
+;            for the exit, and has no name.
+;   floor    slot 0, the picture of the map's floor (cell type 0).
+;   window   a pop-up box over the screen: a menu, a prompt or an error.
+;   frame    the border round a window or the editing grid; but in Animate, one
+;            picture of an animation.
+;   on tape  the filing system is tape (or ROM), numbered below FS_DISC: no
+;            random access, so no single-sprite loads and saves (see disc_fs).
+;
+; The screen is MODE 5 at &5800. On the left, the editing grid: the selected
+; sprite magnified four times, each pixel a cell (four MODE 5 pixels) wide and
+; four lines tall. Under it, the current colour and, for an object, its number
+; and name. On the right, the sheet: a 5x5 grid of large sprites (16x32
+; pixels) and under it a 4x4 grid of small ones (8x16), then the PIPELINE
+; logo. Windows keep what they cover at &5000 and put it back when they close.
+;
+; Keys: Z and X move the pixel cursor left and right, : and / up and down;
+; 0-3 pick a colour (4 is 0 again); Return plots a pixel in that colour and
+; Delete clears it to colour 0. The cursor keys move the selection on the
+; sheet. f0-f3 open the menus (OptionsA, OptionsB, Environment and the
+; credits), and CTRL with a key is a shortcut for a menu item. Escape asks
+; whether to leave.
 ;
 ; Memory, besides the screen:
 ;   &1AB0-&3ADB  this program; the rest, to &3BAF, is whatever was in memory
-;                after it when it was saved
+;                after it when it was saved (see leftover)
 ;   &3E00, &3E80 two sprite buffers: Animate's frames
 ;   &3F80        the undo copy of the sprite being edited
-;   &4000-&4F33  the graphics set, with "Finish Block" after it (start clears
-;                &4000-&4FFF the first time)
+;   &4000-&4F33  the graphics set, with "Finish Block" after it (see
+;                finish_block; start clears &4000-&4FFF the first time)
 ;   &5000-&537F  what a pop-up window covers (the biggest is &380 bytes)
+;   &50-&65      zero page: pointers, counters and scratch
+;   &70-&7E      zero page: the editor's state (the selection, the pixel
+;                cursor, the colour)
+;
+; The file, in order:
+;   names        keys, window text, windows, sprite numbers, the screen, the
+;                graphics set and IO, zero page
+;   &1AB0        data: the logo, slot_of_position, the font (&1D00), the
+;                windows' places and sizes
+;   &2054        windows (open_window, close_window), keys (key_pressed), text
+;                (print_char), menus (menu)
+;   &22BB        sprites: finding their bytes (sprite_address), drawing them
+;                in the editing grid (draw_grid) and on the sheet
+;                (draw_sheet_sprite, sheet_address)
+;   &2595        the Escape event, the screen's furniture, the window texts
+;   &2A53        showing the sheet, the selection (show_selection) and the
+;                colour; three unused routines
+;   &2B4E        start-up state, error_handler, start (&2BAE), main_loop and
+;                command_table
+;   &2DFE        the commands: OptionsA and OptionsB (cmd_*,
+;                pick_second_sprite, combine_sprites), Def. Colour, Animate
+;   &334B        moving the selection and pacing the main loop
+;                (select_sprite), and the pixel cursor (toggle_cursor)
+;   &3503        files: the Environment menu's loads and saves, IO's pieces;
+;                Obj name and its line input (input_line)
+;   &387F        painting (edit_pixels) and the pixel primitives (plot_pixel,
+;                read_pixel)
+;   &3A41        reading a command (read_command, shortcut_keys)
+;   &3ADC        leftover bytes, not part of the program
+;
+; Routine headers say what a routine is for, then In:, Out: and Clobbers:,
+; leaving out a line with nothing to say. "Clobbers: everything" means the
+; registers and whatever zero page and workspace the routines it calls use.
+; Pictures (the logo, the font) are written as pixels, two characters to a
+; pixel, in sprites.6502inc's mode5_pictures notation.
 
 INCLUDE "os.6502inc"
 INCLUDE "osconst.6502inc"
@@ -35,8 +103,9 @@ INCLUDE "io.6502inc"                    ; and sprites.6502inc, the graphics set'
 ; &80 or more).
 NO_KEY = &57
 
-; The code f0 gives while a menu runs (OSBYTE_FUNCTION_KEY_BASE), f1-f9 the
-; codes after it. menu counts any code from FUNCTION_KEY_CODES up as one.
+; While a menu runs, f0 gives KEYCODE_F0 (set with OSBYTE_FUNCTION_KEY_BASE)
+; and f1-f9 the codes after it. menu takes any code from FUNCTION_KEY_CODES
+; up as a function key.
 KEYCODE_F0         = &E0
 FUNCTION_KEY_CODES = &C8
 
@@ -64,9 +133,9 @@ WINDOWS            = 8
 ; the code takes sprite numbers as slots instead.
 FIRST_SMALL = FIRST_SMALL_SLOT
 LAST_SMALL  = FIRST_SMALL + 15
-AFTER_SMALL = MORE_LARGE_SLOT   ; the large places after &0F
+AFTER_SMALL = MORE_LARGE_SLOT   ; the first large place after &0F
 LAST_SPRITE = LAST_SLOT
-SMALL_WIDTH = SMALL_SPRITE_WIDTH / 4    ; sprite_width: bytes across
+SMALL_WIDTH = SMALL_SPRITE_WIDTH / 4    ; in bytes, as sprite_width holds it
 LARGE_WIDTH = LARGE_SPRITE_WIDTH / 4
 ASSERT SLOT_EXIT = LAST_SMALL
 
@@ -92,7 +161,7 @@ ASSERT ROW = 40 * CELL
 graphics      = SET_LOAD_ADDRESS    ; the graphics set
 object_names  = graphics + SET_NAMES
 graphics_end  = graphics + SET_SIZE
-slot_28       = graphics + SET_NAMES - LARGE_SPRITE_SIZE    ; the last slot, which IO keeps apart
+slot_28       = graphics + SET_NAMES - LARGE_SPRITE_SIZE    ; the last slot, stored apart in IO
 
 ; Where the set's pieces are in an IO file (see io_segments).
 IO_SLOT_28_OFFSET  = io_no_object_picture - io_start
@@ -103,19 +172,19 @@ ASSERT LO(IO_SLOT_28_OFFSET) = LO(slot_28 - graphics)
 ASSERT LO(IO_NAMES_OFFSET) = LO(SET_NAMES)
 ASSERT IO_GRAPHICS_SIZE = slot_28 - graphics
 
-frame_a       = &3E00           ; SPRITE_FRAME_A
-frame_b       = frame_a + LARGE_SPRITE_SIZE
-undo_buffer   = &3F80
-window_store  = &5000
+frame_a       = &3E00           ; Animate's frames: sprite number SPRITE_FRAME_A...
+frame_b       = frame_a + LARGE_SPRITE_SIZE     ; ...and SPRITE_FRAME_B
+undo_buffer   = &3F80           ; the sprite being edited, as it was when selected
+window_store  = &5000           ; what the open window covers
 
 ; Places on the screen.
-edit_grid     = SCREEN + ROW + 2*CELL           ; a cell per pixel, two pixel rows to a row
-colour_swatch = SCREEN + 19*ROW + 1*CELL
-name_box      = SCREEN + 19*ROW + 4*CELL
+edit_grid     = SCREEN + ROW + 2*CELL           ; each pixel a cell, two sprite rows to a character row
+colour_swatch = SCREEN + 19*ROW + 1*CELL        ; two cells of the current colour
+name_box      = SCREEN + 19*ROW + 4*CELL        ; an object's number and name
 large_sheet   = SCREEN + 20*CELL                ; 5 sprites across, each 4 cells by 4 rows
-small_sheet   = SCREEN + 20*ROW + 21*CELL       ; 4 across, 4 cells apart, each 2 by 2
+small_sheet   = SCREEN + 20*ROW + 21*CELL       ; 4 across, 4 cells apart, each 2 cells by 2 rows
 frame_preview = SCREEN + 23*ROW + 9*CELL        ; Animate's frame, in its window
-logo_screen   = SCREEN + 28*ROW + 18*CELL
+logo_screen   = SCREEN + 28*ROW + 18*CELL       ; the logo, at the bottom right
 ; Two bytes of the editing grid's frame that tell whether it is drawn for a
 ; large sprite or a small one: the small frame's top right corner, and the
 ; top of the large frame's right edge. Each is &08 (a pixel of colour 1 at
@@ -124,38 +193,38 @@ grid_frame_top   = SCREEN + 10*CELL + 7
 grid_frame_right = SCREEN + ROW + 18*CELL
 
 ; Zero page.
-screen_ptr   = &50              ; where on the screen
+screen_ptr   = &50              ; where on the screen to draw
 data_ptr     = &52              ; a sprite's bytes; window text
 save_ptr     = &54              ; where a window's background is kept; a line of its text
-pixel_x      = &56
+pixel_x      = &56              ; the pixel pixel_address is finding
 pixel_y      = &57
 aux_ptr      = &58              ; a glyph; a window's corner; a second sprite
 line_count   = &60              ; lines of window text, less one
 temp         = &61
 count_x      = &62
 count_y      = &63
-item         = &64              ; the highlighted menu line, from 0
-mask         = &65              ; one pixel of a byte; window text's flag byte
-sprite_width = &70              ; in bytes: 4 large, 2 small (a sprite is 8 lines tall per byte)
+item         = &64              ; the highlighted menu line, from 0; also scratch
+mask         = &65              ; one pixel's bits in a byte; also window text's flag byte
+sprite_width = &70              ; in bytes: 4 large, 2 small; the height in pixels is 8 times it
 sprite       = &71              ; the selected sprite
-old_sprite   = &72
-cursor_x     = &73              ; the pixel cursor in the editing grid
+old_sprite   = &72              ; the selection before select_sprite moved it
+cursor_x     = &73              ; the pixel cursor, in the sprite's pixels
 cursor_y     = &74
-old_cursor_x = &75
+old_cursor_x = &75              ; where it was before edit_pixels moved it
 old_cursor_y = &76
 colour       = &77              ; for plotting, 0-3
 repeat_delay = &78              ; the pixel cursor's key repeat, shortening as it repeats
-last_column  = &7A              ; of the selected sprite's row in the sheet
-by_slot      = &7B              ; bit 7: sprite numbers are slots, not sheet places
-border_ptr   = &7C              ; a window's frame
-escape_latch = &7E              ; bit 7: SHIFT-Escape was pressed
+last_column  = &7A              ; the last column of the selected sprite's row in the sheet
+by_slot      = &7B              ; bit 7 set while sprite numbers are slots, not sheet places
+border_ptr   = &7C              ; where a window's frame is being drawn
+escape_latch = &7E              ; bit 7 set once SHIFT-Escape is pressed
 
 SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 
-; The PIPELINE logo at the bottom right: 88x24 pixels, drawn two characters
-; a pixel (as default.6502inc draws the game's pictures) in its three bands of
-; eight rows, which start copies to the screen a band (a character row) at a
-; time. mode5_pictures lays each band out as the screen does.
+; The PIPELINE logo at the bottom right: 88x24 pixels, in three bands of
+; eight pixel rows, one for each character row it covers; start copies it to
+; the screen a band at a time. mode5_pictures turns each band into bytes in
+; the order the screen holds a character row.
 LOGO_BAND = 22*CELL
 .logo
     EQUB mode5_pictures({
@@ -202,13 +271,13 @@ ASSERT P% - logo = 3 * LOGO_BAND
     EQUB &06, &28, &0C, &0D, &0B
     EQUB &09, &20, &21, &22, &23
 
-; print_char finds a glyph by its high byte alone, so the font starts a page.
+; print_char adds only the font's high byte to a glyph's offset, so the font
+; must start a page.
     ALIGN &100
 
-; A font of 4x8 characters, &20-&7F, eight to a picture (drawn two
-; characters a pixel, so each character is eight across), each stored as a
-; cell: a column of eight bytes. print_char draws them in colour 3. "^~" is a
-; copyright sign.
+; A font of 4x8 characters, &20-&7F, written eight characters to a picture.
+; Each is stored as one cell, a byte for each of its eight lines. print_char
+; draws them in colour 3. "^~" is a copyright sign.
 .font
     EQUB mode5_pictures({
         ; space ! " # $ % & '
@@ -345,8 +414,8 @@ ASSERT P% - logo = 3 * LOGO_BAND
         }
     })
 
-; Bit 7 set while each window is open (and its background saved). start
-; clears all twenty bytes; only WINDOWS exist.
+; Bit 7 set while each window is open (and what it covers is saved). start
+; clears all twenty bytes, though only the first WINDOWS are used.
 .window_open
     SKIP 20
 
@@ -434,7 +503,7 @@ ASSERT window_size - window_address = 2 * WINDOWS
     PLA
     PHA
     TAX
-    ORA #&80                        ; bit 7: open
+    ORA #&80                        ; bit 7 set: open
     STA window_open, X
     JSR window_setup
     LDX #mode5_byte("1111")         ; the title row in colour 1
@@ -493,7 +562,7 @@ ASSERT window_size - window_address = 2 * WINDOWS
     BNE next_char                   ; always: the pointer's last change left it non-zero
 .new_line
     INC line_count
-    LDA save_ptr                    ; save_ptr: the start of the line
+    LDA save_ptr                    ; save_ptr holds the start of the line
     CLC
     ADC #LO(ROW)
     STA save_ptr
@@ -668,7 +737,7 @@ ASSERT window_size - window_address = 2 * WINDOWS
     RTS
 }
 
-; Draw a character from the font at screen_ptr, a cell of it.
+; Draw a character from the font at screen_ptr, filling one cell.
 ; In:  A = character (a control code draws a space), carry set to store it
 ;      (in colour 3 on black), clear to exclusive-OR it with the screen (on
 ;      a window, so drawing it again rubs it out)
@@ -683,7 +752,7 @@ ASSERT window_size - window_address = 2 * WINDOWS
     LDX #&00
     CMP #' '
     BCS printable
-    LDA #'!'                 ; a control code: a space (carry is clear)
+    LDA #'!'                 ; a control code: with carry clear, '!' - ' ' - 1 = 0, the space
 .printable
     SBC #' '                 ; aux_ptr = font + 8 * (A - " ")
     ASL A
@@ -725,7 +794,7 @@ ASSERT window_size - window_address = 2 * WINDOWS
 ; Out: A = X = the line picked with Return (1 = the first after the title,
 ;      0 if the text has no list), or &FF if left with Space, Escape or
 ;      another menu's function key
-; Clobbers: Y, and as open_window
+; Clobbers: Y, item, and as open_window
 .menu
 {
     PHA
@@ -909,7 +978,7 @@ ASSERT window_size - window_address = 2 * WINDOWS
     BCS high_slot
     LSR A
     TAX
-    LDA #&00                        ; the odd half page
+    LDA #&00                        ; an odd slot starts half a page in
     ROR A
     STA data_ptr
     TXA
@@ -1020,7 +1089,7 @@ ASSERT LO(SET_SMALL) = 0 AND LO(SET_MORE_LARGE) = 0
     LDA sprite_width
     STA count_x
 .column
-    LDA sprite_width                ; count_y = the column's bytes, one a row
+    LDA sprite_width                ; count_y = the column's bytes, one for each sprite row
     ASL A
     ASL A
     ASL A
@@ -1034,7 +1103,7 @@ ASSERT LO(SET_SMALL) = 0 AND LO(SET_MORE_LARGE) = 0
 
     ; Shift this pixel's two bits down to make its colour, 0-3.
 .pixel
-    LDA mask
+    LDA mask                        ; item: a copy of mask to shift
     STA item
     LDA temp
     AND mask
@@ -1123,13 +1192,13 @@ ASSERT LO(SET_SMALL) = 0 AND LO(SET_MORE_LARGE) = 0
     STA screen_ptr
     LDA #HI(SCREEN + 10*CELL)
     STA screen_ptr+1
-    LDA #18                         ; rows
+    LDA #18                         ; rows 0-17: the large grid and its frame
     JSR clear_rows
     LDA #LO(SCREEN + 9*ROW + CELL)  ; ...and the rest of its left half
     STA screen_ptr
     LDA #HI(SCREEN + 9*ROW + CELL)
     STA screen_ptr+1
-    LDA #9
+    LDA #9                          ; rows 9-17
     JSR clear_rows
 .large
     LDA sprite_width
@@ -1259,7 +1328,8 @@ ASSERT LO(SET_SMALL) = 0 AND LO(SET_MORE_LARGE) = 0
 
 ; Blank nine cells (72 bytes) of each of A character rows from screen_ptr.
 ; It has no RTS of its own: it runs on into divide_by_5, which does no harm
-; (it just divides the last A), and returns from there.
+; (it divides whatever is left in A, changing only A and X), and returns from
+; there.
 ; In:  A = rows, screen_ptr = where
 ; Clobbers: A, X, Y, screen_ptr, count_y
 .clear_rows
@@ -1359,9 +1429,10 @@ ASSERT LO(SET_SMALL) = 0 AND LO(SET_MORE_LARGE) = 0
     DEC count_y
     BNE row
     RTS
-; How far draw_sheet_sprite steps back through a sprite after a row of
-; cells, and on through the screen to the start of the next row (the low
-; byte), indexed by sprite_width / 2: small, then large.
+; After a row of cells, how far draw_sheet_sprite steps back through the
+; sprite's bytes (column_rewind), and the low byte of how far it steps on
+; through the screen to the start of the next row (row_step). Each is indexed
+; by sprite_width / 2, from 1: small, then large.
 .column_rewind
     EQUB SMALL_SPRITE_SIZE - CELL, LARGE_SPRITE_SIZE - CELL
 .row_step
@@ -1373,7 +1444,8 @@ ASSERT HI(ROW - SMALL_WIDTH*CELL) = HI(ROW - LARGE_WIDTH*CELL)
 ; Where a sprite goes on the screen.
 ; In:  A = sprite number: a sheet position, or a frame buffer (which shows
 ;      in Animate's window)
-; Out: screen_ptr = the top left of its place, A = Y = the sprite number
+; Out: screen_ptr = the top left of its place, Y = the sprite number (and A
+;      too, except for a small sprite)
 ; Clobbers: X
 .sheet_address
 {
@@ -1471,7 +1543,7 @@ ASSERT LO(LARGE_SPRITE_HEIGHT/8 * ROW) = 0
     PHP
     CMP #EVENT_ESCAPE
     BNE other_event
-    ROR MOS_ESCAPE_FLAG             ; carry is set from the CMP: bit 7 of the flag
+    ROR MOS_ESCAPE_FLAG             ; carry is set from the CMP, so this sets bit 7
     TXA
     PHA
     TYA
@@ -1623,9 +1695,10 @@ PALETTE_LINE = 8
     EQUS "E  R  R  O  R  !", CR, CR, "Not available", CR, "with this", CR, "filing system", CR
     EQUB TEXT_END
 ; error_handler copies the error's message into the error window's text,
-; breaking its lines and ending it. Until an error has, the text runs on to
-; text_escape's flag byte, which is also TEXT_END. (A message too long for
-; the buffer would run on over text_escape; the filing systems' are short.)
+; breaking its lines and ending it. Before the first error, the spaces run on
+; to text_escape's flag byte, MENU, which is the same value as TEXT_END and so
+; ends the text. (A message too long for the buffer would run on over
+; text_escape; the filing systems' are short.)
 .text_error
     EQUB PLAIN
     EQUS "E  R  R  O  R  !", CR, CR
@@ -1864,8 +1937,8 @@ ASSERT OBJECT_NAME_LENGTH = 12
 }
 
 ; The stack pointer when the designer first started, for the main loop to
-; reset the stack to. It starts 0, and a stack pointer is never that low,
-; so bit 7 set also says it has been saved.
+; reset the stack to. It starts 0; the stack pointer start finds is always
+; &80 or more, so bit 7 set also says it has been saved.
 .stack_pointer
     EQUB &00
 
@@ -1874,7 +1947,8 @@ ASSERT OBJECT_NAME_LENGTH = 12
 .graphics_loaded
     EQUB &00
 
-; Bit 7 set if the filing system is a disc one (FS_DISC up).
+; Bit 7 set if the filing system is numbered FS_DISC or more (disc, or
+; network), clear on tape or ROM: what the comments call "on tape".
 .disc_fs
     EQUB 0
 
@@ -1939,8 +2013,8 @@ ASSERT OBJECT_NAME_LENGTH = 12
 
 ; The entry point, from the GRAPHIC stub, and where errors start again. The
 ; first time (BRKV still pointing into the ROMs) it takes over BRKV and the
-; event vector, keeping the old ones in IND1V and IND2V to put back on
-; leaving, and enables the Escape event. Unless the screen is in MODE 5
+; event vector, keeping the old ones in IND1V and IND2V (vectors the OS
+; leaves spare) to put back on leaving, and enables the Escape event. Unless the screen is in MODE 5
 ; already (as it is after an error, so a changed palette survives), it sets
 ; MODE 5 and the palette. Then it draws the screen, the first time clears
 ; the graphics area and (on disc) loads DEFAULT, and draws the sheet and the
@@ -1951,8 +2025,8 @@ ASSERT OBJECT_NAME_LENGTH = 12
     LDA #OSBYTE_CURSOR_EDITING      ; the cursor keys give codes
     LDX #CURSOR_KEYS_CODES
     JSR OSBYTE
-    LDA BRKV+1                      ; BRKV still in the ROMs: not ours yet
-    BPL installed
+    LDA BRKV+1                      ; BRKV still pointing into the ROMs (&8000 up):
+    BPL installed                   ; not ours yet
     LDX #LO(error_handler)
     LDY #HI(error_handler)
     LDA EVNTV
@@ -1971,8 +2045,8 @@ ASSERT OBJECT_NAME_LENGTH = 12
     LDA #HI(escape_event)
     STA EVNTV+1
     CLI
-    LDA #OSBYTE_ENABLE_EVENT        ; the Escape event; and the latch clear
-    STA escape_latch                ; (the call number has bit 7 clear)
+    LDA #OSBYTE_ENABLE_EVENT        ; enable the Escape event; storing the call
+    STA escape_latch                ; number (bit 7 clear) also clears the latch
     LDX #EVENT_ESCAPE
     JSR OSBYTE
 .installed
@@ -2009,7 +2083,7 @@ ASSERT OBJECT_NAME_LENGTH = 12
     LDA #&00
     STA by_slot
     TAY
-    ROR A                           ; into disc_fs bit 7
+    ROR A                           ; the carry into bit 7, for disc_fs
     STA disc_fs
     BMI opt
     INY
@@ -2034,7 +2108,7 @@ ASSERT OBJECT_NAME_LENGTH = 12
     JSR OSWRCH
     JMP layout
 .layout_done
-    LDX #20-1                       ; all twenty
+    LDX #20-1                       ; all twenty bytes of window_open
     LDA #&00
 .clear_windows
     STA window_open, X
@@ -2060,7 +2134,8 @@ ASSERT OBJECT_NAME_LENGTH = 12
     CPY #LOGO_BAND
     BCC logo_copy
 
-    ; The first time only: clear the graphics area and load DEFAULT into it.
+    ; The first time only: clear the graphics area and, on disc, load DEFAULT
+    ; into it.
     BIT graphics_loaded
     BMI redraw
     LDA #&00
@@ -2083,7 +2158,7 @@ ASSERT OBJECT_NAME_LENGTH = 12
 
     ; On tape nothing is loaded: the set starts empty. The name is made ""
     ; (the next file on the tape) first, but nothing reads it after this.
-    LDX #6
+    LDX #6                          ; the seven letters of DEFAULT
 .tape_name
     STA default_name, X             ; A = 0
     DEX
@@ -2122,19 +2197,20 @@ ASSERT OBJECT_NAME_LENGTH = 12
     LDA #&00                        ; the pixel cursor to the top left
     STA cursor_x
     STA cursor_y
-    SEC                             ; carry set: and take an undo copy
+    SEC                             ; carry set: take an undo copy too
     JSR redraw_grid
     LDA #&03                        ; start in colour 3
     STA colour
     JSR show_colour
 }
 
-; The main loop, a pass at a time, each at least two centiseconds after the
-; last (select_sprite waits for that, unless CTRL is held) and ending at a
-; vsync: move the selection, paint, run a command from a menu or shortcut,
-; and on Escape (or a latched SHIFT-Escape) ask whether to leave. Each pass
-; starts with the stack as start found it, so a command can give up with a
-; plain JMP to main_loop or command_done.
+; The main loop. Each pass moves the selection, paints, runs a command picked
+; from a menu or by a CTRL shortcut, and on Escape (or a latched SHIFT-Escape)
+; asks whether to leave. A pass starts at least two centiseconds after the
+; last (select_sprite waits for that, unless CTRL is held) and ends by waiting
+; for a vsync. It starts by resetting the stack to where start found it, so a
+; command can give up from any depth with a plain JMP to main_loop or
+; command_done.
 ; Out: doesn't return (leaving the designer, it runs /MRUN or resets)
 .main_loop
 {
@@ -2152,7 +2228,7 @@ ASSERT OBJECT_NAME_LENGTH = 12
     LDA colour                      ; commands may use colour as a scratch value
     STA saved_colour
     JSR read_command
-    ASL A                           ; &FF: no command
+    ASL A                           ; &FF (bit 7 set) means no command
     BCS command_done
     TAY
     LDA command_table, Y
@@ -2160,7 +2236,7 @@ ASSERT OBJECT_NAME_LENGTH = 12
     LDA command_table+1, Y
     STA dispatch+2
 .dispatch
-    JSR &1234                       ; the command (self-modified; the original's placeholder)
+    JSR &1234                       ; the command, written in above (&1234 is the original's)
     LDX #INKEY_TEST(KEY_RETURN)     ; so a menu choice made with Return doesn't plot too
     JSR wait_key_release
 .command_done
@@ -2213,10 +2289,10 @@ ASSERT OBJECT_NAME_LENGTH = 12
     JSR OSBYTE
     BIT disc_fs
     BMI run_mrun
-    LDA #OSBYTE_BREAK_EFFECT        ; *FX200,3: on tape, BREAK clears memory...
-    LDX #&03
+    LDA #OSBYTE_BREAK_EFFECT        ; on tape there's no /MRUN: *FX200,3 makes
+    LDX #&03                        ; BREAK clear memory...
     JSR OSBYTE
-    JMP (CPU_RESET_VECTOR)          ; ...and here is a BREAK
+    JMP (CPU_RESET_VECTOR)          ; ...and this resets the machine as BREAK does
 .run_mrun
     LDX #LO(mrun_command)           ; */MRUN, which goes back to the menu
     LDY #HI(mrun_command)
@@ -2317,7 +2393,7 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
 {
     LDA sprite
     BCC draw
-    ORA #&80                        ; bit 7: take an undo copy
+    ORA #&80                        ; bit 7 set: take an undo copy
 .draw
     JSR draw_grid
     LDX cursor_x
@@ -2395,7 +2471,7 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     JMP wait_key_release
 }
 
-; Flip X's mirrored pixel.
+; Flip X's mirrored pixel: its x and y.
 .mirror_x
     EQUB &00
 
@@ -2547,7 +2623,7 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
 {
     STX combine_target
     STA combine_source
-    LDA #&00                        ; carry into bit 7
+    LDA #&00                        ; combine_over = the carry, in bit 7
     ROR A
     STA combine_over
     LDA sprite_width                ; count_x = the last pixel across
@@ -2732,7 +2808,8 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
 
 ; Show both sprites of a two-sprite command as they are now and close the
 ; picking window. The selection stays on the second sprite, the one picked.
-; In:  A = the first sprite (or, for Backing, the floor), sprite = the second
+; In:  A = the first sprite (for Backing, the floor), sprite = the one picked
+;      (for Backing, the sprite backed)
 ; Clobbers: A, X, Y, and as draw_grid
 .redraw_pair
 {
@@ -2885,8 +2962,9 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
 
 ; Environment Def. Colour (CTRL-C): change the palette. Up and down pick a
 ; logical colour, left and right step its physical colour through the eight;
-; Return, Space, Escape or a function key finish. The change lasts until
-; the designer next sets MODE 5 (not after an error: see start).
+; Return, Space, Escape or a function key finish. The change lasts while the
+; designer runs: start sets the palette only when it has to set MODE 5, which
+; it doesn't when restarting after an error.
 ; Clobbers: everything
 .cmd_def_colour
 {
@@ -2975,7 +3053,7 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     JMP OSWORD
 }
 
-; +1 or -1: the way Def. Colour steps.
+; Def. Colour's step through the physical colours: 1, or -1 (&FF).
 .colour_step
     EQUB &00
 
@@ -3109,13 +3187,13 @@ FRAME_VSYNCS = 6
     LDA sprite
     STA animate_sprite
     TAX
-    AND #&10                        ; a small sprite: no
+    AND #&10                        ; small sprites don't animate...
     BNE none
     TXA
     JSR slot_index
     TAX
     LDA slot_of_position, X
-    CMP #SLOT_ALTERNATE             ; slots &24-&28: no
+    CMP #SLOT_ALTERNATE             ; ...nor do slots &24-&28
     BCS none
     CMP #SLOT_PLAYER
     BCS player
@@ -3156,7 +3234,7 @@ FRAME_VSYNCS = 6
     LDA #monster_frames - animation_frames
     BNE chosen                      ; always
 .player_frames
-    AND #&03                        ; the player's: a pair each
+    AND #&03                        ; the player's: a pair of entries for each slot
     ASL A
 .chosen
     STA frame_index
@@ -3166,7 +3244,7 @@ FRAME_VSYNCS = 6
     STA frame_delay
     LDA animation_frames, X
     STA sprite
-    BPL draw                        ; upside down?
+    BPL draw                        ; UPSIDE_DOWN: turn the buffer over first
     JSR flip_vertically
     LDA #FRAME_VSYNCS
     STA frame_delay
@@ -3258,7 +3336,7 @@ REPEAT_RATE  = 5
     JSR key_pressed
     BPL not_now
     STX key_held                    ; a key is held this pass
-    LDY repeat_count                ; 0: time to repeat
+    LDY repeat_count                ; 0 means it's time to repeat
     BEQ move
     STY key_repeating
     CPY #REPEAT_DELAY               ; a fresh press
@@ -3284,7 +3362,8 @@ PASS_CENTISECONDS = 2
 ; last call. If the selection moves, the old sprite is drawn again without
 ; its box, and the new one boxed and drawn in the editing grid (with an
 ; undo copy).
-; In:  A = 0 normally; else, picking a second sprite, f0-f3 raise an Escape
+; In:  A = 0 from the main loop; non-zero while picking a second sprite, when
+;      f0-f3 also raise an Escape
 ; Out: N set if nothing moved (or CTRL is held: then nothing is done)
 ; Clobbers: A, X, Y, and as draw_grid
 .select_sprite
@@ -3336,14 +3415,14 @@ PASS_CENTISECONDS = 2
     CMP #LAST_SPRITE                ; no small sprite below the last large one
     BEQ down_done
     CMP #&0F                        ; &0F, at the start of row 3, has &24 below it...
-    BNE not_a
+    BNE down_not_0f
     LDA #&24
-    BNE store_down
-.not_a
+    BNE store_down                  ; always
+.down_not_0f
     CMP #&0A                        ; ...and &0A has &0F
     BNE step_down
     LDA #&0F
-    BNE store_down
+    BNE store_down                  ; always
 .step_down
     CLC
     ADC row_down_step, X
@@ -3358,14 +3437,14 @@ PASS_CENTISECONDS = 2
     BEQ up_done
     LDA sprite
     CMP #&0F                        ; the same two, upwards
-    BNE not_f
+    BNE up_not_0f
     LDA #&0A
-    BNE store_up
-.not_f
+    BNE store_up                    ; always
+.up_not_0f
     CMP #&24
     BNE step_up
     LDA #&0F
-    BNE store_up
+    BNE store_up                    ; always
 .step_up
     SEC
     LDA sprite
@@ -3398,7 +3477,7 @@ PASS_CENTISECONDS = 2
 .wait
     LDA #OSWORD_READ_INTERVAL_TIMER
     JSR reset_timer.osword
-    LDX #&04
+    LDX #&04                        ; any of the top four bytes set is long enough
     LDA #&00
 .check
     ORA timer_value, X
@@ -3470,12 +3549,13 @@ PASS_CENTISECONDS = 2
     JMP OSWORD
 }
 
-; Set while a held cursor key is counting down to its next repeat.
+; Non-zero when repeat_key found a cursor key held this pass, counting down
+; to its next repeat.
 .key_repeating
     EQUB &00
 
-; The selected sprite's row in the sheet. Its last two bytes are also
-; select_sprite's exit with nothing moved.
+; The selected sprite's row in the sheet. Its return_negative (LDA #&80 :
+; RTS) is also select_sprite's exit when nothing moved.
 ; In:  sprite
 ; Out: X = row (0-4 for the large sprites, 5-8 for the small ones),
 ;      last_column = 4; A = its column for a large sprite, &80 for a small
@@ -3534,10 +3614,10 @@ PASS_CENTISECONDS = 2
 {
     TYA
     PHA
-    AND #&FE                        ; a word a pair of rows
+    AND #&FE                        ; grid_row_address has a word for each pair of rows
     TAY
     TXA
-    ASL A                           ; a cell a pixel
+    ASL A                           ; a cell for each pixel
     ASL A
     ASL A
     CLC
@@ -3580,7 +3660,7 @@ PASS_CENTISECONDS = 2
 
 ; Ask for the name of a file to save to. If it exists it must be a graphics
 ; set or an IO file (setting io_file), and the user is asked whether to
-; replace it: Cancel abandons the command.
+; replace it: Cancel abandons the command. On tape nothing is checked.
 ; Out: input_buffer = the name; osfile_block filled (file_info); io_file
 ;      bit 7 set for an IO file
 ; Clobbers: A, X, Y, and as open_window
@@ -3787,10 +3867,11 @@ ASSERT LO(graphics) = 0 AND HI(graphics) + HI(SET_SIZE) = HI(graphics_end)
 
 ; Clear gbpb_block, and refuse a command the filing system can't do.
 ; In:  X = the command, FILE_LOAD_SPRITE to FILE_SAVE_FILE
+; Out: doesn't return if refused: it shows the error (show_error)
 ; Clobbers: A, Y
 .check_filing_system
 {
-    LDY #&0F
+    LDY #&0F                        ; all sixteen bytes
     LDA #&00
 .clear
     STA gbpb_block, Y
@@ -3828,7 +3909,7 @@ ASSERT LO(graphics) = 0 AND HI(graphics) + HI(SET_SIZE) = HI(graphics_end)
 .open_file
 {
     LDA #OSFIND_OPEN_INPUT
-    BITABS
+    BITABS                          ; a BIT opcode: skips the LDA below
 .update
     LDA #OSFIND_OPEN_UPDATE
     LDX osfile_block
@@ -3925,7 +4006,7 @@ ASSERT LO(graphics) = 0 AND HI(graphics) + HI(SET_SIZE) = HI(graphics_end)
 .read_block
 {
     LDA #OSGBPB_READ_AT
-    BITABS
+    BITABS                          ; a BIT opcode: skips the LDA below
 .write
     LDA #OSGBPB_WRITE_AT
     LDX #LO(gbpb_block)
@@ -3959,7 +4040,7 @@ ASSERT LO(graphics) = 0 AND HI(graphics) + HI(SET_SIZE) = HI(graphics_end)
     JSR close_window
     JSR file_info
     BCS found
-    CMP #OSFILE_TYPE_FILE           ; not there
+    CMP #OSFILE_TYPE_FILE           ; not a file: "No Such File"
     BNE cmd_load_file.no_file
 .found
     LDA #&00
@@ -3971,23 +4052,24 @@ ASSERT LO(graphics) = 0 AND HI(graphics) + HI(SET_SIZE) = HI(graphics_end)
     LDA osfile_load+1
     CMP #HI(graphics)
     BNE check_io_file
-    LDA osfile_start+1              ; the length's
+    LDA osfile_start+1              ; the length's high byte
     CMP #HI(SET_SIZE)
     BNE check_io_file
     RTS
 }
 
 ; Bit 7 set when the file being loaded or saved is IO, not a graphics set.
-; (It sits in the middle of ask_load_name.)
+; (It sits between ask_load_name and its end, check_io_file.)
 .io_file
     EQUB &00
 
-; ask_load_name's end: a file that isn't a graphics set had better be IO.
+; ask_load_name's end: a file that isn't a graphics set must be IO, or it's
+; "Bad File".
 ; Out: as ask_load_name (or "Bad File", not returning)
 ; Clobbers: A
 .check_io_file
 {
-    LDA osfile_start+1              ; the length's
+    LDA osfile_start+1              ; the length's high byte
     CMP #HI(IO_LENGTH)
     BEQ io
     JMP bad_file
@@ -4060,7 +4142,7 @@ ASSERT LO(graphics) = 0 AND HI(graphics) + HI(SET_SIZE) = HI(graphics_end)
 
 ; Where the graphics set is in an IO file (as MISSION builds it): each piece's
 ; address in the set, its offset in the file and its length.
-IO_SEGMENT = 6                  ; bytes an entry
+IO_SEGMENT = 6                  ; bytes in each entry
 .io_segments
     EQUW slot_28, IO_SLOT_28_OFFSET, LARGE_SPRITE_SIZE
     EQUW object_names, IO_NAMES_OFFSET, OBJECT_KINDS * OBJECT_NAME_LENGTH
@@ -4096,7 +4178,7 @@ IO_SEGMENT = 6                  ; bytes an entry
 .osfile_graphics
 {
     LDX #&00
-    STX osfile_exec                 ; exec address 0: load where we say
+    STX osfile_exec                 ; the exec address's low byte 0: load at osfile_load
     LDX #LO(graphics)
     STX osfile_load
     LDX #HI(graphics)
@@ -4124,7 +4206,8 @@ IO_SEGMENT = 6                  ; bytes an entry
     JMP show_error
 }
 
-; OptionsA Obj name (CTRL-N): rename the selected object (not the exit).
+; OptionsA Obj name (CTRL-N): rename the selected object. Nothing happens for
+; the exit or a large sprite.
 ; In:  sprite
 ; Clobbers: everything
 .cmd_obj_name
@@ -4178,7 +4261,7 @@ IO_SEGMENT = 6                  ; bytes an entry
     LDY #&00
     LDA #OSBYTE_FLUSH_BUFFERS       ; empty the keyboard buffer
     JSR OSBYTE
-    LDY #&0F
+    LDY #&0F                        ; sixteen bytes, up to the last CR
     LDA #' '
 .blank
     STA input_buffer, Y
@@ -4346,7 +4429,8 @@ CURSOR_DELAY_MIN  = 10
     STA colour
     JSR show_colour
 
-    ; Moved: shorten the repeat delay and move the cursor.
+    ; If the cursor moved, shorten the repeat delay and redraw the cursor;
+    ; if not, put the delay back to CURSOR_DELAY.
 .not_0
     LDA old_cursor_x
     EOR cursor_x
@@ -4509,8 +4593,8 @@ CURSOR_DELAY_MIN  = 10
     STA data_ptr
     BCC column                      ; always: no sprite crosses a page
 .got_column
-    LDA pixel_y                     ; columns start at multiples of their size
-    ORA data_ptr
+    LDA pixel_y                     ; a column starts at a multiple of its size,
+    ORA data_ptr                    ; so ORing in the row adds it
     STA data_ptr
     LDA pixel_x
     AND #&03
@@ -4573,8 +4657,9 @@ CURSOR_DELAY_MIN  = 10
 
 ; Read a command: a CTRL shortcut, or a choice from the menu whose function
 ; key is pressed.
-; Out: A = the command's number in command_table (menu * 8 + item), 0 for
-;      the credits, or &FF for none
+; Out: A = the command's number in command_table (menu * 8 + item, or a
+;      shortcut's place in shortcut_keys plus one), 0 for the credits, or &FF
+;      for none
 ; Clobbers: X, Y, temp, and as menu
 .read_command
 {
@@ -4645,8 +4730,9 @@ CURSOR_DELAY_MIN  = 10
     EQUB INKEY_TEST({KEY_F8, KEY_F9, KEY_F6, KEY_F7, KEY_C}), 0, 0, 0                ; Environment
 SHORTCUTS = P% - shortcut_keys
 
-; Which cursor key the selection last saw held (INKEY_TEST() of it, or 0),
-; and a byte nothing uses.
+; &FF if repeat_key found one of the cursor keys held during this pass of
+; select_sprite (it stores key_pressed's result), else 0; then a byte nothing
+; uses.
 .key_held
     EQUB 0, 0
 ; Non-zero while picking a second sprite.
@@ -4678,11 +4764,13 @@ SHORTCUTS = P% - shortcut_keys
     RTS
 }
 
-; Not part of the program: what the buffer the hidden files were written from
-; held past its end. These are H.GAME's bytes at the same file offsets
-; (&202C on): the last &41 bytes of the game's code (&232C-&236C where it
-; runs), then the strip of LDATA's picture that H.GAME ends with (see its
-; leftover). H.LEVDES, written next, ends with this file's last bytes.
+; Not part of the program. The three hidden programs (H.GAME, this, then
+; H.LEVDES) were written to the disc from one buffer, a whole number of
+; sectors each, so each ends with what the one before left in the buffer past
+; its own end. These are H.GAME's bytes at the same file offsets (&202C on):
+; the last &41 bytes of the game's code (&232C-&236C where it runs), then the
+; strip of LDATA's picture that H.GAME ends with (see its leftover). H.LEVDES
+; ends with this file's last bytes.
 .leftover
     EQUB &FF, &9A, &4C, &C3, &12, &FC, &1F, &01
     EQUB &1F, &44, &1F, &CD, &1F, &D7, &20, &56
