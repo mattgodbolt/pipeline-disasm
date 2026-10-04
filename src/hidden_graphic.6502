@@ -2,28 +2,30 @@
 ;
 ; The GRAPHIC stub reads this from sectors &145-&165, which no catalogue entry
 ; mentions, to &1AB0 and jumps to start. It edits a graphics set - the game's
-; sprites and the names of its objects - kept at &4000 (DEFAULT.6502 shows
-; the format), and goes back to the menu by *RUNning MRUN.
+; pictures and the names of its objects - kept at &4000 (src/default.6502 is
+; one; graphics_designer.6502inc names its layout), and goes back to the menu
+; by running /MRUN (on tape it resets the machine instead).
 ;
 ; The screen is MODE 5 at &5800. On the left, the selected sprite magnified
-; four times into an editing grid, and under it the current colour and, for an
-; object, its number and name. On the right, the sprite sheet: a 5x5 grid of
-; large sprites (16x32 pixels) and under it a 4x4 grid of small ones (8x16),
-; then the PIPELINE logo. Menus, prompts and errors pop up in windows that
-; keep what they cover at &5000.
+; four times into an editing grid, and under it the current colour and, for
+; an object, its number and name. On the right, the sprite sheet: a 5x5 grid
+; of large sprites (16x32 pixels) and under it a 4x4 grid of small ones
+; (8x16), then the PIPELINE logo. Menus, prompts and errors pop up in windows
+; that keep what they cover at &5000.
 ;
 ; Keys: Z X : / move the pixel cursor, 0-3 pick a colour (4 is 0 again),
 ; Return plots and Delete clears; the cursor keys pick a sprite; f0-f3 open
 ; the menus (OptionsA, OptionsB, Environment and the credits) and CTRL with a
-; letter is a shortcut for a menu item; Escape offers to leave.
+; key is a shortcut for a menu item; Escape offers to leave.
 ;
 ; Memory, besides the screen:
 ;   &1AB0-&3ADB  this program; the rest, to &3BAF, is whatever was in memory
 ;                after it when it was saved
 ;   &3E00, &3E80 two sprite buffers: Animate's frames
 ;   &3F80        the undo copy of the sprite being edited
-;   &4000-&4F33  the graphics set, with "Finish Block" after it
-;   &5000-&57FF  what the pop-up windows cover
+;   &4000-&4F33  the graphics set, with "Finish Block" after it (start clears
+;                &4000-&4FFF the first time)
+;   &5000-&537F  what a pop-up window covers (the biggest is &380 bytes)
 
 INCLUDE "os.6502inc"
 INCLUDE "osconst.6502inc"
@@ -31,13 +33,14 @@ INCLUDE "io.6502inc"
 INCLUDE "sprites.6502inc"
 INCLUDE "graphics_designer.6502inc"
 
-; In shortcut_keys, an entry below &80 isn't a key (an INKEY_TEST() value is
+; In shortcut_keys, an entry below &80 isn't a key (any INKEY_TEST() value is
 ; &80 or more).
 NO_KEY = &57
 
 ; The code f0 gives while a menu runs (OSBYTE_FUNCTION_KEY_BASE), f1-f9 the
-; codes after it.
-CODE_F0 = &E0
+; codes after it. menu counts any code from FUNCTION_KEY_CODES up as one.
+CODE_F0            = &E0
+FUNCTION_KEY_CODES = &C8
 
 ; Window text: a flag byte (MENU makes the lines after the first a list to
 ; pick from), then lines ending in CR, then TEXT_END.
@@ -45,62 +48,81 @@ TEXT_END = &FF
 MENU     = &FF
 PLAIN    = 0
 
-; Windows, numbered as window_address and window_size list them.
+; Windows, numbered as window_address and window_size list them. A menu's
+; window number is also its function key's number.
 WINDOW_OPTIONS_A   = 0
 WINDOW_OPTIONS_B   = 1
 WINDOW_ENVIRONMENT = 2
 WINDOW_CREDITS     = 3
-WINDOW_PICK        = 4          ; "Select sprite to..." with a picture of it; Animate's
+WINDOW_PICK        = 4          ; "Select sprite to...", and Animate's
 WINDOW_QUESTION    = 5          ; Escape?, Exists, the palette
-WINDOW_INPUT       = 6          ; file and object names
+WINDOW_INPUT       = 6          ; file and object names; "insert disc"
 WINDOW_ERROR       = 7
+WINDOWS            = 8
 
-; Sprite numbers: &00-&0F and &20-&28 are the large sprites' sheet positions,
-; &10-&1F the small ones; the last small one is the man, who has no name.
-FIRST_SMALL = &10
-LAST_SMALL  = &1F
-THE_MAN     = LAST_SMALL
-AFTER_SMALL = &20
-SMALL_WIDTH = 2                 ; sprite_width, in bytes
-LARGE_WIDTH = 4
+; Sprite numbers. On the sheet, &00-&0F and &20-&28 are the large sprites'
+; places in reading order (slot_of_position gives the slot each shows), and
+; &10-&1F the small ones, which show their own slots. While by_slot is set,
+; the code takes sprite numbers as slots instead.
+FIRST_SMALL = FIRST_SMALL_SLOT
+LAST_SMALL  = FIRST_SMALL + 15
+AFTER_SMALL = MORE_LARGE_SLOT   ; the large places after &0F
+LAST_SPRITE = LAST_SLOT
+SMALL_WIDTH = SMALL_SPRITE_WIDTH / 4    ; sprite_width: bytes across
+LARGE_WIDTH = LARGE_SPRITE_WIDTH / 4
+ASSERT SLOT_EXIT = LAST_SMALL
 
 ; Sprite numbers beyond the sheet: the two buffers Animate shows frames in.
 SPRITE_FRAME_A = &57
 SPRITE_FRAME_B = &58
 UPSIDE_DOWN    = &80            ; in animation_frames: show the frame turned over
 
-; Screen layout: MODE 5, 20 character cells of 8 bytes across each row.
+; The screen: MODE 5, where a character row is 40 cells of 8 bytes, each cell
+; four pixels (a byte) across and eight lines down. A MODE 5 text character
+; is two cells wide; the designer's own font is one.
 SCREEN = &5800
 CELL   = 8
-ROW    = &140
+ROW    = 40 * CELL
 
 graphics      = &4000           ; the graphics set
-; Where its pieces are in an IO file (see io_segments).
-IO_SLOT_28    = &0000
-IO_NAMES      = &0080
-IO_GRAPHICS   = &25D3
-object_names  = graphics + &E80
-graphics_end  = graphics + &F34
-frame_a       = &3E00
-frame_b       = &3E80
+object_names  = graphics + SET_NAMES
+graphics_end  = graphics + SET_SIZE
+slot_28       = graphics + SET_NAMES - LARGE_SPRITE_SIZE    ; the last slot, which IO keeps apart
+
+; Where the set's pieces are in an IO file (see io_segments).
+IO_SLOT_28_OFFSET  = io_no_object_picture - io_start
+IO_NAMES_OFFSET    = io_object_names - io_start
+IO_GRAPHICS_OFFSET = io_graphics - io_start
+IO_LENGTH          = IO_END - io_start
+ASSERT LO(IO_SLOT_28_OFFSET) = LO(slot_28 - graphics)
+ASSERT LO(IO_NAMES_OFFSET) = LO(SET_NAMES)
+ASSERT IO_NAMES_SIZE = LARGE_SPRITE_SIZE + OBJECT_NAMES * OBJECT_NAME_LENGTH
+ASSERT IO_GRAPHICS_SIZE = slot_28 - graphics
+
+frame_a       = &3E00           ; SPRITE_FRAME_A
+frame_b       = frame_a + LARGE_SPRITE_SIZE
 undo_buffer   = &3F80
 window_store  = &5000
-edit_grid     = SCREEN + ROW + 2*CELL
+
+; Places on the screen.
+edit_grid     = SCREEN + ROW + 2*CELL           ; a cell per pixel, two pixel rows to a row
 colour_swatch = SCREEN + 19*ROW + 1*CELL
 name_box      = SCREEN + 19*ROW + 4*CELL
-large_sheet   = SCREEN + 20*CELL
-small_sheet   = SCREEN + 20*ROW + 21*CELL
-frame_preview = SCREEN + 23*ROW + 9*CELL
+large_sheet   = SCREEN + 20*CELL                ; 5 sprites across, each 4 cells by 4 rows
+small_sheet   = SCREEN + 20*ROW + 21*CELL       ; 4 across, 4 cells apart, each 2 by 2
+frame_preview = SCREEN + 23*ROW + 9*CELL        ; Animate's frame, in its window
 logo_screen   = SCREEN + 28*ROW + 18*CELL
 ; Two bytes of the editing grid's frame that tell whether it is drawn for a
-; large sprite or a small one.
+; large sprite or a small one: the small frame's top right corner, and the
+; top of the large frame's right edge. Each is &08 (a pixel of colour 1 at
+; the cell's left) only when that frame is drawn.
 grid_frame_top   = SCREEN + 10*CELL + 7
 grid_frame_right = SCREEN + ROW + 18*CELL
 
 ; Zero page.
 screen_ptr   = &50              ; where on the screen
 data_ptr     = &52              ; a sprite's bytes; window text
-save_ptr     = &54              ; where a window's background is kept
+save_ptr     = &54              ; where a window's background is kept; a line of its text
 pixel_x      = &56
 pixel_y      = &57
 aux_ptr      = &58              ; a glyph; a window's corner; a second sprite
@@ -110,8 +132,8 @@ count_x      = &62
 count_y      = &63
 item         = &64              ; the highlighted menu line, from 0
 mask         = &65              ; one pixel of a byte; window text's flag byte
-sprite_width = &70              ; in bytes: 4 large, 2 small (8 lines tall per byte)
-sprite       = &71              ; the selected sheet position
+sprite_width = &70              ; in bytes: 4 large, 2 small (a sprite is 8 lines tall per byte)
+sprite       = &71              ; the selected sprite
 old_sprite   = &72
 cursor_x     = &73              ; the pixel cursor in the editing grid
 cursor_y     = &74
@@ -120,8 +142,8 @@ old_cursor_y = &76
 colour       = &77              ; for plotting, 0-3
 repeat_delay = &78              ; the pixel cursor's key repeat, shortening as it repeats
 last_column  = &7A              ; of the selected sprite's row in the sheet
-by_slot      = &7B              ; bit 7: sprite numbers are slots, not sheet positions
-border_ptr   = &7C
+by_slot      = &7B              ; bit 7: sprite numbers are slots, not sheet places
+border_ptr   = &7C              ; a window's frame
 escape_latch = &7E              ; bit 7: SHIFT-Escape was pressed
 
 SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
@@ -2187,8 +2209,8 @@ LAYOUT_END = &EA
     LDX sprite_width
     CPX #SMALL_WIDTH
     BNE redraw
-    LDA sprite                      ; the man has no name to clear
-    CMP #THE_MAN
+    LDA sprite                      ; the exit has no name to clear
+    CMP #SLOT_EXIT
     BEQ redraw
     JSR name_offset
     LDA #&00
@@ -2553,7 +2575,7 @@ LAYOUT_END = &EA
 }
 
 ; OptionsB Swap (CTRL-S): swap this sprite with another, and two objects'
-; names with them (not the man's: he has none).
+; names with them (not the exit's: it has none).
 .cmd_swap
 {
     LDX #LO(text_swap)
@@ -2572,11 +2594,11 @@ LAYOUT_END = &EA
     LDA sprite_width
     CMP #SMALL_WIDTH
     BNE done
-    CPX #THE_MAN
+    CPX #SLOT_EXIT
     BEQ done
     PLA
     PHA
-    CMP #THE_MAN
+    CMP #SLOT_EXIT
     BEQ done
 
     ; Swap the names: data_ptr and aux_ptr hold the two names' offsets now.
@@ -3481,8 +3503,8 @@ LAYOUT_END = &EA
     JSR read_block.write
     PLA
     CLC
-    ADC #&06                        ; six bytes an entry...
-    CMP #&12                        ; ...three entries
+    ADC #IO_SEGMENT
+    CMP #io_segments_end - io_segments
     BCC segment
     JSR close_files
     JMP done
@@ -3557,18 +3579,18 @@ LAYOUT_END = &EA
     RTS
 .io
     LDA gbpb_block+10
-    CMP #HI(&E00)                   ; slot &28, at the start of IO
+    CMP #HI(slot_28 - graphics)     ; the slot IO keeps apart
     BNE io_graphics
-    LDA #&00
+    LDA #HI(IO_SLOT_28_OFFSET)      ; (the low byte is the same)
     STA gbpb_block+10
     RTS
 .io_graphics
     LDA gbpb_block+9
     CLC
-    ADC #LO(IO_GRAPHICS)
+    ADC #LO(IO_GRAPHICS_OFFSET)
     STA gbpb_block+9
     LDA gbpb_block+10
-    ADC #HI(IO_GRAPHICS)
+    ADC #HI(IO_GRAPHICS_OFFSET)
     STA gbpb_block+10
     RTS
 }
@@ -3587,7 +3609,7 @@ LAYOUT_END = &EA
 .io
     TYA
     CLC
-    ADC #LO(IO_NAMES)               ; &E80 in a graphics set, &80 in IO: the same low byte
+    ADC #LO(IO_NAMES_OFFSET)        ; the same low byte as SET_NAMES
     BCC store
     INX
 .store
@@ -3689,7 +3711,7 @@ LAYOUT_END = &EA
     JMP start.redraw
 }
 
-; Write the selected object's name to the file, unless it's the man.
+; Write the selected object's name to the file, unless it's the exit.
 .write_name
 {
     JSR name_transfer
@@ -3698,12 +3720,12 @@ LAYOUT_END = &EA
 }
 
 ; Point gbpb_block at the selected object's name, in memory and in the file.
-; Out: carry set (and nothing done) for the man, who has no name
+; Out: carry set (and nothing done) for the exit, which has no name
 ; Clobbers: A, X, Y
 .name_transfer
 {
     LDA sprite
-    CMP #THE_MAN
+    CMP #SLOT_EXIT
     BNE named
     RTS
 .named
@@ -3723,7 +3745,7 @@ LAYOUT_END = &EA
     RTS
 }
 
-; Read the selected object's name from the file, unless it's the man.
+; Read the selected object's name from the file, unless it's the exit.
 .read_name
 {
     JSR name_transfer
@@ -3781,7 +3803,7 @@ LAYOUT_END = &EA
     CMP #HI(graphics)
     BNE not_graphics
     LDA osfile_block+11
-    CMP #HI(graphics_end - graphics) ; the length's
+    CMP #HI(SET_SIZE)               ; the length's
     BNE not_graphics
     RTS
 }
@@ -3791,7 +3813,7 @@ LAYOUT_END = &EA
     EQUB &00
 .not_graphics
     LDA osfile_block+11
-    CMP #&33                        ; an IO file is &33xx long
+    CMP #HI(IO_LENGTH)              ; an IO file's length
     BEQ io
     JMP bad_file
 .io
@@ -3849,8 +3871,8 @@ LAYOUT_END = &EA
     JSR read_block
     PLA
     CLC
-    ADC #&06
-    CMP #&12
+    ADC #IO_SEGMENT
+    CMP #io_segments_end - io_segments
     BCC segment
     JSR close_files
     JMP start.redraw
@@ -3858,10 +3880,12 @@ LAYOUT_END = &EA
 
 ; Where the graphics set is in an IO file (as MISSION builds it): each piece's
 ; address in the set, its offset in the file and its length.
+IO_SEGMENT = 6                  ; bytes an entry
 .io_segments
-    EQUW graphics + &E00, IO_SLOT_28, &80       ; large slot &28
-    EQUW object_names, IO_NAMES, 15*12          ; the names
-    EQUW graphics, IO_GRAPHICS, &E00            ; slots &00-&27
+    EQUW slot_28, IO_SLOT_28_OFFSET, LARGE_SPRITE_SIZE
+    EQUW object_names, IO_NAMES_OFFSET, OBJECT_NAMES * OBJECT_NAME_LENGTH
+    EQUW graphics, IO_GRAPHICS_OFFSET, IO_GRAPHICS_SIZE         ; slots &00-&27
+.io_segments_end
 
 ; Read the catalogue entry of the file named in input_buffer (OSFILE 5).
 ; Out: carry set if the filing system isn't a disc one (nothing read); else
@@ -3914,7 +3938,7 @@ LAYOUT_END = &EA
     JMP show_error
 }
 
-; OptionsA Obj name (CTRL-N): rename the selected object (not the man).
+; OptionsA Obj name (CTRL-N): rename the selected object (not the exit).
 .cmd_obj_name
 {
     LDA sprite_width
@@ -3924,7 +3948,7 @@ LAYOUT_END = &EA
     RTS
 .small
     LDA sprite
-    CMP #THE_MAN
+    CMP #SLOT_EXIT
     BEQ done
     LDA #WINDOW_INPUT
     LDX #LO(text_object_name)
