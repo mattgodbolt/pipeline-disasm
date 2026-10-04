@@ -504,7 +504,9 @@ shift_from = &100 - (SCROLL_RIGHT - SCROLL_LEFT)    ; Y counts up to zero
 ; A tune for SOUND's three channels, kept as a separate BASIC program;
 ; line 1020 runs it (PAGE=PAGE+&1C00:RUN), though no line leads there. Its
 ; pattern P$ picks the DATA lines (A is 40, B 50 ...) that hold three voices
-; of notes as letters.
+; of notes as letters. Which tune it is isn't written down: asking Claude to
+; name it trips an error in Claude's API, so that's left to people (see
+; docs/notes/basic.md).
 .tune
     ASSERT tune = program + &1C00
 BASIC

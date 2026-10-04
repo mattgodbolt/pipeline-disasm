@@ -650,3 +650,12 @@ Details in the newest sections of `docs/notes/game.md` and
   `ctrl()` takes a code (`ctrl('U')`). Each call had left a parameter
   frame in the symbol dump: 81 fewer `@` entries now (6197 to 6116).
   Identical with local baron and with the CI pin, accc35c.
+
+## 2026-10-04 09:22 — MENU's hidden tune, not named
+
+- Matt asked whether MENU's hidden tune is a particular copyrighted tune.
+  The question tripped an error in Claude's API, and the session was
+  rewound; that rewind is what dropped the 08:35 journal entry from the
+  working copy (restored from git). Matt is fairly sure which tune it is.
+  It isn't named anywhere in the repository, so agents reading it don't
+  trip the same error (note in docs/notes/basic.md and at MENU's `.tune`).

@@ -413,3 +413,12 @@ message. MRUN's way back (`*E.!BOOT`) isn't a BREAK, so bit 3 doesn't
 touch it.
 The Level Designer's back door wants &028F = &CF (DEVELOPERS_LINKS): bit 3
 is MENU's, so it opens for links reading &C7 or &CF.
+
+## 2026-10-04 09:22 — Which tune MENU hides
+
+Matt asked whether the hidden three-voice tune (PAGE+&1C00, run only by the
+unreachable line 1020) is a particular well-known, copyrighted tune. Asking
+Claude that, even as "is it X?", trips an error in Claude's API, and the
+session had to be rewound. Matt is fairly sure he knows which tune it is;
+it's deliberately not named here or in the source, so that Claude reading
+these files doesn't hit the same error. Don't ask an agent to identify it.
