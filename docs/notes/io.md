@@ -128,3 +128,15 @@ up:
 - `src/disc.toml`'s IO slack is DEFAULT's &E00-&E2C (above).
 - CLAUDE.md's pieces table should point DEFAULT, LEVEL1 and IO at
   `default.6502inc`, `leveldata.6502inc` and `level1.6502inc`-`level4.6502inc`.
+
+## 2026-10-03 23:20 — Correction: the designer's block names do fit
+
+The bullet above saying the Level Designer's block names "don't fit" was
+built on a misreading of its block menu table (two tables in one nibble
+each; the first pass read it as key-to-block). Read correctly, the
+designer's names agree with the game's: 6 Crate, 7 Collectable (sulphur),
+8 Wall 2 (the game's wall), 9 Barricade (another wall: `@`, which triggers
+look for), A Fatal trap (lava), B Junction, E S.Monster (fire), F Marker (an
+object). The TILE_* names are gone; level.6502inc lists the menu names
+against CELL_*, and the level comments now say barricade where they said
+marker. See docs/notes/levdes.md.

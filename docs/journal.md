@@ -372,3 +372,33 @@ Details in `docs/notes/io.md`.
   `disc.toml`'s IO slack could come from DEFAULT; `TILE_*` (designer) and
   `CELL_*` (game) name the same values differently. The three reviewers were
   told to merge main and use the shared names.
+
+## 2026-10-03 23:20 — Merged: the Level Designer review
+
+Details in `docs/notes/levdes.md`.
+
+- The first pass had the designer's block numbers wrong: its block menu
+  table holds two tables, a nibble each (indexed by block, its menu item;
+  indexed by item, its block), and was read as key-to-block. Read right, the
+  designer's names agree with the game's meanings (6 Crate, 7 Collectable,
+  8 Wall 2, 9 Barricade, A Fatal trap = lava, B Junction, E S.Monster =
+  fire, F Marker = object). Confirmed key by key in jsbeeb, and by the
+  simulator dying on A and E and turning at B. On main the TILE_* names
+  (which had the old reading) are gone, `level.6502inc` lists the menu names
+  against CELL_*, and comments calling cell 9 a marker now say barricade.
+- Other corrections: WDATA's units are screen columns and character rows;
+  its messages' TABs were misread constants (now `os_tab(column, row)`); the
+  back door needs Caps Lock off then I; a puzzle's status digit is its
+  object (puzzle mod 8 + 1); the simulator's directions number 0 left,
+  1 up, 2 right, 3 down, unlike the level's, so they keep their own names.
+- Found: a 12-character filename doesn't save (its Return is overwritten by
+  the file control block) - silently; loading a level with the wrong code
+  loses the one being edited.
+- Ian's labels from the MENU fragment are noted at their routines (sel0
+  `choose_from_window`, sure `confirm`, wind `open_window`, table
+  `jump_to_handler`, key3 `help_menu`, help `help_menu_show`, canc the RTS at
+  `hex_key_done`, t2 `work`).
+- Every OS call, key, character, VDU code, CRTC register, menu item, flag and
+  direction in the designer is named, in `src/levdes.6502inc` for now; many
+  belong in shared includes, which waits for the other reviews so it's done
+  once.

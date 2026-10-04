@@ -38,7 +38,7 @@ level_3 = {
     ; The triggers: name, action and flags, where, the action's A, X and Y,
     ; and a condition.
     {
-        ; 0: (38, 51) becomes the floor (.); when facing right at a marker (@)
+        ; 0: (38, 51) becomes the floor (.); when facing right at a barricade (@)
         {"", PUZZLE_PLACE_BLOCK + PUZZLE_USES_OBJECT, 37, 51, &00, &26, &33, &D9},
         ; 1: takes the player to (32, 14)
         {"", PUZZLE_TELEPORT + PUZZLE_USES_OBJECT + PUZZLE_REUSABLE, IGNORE, IGNORE, &FF, &1C, &0A, &09},
@@ -50,7 +50,7 @@ level_3 = {
         {"", PUZZLE_MOVE_NEXT_BLOCK + PUZZLE_USES_OBJECT + PUZZLE_OFF, IGNORE, IGNORE, &00, &2A, &0F, &45},
         ; 5: sets the clock to 230
         {"", PUZZLE_SET_LEVELS + PUZZLE_USES_OBJECT, IGNORE, IGNORE, &01, &E6, &00, &06},
-        ; 6: the cell in front becomes the floor (.); when facing down at a marker (@)
+        ; 6: the cell in front becomes the floor (.); when facing down at a barricade (@)
         {"", PUZZLE_NEXT_BLOCK + PUZZLE_USES_OBJECT + PUZZLE_COUNTS_COLLECTS, 32, 41, &00, &1C, &3B, &F9},
         ; 7: the cell in front becomes the floor (.); when facing a wall (#)
         {"", PUZZLE_NEXT_BLOCK + PUZZLE_USES_OBJECT + PUZZLE_REUSABLE, IGNORE, IGNORE, &00, &14, &20, &45},

@@ -40,13 +40,13 @@ level_2 = {
     {
         ; 0: blows up object 0
         {"", PUZZLE_DETONATE_OBJECT + PUZZLE_USES_OBJECT, 19, 63, &00, &18, &00, &2F},
-        ; 1: (26, 42) becomes the floor (.); when facing up at a marker (@)
+        ; 1: (26, 42) becomes the floor (.); when facing up at a barricade (@)
         {"", PUZZLE_PLACE_BLOCK + PUZZLE_USES_OBJECT, 26, 43, &00, &1A, &2A, &E9},
         ; 2: the cell in front becomes lava (~); when facing down at an object ($)
         {"", PUZZLE_NEXT_BLOCK + PUZZLE_USES_OBJECT, 20, 39, &0A, &A0, &A0, &FF},
-        ; 3: (62, 39) becomes the floor (.); when facing right at a marker (@)
+        ; 3: (62, 39) becomes the floor (.); when facing right at a barricade (@)
         {"", PUZZLE_PLACE_BLOCK + PUZZLE_USES_OBJECT, 61, 39, &00, &3E, &27, &D9},
-        ; 4: (21, 32) becomes a pipe across (-); when facing left at a marker (@)
+        ; 4: (21, 32) becomes a pipe across (-); when facing left at a barricade (@)
         {"", PUZZLE_PLACE_BLOCK + PUZZLE_USES_OBJECT, 22, 32, &0C, &15, &20, &C9},
         ; 5: blows up object 5; when facing down at a wall (=)
         {"", PUZZLE_DETONATE_OBJECT + PUZZLE_USES_OBJECT, 50, 31, &05, &A0, &14, &F8},

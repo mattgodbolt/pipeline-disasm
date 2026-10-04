@@ -37,7 +37,7 @@ level_1 = {
     ; The triggers: name, action and flags, where, the action's A, X and Y,
     ; and a condition.
     {
-        ; 0: the cell at (31, 33) moves right; when facing down at a marker (@)
+        ; 0: the cell at (31, 33) moves right; when facing down at a barricade (@)
         {"First Door", PUZZLE_MOVE_BLOCK + PUZZLE_USES_OBJECT + PUZZLE_REUSABLE, 31, 32, &01, &1F, &21, &F9},
         ; 1: takes the player to (31, 30)
         {"Telept Bck", PUZZLE_TELEPORT + PUZZLE_USES_OBJECT + PUZZLE_REUSABLE, IGNORE, IGNORE, &00, &1B, &1A, &00},
@@ -82,11 +82,11 @@ level_1 = {
         {"One way 2 ", PUZZLE_MOVE_BLOCK, 51, 2, &01, &31, &00, &A0},
         ; 21: takes the player to (41, 7); when facing fire (*)
         {"Tel Bck   ", PUZZLE_TELEPORT + PUZZLE_OFF + PUZZLE_REUSABLE, IGNORE, IGNORE, &00, &25, &03, &4E},
-        ; 22: (4, 16) becomes the floor (.); when facing right at a marker (@)
+        ; 22: (4, 16) becomes the floor (.); when facing right at a barricade (@)
         {"3rd door  ", PUZZLE_PLACE_BLOCK + PUZZLE_USES_OBJECT, 3, 16, &00, &04, &10, &D9},
         ; 23: (19, 47) becomes a pipe across (-); when facing down
         {"One way   ", PUZZLE_PLACE_BLOCK, 19, 53, &0C, &13, &2F, &B0},
-        ; 24: the cell at (24, 53) moves left; when facing down at a marker (@)
+        ; 24: the cell at (24, 53) moves left; when facing down at a barricade (@)
         {"2nd door  ", PUZZLE_MOVE_BLOCK + PUZZLE_USES_OBJECT, 24, 52, &00, &18, &35, &F9},
         ; 25: puts monster 0 at (42, 9) going right, back and forth; when facing up
         {"Relocate  ", PUZZLE_PLACE_MONSTER, 49, 25, &A8, &B1, &25, &A0},
@@ -98,9 +98,9 @@ level_1 = {
         {"Order 3   ", PUZZLE_PLACE_BLOCK, 45, 5, &0A, &2D, &00, &90},
         ; 29: (47, 0) becomes lava (~); when facing right
         {"Order 4   ", PUZZLE_PLACE_BLOCK, 47, 4, &0A, &2F, &00, &90},
-        ; 30: (40, 10) becomes the floor (.); when facing down at a marker (@)
+        ; 30: (40, 10) becomes the floor (.); when facing down at a barricade (@)
         {"4th door  ", PUZZLE_PLACE_BLOCK + PUZZLE_USES_OBJECT, 40, 9, &00, &28, &0A, &F9},
-        ; 31: (61, 2) becomes a marker (@); when facing right
+        ; 31: (61, 2) becomes a barricade (@); when facing right
         {"One way 3 ", PUZZLE_PLACE_BLOCK, 59, 0, &09, &3D, &02, &90}
     },
     ; The map.

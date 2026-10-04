@@ -27,8 +27,8 @@
 ; order, then the map. A mission keeps each field of all four levels
 ; together, then the four maps.
 ;
-; The designer calls triggers puzzles, and the game's cell types blocks (with
-; names of its own: TILE_* in level.6502inc).
+; The designer calls triggers puzzles, and the game's cell types blocks (its
+; menu's names for them are listed in level.6502inc).
 
 LEVEL_FIELD_SIZES = {1, 1, 1, 4, 8, 32, 16, 32, 64, 64, 64}
 ; Where each field starts among a level's fields (MISSION's pnt): the
@@ -69,8 +69,8 @@ CELL_OBJECT       = &F    ; an object (or the exit): see the level's objects
 ; Maps are drawn a character a cell, a string a row, with these for cell types
 ; 0-F: the floor ".", walls filling the bottom right "r", bottom left "7",
 ; top right "L" and top left "J" (the corners of the box-drawing shapes), a
-; wall "#", a crate "c", sulphur "o", a wall "=", a wall "@" (the designer's
-; marker, which triggers often look for), lava "~", a pipe junction "+",
+; wall "#", a crate "c", sulphur "o", a wall "=", a barricade "@" (another
+; wall, which triggers often look for), lava "~", a pipe junction "+",
 ; pipes across "-" and down "|", fire "*" and an object "$". (The pictures for
 ; them are in default.6502inc.)
 MAP_KEY = ".r7LJ#co=@~+-|*$"

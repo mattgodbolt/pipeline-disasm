@@ -57,23 +57,23 @@ MACRO MONSTER x, y, direction, pattern
     EQUB x * 4, y * 4, direction, pattern
 ENDMACRO
 
-; The designer's names for the map's blocks, from its block menu. They
-; aren't what the game makes of them (CELL_* in leveldata.6502inc): its fatal
-; trap is a crate, its crate a wall, its wall 2 lava, its S.monster a pipe
-; junction, its barricade fire and its junction an object.
-TILE_BLANK      = &0
-TILE_SE_CURVE   = &1
-TILE_SW_CURVE   = &2
-TILE_NE_CURVE   = &3
-TILE_NW_CURVE   = &4
-TILE_WALL_1     = &5
-TILE_FATAL_TRAP = &6
-TILE_COLLECTABLE = &7
-TILE_CRATE      = &8
-TILE_MARKER     = &9
-TILE_WALL_2     = &A
-TILE_MONSTER    = &B
-TILE_HORZ_PIPE  = &C
-TILE_VERT_PIPE  = &D
-TILE_BARRICADE  = &E
-TILE_JUNCTION   = &F
+; The designer's names for the map's blocks, from its block menu, against the
+; game's cell types (CELL_* in leveldata.6502inc). They agree on what each
+; block is; the menu just lists them in its own order (see block_menu_map in
+; hidden_levdes.6502, and docs/notes/levdes.md):
+;
+;   block  menu name     the game
+;   0      Blank         CELL_FLOOR
+;   1-4    SE/SW/NE/NW curve   walls, curved
+;   5      Wall 1        a wall
+;   6      Crate         CELL_CRATE
+;   7      Collectable   CELL_SULPHUR
+;   8      Wall 2        CELL_WALL
+;   9      Barricade     a wall
+;   A      Fatal trap    CELL_LAVA
+;   B      Junction      CELL_JUNCTION
+;   C      Horz.Pipe     CELL_PIPE_ACROSS
+;   D      Vert.Pipe     CELL_PIPE_DOWN
+;   E      S.Monster     CELL_FIRE (the designer marks monsters with it)
+;   F      Marker        CELL_OBJECT (the designer marks the start, finish
+;                        and objects with it)
