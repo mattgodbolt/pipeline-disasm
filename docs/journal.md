@@ -534,3 +534,26 @@ Details in the newest sections of `docs/notes/loaders.md` and
   filename fails to save without a word in the Level Designer, and what the
   game's clipping thresholds &E2 and &F1 are (and the leftover at
   &50AD-&50FF).
+
+## 2026-10-03 23:27 — Merged: the Level Designer's 12-character filename
+
+Details in the newest section of `docs/notes/levdes.md`.
+
+- Correction to 23:20's (really 19:38's) "silently": a 12-character name
+  fails with "Error 204 has occurred !" and "Bad name" in the message box.
+  The earlier test's extra `key Enter` (beeb.mjs's `type` already presses
+  Return) cleared the message at once. The overrun leaves ":0.$.ABCDEFG0",
+  and DFS 1.2 refuses an eighth leaf character. Since a drive, a directory
+  and a 7-character leaf make exactly 12, every full-length name fails; 11
+  are safe. Load level overruns the same way, and as any failed load does,
+  loses the level being edited.
+- Found: DFS can't see the hidden runs, so it counts &114-&31F as free and
+  puts a new file after LEVDES's stub at &113. Saving levels onto the
+  PIPELINE disc itself overwrites H.GAME from the second level on (jsbeeb:
+  four saves changed &114-&13F). Every catalogued file is locked, so
+  MISSION can't save over IO, and a mission saved under a new name (&34
+  sectors) would land on H.GAME and the start of H.GRAPH; that follows from
+  the same allocation, not tested. The designer asks for the PIPELINE disc
+  back when it exits, so data was presumably meant for a disc of its own.
+- tools/beeb.mjs: `ssd FILE` writes drive 0's disc as it stands, to see what
+  a program saved.
