@@ -27,8 +27,8 @@
 ;
 ; The map key characters in brackets are the ones level maps are drawn with
 ; (MAP_KEY in leveldata.6502inc).
-
-INCLUDE "sprites.6502inc"
+;
+; Whatever includes this includes sprites.6502inc first (io.6502inc does).
 
 ; Slots &00-&0F: a picture for each type of map cell, by type.
 default_tiles = {
@@ -1259,8 +1259,6 @@ default_object_names = {
     " Explosives "   ; 14
 }
 
-DEFAULT_NAME_LENGTH = 12
-
 ; The bytes of slots &00-&27, the graphics, as they start a graphics file and
 ; end a mission. (FUNCTIONs rather than macros: baron's symbol dump keeps a
 ; function's frame twice when it's called inside a macro.)
@@ -1275,5 +1273,6 @@ FUNCTION default_graphics() = FLATTEN({
 ; graphics file and start a mission.
 FUNCTION default_names()
     names = CODES(default_object_names)
-    ASSERT RANK(names) = 2 AND LEN(names[0]) = DEFAULT_NAME_LENGTH, "an object's name is 12 characters"
+    ASSERT RANK(names) = 2 AND LEN(names[0]) = OBJECT_NAME_LENGTH, "an object's name is 12 characters"
+    ASSERT LEN(names) = OBJECT_KINDS, "a set names 15 kinds of object"
 = CONCAT(mode5_pictures({default_no_object}), FLATTEN(names))

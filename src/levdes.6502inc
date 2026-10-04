@@ -44,9 +44,8 @@ COORDINATE_BITS = &3F
 POSITION_FLAGS  = &C0
 
 ; An object's fourth byte: the charges below its three flags. Its sprite is
-; one of the game's 15 kinds of object, icons 0-14 (icon 15 is the exit).
+; one of the OBJECT_KINDS (sprites.6502inc).
 OBJECT_CHARGES = &1F
-OBJECT_KINDS   = 15
 
 ; A puzzle's type byte: the type below its flags.
 PUZZLE_TYPE = &0F

@@ -26,6 +26,7 @@
 INCLUDE "os.6502inc"
 INCLUDE "osconst.6502inc"
 INCLUDE "level.6502inc"
+INCLUDE "sprites.6502inc"                ; OBJECT_KINDS
 INCLUDE "levdes.6502inc"
 INCLUDE "wdata.6502inc"
 

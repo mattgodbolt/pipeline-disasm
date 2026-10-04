@@ -48,6 +48,7 @@ PICTURE_COLUMN_BYTES = CHARS_PER_CELL * CHAR_BYTES
 ICON_BYTES           = PICTURE_BYTES / 4
 ICON_COLUMN_BYTES    = PICTURE_COLUMN_BYTES / 2
 VIEW_CELLS           = SCREEN_COLUMNS / CHARS_PER_CELL
+ASSERT PICTURE_BYTES = LARGE_SPRITE_SIZE AND ICON_BYTES = SMALL_SPRITE_SIZE
 
 ; Pictures by number from io_tiles: the cell types' (0-15), the object icons
 ; four to a picture (16-19), the player facing each way (20-23), and the
@@ -56,7 +57,6 @@ VIEW_CELLS           = SCREEN_COLUMNS / CHARS_PER_CELL
 FUNCTION tile(type) = io_tiles + type * PICTURE_BYTES
 FUNCTION icon(n) = io_object_icons + n * ICON_BYTES
 FUNCTION player_facing(direction) = io_player + direction * PICTURE_BYTES
-EXIT_ICON       = 15
 FIRST_ALTERNATE = (io_alternates - io_tiles) DIV PICTURE_BYTES
 ALTERNATES      = 4       ; cell types with a second picture
 

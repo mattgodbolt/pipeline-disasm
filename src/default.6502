@@ -10,6 +10,7 @@
 ;
 ; The designer's sheet shows the large slots in its own order
 ; (slot_of_position in H.GRAPH).
+INCLUDE "sprites.6502inc"
 INCLUDE "default.6502inc"
 
 SECTION default, filename="DEFAULT", org=&4000, load=&4000, exec=&0

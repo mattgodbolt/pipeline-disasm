@@ -2404,14 +2404,14 @@ ASSERT direction_dy - direction_dx = DIRECTION_NONE + 1
 ; Print the name of object icon A.
 ; Clobbers: A, X, Y, work0.
 .print_object_name
-    ASL A                               ; * IO_NAME_LENGTH
+    ASL A                               ; * OBJECT_NAME_LENGTH
     ASL A
     STA work0
     ASL A
     ADC work0
     TAY
-    LDX #IO_NAME_LENGTH - 1
-ASSERT IO_NAME_LENGTH = 12
+    LDX #OBJECT_NAME_LENGTH - 1
+ASSERT OBJECT_NAME_LENGTH = 12
 
 ; Print X + 1 characters from io_object_names + Y.
 ; Clobbers: A, X, Y.
@@ -3883,7 +3883,7 @@ ASSERT SCREEN_COLUMNS / 2 = &10         ; for bit4_mask
     BPL print_selected_object
     LDA #VDU_BACKSPACE                  ; nothing selected: back a character...
     JSR OSWRCH
-    LDY #IO_NAME_LENGTH + 2
+    LDY #OBJECT_NAME_LENGTH + 2
     LDA #ascii(" ")                     ; ...and spaces a character past a name
 .print_selected_blank
     JSR OSWRCH

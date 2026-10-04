@@ -1,3 +1,54 @@
+; A PIPELINE graphics set: its layout and what each slot is for, then the
+; notation its pictures are written in here. The Graphics Designer edits a
+; set at &4000 and saves it whole (DEFAULT is one: default.6502inc describes
+; it); MISSION copies it into a mission, where the game draws with it
+; (io.6502inc has where it goes there). Included by io.6502inc, so anything
+; including that has this too.
+
+; ---------------------------------------------------------------------------
+; The layout: sprites in numbered slots, then the objects' names.
+
+LARGE_SPRITE_WIDTH  = 16        ; pixels
+LARGE_SPRITE_HEIGHT = 32
+LARGE_SPRITE_SIZE   = LARGE_SPRITE_WIDTH / 4 * LARGE_SPRITE_HEIGHT    ; bytes, four pixels each
+SMALL_SPRITE_WIDTH  = 8
+SMALL_SPRITE_HEIGHT = 16
+SMALL_SPRITE_SIZE   = SMALL_SPRITE_WIDTH / 4 * SMALL_SPRITE_HEIGHT
+
+; The objects: kinds 0-14, each with an icon (a small slot) and a name, space
+; padded. Icon 15, after them, is the exit's, and has no name.
+OBJECT_KINDS       = 15
+OBJECT_NAME_LENGTH = 12
+EXIT_ICON          = OBJECT_KINDS
+
+SET_LARGE      = &000           ; large slots &00-&0F
+SET_SMALL      = &800           ; small slots &10-&1F
+SET_MORE_LARGE = &A00           ; large slots &20-&28
+SET_NAMES      = &E80           ; the names of icons 0-14
+SET_SIZE       = &F34
+
+FIRST_SMALL_SLOT = &10
+MORE_LARGE_SLOT  = &20
+LAST_SLOT        = &28
+
+; What the game makes of the slots (a mission holds slots &00-&27, the set's
+; first &E00 bytes, as its graphics, and slot &28 apart). Slots &00-&0F are
+; the map's cell types, &10-&1F the objects' icons.
+SLOT_FLOOR     = &00            ; cell type 0; the game also fills the floor round an
+                                ; icon from its first character cell, so it repeats that
+SLOT_MONSTER   = &0E            ; &0E and &0F: the flame monsters' two pictures
+SLOT_EXIT      = FIRST_SMALL_SLOT + EXIT_ICON
+SLOT_PLAYER    = &20            ; &20-&23: the player facing left, right, up and down
+SLOT_ALTERNATE = &24            ; &24-&27: second pictures for cell types 5, 7, 8 and A
+SLOT_NO_OBJECT = &28            ; for an object cell with no object in it
+
+ASSERT SET_SMALL = SET_LARGE + FIRST_SMALL_SLOT * LARGE_SPRITE_SIZE
+ASSERT SET_MORE_LARGE = SET_SMALL + (MORE_LARGE_SLOT - FIRST_SMALL_SLOT) * SMALL_SPRITE_SIZE
+ASSERT SET_NAMES = SET_MORE_LARGE + (LAST_SLOT + 1 - MORE_LARGE_SLOT) * LARGE_SPRITE_SIZE
+ASSERT SET_SIZE = SET_NAMES + OBJECT_KINDS * OBJECT_NAME_LENGTH
+ASSERT SLOT_EXIT = MORE_LARGE_SLOT - 1 AND SLOT_PLAYER = MORE_LARGE_SLOT
+
+; ---------------------------------------------------------------------------
 ; Sprites written as pictures. A picture is a list of strings, one per row of
 ; pixels, each character a logical colour: . 1 2 3. The bytes come out the
 ; way PIPELINE stores sprites (and MODE 5 lays out the screen inside a

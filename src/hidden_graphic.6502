@@ -3,7 +3,7 @@
 ; The GRAPHIC stub reads this from sectors &145-&165, which no catalogue entry
 ; mentions, to &1AB0 and jumps to start. It edits a graphics set - the game's
 ; pictures and the names of its objects - kept at &4000 (src/default.6502 is
-; one; graphics_designer.6502inc names its layout), and goes back to the menu
+; one; sprites.6502inc names its layout), and goes back to the menu
 ; by running /MRUN (on tape it resets the machine instead).
 ;
 ; The screen is MODE 5 at &5800. On the left, the selected sprite magnified
@@ -29,9 +29,7 @@
 
 INCLUDE "os.6502inc"
 INCLUDE "osconst.6502inc"
-INCLUDE "io.6502inc"
-INCLUDE "sprites.6502inc"
-INCLUDE "graphics_designer.6502inc"
+INCLUDE "io.6502inc"                    ; and sprites.6502inc, the graphics set's format
 
 ; In shortcut_keys, an entry below &80 isn't a key (any INKEY_TEST() value is
 ; &80 or more).
@@ -103,7 +101,6 @@ IO_GRAPHICS_OFFSET = io_graphics - io_start
 IO_LENGTH          = IO_END - io_start
 ASSERT LO(IO_SLOT_28_OFFSET) = LO(slot_28 - graphics)
 ASSERT LO(IO_NAMES_OFFSET) = LO(SET_NAMES)
-ASSERT IO_NAMES_SIZE = LARGE_SPRITE_SIZE + OBJECT_NAMES * OBJECT_NAME_LENGTH
 ASSERT IO_GRAPHICS_SIZE = slot_28 - graphics
 
 frame_a       = &3E00           ; SPRITE_FRAME_A
@@ -4066,7 +4063,7 @@ ASSERT LO(graphics) = 0 AND HI(graphics) + HI(SET_SIZE) = HI(graphics_end)
 IO_SEGMENT = 6                  ; bytes an entry
 .io_segments
     EQUW slot_28, IO_SLOT_28_OFFSET, LARGE_SPRITE_SIZE
-    EQUW object_names, IO_NAMES_OFFSET, OBJECT_NAMES * OBJECT_NAME_LENGTH
+    EQUW object_names, IO_NAMES_OFFSET, OBJECT_KINDS * OBJECT_NAME_LENGTH
     EQUW graphics, IO_GRAPHICS_OFFSET, IO_GRAPHICS_SIZE         ; slots &00-&27
 .io_segments_end
 
