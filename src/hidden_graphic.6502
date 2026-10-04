@@ -9,13 +9,13 @@
 ;
 ; How it's reached: MENU, the BASIC menu the disc boots into, runs the GRAPHIC
 ; stub (*/GRAPHIC), a small loader in the disc's catalogue. The stub reads
-; this program from sectors &145-&165, a run of sectors that no catalogue
-; entry mentions, so that copying the disc's files leaves it behind
-; (hidden_loader.6502inc has the details). It reads it to &1AB0 and jumps to
-; start (&2BAE). H.GRAPH is only the build's name for those sectors. Escape
-; offers to leave: on disc that runs /MRUN, a small program that undoes the
-; designer's changes to the OS and runs the boot file again to bring the menu
-; back; on tape it resets the machine.
+; this program to &1AB0 from sectors &145-&165, a run of sectors that no
+; catalogue entry mentions, so that copying the disc's files leaves it behind
+; (hidden_loader.6502inc has the details), and jumps to start (&2BAE).
+; H.GRAPH is only the build's name for those sectors. Escape offers to leave:
+; on disc that runs /MRUN, a small program that undoes the designer's changes
+; to the OS and runs the boot file again to bring the menu back; on tape it
+; resets the machine.
 ;
 ; Words used throughout:
 ;   slot     a sprite's place in the graphics set, &00-&28. &10-&1F are small
