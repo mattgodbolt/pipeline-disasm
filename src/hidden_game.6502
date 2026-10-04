@@ -4162,15 +4162,16 @@ ASSERT TURN_ANTICLOCKWISE - TURN_CLOCKWISE = TURN_CLOCKWISE - TURN_AHEAD AND TUR
     CLC
     RTS
 
-; Trigger action 7: put monster A AND 3 in map cell (A DIV 4, Y DIV 4) (its
-; position in characters is A and Y with their low bits clear), going
-; direction Y AND 3 with turning preferences X, and move its fire cell there.
-.trigger_move_monster
+; Action 7: put monster A AND 3 in map cell (A DIV 4, Y DIV 4) (its position
+; in characters is A and Y with their low bits clear), going direction Y AND
+; 3 with turning preferences X, and move its fire cell there. A monster
+; that was gone comes back.
+.action_move_monster
     JSR trigger_arguments
     STX work0
     PHA
-    AND #&03                            ; monster A AND 3
-    ASL A
+    AND #MONSTERS - 1                   ; monster A AND 3
+    ASL A                               ; * MONSTER_BYTES
     ASL A
     TAX
     LDA monster_x, X                    ; where it was, in cells
@@ -4182,27 +4183,29 @@ ASSERT TURN_ANTICLOCKWISE - TURN_CLOCKWISE = TURN_CLOCKWISE - TURN_AHEAD AND TUR
     LSR A
     STA work3
     PLA
-    AND #&FC                            ; where it goes
+    AND #&FF - (CHARS_PER_CELL - 1)     ; where it goes
     STA monster_x, X
     LSR A
     LSR A
     STA work4
     TYA
-    AND #&FC
+    AND #&FF - (CHARS_PER_CELL - 1)
     STA monster_y, X
     LSR A
     LSR A
     STA work5
-    TYA                                 ; its direction
-    AND #&03
+    TYA                                 ; its direction, in the bits that
+    AND #3                              ; the position left over
     STA monster_direction, X
     LDA work0                           ; its turning preferences
     STA monster_turns, X
     LDA #CELL_FIRE                      ; move its mark, a fire cell
     BNE move_cell_type
 
-; Move what's in map cell (X, Y) a cell in direction A, objects and all, and
-; draw both cells. Returns: carry set if the cell was empty (nothing moved).
+; Move what's in map cell (X, Y) a cell in direction A, objects and all, over
+; whatever is there, and draw both cells.
+; Out: the carry set if the cell was empty (nothing moved).
+; Clobbers: A, X, Y, work0-work5 and the drawing variables.
 .move_cell
     STX work2
     STY work3
@@ -4230,7 +4233,7 @@ ASSERT TURN_ANTICLOCKWISE - TURN_CLOCKWISE = TURN_CLOCKWISE - TURN_AHEAD AND TUR
 .move_cell_draw
     LDX work2
     LDY work3
-    LDA #&00                            ; empty where it was
+    LDA #CELL_FLOOR                     ; empty where it was
     JSR set_cell_and_draw
     PLA
     LDX work4
@@ -4242,8 +4245,10 @@ ASSERT TURN_ANTICLOCKWISE - TURN_CLOCKWISE = TURN_CLOCKWISE - TURN_AHEAD AND TUR
 
 ; Read the keys into action, unless an action's waiting: P, D, M, CTRL, T and
 ; Return are actions 1-6 (the first pressed, from 6 down), the directions 7-10.
-; The direction the player faces walks on while its key is held; a new
-; direction only once its key has been let go since it was last pressed.
+; The way the player faces walks on while its key is held; another direction
+; counts only once its key has been let go since it was last down (and with
+; the facing key not held, every direction key is forgotten as let go).
+; Clobbers: A, X, Y, work0, work1.
 .read_keys
     LDA action
     BNE move_cell_done
@@ -4263,7 +4268,7 @@ ASSERT TURN_ANTICLOCKWISE - TURN_CLOCKWISE = TURN_CLOCKWISE - TURN_AHEAD AND TUR
     BNE read_move_keys
     JSR clear_keys_down                 ; no move: forget what was held
 .read_move_keys
-    LDY #&03
+    LDY #DIRECTION_DOWN                 ; each direction key
 .read_move_key
     SEC                                 ; a new direction must be pressed afresh
     JSR test_move_key
@@ -4272,9 +4277,10 @@ ASSERT TURN_ANTICLOCKWISE - TURN_CLOCKWISE = TURN_CLOCKWISE - TURN_AHEAD AND TUR
     RTS
 
 ; Is direction key Y pressed? With the carry set it counts only if it wasn't
-; down last time. Sets action to Y + 7 if it counts.
+; down last time. Sets action to ACTION_LEFT + Y if it counts.
+; Clobbers: A, X, Y, work0, work1.
 .test_move_key
-    ROL work1                           ; the carry into the mask
+    ROL work1                           ; the carry into the mask's bit 0
     STY work0
     LDX key_left, Y
     JSR key_pressed
@@ -4284,53 +4290,57 @@ ASSERT TURN_ANTICLOCKWISE - TURN_CLOCKWISE = TURN_CLOCKWISE - TURN_AHEAD AND TUR
     AND work1
     BNE move_cell_done
     TYA
-    CLC                                 ; action 7-10
+    CLC
     ADC #ACTION_LEFT
     STA action
 .test_move_key_note
     LDY work0                           ; remember: 1 if it's down
     TXA
-    EOR #&01
+    EOR #1
     STA keys_were_down, Y
     RTS
 
 ; Shrink the display to nothing by narrowing the CRTC's displayed area and
 ; moving its syncs to keep it centred, a frame at a time; then black and a
 ; clear screen.
+; Clobbers: A, X, Y, work0, work1.
 .close_view
     JSR pause
-    LDY #40                             ; 40 frames
+    LDY #40                             ; from 40 characters and rows to none
 .close_view_step
     TYA
-    LDX #&01
-    JSR set_crtc_register               ; R1: characters displayed
+    LDX #CRTC_HORIZONTAL_DISPLAYED
+    JSR set_crtc_register
     LSR A
     CLC
-    ADC #&1D                            ; R2: horizontal sync, kept centred
-    INX
+    ADC #45 - SCREEN_COLUMNS / 2        ; the sync kept centred (45 for 32)
+    INX                                 ; CRTC_HSYNC_POSITION
     JSR set_crtc_register
     TYA
-    LDX #&06
-    JSR set_crtc_register               ; R6: rows displayed
+    LDX #CRTC_VERTICAL_DISPLAYED
+    JSR set_crtc_register
     LSR A
     CLC
-    ADC #&12                            ; R7: vertical sync
-    INX
+    ADC #34 - SCREEN_ROWS / 2           ; likewise (34 for 32)
+    INX                                 ; CRTC_VSYNC_POSITION
     JSR set_crtc_register
     TYA
     JSR wait_vsync
     TAY
     DEY
     BPL close_view_step
-    LDX #&00                            ; logical colour 0 black
+    LDX #COLOUR_BLACK                   ; logical colour 0 black
     JSR vdu_palette
     JSR clear_screen                    ; and the CRTC back
+ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITION = CRTC_VERTICAL_DISPLAYED + 1
 
-; Wait a moment: four or two delay loops of 65536 turns.
+; Wait a moment: four (pause) or two (short_pause) delay loops of 65536
+; turns.
+; Clobbers: X, Y.
 .pause
     JSR short_pause
 .short_pause
-    LDY #&00
+    LDY #0
     JSR delay
     JMP delay
 
@@ -4338,18 +4348,19 @@ ASSERT TURN_ANTICLOCKWISE - TURN_CLOCKWISE = TURN_CLOCKWISE - TURN_AHEAD AND TUR
 ; wild for a while. Then the last level's edit code, "Praise and
 ; felicitations!", and for the locked (competition) mission played from the
 ; start, an entry code; wait for Space.
+; Clobbers: everything.
 .mission_done
-    LDA #&00
+    LDA #0
     JSR set_palette                     ; level 1's palette
     LDA stage
-    CMP #&03                            ; the last level done properly?
+    CMP #STAGE_DONE                     ; the last level done properly?
     BCC mission_done_screen
-    STA work0
+    STA work0                           ; three times round
 .mission_done_flash
     STA ULA_PALETTE                     ; any old colours...
     JSR wait_vsync
     CLC
-    ADC #&05                            ; ...through every combination
+    ADC #5                              ; ...through every combination
     BNE mission_done_flash
     DEC work0
     BNE mission_done_flash
@@ -4357,15 +4368,18 @@ ASSERT TURN_ANTICLOCKWISE - TURN_CLOCKWISE = TURN_CLOCKWISE - TURN_AHEAD AND TUR
     JSR pause
     JSR pause
 .mission_done_screen
-    LDA #&04
+    LDA #IO_LEVELS
     STA level                           ; the last level's edit code
-    LDA #&03                            ; 3 lives' pictures; no mission text
+    LDA #START_LIVES                    ; 3 lives' pictures; no mission text
     SEC
     JSR show_edit_code
     JSR print_inline
-    EQUB &1F, &07, &0F, &11, &03
+    TEXT_AT 6, 11
+    EQUB VDU_COLOUR, 3
     EQUS "Praise"
-    EQUB &09, &61, &6E, &64, &1F, &01, &10
+    EQUB VDU_RIGHT
+    EQUS "and"
+    TEXT_AT 2, 12
     EQUS "felicitations!"
     NOP
     LDA io_locked                       ; the original, locked mission...
@@ -4375,16 +4389,20 @@ ASSERT TURN_ANTICLOCKWISE - TURN_CLOCKWISE = TURN_CLOCKWISE - TURN_AHEAD AND TUR
 .mission_done_wait
     JMP wait_for_space
 
-; The entry code: from the score, scrambled, and a checksum of the whole of
-; the mission's level data (io_attrs to the end of the maps) so the code shows
-; which mission was played, printed in the 1-9, A-W alphabet.
+; The entry code: the score, scrambled, and a checksum of the whole of the
+; mission's level data (io_attrs to the end of the maps) so the code shows
+; which mission was played, printed in the 1-9, A-W alphabet: ten
+; characters, in a box of background colour 2. In order: a digit of the
+; checksum's sum, the score's low byte (two), four more of the checksum, one
+; of the score mixed, and the score's high byte (two).
 .show_entry_code
     JSR print_inline
-    EQUB &1F, &0E, &15
+    TEXT_AT 4, 19
     EQUS "Entry"
-    EQUB &09
+    EQUB VDU_RIGHT
     EQUS "code:-"
-    EQUB &11, &82, &11, &01, &1F, &02, &18
+    EQUB VDU_COLOUR, COLOUR_BACKGROUND + 2, VDU_COLOUR, 1
+    TEXT_AT 4, 22
     NOP
     LDA score_high                      ; the score, scrambled
     JSR scramble
@@ -4394,8 +4412,8 @@ ASSERT TURN_ANTICLOCKWISE - TURN_CLOCKWISE = TURN_CLOCKWISE - TURN_AHEAD AND TUR
     PHA
     LDA #HI(io_attrs)                   ; the checksum runs from io_attrs...
     STA work5
-    LDX #&04
-    LDA #&00
+    LDX #4
+    LDA #0
 .entry_code_clear
     STA work0, X
     DEX
@@ -4422,14 +4440,14 @@ ASSERT TURN_ANTICLOCKWISE - TURN_CLOCKWISE = TURN_CLOCKWISE - TURN_AHEAD AND TUR
     DEX
     BPL entry_code_sum
     PHA
-    LDA #&20                            ; a space
+    LDA #ascii(" ")                     ; a space, in the box
     JSR OSWRCH
     PLA
     JSR print_code_digit
     PLA
-    EOR #&AA                            ; the score's high byte...
+    EOR #&AA                            ; the score's low byte...
     JSR print_code_byte
-    LDX #&03                            ; the checksum
+    LDX #3                              ; the checksum
 .entry_code_print
     LDA work0, X
     JSR print_code_digit
@@ -4442,21 +4460,23 @@ ASSERT TURN_ANTICLOCKWISE - TURN_CLOCKWISE = TURN_CLOCKWISE - TURN_AHEAD AND TUR
     JSR scramble
     JSR print_code_digit
     PLA
-    EOR #&55                            ; the score's low byte
+    EOR #&55                            ; ...and the high byte
     JSR print_code_byte
     JSR print_inline
-    EQUB &20, &1F, &06, &17
+    EQUS " "
+    TEXT_AT 4, 21                       ; the box's top...
     NOP
     JSR print_12_spaces
     JSR print_inline
-    EQUB &1F, &12, &18
+    TEXT_AT 4, 23                       ; ...and bottom
     NOP
     JSR print_12_spaces
     JSR print_inline
-    EQUB &11, &80
+    EQUB VDU_COLOUR, COLOUR_BACKGROUND + 0
     NOP
 
-; Wait for Space to be pressed and let go.
+; Wait for Space to be pressed and let go, then clear any Escape.
+; Clobbers: A, X, Y.
 .wait_for_space
     LDX #INKEY_TEST(KEY_SPACE)          ; Space down...
     JSR key_pressed
@@ -4466,28 +4486,35 @@ ASSERT TURN_ANTICLOCKWISE - TURN_CLOCKWISE = TURN_CLOCKWISE - TURN_AHEAD AND TUR
     JSR key_pressed
     BEQ wait_for_space_up
 
-; OSBYTE &7E: clear an Escape.
+; Clear an Escape.
 .acknowledge_escape
-    LDA #&7E
+    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE
     JMP OSBYTE
+
+; Print 12 spaces.
+; Clobbers: A, X.
 .print_12_spaces
-    LDA #&20
-    LDX #&0C
+    LDA #ascii(" ")
+    LDX #12
 .print_spaces_loop
     JSR OSWRCH
     DEX
     BNE print_spaces_loop
     RTS
 
-; After a level: the backpack screen (A lives, the carry set for no mission
-; text) with the edit code of the level just finished (level is already the
-; next level, and the codes are read from one before io_edit_code_*).
+; After a level: the backpack screen with the edit code of the level just
+; finished (level is already the next level, and the codes are read from one
+; before io_edit_code_*).
+; In: A = the lives to show; the carry set to leave out the mission text.
+; Clobbers: everything.
 .show_edit_code
     JSR draw_backpack_screen
     JSR print_inline
-    EQUB &1F, &07, &13, &11, &81, &11, &02
+    TEXT_AT 6, 16
+    EQUB VDU_COLOUR, COLOUR_BACKGROUND + 1, VDU_COLOUR, 2
     EQUS "Edit code:"
-    EQUB &1F, &05, &14, &11, &80, &11, &03
+    TEXT_AT 10, 17
+    EQUB VDU_COLOUR, COLOUR_BACKGROUND + 0, VDU_COLOUR, 3
     NOP
     LDY level                           ; the level just finished's
     LDA io_edit_code_high - 1, Y
@@ -4496,19 +4523,20 @@ ASSERT TURN_ANTICLOCKWISE - TURN_CLOCKWISE = TURN_CLOCKWISE - TURN_AHEAD AND TUR
     JSR print_code_pair
     LDA io_edit_code_low - 1, Y
 
-; A byte of a code, scrambled, as two digits.
+; A byte of an edit code, unscrambled, as two digits.
 .print_code_pair
     JSR scramble
-    LDX #&03
+    LDX #3                              ; zeros print
     JMP print_bcd
 
 ; Is there an object at map cell (X, Y)?
-; Returns: carry set and Y = its offset in objects (X its number) if so.
+; Out: the carry set, Y = its offset in objects and X its number, if so.
+; Clobbers: A, work0, work1.
 .find_object
     STX work0
     STY work1
-    LDY #7 * 4
-    LDX #&07
+    LDY #(OBJECTS - 1) * OBJECT_BYTES
+    LDX #OBJECTS - 1
 .find_object_loop
     LDA object_x, Y
     CMP work0
@@ -5672,7 +5700,7 @@ ASSERT TURN_ANTICLOCKWISE - TURN_CLOCKWISE = TURN_CLOCKWISE - TURN_AHEAD AND TUR
     EQUW action_launch
     EQUW action_explode
     EQUW action_set_monster
-    EQUW trigger_move_monster
+    EQUW action_move_monster
     EQUW action_teleport
     EQUW action_toggle
     EQUW action_enable
