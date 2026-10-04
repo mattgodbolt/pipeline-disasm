@@ -431,3 +431,108 @@ these files doesn't hit the same error. Don't ask an agent to identify it.
 - The mission's name is printed as is: `draw_backpack_screen` sends its 30
   bytes to OSWRCH unchanged (`print_names_text`), so MISSION's VDU 31s place
   it and the 9s step over the background.
+
+## 2026-10-04 09:37 — MISSION's saves on the PIPELINE disc
+
+MISSION saves with `*SAVE` through OSCLI (PROCosc), nothing of its own
+below DFS, onto whatever disc is in the drive: between the filename and
+the save nothing asks for another disc or looks at which one is in. The
+only hint is PROCquit's "Insert PIPELINE disk", which assumes it was taken
+out. On the PIPELINE disc DFS 1.20 treats everything past the last
+catalogued file (the LEVDES stub, &113) as free, as with the Level
+Designer's saves (levdes.md), and there are no gaps between the catalogued
+files, so each save starts where the one before ended. Seen in jsbeeb:
+
+| Saved | Length | Sectors | Over |
+|---|---|---|---|
+| 1st mission (option 8) | &33D3, &34 sectors | &114-&147 | all of H.GAME (&122-&142), the free &143-&144, H.GRAPH's first three (&145-&147, its &1AB0-&1DAF) |
+| 2nd mission | | &148-&17B | the rest of H.GRAPH, the free &166-&16C, H.LEVDES's first fifteen (&16D-&17B, its &1100-&1FFF) |
+| 3rd mission | | &17C-&1AF | the rest of H.LEVDES (&17C-&18B, its &2000-&2FFF), &18C-&18F, then past the 40 formatted tracks |
+| 1st graphics (option 4) | &F34, 16 | &114-&123 | H.GAME's first two (&3000-&31FF, its loader) |
+| 1st level (option 6) | &A5F, 11 | &114-&11E | nothing |
+| 2nd level | | &11F-&129 | H.GAME's first eight (&3000-&37FF) |
+
+- A mission is catalogued unlocked, load &242D, exec 0: the i/h lock is
+  only the byte inside the file. A name already on the disc is refused
+  before anything is written: saving as IO gave "Error 195 has occurred."
+  "Locked" (PROCreport) and left the disc as it was. Every file on the
+  PIPELINE disc is locked, so no save replaces one.
+- H.GAME's run then holds the mission from offset &E00 to &2EFF: level 2's
+  map from its byte &2D, the maps of levels 3 and 4, and the graphics up to
+  +&92C. H.GRAPH's first three sectors get the file's last &2D3 bytes (the
+  graphics from +&B2D) and then whatever followed the file in memory.
+- On the 40-track disc the third mission fails part-way. On
+  build/pipeline.hfe (jsbeeb takes it as 40 tracks) it gave "Error 199 has
+  occurred." "Disk fault 18 at 28/00" (track 40 isn't there), by when M3
+  was in the catalogue and &17C-&18F written, so H.LEVDES was gone anyway.
+  On the .ssd jsbeeb assumes 80 tracks (the catalogue claims 800 sectors)
+  and the save runs on to &1AF.
+
+What then happens, from MENU on each saved disc (it still boots to the
+menu: the catalogued files are untouched):
+
+- One mission saved: the game doesn't start. The GAME stub reads its run
+  blind and jumps to &3000, which for a fresh mission (DEFAULT's graphics,
+  blank levels) holds 0: a BRK with error number 0 and an empty message.
+  BASIC prints " at line 960" (MENU's `*/GAME`) and stops at its prompt in
+  MODE 7. Error 0 can't be trapped, so MENU's ON ERROR, which would hang,
+  never runs (checked at BASIC: `10ON ERROR PRINT "trapped",ERR:END` with
+  `20?&3000=0:?&3001=0:CALL &3000` gives " at line 20"; with `?&3001=1`,
+  "trapped 1"). The same with LEVEL1 loaded as level 2, whose map is 0 at
+  +&2D too; a level 2 with something there would be run as code instead.
+- One graphics file saved: the game hangs. &3000 holds 02 02 02 0E (the
+  names block's start, SLOT_NO_OBJECT's picture), and &02 stops the 6502
+  until BREAK: jsbeeb sat at PC &3000 with a black screen.
+- One level file saved: the game starts (its title screen). Two: " at
+  line 960" again (L2's byte &300, at &3000, is in its blank map).
+- The Graphics Designer after one mission save runs, but its PIPELINE
+  logo is noise, the sprite sheet shows other sprites in most places and
+  junk in some (slot_of_position, &1CC0, is sprite bytes now, and the
+  editing grid opens on another sprite), and the font's first 22 glyphs
+  (&20-&35: space, punctuation, 0-5) are sprite bytes: OptionsA shows
+  "Flip X" and "Obj name" with a blot for the space. After two mission
+  saves: " at line 225", "Bad program" and BASIC's prompt over MENU's
+  screen (its entry, &2BAE, is in M2's bytes now).
+- The Level Designer after one mission save is as usual (title, then the
+  empty map after Space, as on the unchanged disc). After two, and after
+  three: "Bad program" and BASIC's prompt. Its entry, &2E21, survives the
+  second save but the code it calls below &2000 doesn't.
+
+How, from the repository root after `make` (build/pipeline.ssd and
+build/pipeline.hfe; beeb.mjs's default disc, original/pipeline.ssd, is the
+same bytes). `<M>` stands for booting into MISSION, `wait 33; key Digit5;
+key Enter; wait 10`, and `<SAVE NAME>` for option 8, `key Digit8; key
+Enter; wait 1; type NAME; wait 5` (`type` presses Return after its text).
+
+```
+node tools/beeb.mjs '<M>; <SAVE M1>; ssd build/m1.ssd; <SAVE M2>; ssd build/m2.ssd; <SAVE M3>; ssd build/m3.ssd'
+node tools/beeb.mjs --disc build/pipeline.hfe '<M>; <SAVE M1>; <SAVE M2>; key Digit8; key Enter; wait 1; type M3; wait 60; out; ssd build/hfe3.ssd'
+node tools/beeb.mjs '<M>; key Digit4; key Enter; wait 1; type G1; wait 5; ssd build/g1.ssd'
+node tools/beeb.mjs '<M>; key Digit6; key Enter; wait 1; type 1; wait 1; type L1; wait 15; ssd build/l1.ssd; key Digit6; key Enter; wait 1; type 1; wait 1; type L2; wait 15; ssd build/l2.ssd'
+node tools/beeb.mjs '<M>; key Digit5; key Enter; wait 1; type 2; wait 1; type LEVEL1; wait 20; <SAVE M1>; ssd build/m1lev.ssd'
+node tools/beeb.mjs '<M>; <SAVE IO>; out; ssd build/io.ssd'
+python3 tools/ssdcmp.py build/pipeline.ssd build/m1.ssd src/disc.toml | tail -1
+python3 -c 'import sys; o = open("build/pipeline.ssd", "rb").read(); d = open(sys.argv[1], "rb").read(); print(" ".join("%X" % s for s in range(2, len(d) // 256) if d[s*256:s*256+256] != o[s*256:s*256+256].ljust(256, b"\0")))' build/m1.ssd
+python3 -c 'import sys; sys.path.insert(0, "tools"); from dfs import read_catalogue; c = read_catalogue(open(sys.argv[1], "rb").read()); print(c.cycle, [(e.full_name, hex(e.start), hex(e.length), e.locked) for e in c.entries])' build/m1.ssd
+node tools/beeb.mjs --disc build/m1.ssd 'wait 33; key Digit1; key Enter; wait 15; out; regs; hex 3000 32'
+node tools/beeb.mjs --disc build/m1.ssd 'wait 33; key Digit3; key Enter; wait 15; key F10 5; wait 1; shot build/graph1.png'
+node tools/beeb.mjs --disc build/m1.ssd 'wait 33; key Digit4; key Enter; wait 15; key Space; wait 5; shot build/levdes1.png'
+node tools/beeb.mjs --boot no 'type 10ON ERROR PRINT "trapped",ERR:END; type 20?&3000=0:?&3001=0:CALL &3000; type RUN; wait 2; out'
+```
+
+The rest are the same runs with another disc (g1, l1, l2, m1lev, m2, m3)
+and option (Digit1 the game, Digit3 graphics, Digit4 levels). jsbeeb
+writes an 80-track .ssd, so the one-liner pads the original with zeros:
+past &18F it only shows sectors with something other than 0 in them (M3's
+&1A1-&1AF; &190-&1A0 are blank map).
+
+Not seen run: the overwritten sectors' address marks (DFS presumably
+writes ordinary ones over the deleted ones; beeb.mjs saves only an .ssd),
+and the bytes past the file's end in its last sector (read as "whatever
+followed in memory" from how DFS saves, not compared). "Bad program" is
+presumably BASIC finding MENU's program (from &1900) gone when it gets
+back to its prompt: both designers' runs load over it (from &1AB0 and
+&1100), while H.GAME's, from &3000, leaves line 960 standing. What each
+designer ran into before its error wasn't traced. Whether the disc was
+sold write-protected isn't known; if it was, these saves would all fail
+instead.
