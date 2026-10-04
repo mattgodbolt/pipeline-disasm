@@ -1,7 +1,11 @@
-; MOS call numbers and other constants every piece shares: OSBYTE, OSWORD
-; and filing system call numbers and their settings, service calls, buffers,
-; events, internal key numbers, and the 8271 disc controller's commands as
-; OSWORD &7F passes them. Addresses are in os.6502inc.
+; The machine's numbers, other than addresses (os.6502inc has those), for
+; every piece: OSBYTE, OSWORD and filing system call numbers and their
+; settings, service calls, SOUND channels, buffers and events; internal key
+; numbers and the codes keys give; characters; VDU and PLOT codes; 6845 CRTC
+; registers; screen memory in the modes the pieces use; 6502 opcodes; and
+; the 8271 disc controller's commands as OSWORD &7F passes them. A name here
+; means the same in every piece; a program's own settings (its *FX225 base,
+; its own screen layout) stay in its own include.
 
 ; OSBYTE calls.
 OSBYTE_CURSOR_EDITING     = &04 ; *FX4: X = CURSOR_KEYS_*
