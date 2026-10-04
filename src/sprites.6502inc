@@ -10,15 +10,6 @@ FUNCTION mode5_byte(pixels)
     p = FIND(CODES(".123"), CODES(pixels))
 = SUM((p DIV 2) * {128, 64, 32, 16} + (p MOD 2) * {8, 4, 2, 1})
 
-; One character a pixel.
-MACRO SPRITE_COLUMNS rows
-    FOR c = 0..LEN(rows[0]) DIV 4 - 1
-        FOR r = 0..LEN(rows) - 1
-            EQUB mode5_byte(rows[r][4*c..4*c+3])
-        NEXT
-    NEXT
-ENDMACRO
-
 ; The game's pictures (src/default.6502inc) are drawn two characters a pixel,
 ; as a MODE 5 pixel is twice as wide as it is tall, so they look in the
 ; source as they do on the screen. mode5_pictures turns a list of same-sized
@@ -53,16 +44,3 @@ FUNCTION mode5_pictures(pictures)
     pixel_bits(text[starts + 4], 2),
     pixel_bits(text[starts + 6], 3)
 }, 0)
-
-; A picture laid out as MODE 5 screen memory: a band of eight rows at a time,
-; each band a cell (four pixels across, eight down) after another, left to
-; right. Copying it to the screen a band per character row shows it.
-MACRO SCREEN_PICTURE rows
-    FOR b = 0..LEN(rows) DIV 8 - 1
-        FOR c = 0..LEN(rows[0]) DIV 4 - 1
-            FOR r = 8*b..8*b+7
-                EQUB mode5_byte(rows[r][4*c..4*c+3])
-            NEXT
-        NEXT
-    NEXT
-ENDMACRO
