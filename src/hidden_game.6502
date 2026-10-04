@@ -5299,12 +5299,12 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
     TAY
 .make_sound_done
     RTS
-.explode_in_flight
+.explode_landing
     LDX thrown_x                        ; where it landed
     LDY thrown_y
     BPL explode_at
 .explode_carried
-    BCC explode_in_flight
+    BCC explode_landing                 ; landing, not carried
     LDA #EMPTY_SLOT                     ; it's gone from the backpack...
     STA backpack, X
     LDX player_x                        ; ...where the player is
