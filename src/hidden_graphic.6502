@@ -751,7 +751,7 @@ ASSERT window_size - window_address = 2 * WINDOWS
     INC item
 .no_list
     LDA #OSBYTE_CURSOR_EDITING      ; the cursor keys give codes
-    LDX #&01
+    LDX #CURSOR_KEYS_CODES
     JSR OSBYTE
     LDA #OSBYTE_FUNCTION_KEY_BASE   ; f0-f9 give CODE_F0 up
     LDX #CODE_F0
@@ -767,7 +767,7 @@ ASSERT window_size - window_address = 2 * WINDOWS
     LDA #OSBYTE_ACKNOWLEDGE_ESCAPE  ; if there was an Escape
     JSR OSBYTE
     LDA #OSBYTE_FUNCTION_KEY_BASE   ; function keys back to strings
-    LDX #&01
+    LDX #FUNCTION_KEYS_STRINGS
     LDY #&00
     JSR OSBYTE
     PLA
@@ -1951,7 +1951,7 @@ ASSERT OBJECT_NAME_LENGTH = 12
 .start
 {
     LDA #OSBYTE_CURSOR_EDITING      ; the cursor keys give codes
-    LDX #&01
+    LDX #CURSOR_KEYS_CODES
     JSR OSBYTE
     LDA BRKV+1                      ; BRKV still in the ROMs: not ours yet
     BPL installed
@@ -2211,7 +2211,7 @@ ASSERT OBJECT_NAME_LENGTH = 12
     INX                             ; Escape was pending), so this is OSBYTE 4,1 and the
     JSR OSBYTE                      ; cursor keys stay codes; MENU sets that anyway
     LDA #OSBYTE_FUNCTION_KEY_BASE   ; function keys back to strings
-    LDX #&01
+    LDX #FUNCTION_KEYS_STRINGS
     JSR OSBYTE
     BIT disc_fs
     BMI run_mrun
@@ -2897,7 +2897,7 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     LDY #HI(empty_text)
     JSR open_window
     LDA #OSBYTE_CURSOR_EDITING      ; the cursor keys give codes
-    LDX #&01
+    LDX #CURSOR_KEYS_CODES
     JSR OSBYTE
     LDA #OSBYTE_FUNCTION_KEY_BASE   ; f0-f9 give CODE_F0 up
     LDX #CODE_F0

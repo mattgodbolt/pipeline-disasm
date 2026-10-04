@@ -1,29 +1,92 @@
-; MOS call numbers and other constants: OSBYTE and OSWORD numbers, buffers,
+; MOS call numbers and other constants every piece shares: OSBYTE, OSWORD
+; and filing system call numbers and their settings, service calls, buffers,
 ; events, internal key numbers, and the 8271 disc controller's commands as
 ; OSWORD &7F passes them. Addresses are in os.6502inc.
 
 ; OSBYTE calls.
-OSBYTE_CURSOR_EDITING   = &04   ; *FX4: X=1 makes the cursor keys type codes
-OSBYTE_AUTO_REPEAT_DELAY = &0B  ; *FX11: X=0 turns auto-repeat off
-OSBYTE_DISABLE_EVENT    = &0D   ; X = event number
-OSBYTE_ENABLE_EVENT     = &0E   ; X = event number
-OSBYTE_FLUSH_BUFFERS    = &0F   ; *FX15: X=0 all buffers, 1 just input
-OSBYTE_INKEY            = &81   ; X,Y = INKEY argument; X=Y=&FF if a key tested is down
-OSBYTE_INSERT_BUFFER    = &8A   ; X = buffer, Y = character
-OSBYTE_BREAK_EFFECT     = &C8   ; *FX200: bit 0 disables Escape, bit 1 clears memory on BREAK
-OSBYTE_ESCAPE_KEY       = &E5   ; *FX229: X=0 Escape key makes an escape condition
-OSBYTE_ESCAPE_EFFECTS   = &E6   ; *FX230: X=1 an escape condition does nothing else
+OSBYTE_CURSOR_EDITING     = &04 ; *FX4: X = CURSOR_KEYS_*
+OSBYTE_AUTO_REPEAT_DELAY  = &0B ; *FX11: X centiseconds before a key repeats; 0 turns auto-repeat off
+OSBYTE_AUTO_REPEAT_PERIOD = &0C ; *FX12: X centiseconds between repeats
+OSBYTE_DISABLE_EVENT      = &0D ; X = event number
+OSBYTE_ENABLE_EVENT       = &0E ; X = event number
+OSBYTE_FLUSH_BUFFERS      = &0F ; *FX15: X=0 all buffers, 1 just input
+OSBYTE_WAIT_VSYNC         = &13 ; *FX19: wait for the next vertical sync
+OSBYTE_RAISE_ESCAPE       = &7D ; set the Escape flag, as the key would (no event)
+OSBYTE_ACKNOWLEDGE_ESCAPE = &7E ; clear an Escape; X = &FF if there was one, else 0
+OSBYTE_INKEY              = &81 ; X,Y = INKEY argument; X=Y=&FF if a key tested is down
+OSBYTE_READ_CHAR_AND_MODE = &87 ; X = the character at the text cursor, Y = the mode
+OSBYTE_INSERT_BUFFER      = &8A ; X = buffer, Y = character
+OSBYTE_OPT                = &8B ; *OPT X, Y
+OSBYTE_SERVICE_CALL       = &8F ; X = the service call, Y its argument
+OSBYTE_WRITE_SHEILA       = &97 ; *FX151: X = offset in page &FE, Y = the value
+OSBYTE_BREAK_EFFECT       = &C8 ; *FX200: bit 0 disables Escape, bit 1 clears memory on BREAK
+OSBYTE_KEYBOARD_STATUS    = &CA ; *FX202: bit 4 clear Caps Lock, bit 5 clear
+                                ; Shift Lock, bit 7 set Shift reverses Caps Lock
+OSBYTE_BELL_DURATION      = &D6 ; *FX214
+OSBYTE_FUNCTION_KEY_BASE  = &E1 ; *FX225: X = f0's code (f1 one more...), or FUNCTION_KEYS_STRINGS
+OSBYTE_ESCAPE_KEY         = &E5 ; *FX229: X=0 Escape key makes an escape condition
+OSBYTE_ESCAPE_EFFECTS     = &E6 ; *FX230: X=1 an escape condition does nothing else
+
+; *FX4's settings: what the cursor keys and COPY do.
+CURSOR_KEYS_EDIT  = 0           ; copy editing
+CURSOR_KEYS_CODES = 1           ; they give codes, &87 (COPY) to &8B
+CURSOR_KEYS_SOFT  = 2           ; COPY and the cursor keys are function keys 11-15
+
+; *FX225's setting for the function keys to give their strings (*KEY), as
+; they do at first.
+FUNCTION_KEYS_STRINGS = 1
+
+; Service calls (OSBYTE_SERVICE_CALL).
+SERVICE_CLAIM_ABSOLUTE = 1      ; claim absolute workspace
+SERVICE_CLAIM_PRIVATE  = 2      ; claim private workspace
 
 ; OSWORD calls.
-OSWORD_READ_LINE = &00          ; YX: buffer address (2), max length, lowest and highest character
+OSWORD_READ_LINE            = &00   ; YX: buffer address (2), max length, lowest and highest character
+OSWORD_READ_INTERVAL_TIMER  = &03   ; YX: 5 bytes
+OSWORD_WRITE_INTERVAL_TIMER = &04   ; YX: 5 bytes
+OSWORD_SOUND                = &07   ; YX: channel, amplitude, pitch, duration (2 bytes each)
 OSWORD_READ_CHAR_DEFINITION = &0A   ; YX: the character, then its 8 rows of pixels, top first
+OSWORD_READ_PALETTE         = &0B   ; YX: logical colour; returns the physical one after it
+OSWORD_WRITE_PALETTE        = &0C   ; YX: logical colour, physical colour, 0, 0, 0
 
-; Buffer numbers for OSBYTE &8A and friends.
+; A SOUND channel number: the channel in the low nibble, flags above it,
+; and in its high byte the number of other channels to wait for.
+SOUND_FLUSH   = &10             ; flush the channel's queue first
+SOUND_SYNC_1  = &01             ; (high byte) wait for one other channel
+CHANNEL_NOISE = 0               ; channels 1-3 are tones
+
+; OSFILE calls, and the object type OSFILE_READ_INFO returns in A.
+OSFILE_SAVE      = &00
+OSFILE_READ_INFO = &05          ; fills the block with the catalogue entry
+OSFILE_LOAD      = &FF
+OSFILE_TYPE_FILE = 1            ; (0 no such object, 2 a directory)
+
+; OSFIND calls: close (Y = handle, 0 for all), or open the file named at YX.
+OSFIND_CLOSE       = &00
+OSFIND_OPEN_INPUT  = &40
+OSFIND_OPEN_UPDATE = &C0
+
+; OSGBPB calls, at the pointer given in the block.
+OSGBPB_WRITE_AT = 1
+OSGBPB_READ_AT  = 3
+
+; OSARGS with A = 0 and Y = 0 reads the current filing system's number;
+; 4 and up are disc (and network) filing systems, below that tape and ROM.
+OSARGS_READ_FS = &00
+FS_DISC        = 4
+
+; FSCV calls.
+FSCV_OPT = &00                  ; *OPT X,Y
+
+; Buffer numbers for OSBYTE &8A and friends. Sound channel n's buffer is
+; BUFFER_SOUND_0 + n.
 BUFFER_KEYBOARD = 0
+BUFFER_SOUND_0  = 4
 
 ; Event numbers.
-EVENT_VSYNC = 4
-EVENT_ESCAPE = 6
+EVENT_OUTPUT_EMPTY = 0          ; X = the buffer
+EVENT_VSYNC        = 4
+EVENT_ESCAPE       = 6
 
 ; Internal key numbers (the keyboard matrix), and the byte INKEY wants to
 ; test one: INKEY -(k+1).

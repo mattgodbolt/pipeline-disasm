@@ -4392,7 +4392,7 @@ entry_font_to = entry_copy_font_store + 1
     LDA #OSBYTE_BELL_DURATION
     LDX #2                      ; a short beep
     JSR osbyte_y0
-    LDA #OSBYTE_SOFT_KEY_BASE
+    LDA #OSBYTE_FUNCTION_KEY_BASE
     LDX #KEYCODE_F0
     JSR osbyte_y0
     LDY #3

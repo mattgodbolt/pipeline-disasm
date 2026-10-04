@@ -5,43 +5,6 @@
 
 ; ---- For osconst.6502inc ----
 
-; OSBYTE calls.
-OSBYTE_WAIT_VSYNC         = &13 ; *FX19: wait for the next vertical sync
-OSBYTE_RAISE_ESCAPE       = &7D ; set the Escape flag, as the key would (no event)
-OSBYTE_ACKNOWLEDGE_ESCAPE = &7E ; clear an Escape; X=&FF if there was one, else 0
-OSBYTE_READ_CHAR_AND_MODE = &87 ; X = the character at the text cursor, Y = the mode
-OSBYTE_WRITE_SHEILA       = &97 ; *FX151: X = offset in page &FE, Y = the value
-OSBYTE_FUNCTION_KEY_BASE  = &E1 ; *FX225: X = f0's code (f1 one more...); 1 = strings
-
-; OSWORD calls.
-OSWORD_READ_INTERVAL_TIMER  = &03   ; YX: 5 bytes
-OSWORD_WRITE_INTERVAL_TIMER = &04   ; YX: 5 bytes
-OSWORD_READ_PALETTE         = &0B   ; YX: logical colour; returns the physical one after it
-OSWORD_WRITE_PALETTE        = &0C   ; YX: logical colour, physical colour, 0, 0, 0
-
-; OSFILE calls, and the object type OSFILE_READ_INFO returns in A.
-OSFILE_SAVE      = &00
-OSFILE_READ_INFO = &05          ; fills the block with the catalogue entry
-OSFILE_LOAD      = &FF
-OSFILE_TYPE_FILE = 1            ; (0 no such object, 2 a directory)
-
-; OSFIND calls: close (Y = handle, 0 for all), or open the file named at YX.
-OSFIND_CLOSE       = &00
-OSFIND_OPEN_INPUT  = &40
-OSFIND_OPEN_UPDATE = &C0
-
-; OSGBPB calls, at the pointer given in the block.
-OSGBPB_WRITE_AT = 1
-OSGBPB_READ_AT  = 3
-
-; OSARGS with A = 0 and Y = 0 reads the current filing system's number;
-; 4 and up are disc (and network) filing systems, below that tape and ROM.
-OSARGS_READ_FS = &00
-FS_DISC        = 4
-
-; FSCV calls.
-FSCV_OPT = &00                  ; *OPT X,Y
-
 ; The codes OSRDCH returns for the cursor keys after *FX4,1.
 CODE_LEFT  = &88
 CODE_RIGHT = &89
