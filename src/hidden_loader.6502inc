@@ -1,35 +1,51 @@
-; The stub loader the disc catalogues as GAME, GRAPHIC and LEVDES: the same
-; &D9 bytes at &0900 three times over, differing only in which hidden sector
-; run they read, where it goes and where it's entered. The including file
+; The stub loader the disc catalogues as GAME, GRAPHIC and LEVDES.
+;
+; The three big programs MENU starts (the game, the Graphics Designer and
+; the Level Designer) have no catalogue entries. Each sits in a "hidden
+; run": whole sectors past the last catalogued file, which DFS sees as free
+; space. A stub is the small catalogued program that loads one: these &D9
+; bytes, loaded and run at &0900, read a hidden run a track at a time with
+; the disc controller's own commands and jump into it. GAME, GRAPHIC and
+; LEVDES are this code assembled three times, differing only in which run
+; they read, where it goes and where it's entered. The including file
 ; defines those four numbers, then INCLUDEs this inside its SECTION:
 ;
-;   hidden_first_sector  absolute DFS sector the run starts at (disc.toml [[raw]])
+;   hidden_first_sector  the sector the run starts at, counted from track 0
+;                        sector 0 (src/disc.toml's [[raw]] entries place the runs)
 ;   hidden_length        its length in bytes, a whole number of sectors
-;   hidden_load          where in the I/O processor it's read to
+;   hidden_load          where in the I/O processor (the BBC itself, as
+;                        against a second processor) it's read to
 ;   hidden_entry         where it's entered once read
 ;
-; The protection is two layers, both about stopping a DFS copy:
+; The protection is two layers, both about stopping a copy made with DFS's
+; own commands:
 ;
-; - The programs live in sector runs past the last catalogued file, which no
-;   catalogue entry mentions, so *COPY copies only these stubs.
+; - No catalogue entry mentions the hidden runs, so *COPY copies only these
+;   stubs.
 ; - Every sector of those runs was written with a deleted data address mark
-;   (seen on the flux captures; an .ssd can't hold the mark, so it's gone from
-;   original/pipeline.ssd). The 8271 flags a deleted sector with result &20,
-;   and DFS reports any nonzero result as a disc fault, so a *BACKUP should
-;   stop there. The stub reads with the 8271's "read data and deleted data"
-;   command through OSWORD &7F, below DFS, and ignores the result, so it
+;   (the flux capture original/E447ED5E.hfe has them; an .ssd can't hold the
+;   mark, so original/pipeline.ssd has lost it). The 8271, the BBC's floppy
+;   disc controller, ends a read of a deleted sector with result &20, and DFS
+;   reports any nonzero result as a disc fault, so a *BACKUP should stop
+;   there. The stub hands its commands to the 8271 through OSWORD &7F,
+;   reading with "read data and deleted data", and ignores the result, so it
 ;   doesn't care whether the marks are there - which is why the .ssd runs.
 ;
-; It also copes with this 40-track disc in an 80-track drive. OSWORD &7F's
-; commands reach the 8271 as they are (DFS 1.2 passes them on unchanged),
-; and the 8271 steps the head one of the drive's tracks for each it counts.
-; So it reads one sector ID off track 4, and if the ID doesn't say 4 the
-; head has gone half as far into the disc as asked: from then on it seeks to
-; twice each track and tells the 8271 which track it's really on (see
-; read_next_track). Seen in jsbeeb, with the drive stepping as an 80-track
-; drive does: each stub sets double_step and reads its run correctly. DFS
-; 1.2 doesn't double-step its own reads, so with it the game goes on to fail
-; loading IO ("Disk fault 18"); this is presumably for a DFS that does.
+; It also copes with this 40-track disc in an 80-track drive, whose head
+; moves half as far for each step. OSWORD &7F's commands reach the 8271 as
+; they are (DFS 1.2 passes them on unchanged), and the 8271 steps the head
+; once for each track it counts. So the stub reads one sector ID off track
+; PROBE_TRACK, and if the ID gives another track the head has gone only half
+; as far into the disc as asked. From then on it seeks to twice each track
+; and, for each read, tells the 8271 it's on the track the disc's IDs give
+; (see read_next_track). DFS 1.2 doesn't double-step its own reads, so under
+; it the game, once loaded, fails to load IO ("Disk fault 18"): the stub's
+; care only pays under a DFS that does. (docs/notes/loaders.md has both
+; tested in jsbeeb.)
+;
+; Below: the numbers, the loading code (start to next_track_or_run), three
+; small routines that issue 8271 commands, then the commands' parameter
+; blocks and the stub's two variables.
 ;
 ; Parameter blocks for OSWORD &7F (8271 command) all have the same shape:
 ;   +0      drive (0 here: the stubs only ever load from drive 0)
@@ -67,8 +83,10 @@ ASSERT sector_count < 256, "the sector count lives in one byte"
 sectors_this_read = &70     ; sectors the current read takes from this track
 sectors_left = &72          ; sectors of the run not yet asked for
 
-; Entry, at the stub's load address, from *RUN (MENU's */GAME, */GRAPHIC or
-; */LEVDES). Never returns: ends by jumping into the program it loaded.
+; Load the hidden run and enter it. *RUN enters here, at the stub's load
+; address (MENU's */GAME, */GRAPHIC or */LEVDES).
+; In: nothing.
+; Never returns: it ends by jumping to hidden_entry, in the program it loaded.
 .start
     ; seek_track starts at 0, so this recalibrates: a seek to track 0 steps
     ; out until the drive signals track 0, so the probe below is a known
@@ -137,17 +155,17 @@ sectors_left = &72          ; sectors of the run not yet asked for
     ADC read_address+1
     STA read_address+1
     INC read_track
-    ; The result is fetched and then ignored: the NOP and JMP fill exactly the
-    ; seven bytes a test and branch round the error would (LDA, a two-byte
-    ; test, BEQ), with the BRK below the failure case. On the original disc
-    ; every read returns FDC_RESULT_DELETED_DATA, so a check for zero could
-    ; never pass; this looks like that check patched out.
+    ; The result is fetched and then ignored. LDA, NOP and JMP take seven
+    ; bytes, the same as LDA, a two-byte test and a BEQ over the error block
+    ; below, which a failed read would fall into. On the original disc every
+    ; read returns FDC_RESULT_DELETED_DATA, so a check for zero would always
+    ; fail; this looks like such a check patched out.
     LDA read_result
     NOP
     JMP next_track_or_run
 
-; Unreachable since the result check went: a BRK error block, as the MOS
-; expects one (BRK, error number, message, zero).
+; Unreachable: the JMP above skips it and nothing else leads here. A BRK
+; error block, as the MOS expects one (BRK, error number, message, zero).
 .sector_read_fault
     BRK
     EQUB &FF
@@ -203,8 +221,9 @@ sectors_left = &72          ; sectors of the run not yet asked for
     EQUB 0
     EQUB 0                      ; result
 
-; Read data and deleted data: track, first sector, size and count. The
-; buffer address's page is stepped on after each track, so the run lands
+; Read data and deleted data: track, first sector, then the sector size code
+; (top three bits) and the count (low five) in one byte. The buffer
+; address's page is stepped on after each track, so the run lands
 ; contiguously from hidden_load.
 .read_block
     EQUB DRIVE

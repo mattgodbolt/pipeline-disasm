@@ -1,16 +1,21 @@
-; $.GAME: &D9 bytes at sector &111. The stub loader for the game itself
-; (MENU option 1, `*/GAME`): reads H.GAME from its hidden sectors and enters
-; it. All of the code is in hidden_loader.6502inc, shared with GRAPHIC and
-; LEVDES.
+; $.GAME: the catalogued file at sector &111, &D9 bytes loaded and run at
+; &0900. The stub loader for the game itself (MENU option 1, `*/GAME`): it
+; reads H.GAME from its hidden sectors and enters it. All of the code is in
+; hidden_loader.6502inc, which says what a stub and a hidden run are; it's
+; shared with GRAPHIC and LEVDES, and this file gives it the four numbers
+; that differ.
 
 INCLUDE "os.6502inc"
 INCLUDE "osconst.6502inc"
 
-; H.GAME, as src/disc.toml places it: track 29 sector 0 to track 32 sector 2.
+; H.GAME, the game's hidden run. No catalogue entry names it: the name is the
+; build's (src/hidden_game.6502 makes it, src/disc.toml places it). Track 29
+; sector 0 to track 32 sector 2. Each source assembles on its own, so the
+; addresses are written out here.
 hidden_first_sector = &122
 hidden_length = &2100
 hidden_load = &3000
-hidden_entry = &3000
+hidden_entry = &3000                    ; game.loader, its first byte
 
 SECTION game, filename="GAME", org=&0900, load=&900, exec=&900
 .game_loader
