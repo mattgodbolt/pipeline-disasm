@@ -422,3 +422,12 @@ Claude that, even as "is it X?", trips an error in Claude's API, and the
 session had to be rewound. Matt is fairly sure he knows which tune it is;
 it's deliberately not named here or in the source, so that Claude reading
 these files doesn't hit the same error. Don't ask an agent to identify it.
+
+## 2026-10-04 09:22 — Two "presumably"s, settled from the game
+
+- The game does read MENU's keys from &50-&59: its `loader` (&3000 on
+  entry) copies all ten, through `key_order`, into `action_keys` (&66-&6F)
+  in the order it tests its actions, before `work0`-`work5` take over &50.
+- The mission's name is printed as is: `draw_backpack_screen` sends its 30
+  bytes to OSWRCH unchanged (`print_names_text`), so MISSION's VDU 31s place
+  it and the 9s step over the background.
