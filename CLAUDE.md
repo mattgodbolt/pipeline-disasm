@@ -47,7 +47,7 @@ fails if a scope redefines a name its file already has outside it.
   OSFILE, OSFIND, OSGBPB, OSARGS and FSCV calls and their settings
   (`CURSOR_KEYS_*`...), service calls, SOUND channel flags, buffers, events,
   internal key numbers (`KEY_*`, tested with `INKEY_TEST()`), the codes keys
-  give (`KEYCODE_*` after *FX4,1), characters (`CR`, `ESC`, `DEL`, `ascii()`,
+  give (`KEYCODE_*` after *FX4,1), characters (`CR`, `ESC`, `DEL`,
   `ctrl()`), VDU and PLOT codes, CRTC registers and cursor settings, screen
   memory (`MODE1_SCREEN`, `MODE5_SCREEN`, their row and character sizes,
   `SCREEN_MEMORY_END`: addresses, but kept out of os.6502inc so the
@@ -150,7 +150,9 @@ DEFAULT, LEVEL1 and IO are all emitted from these.
   tables in groups with CONCAT.
 - Stepped ranges whose limit equals their second element fail
   (`0..2..2`: "Argument out of domain", baron#13); write `0..2..3` or a list.
-- No character literals: use `ascii("A")` from osconst.6502inc.
+- Character literals: `'A'` is 65 (`'"'` works; `'` itself can't be written,
+  so it's 39). baron's docs only show `CODES("A")[0]`. Prefer `'A'` to a
+  FUNCTION: every FUNCTION call leaves a frame in the symbol dump.
 - `docs/baron-feedback.md` collects baron issues and wishes; check it before
   filing anything (issues are filed as Claude acting for Matt).
 - The symbol dump also holds FUNCTION and macro parameters under `@...`

@@ -286,7 +286,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .brk_handler_wait
     JSR wait_for_key
     INC in_main_loop
-    CMP #ascii("i")
+    CMP #'i'
     BEQ debug_exit_check
 .restart_main_loop
     JSR vector_draw_map
@@ -437,9 +437,9 @@ saved_rdchv = rdchv_filter + 1
 ; over 255. (X = 2 would be a number 256 digits long.)
 ; Clobbers: Y, ptr, the input buffer.
 .input_number
-    LDA #ascii("0")
+    LDA #'0'
     STA input_min_char
-    LDA #ascii("9")
+    LDA #'9'
     STA input_max_char
     LDA #3
     JSR input_line
@@ -449,7 +449,7 @@ saved_rdchv = rdchv_filter + 1
     PHA
     LDA input_buffer, Y
     SEC
-    SBC #ascii("0")
+    SBC #'0'
     BCC input_number_not_digit  ; the Return
     STA input_buffer, Y
     PLA
@@ -516,9 +516,9 @@ saved_rdchv = rdchv_filter + 1
 .confirm_loop
     JSR wait_for_key
     ORA #&20                    ; lower case
-    CMP #ascii("n")
+    CMP #'n'
     BEQ menu_ok
-    CMP #ascii("y")
+    CMP #'y'
     BNE confirm_loop
     JMP vector_close_window
 
@@ -530,16 +530,16 @@ saved_rdchv = rdchv_filter + 1
 ; then spaces to its end. The cursor is off again and any key allowed.
 ; Clobbers: A, X, Y.
 .input_text
-    LDY #ascii(" ")
+    LDY #' '
     STY input_min_char
-    LDY #ascii("~")
+    LDY #'~'
     STY input_max_char
 .input_line
     STA input_max_length
     TXA
     JSR vector_print_line2
     JSR cursor_on
-    LDA #ascii(" ")
+    LDA #' '
     JSR OSWRCH
     LDY #15
 .input_line_clear
@@ -1021,18 +1021,18 @@ saved_rdchv = rdchv_filter + 1
 ; In: A = the key.
 ; Clobbers: A, X, Y, ptr, the low code's zero page.
 .hex_key
-    CMP #ascii("0")
+    CMP #'0'
     BCC hex_key_done
-    CMP #ascii("F") + 1
+    CMP #'F' + 1
     BCS hex_key_cursor
-    CMP #ascii("9") + 1
+    CMP #'9' + 1
     BCC hex_key_item
-    SBC #ascii("A")
+    SBC #'A'
     BCC hex_key_cursor
-    ADC #ascii("9")             ; A-F follow 0-9 (the carry adds one)
+    ADC #'9'             ; A-F follow 0-9 (the carry adds one)
 .hex_key_item
     TAY
-    LDA block_menu_map - ascii("0"), Y
+    LDA block_menu_map - '0', Y
     AND #&0F                    ; the item's block
     STA brush
 ; Beep (VDU 7, made short by *FX214,2).
@@ -1225,7 +1225,7 @@ handler_address = jump_to_handler_jmp + 1
 .edit_marker_define
     LDX #W_OPTIONS_LOCATION
     JSR get_key_no_plot
-    CMP #ascii(" ")
+    CMP #' '
     BEQ switch_simulate_done
     CMP #CR
     BNE edit_marker_define
@@ -1302,7 +1302,7 @@ handler_address = jump_to_handler_jmp + 1
 .object_position_define
     LDX #W_OBJECT_LOCATION
     JSR get_key_no_plot
-    CMP #ascii(" ")
+    CMP #' '
     BEQ show_object_window
     CMP #CR
     BNE object_position_define
@@ -1440,11 +1440,11 @@ handler_address = jump_to_handler_jmp + 1
     BNE print_digit_out
     DEC ptr+1
     BEQ print_digit_out         ; always print the units
-    LDA #-ascii("0")            ; a leading zero: VDU 0
+    LDA #-'0'            ; a leading zero: VDU 0
     DEY
 .print_digit_out
     INY
-    ADC #ascii("0")
+    ADC #'0'
     JMP OSWRCH
 
 ; Options menu, M.Monster: which one, then its window until OK.
@@ -1480,7 +1480,7 @@ handler_address = jump_to_handler_jmp + 1
 .monster_position_define
     LDX #W_MONSTER_LOCATION
     JSR get_key_no_plot
-    CMP #ascii(" ")
+    CMP #' '
     BEQ show_monster_window
     CMP #CR
     BNE monster_position_define
@@ -1508,7 +1508,7 @@ handler_address = jump_to_handler_jmp + 1
     LDA record
     LSR A
     LSR A
-    ADC #ascii("1")
+    ADC #'1'
     JSR OSWRCH
     JMP vector_text_colours
 
@@ -2016,9 +2016,9 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
 ; space.
 .name_char
     LDA input_buffer, X
-    CMP #ascii(" ")
+    CMP #' '
     BCS name_char_done
-    LDA #ascii(" ")
+    LDA #' '
 .name_char_done
     RTS
 
@@ -2035,7 +2035,7 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     LDA puzzle
     AND #OBJECTS - 1
     CLC
-    ADC #ascii("1")
+    ADC #'1'
     JSR OSWRCH
     LDA #0
     STA work+1
@@ -2256,7 +2256,7 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
 .condition_position_define
     LDX #W_PUZZLE_LOCATION
     JSR get_key_no_plot
-    CMP #ascii(" ")
+    CMP #' '
     BEQ open_conditions_window
     CMP #CR
     BNE condition_position_define
@@ -2310,9 +2310,9 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
 ; Out: ptr+1 to ptr+3 = the code (overlapping work).
 ; Clobbers: A, X, Y, ptr, work, the input buffer.
 .input_editing_code
-    LDA #ascii("0")
+    LDA #'0'
     STA input_min_char
-    LDA #ascii("9")
+    LDA #'9'
     STA input_max_char
     LDA #6                      ; digits
     LDX #M_ENTER_CODE
@@ -2322,11 +2322,11 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
 .input_editing_code_pair
     LDA input_buffer+1, X
     SEC
-    SBC #ascii("0")
+    SBC #'0'
     STA ptr
     LDA input_buffer, X
     SEC
-    SBC #ascii("0")
+    SBC #'0'
     ASL A
     ASL A
     ASL A
@@ -2561,7 +2561,7 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
 .effect_position_define
     LDX #W_PUZZLE_LOCATION
     JSR get_key_no_plot
-    CMP #ascii(" ")
+    CMP #' '
     BEQ effect_position_done
     CMP #CR
     BNE effect_position_define
@@ -2899,7 +2899,7 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     JSR get_key_no_plot
     CMP #CR
     BEQ place_monster_position_keep
-    CMP #ascii(" ")
+    CMP #' '
     BNE place_monster_position_loop
     PLA
     STA cursor_y
@@ -2935,7 +2935,7 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
 ; Clobbers: A, Y.
 .pad_input
     LDY ptr
-    LDA #ascii(" ")
+    LDA #' '
 .pad_input_loop
     STA input_buffer, Y
     INY
@@ -3148,24 +3148,24 @@ block_menu = {CELL_FLOOR, CELL_SE_CURVE, CELL_SW_CURVE, CELL_NE_CURVE,
     ; The eighth character of each name is the tens digit: space for 1-9,
     ; then 1, 2 and 3. Fill three overlapping runs and let "Puzzle " below
     ; overwrite the rest.
-    LDA #ascii("3")
+    LDA #'3'
     STA level_names + 29*8 + 7
     STA level_names + 30*8 + 7
     STA level_names + 31*8 + 7
     LDX #10 * 8 - 1
 .new_level_tens
-    LDA #ascii(" ")
+    LDA #' '
     STA level_names, X
-    LDA #ascii("1")
+    LDA #'1'
     STA level_names + 9*8, X
-    LDA #ascii("2")
+    LDA #'2'
     STA level_names + 19*8, X
     DEX
     BPL new_level_tens
     ; The last two are the units digit and a space.
     LDX #(PUZZLES - 1) * 2
 .new_level_units
-    LDA #ascii(" ")
+    LDA #' '
     STA level_name_ends+1, X
     TXA
     LSR A
@@ -3174,7 +3174,7 @@ block_menu = {CELL_FLOOR, CELL_SE_CURVE, CELL_SW_CURVE, CELL_NE_CURVE,
     JSR reduce_mod_10
     JSR reduce_mod_10
     CLC
-    ADC #ascii("0")
+    ADC #'0'
     STA level_name_ends, X
     DEX
     DEX
@@ -4205,7 +4205,7 @@ SECTION low_code, org=&0880
     PLA
     CMP #CR
     BEQ window_menu_return
-    CMP #ascii(" ")
+    CMP #' '
     BEQ window_menu_space
     LDA #OSBYTE_FLUSH_BUFFERS   ; (X is left over: the input buffer or all
     JSR OSBYTE                  ; of them)
@@ -4456,7 +4456,7 @@ entry_font_to = entry_copy_font_store + 1
     JSR OSBYTE
 .entry_wait_space
     JSR OSRDCH
-    CMP #ascii(" ")
+    CMP #' '
     BNE entry_wait_space
     LDA #OSBYTE_ESCAPE_KEY      ; *FX229,0: Escape back on
     JSR OSBYTE

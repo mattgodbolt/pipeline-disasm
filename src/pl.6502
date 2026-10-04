@@ -140,7 +140,7 @@ swapped = &72               ; check_code_byte's working
 checks_left = &73           ; check_code_byte's count, a guard against patching
 code_bcd = &80              ; (CODE_BYTES) the code typed, as BCD
 
-DIGIT_0 = ascii("0")
+DIGIT_0 = '0'
 CODE_DIGITS = 6             ; an editing code, two digits to a byte
 CODE_BYTES = CODE_DIGITS / 2
 ACTION_WIDTH = 15           ; the action column, padded with spaces
@@ -338,7 +338,7 @@ ASSERT PUZZLE_NAME_HEAD = 8
     BNE print_action
     BEQ print_on_off            ; always
 .pad_action
-    LDA #ascii(" ")
+    LDA #' '
 .pad_action_loop
     JSR OSWRCH
     DEX
@@ -351,10 +351,10 @@ ASSERT PUZZLE_NAME_HEAD = 8
     PLA
     AND #PUZZLE_OFF
     BNE print_off
-    LDA #ascii("n")
+    LDA #'n'
     BNE print_last_letter       ; always
 .print_off
-    LDA #ascii("f")
+    LDA #'f'
     JSR OSWRCH
 .print_last_letter
     JSR OSWRCH
@@ -446,7 +446,7 @@ ASSERT BEL >> 1 = CHEAT_FURTHEST_LEVEL
 ; OSWORD 0 for the filename: up to 12 characters, any printable.
 .read_filename_block
     EQUW filename
-    EQUB filename_end - filename, ascii(" "), &FF
+    EQUB filename_end - filename, ' ', &FF
 
 ; The filename is read over the placeholder, so OSCLI sees *L.<filename>.
 .load_command
@@ -459,7 +459,7 @@ ASSERT BEL >> 1 = CHEAT_FURTHEST_LEVEL
 ; OSWORD 0 for the code: up to six digits, into zero page.
 .read_code_block
     EQUW typed_digits
-    EQUB CODE_DIGITS, ascii("0"), ascii("9")
+    EQUB CODE_DIGITS, '0', '9'
 
 ; Characters print_format_char hands out in turn, stored inverted. The
 ; tens digits in the middle are read directly, not inverted, and never

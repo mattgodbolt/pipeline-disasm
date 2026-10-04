@@ -142,15 +142,14 @@ KEYCODE_RIGHT = &89
 KEYCODE_DOWN  = &8A
 KEYCODE_UP    = &8B
 
-; A character's code, as a value: ascii("A") is &41.
-FUNCTION ascii(c) = CODES(c)[0]
-
-; Characters with no name of their own in a string, and CTRL with a letter.
+; Characters with no name of their own in a string, and CTRL with a letter
+; (ctrl('U') is 21). Printable characters are written as baron's character
+; literals, 'A' for &41, which leave nothing in the symbol dump.
 BEL = 7
 CR  = 13
 ESC = &1B                       ; what OSBYTE &81 gives in Y on Escape
 DEL = &7F
-FUNCTION ctrl(c) = ascii(c) AND &1F
+FUNCTION ctrl(c) = c AND &1F
 
 ; VDU codes.
 VDU_TEXT_CURSOR   = 4           ; text at the text cursor

@@ -17,7 +17,8 @@ one home; CLAUDE.md's "Where names live" lists them.
   `FUNCTION_KEYS_STRINGS`); service calls; SOUND channel flags
   (`SOUND_FLUSH`, `SOUND_SYNC_1`, `CHANNEL_NOISE`); buffers and events; one
   sorted table of internal key numbers; `KEYCODE_LEFT`... (*FX4,1's cursor
-  codes); `BEL`, `CR`, `ESC`, `DEL`, `ascii()`, `ctrl()`; the VDU and PLOT
+  codes); `BEL`, `CR`, `ESC`, `DEL`, `ctrl()` (printable characters are `'A'`
+  literals); the VDU and PLOT
   codes (including basic.6502inc's three); CRTC registers and cursor
   settings; the screen latch value `SCREEN_WRAP_8K`; screen memory
   (`MODE1_SCREEN`, `MODE5_SCREEN`, their row and character sizes,

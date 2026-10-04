@@ -681,11 +681,11 @@ ASSERT window_size - window_address = 2 * WINDOWS
     LDY #&00
     STY aux_ptr+1
     LDX #&00
-    CMP #ascii(" ")
+    CMP #' '
     BCS printable
-    LDA #ascii("!")                 ; a control code: a space (carry is clear)
+    LDA #'!'                 ; a control code: a space (carry is clear)
 .printable
-    SBC #ascii(" ")                 ; aux_ptr = font + 8 * (A - " ")
+    SBC #' '                 ; aux_ptr = font + 8 * (A - " ")
     ASL A
     ASL A
     ROL aux_ptr+1
@@ -780,7 +780,7 @@ ASSERT window_size - window_address = 2 * WINDOWS
     CMP count_y                     ; ...other than this menu's own closes it
     BNE cancel
 .not_fkey
-    CMP #ascii(" ")
+    CMP #' '
     BEQ cancel
     CMP #CR
     BEQ chosen
@@ -1630,7 +1630,7 @@ PALETTE_LINE = 8
     EQUB PLAIN
     EQUS "E  R  R  O  R  !", CR, CR
 .error_message
-    EQUB REPEATED(61, ascii(" "))
+    EQUB REPEATED(61, ' ')
 .text_escape
     EQUB MENU
     EQUS "Escape?", CR, "No", CR, "Yes", CR
@@ -1729,11 +1729,11 @@ PALETTE_LINE = 8
     STA screen_ptr
     LDA #HI(name_box)
     STA screen_ptr+1
-    LDX #ascii(" ")                 ; objects 1-9: no tens
+    LDX #' '                 ; objects 1-9: no tens
     LDA sprite
     CMP #FIRST_SMALL + 9
     BCC tens
-    LDX #ascii("1")
+    LDX #'1'
 .tens
     SEC
     TXA
@@ -1746,9 +1746,9 @@ PALETTE_LINE = 8
     SBC #10
 .units
     SEC                             ; carry set: store the characters
-    ORA #ascii("0")
+    ORA #'0'
     JSR print_char_advance
-    LDA #ascii(":")
+    LDA #':'
     SEC
     JSR print_char_advance
     JSR name_offset
@@ -2088,7 +2088,7 @@ ASSERT OBJECT_NAME_LENGTH = 12
     STA default_name, X             ; A = 0
     DEX
     BPL tape_name
-    LDA #ascii("""")
+    LDA #'"'
     STA default_name
     STA default_name+1
     BNE redraw                      ; always
@@ -2812,7 +2812,7 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
 .wait_space
     JSR OSRDCH
     BCS close
-    CMP #ascii(" ")
+    CMP #' '
     BNE wait_space
 .close
     LDA #WINDOW_ERROR
@@ -2922,7 +2922,7 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     BCS done
     CMP #CR
     BEQ done
-    CMP #ascii(" ")
+    CMP #' '
     BEQ done
     CMP #KEYCODE_DOWN
     BNE not_down
@@ -4179,14 +4179,14 @@ IO_SEGMENT = 6                  ; bytes an entry
     LDA #OSBYTE_FLUSH_BUFFERS       ; empty the keyboard buffer
     JSR OSBYTE
     LDY #&0F
-    LDA #ascii(" ")
+    LDA #' '
 .blank
     STA input_buffer, Y
     DEY
     BPL blank
     INY
 .read
-    LDA #ascii(" ")                 ; a space after the line: what a rub-out leaves
+    LDA #' '                 ; a space after the line: what a rub-out leaves
     STA input_buffer, Y
     JSR OSRDCH
     BCC got_key
@@ -4200,7 +4200,7 @@ IO_SEGMENT = 6                  ; bytes an entry
     RTS
 .edit
     AND #&7F                        ; the cursor keys' codes become control codes, ignored
-    CMP #ctrl("U")
+    CMP #ctrl('U')
     BNE not_wipe
     TYA
     TAX
@@ -4228,7 +4228,7 @@ IO_SEGMENT = 6                  ; bytes an entry
     BNE rub_out
     JMP read
 .add
-    CMP #ascii(" ")
+    CMP #' '
     BCC read
     CPY input_limit
     BCS read

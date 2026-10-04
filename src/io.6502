@@ -22,8 +22,8 @@ INCLUDE "level4.6502inc"
 ; spaces stored as VDU_RIGHT so the picture behind them shows.
 FUNCTION mission_name_half(x, y, text)
     ASSERT LEN(text) = IO_MISSION_SIZE / 2 - 3, "half a mission name is 12 characters"
-    spaces = CODES(text) = ascii(" ")
-= CONCAT(VDU_TAB, x, y, CODES(text) + (VDU_RIGHT - ascii(" ")) * spaces)
+    spaces = CODES(text) = ' '
+= CONCAT(VDU_TAB, x, y, CODES(text) + (VDU_RIGHT - ' ') * spaces)
 
 SECTION io, filename="IO", org=io_start, load=io_start, exec=0
 .io

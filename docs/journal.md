@@ -639,3 +639,14 @@ Details in the newest sections of `docs/notes/game.md` and
   codes if it can sit among ordinary lines in a `BASIC` block; once it
   lands, src/mission.6502 can lose its raw bytes and become valid UTF-8.
 - baron#13 (`0..2..2`): Rich agrees it's a bug.
+
+## 2026-10-04 09:17 — Character literals
+
+- Rich points out baron has character literals: `'A'` is 65, in
+  expressions and operands alike (`'"'` too; `'` itself can't be
+  written). Baron's docs only show `CODES("A")[0]`, which is why we built
+  `ascii()` instead.
+- Every `ascii("x")` (79 of them) is now `'x'`, the FUNCTION is gone, and
+  `ctrl()` takes a code (`ctrl('U')`). Each call had left a parameter
+  frame in the symbol dump: 81 fewer `@` entries now (6197 to 6116).
+  Identical with local baron and with the CI pin, accc35c.

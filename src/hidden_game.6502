@@ -2484,10 +2484,10 @@ ASSERT OBJECT_NAME_LENGTH = 12
 .print_code_digit
     AND #&1F
     CLC
-    ADC #ascii("1")                     ; "1" for 0
-    CMP #ascii("9") + 1
+    ADC #'1'                     ; "1" for 0
+    CMP #'9' + 1
     BCC print_code_char
-    ADC #ascii("A") - ascii("9") - 2    ; "A" for 9 (the carry's set)
+    ADC #'A' - '9' - 2    ; "A" for 9 (the carry's set)
 .print_code_char
     JMP OSWRCH
 
@@ -2649,12 +2649,12 @@ ASSERT OBJECT_NAME_LENGTH = 12
 .print_digit
     BEQ print_digit_zero
     LDX #3
-    ORA #ascii("0")                     ; a digit; zeros from now on print
+    ORA #'0'                     ; a digit; zeros from now on print
     BNE print_digit_char
 .print_digit_zero
     CPX #3                              ; a leading zero?
     BCC print_digit_char
-    LDA #ascii("O")                     ; zero is the letter O
+    LDA #'O'                     ; zero is the letter O
 .print_digit_char
     INX                                 ; VDU 0 prints nothing
     JMP OSWRCH
@@ -2691,7 +2691,7 @@ ASSERT OBJECT_NAME_LENGTH = 12
 .print_level
     LDA level
     CLC
-    ADC #ascii("1")                     ; "1" for level 0
+    ADC #'1'                     ; "1" for level 0
     JMP OSWRCH
 
 ; "WELL DONE!" in blocks: 11 rows of 32 bits, a bit a character cell, the top
@@ -3195,9 +3195,9 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
 .title_screen_got_key
     AND #&DF                            ; upper case, and Space is 0
     BEQ title_start                     ; Space: start
-    CMP #ascii("S")
+    CMP #'S'
     BEQ title_screen_next_level
-    CMP #ascii("L")                     ; load a mission
+    CMP #'L'                     ; load a mission
     BNE title_screen_key
     JMP ask_for_mission
 .title_screen_next_level
@@ -3897,7 +3897,7 @@ ASSERT SCREEN_COLUMNS / 2 = &10         ; for bit4_mask
     LDA #VDU_BACKSPACE                  ; nothing selected: back a character...
     JSR OSWRCH
     LDY #OBJECT_NAME_LENGTH + 2
-    LDA #ascii(" ")                     ; ...and spaces a character past a name
+    LDA #' '                     ; ...and spaces a character past a name
 .print_selected_blank
     JSR OSWRCH
     DEY
@@ -4472,7 +4472,7 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     DEX
     BPL entry_code_sum
     PHA
-    LDA #ascii(" ")                     ; a space, in the box
+    LDA #' '                     ; a space, in the box
     JSR OSWRCH
     PLA
     JSR print_code_digit
@@ -4527,7 +4527,7 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
 ; Print 12 spaces.
 ; Clobbers: A, X.
 .print_12_spaces
-    LDA #ascii(" ")
+    LDA #' '
     LDX #12
 .print_spaces_loop
     JSR OSWRCH
@@ -5749,7 +5749,7 @@ ASSERT flash_palette_cycle >= SWAP_START AND flash_palette_cycle < SWAP_END
 ASSERT P% - mission_filename = FILENAME_LENGTH + 1
 .read_line_block
     EQUW mission_filename
-    EQUB FILENAME_LENGTH, ascii(" "), &FF
+    EQUB FILENAME_LENGTH, ' ', &FF
 .disk_command
     EQUS "DISK", CR
 
@@ -5784,7 +5784,7 @@ ASSERT P% - mission_filename = FILENAME_LENGTH + 1
 .error_handler_print
     LDA (work0), Y
     BEQ error_handler_done
-    CMP #ascii(" ")                     ; spaces as cursor movement, control codes left out
+    CMP #' '                     ; spaces as cursor movement, control codes left out
     BCC error_handler_next
     BNE error_handler_char
     LDA #VDU_RIGHT
