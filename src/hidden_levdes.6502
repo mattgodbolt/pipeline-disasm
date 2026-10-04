@@ -14,9 +14,14 @@
 ; same way and printed into with the OS's text output.
 ;
 ; Keys: Z X : / move the cursor, Return plots the current block, Delete
-; blanks the cell, 0-9 A-F choose a block, S runs the simulator, f0-f4 are the
-; commands (block menu, Options, Files, Help, About). Leaving goes back to
-; the menu by *RUNning /MRUN.
+; blanks the cell, 0-9 and A-F choose a block (the block menu's items, by
+; number), S switches the simulator, f0-f4 are the commands (block menu,
+; Options, Files, Help, About). Leaving goes back to the menu by *RUNning
+; /MRUN.
+;
+; A fragment of the authors' BASIC assembler source survives in MENU's tail
+; (docs/notes/basic.md), giving a few original labels: sel0, sure, wind,
+; table, key3, help, canc and t2. The routines they name say so.
 
 INCLUDE "os.6502inc"
 INCLUDE "osconst.6502inc"
@@ -28,23 +33,26 @@ INCLUDE "wdata.6502inc"
 FUNCTION handlers(p) = (p - menu_tables) / 2 + 1
 
 ; Zero page. The low code's variables are its own; the rest is the editor's.
-input_buffer    = &40           ; OSWORD 0 line input, up to 16 characters
+input_buffer    = &40           ; OSWORD 0's line, 16 bytes (12 characters
+                                ; at most, then a Return)
 cursor_x        = &50           ; the map cursor, 0-63 across
 cursor_y        = &51           ; and down
 ptr             = &52           ; a pointer, or two bytes of scratch
 work            = &54           ; another; also a saved position or a count
+                                ; (Ian's t2)
 cursor_shown    = &56           ; 1 while the cursor's cell is inverted
 key_pressed     = &57           ; what get_key read
 keys_acted_on   = &58           ; how many held keys get_key acted on this pass
 brush           = &59           ; the block Return plots
 plot_enabled    = &5A           ; nonzero lets Return and Delete plot
 record          = &5B           ; the object, monster or puzzle being edited,
-                                ; times 4 (the size of its records)
+                                ; times 4 (the size of its records); or 0 or
+                                ; 4 for the start or the finish
 puzzle          = &5C           ; the puzzle being edited
 kept_window     = &5D           ; a window to keep on screen while the cursor
                                 ; moves, or negative
-choices         = &5E           ; four two-bit fields, unpacked (priorities,
-                                ; sprites)
+choices         = &5E           ; four two-bit fields, unpacked: a monster
+                                ; pattern's turns, or the level's sprites
 arg             = &62           ; a message number, offset or field in hand
 number          = &63           ; the number being asked for
 effect_window   = &64           ; the effect editor's window
@@ -52,45 +60,49 @@ effect_table    = &65           ; and its handler table
 unused_66       = &66           ; set to &C0 at startup, never read
 loading         = &67           ; nonzero while a level loads, so an error
                                 ; clears what was half loaded
-simulate_window = &68           ; W_SIMULATE+1 while simulating, else 0
-direction       = &69           ; the simulator's direction of travel (0 left,
-                                ; 1 up, 2 right, 3 down)
-simulating      = &6A           ; nonzero while the simulator is moving
-in_main_loop    = &6B           ; nonzero while the main loop waits for a key,
-                                ; when function keys are commands, not aborts
+simulate_window = &68           ; W_SIMULATE+1 while the simulator is on, else
+                                ; 0: less 1, the window the main loop keeps
+direction       = &69           ; the simulated player's way (DIR_*)
+travelling      = &6A           ; nonzero while it travels along pipes
+in_main_loop    = &6B           ; &FF while the main loop waits for a key, so
+                                ; function keys come back as keys rather than
+                                ; abandoning what's going on
 menu_window     = &6C           ; choose_from_window's window, less 1
 ; The low code's.
 screen_ptr      = &72
 glyph_ptr       = &74           ; also a second screen pointer
 window_ptr      = &76           ; into a window definition or message
-byte_count      = &78
-line_count      = &79
-saved_x         = &7A
+byte_count      = &78           ; bytes across a window, or cells in a run
+line_count      = &79           ; lines (or menu items) to go
+saved_x         = &7A           ; draw_map_run's first cell
 nibble_mask     = &7B           ; &F0 or &0F: which half of a map byte
-run_length      = &7C
-map_ptr         = &7E
-restore_x       = &80           ; close_window's area
-restore_row     = &81
+run_length      = &7C           ; close_window's width
+map_ptr         = &7E           ; also draw_window's line start
+restore_x       = &80           ; close_window's left
+restore_row     = &81           ; and the cell row it's redrawing
 menu_item       = &82           ; window_menu's choice
 menu_shown_item = &83           ; and the item it has highlighted
-window_x        = &84           ; the window being drawn, in glyph columns
-window_y        = &85           ; and half rows
-window_width    = &86
-window_height   = &87           ; also its number of menu items
-window_flags    = &88           ; its y byte with bit 7
-menu_first_item = &89
+window_x        = &84           ; the window last drawn, in screen columns
+window_y        = &85           ; and cell rows (half character rows)
+window_width    = &86           ; in screen columns
+window_height   = &87           ; its number of menu items
+window_flags    = &88           ; its y byte, for SPACE_STAYS (bit 7)
+menu_first_item = &89           ; the item window_menu started on
 
 message_box     = screen_address(MESSAGE_BOX_COLUMN, MESSAGE_BOX_ROW)
 
 SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 
 ; Entry points at fixed addresses, with two pointers the startup code uses.
+; Most calls between the program's parts go through tables like this one
+; (there are two more, at the low code's start and before new_level), as if
+; the parts were assembled separately.
 .vector_crtc_write
     JMP crtc_write
 .vector_cursor_off
     JMP cursor_off
 .rdchv_filter_operand_address
-    EQUW rdchv_filter+1         ; where entry saves the OS's RDCHV
+    EQUW saved_rdchv            ; where entry saves the OS's RDCHV
 .brk_handler_address
     EQUW brk_handler
 .vector_main
@@ -120,9 +132,11 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 ; choose_from_window starts on the first item; choose_from_window_at on item
 ; Y. Window W_SELECT_BLOCK is special: Y and the result are blocks, not menu
 ; items, translated through block_menu_map.
+; Ian's sel0.
 ; In: A = window number, Y = first item.
 ; Out: A = the item (or block) chosen.
-; Clobbers: X, Y, ptr; Escape restarts the main loop.
+; Clobbers: X, Y, ptr, menu_window, the low code's zero page; Escape
+; restarts the main loop (menu_select).
 .choose_from_window
     LDY #0
 .choose_from_window_at
@@ -157,8 +171,11 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 ; Run the menu of the window just opened.
 ; In: A = the item to start on.
 ; Out: A = the item chosen.
-; Clobbers: X, Y. Escape (the OS's escape condition) is acknowledged, the
-; screen repaired and the main loop restarted.
+; Clobbers: X, Y, the low code's zero page. Escape (the OS's escape
+; condition) is acknowledged, the screen repaired and the main loop
+; restarted, without resetting the stack as an error or a function key
+; does: each Escape from a menu leaves a few bytes behind, harmlessly, as
+; the stack wraps round its page.
 .menu_select
     JSR vector_menu_select
     BCC choose_done
@@ -172,7 +189,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 
 ; After Escape: cursor off, any key allowed, the map redrawn. With Shift
 ; held as well, offer to leave the designer.
-; Clobbers: A, X, Y.
+; Clobbers: A, X, Y, the low code's zero page.
 .escape_reset
     JSR cursor_off
     JSR allow_any_key
@@ -199,9 +216,11 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     EQUS "/MRUN", CR
 
 ; BRKV: report an error in the message box, wait for a key and go back to
-; the main loop. A level half loaded is cleared rather than kept. Typing "i"
-; with the keyboard links set to &CF leaves for BASIC instead, with the error
-; pointer in ptr: the authors' way out.
+; the main loop, with in_main_loop 0 whatever it was. A level half loaded is
+; cleared rather than kept. A lower-case "i" leaves for BASIC instead, with
+; the error pointer in ptr, if the startup options (the keyboard links) read
+; DEVELOPERS_LINKS: the authors' way out. get_key forces Caps Lock on and
+; Shift doesn't undo it, so it takes Caps Lock then I (seen in jsbeeb).
 .brk_handler
     LDX #&FF
     TXS
@@ -217,9 +236,9 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     STA work+1
     JSR hide_cursor
     JSR cursor_off
-    LDA rdchv_filter+1          ; put the OS's RDCHV back
+    LDA saved_rdchv             ; put the OS's RDCHV back
     STA RDCHV
-    LDA rdchv_filter+2
+    LDA saved_rdchv+1
     STA RDCHV+1
     JSR level_file_done
     JSR vector_open_message_box
@@ -277,7 +296,8 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     JSR OSCLI
 .basic_command
     EQUS "BASIC", CR
-; Wait for a key, ignoring any typed ahead.
+; Wait for a key, ignoring any typed ahead; Escape is acknowledged and
+; ignored, and (through rdchv_filter) a function key abandons the wait.
 ; Out: A = the key.
 ; Clobbers: X, Y.
 .wait_for_key
@@ -289,19 +309,24 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     BCS wait_for_key_loop
     RTS
 
+; Throw away any keys typed ahead.
 ; Clobbers: A, X, Y.
 .flush_input
     LDA #OSBYTE_FLUSH_BUFFERS
     LDX #1                      ; just the input buffer
     JMP OSBYTE
 
-; RDCHV while input_line runs: OSWORD 0 sees only Return, Delete and keys
-; from input_min_char to input_max_char, and a function key abandons the
-; input for its command. entry saves the OS's RDCHV in the JSR here.
+; RDCHV from main on (brk_handler takes it out while it shows an error, and
+; MRUN when the designer is left): OSRDCH, and so OSWORD 0, only sees Return,
+; Delete and keys from input_min_char to input_max_char (normally all of them;
+; input_line narrows them), and a function key abandons whatever is going on
+; for its command. Escape goes straight through. entry puts the OS's RDCHV in
+; the JSR here.
 .rdchv_filter_retry
     PLP
 .rdchv_filter
-    JSR &FFA6                   ; the OS's RDCHV, filled in at startup
+    JSR &FFA6                   ; the OS's RDCHV, filled in by entry
+saved_rdchv = rdchv_filter + 1
     BCS do_nothing
     PHP
     JSR check_function_key
@@ -319,10 +344,11 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .do_nothing                     ; Options menu, OK
     RTS
 
-; A function key (*FX225,128 makes f0-f5 &80-&85) abandons whatever is going
-; on and runs its command from the main loop.
+; A function key, f0-f5, abandons whatever is going on: the stack is reset,
+; the map redrawn, and its command run from the main loop (f5 has none, so it
+; only abandons).
 ; In: A = a key.
-; Out: A preserved, unless it doesn't return.
+; Out: A preserved, if it wasn't a function key.
 .check_function_key
     PHA
     EOR #KEYCODE_F0
@@ -343,7 +369,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 ; The map cursor is the cursor's cell inverted; hide_cursor puts the cell
 ; back if it's showing, toggle_cursor flips it, after waiting for the vertical
 ; sync so it doesn't flicker.
-; Clobbers: A, X, Y.
+; Clobbers: A, X, Y, screen_ptr.
 .hide_cursor
     LDA cursor_shown
     BEQ do_nothing
@@ -359,7 +385,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 
 ; Put a block in the map at the cursor and on the screen.
 ; In: A = the block.
-; Clobbers: A, X, Y, ptr, work.
+; Clobbers: A, X, Y, ptr, work, screen_ptr.
 .plot_at_cursor
     PHA
     JSR hide_cursor
@@ -371,7 +397,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 ; Ask which object, monster or puzzle, until the answer is 1 to A.
 ; In: A = how many there are; X = the question's message.
 ; Out: record = (the answer - 1) * 4.
-; Clobbers: A, X, Y, ptr, work.
+; Clobbers: A, X, Y, ptr, work, the input buffer.
 .choose_record
     STX work
     STA record
@@ -436,8 +462,9 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     INX
     RTS
 
-; Place monster window, OK: keep the monster's position, with its number and
-; direction in the bottom bits.
+; Place monster window, OK: put back the copies the window's items worked on,
+; the position with the monster's number and direction in the bottom bits,
+; and close it as below.
 .place_monster_ok
     LDY record
     LDA cursor_x
@@ -451,7 +478,8 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     ORA work+1                  ; direction
     STA level_puzzle_effects+2, Y
 ; The OK item of an editing window: close it and return from the routine
-; that runs the window's menu, dropping the choice it pushed first if it did.
+; that runs the window's menu, whose JSR jump_to_handler led here, dropping
+; the choice it pushed first if it did (menu_ok_drop_choice).
 .menu_ok_drop_choice
     PLA
 .menu_ok
@@ -465,8 +493,9 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     LDX #3
     RTS
 
-; "SURE ? Press Y or N". Returns on Y; on N returns from the caller instead.
-; Clobbers: A, X, Y.
+; "SURE ? Press Y or N". Returns on Y; on N closes the window and returns
+; from the caller instead. Ian's sure.
+; Clobbers: A, X, Y, the low code's zero page.
 .confirm
     LDA #W_SURE
     JSR open_window
@@ -483,8 +512,8 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 ; (input_line), into input_buffer, after a prompt on the message box's
 ; second line. Escape is an error.
 ; In: A = the most characters; X = the prompt's message.
-; Out: ptr = the number of characters; input_buffer, Return-terminated and
-; padded with spaces.
+; Out: ptr = the number of characters; input_buffer = them and a Return,
+; then spaces to its end. The cursor is off again and any key allowed.
 ; Clobbers: A, X, Y.
 .input_text
     LDY #ascii(" ")
@@ -528,6 +557,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     LDA #OSBYTE_CURSOR_EDITING
     JMP OSBYTE
 
+; Let OSRDCH (rdchv_filter) return any key.
 ; Clobbers: X.
 .allow_any_key
     LDX #0
@@ -536,7 +566,10 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     STX input_max_char
     RTS
 
-; In: A = the value for CRTC register 10 (cursor start), or X for the register.
+; Write a CRTC register: the cursor start register (crtc_set_cursor_start),
+; or register X (crtc_write).
+; In: A = the value.
+; Clobbers: X, for crtc_set_cursor_start.
 .crtc_set_cursor_start
     LDX #CRTC_CURSOR_START
 .crtc_write
@@ -544,14 +577,17 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     STA CRTC_DATA
     RTS
 
+; Escape where a key was read: tidy up (offering to leave if Shift is held
+; too), then raise the designer's own error for it.
 .escape_pressed
     JSR escape_reset
     BRK
     EQUB ERROR_ESCAPE_KEY
     EQUS "Escape key pressed", 0
-; get_key's loop while the simulator is running: no key means take another
-; step the way it's going.
-.get_key_simulating
+; get_key's loop while travelling: each pass takes a step the way it's going.
+; With no key it goes round again; with one, it carries on from the S key
+; (the movement keys don't steer it) and so usually returns the key.
+.get_key_travelling
     ASL A                       ; C set if no key came
     BCC get_key_step
     INC keys_acted_on           ; keep going round
@@ -584,7 +620,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     LDY #&4F                    ; doesn't reverse Caps Lock
     LDA #OSBYTE_KEYBOARD_STATUS
     JSR OSBYTE
-    LDX simulating              ; a centisecond a step when simulating,
+    LDX travelling              ; a centisecond a step when travelling,
     BNE get_key_inkey
     LDX #20                     ; else flash every fifth of a second
 .get_key_inkey
@@ -603,8 +639,8 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     ROR A
     CPY #ESC
     BEQ escape_pressed
-    LDY simulating
-    BNE get_key_simulating
+    LDY travelling
+    BNE get_key_travelling
     ASL A
     BCS get_key_poll
     ; A key came: now see which keys are held, so a held key repeats at the
@@ -749,7 +785,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 ; the map; with the simulator on it moves like the player: it walks onto
 ; blank cells and collectables, loses a life in a fatal trap, an S.Monster or
 ; off the map's edge, and enters a pipe that runs its way, which starts it
-; travelling (simulating) until it comes out. Anything else stops it. Shift
+; travelling until it comes out. Anything else stops it. Shift
 ; lets it go anywhere on the map regardless, and stops any travelling.
 ; In: Y = direction, 0 left, 1 up, 2 right, 3 down.
 ; Out: C clear and X, Y = the new position if it moved.
@@ -767,15 +803,15 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     DEX
     BEQ move_into_tile
     INX
-    STX simulating
+    STX travelling
     BEQ move_to_neighbour
 .move_into_tile
-    LDX simulating
+    LDX travelling
     BNE simulate_travel
     TAX
     BEQ move_to_neighbour       ; anyone can go onto a blank
     LDX simulate_window
-    BEQ move_to_neighbour       ; and anywhere when not simulating
+    BEQ move_to_neighbour       ; and anywhere with the simulator off
     CMP #CELL_SULPHUR
     BEQ move_to_neighbour
     CMP #CELL_LAVA
@@ -793,7 +829,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     BNE move_pop
     ; Into a pipe: start travelling, and finish our caller (the cursor_*
     ; handler) by calling the rest of it, before getting on with get_key.
-    INC simulating
+    INC travelling
     PLA
     JSR move_push
     PLA
@@ -834,7 +870,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     JSR wait_for_key
     JSR reopen_window
     LDA #0
-    STA simulating
+    STA travelling
     RTS
 
 ; One step of travelling: along pipes whatever their direction, out onto a
@@ -867,7 +903,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .simulate_collect
     LDA #0
 .simulate_set_running
-    STA simulating
+    STA travelling
     BEQ move_to_neighbour
 .simulate_junction
     PLA
@@ -940,7 +976,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .main_loop
     DEC in_main_loop
     LDA #1                      ; plotting allowed
-    LDX simulate_window         ; keep the Simulate window up if simulating
+    LDX simulate_window         ; keep the Simulate window up if it's on
     DEX
     JSR get_key
     INC in_main_loop
@@ -988,7 +1024,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .select_brush
     LDA #0
     STA simulate_window
-    STA simulating
+    STA travelling
     LDA #W_SELECT_BLOCK
     LDY brush
     JSR choose_from_window_at
@@ -1005,10 +1041,10 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     BEQ select_brush
     LDA simulate_window
     PHA
-    LDA simulating
+    LDA travelling
     LDX #0
     STX simulate_window
-    STX simulating
+    STX travelling
     TAX
     PLA
     DEY
@@ -1019,7 +1055,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     BEQ help_menu
     DEY
     BEQ show_about
-    STX simulating
+    STX travelling
     STA simulate_window
     RTS
 
@@ -1102,7 +1138,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     EOR #W_SIMULATE + 1
     STA simulate_window
     BNE switch_simulate_on
-    STA simulating
+    STA travelling
     BCS switch_simulate_done
     LDA kept_window
     CMP #W_SIMULATE
@@ -2979,7 +3015,7 @@ block_menu = {CELL_FLOOR, CELL_SE_CURVE, CELL_SW_CURVE, CELL_NE_CURVE,
     EQUW place_monster_pattern, place_monster_ok
 .help_handlers
     EQUW help_find_puzzle, help_simulate, vector_close_window
-; get_key's steps while simulating, by direction.
+; get_key's steps while travelling, by direction.
 .cursor_handlers
     EQUW cursor_left, cursor_up, cursor_right, cursor_down
 
@@ -4248,7 +4284,7 @@ ENDSECTION
     INX
     STX cursor_shown
     STX simulate_window
-    STX simulating
+    STX travelling
     STX brush
     STX loading
     STX in_main_loop
