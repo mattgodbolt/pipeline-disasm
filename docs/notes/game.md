@@ -444,8 +444,8 @@ edge (a flame at &FF drawn whole):
     node tools/play.mjs --disc build/pipeline.ssd 'game; wait 7; poke 25A0 FD FE; bkey SPACE; wait 8; bdown SHIFT; bkey ESCAPE; bup SHIFT; until 125F; shot build/shots/burn-top-left.png'
 
 (SHIFT+Escape ends the game; &125F is burn_up's RTS. Matching each view cell
-against the pictures after the first: flames to column 24, lava from 25,
-with the map's last column at 21.) One slip: with view_x exactly &E2 (the
+against the pictures after the first of these: flames to column 24, lava
+from 25, with the map's last column at 21.) One slip: with view_x exactly &E2 (the
 player in column 60) a flame at X = &FF is view column 29, and with the
 right edge unchecked its fourth column lands in view column 0 a row down.
 Watched in jsbeeb (start at column 60, a hook on draw_sprite diffing screen
