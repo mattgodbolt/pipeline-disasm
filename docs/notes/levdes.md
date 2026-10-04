@@ -362,3 +362,77 @@ shared include has. To move when the shared includes can take them:
 - In hidden_levdes.6502: MOVE_LEFT/UP/RIGHT/DOWN, the cursor's own
   directions (0 left, 1 up, 2 right, 3 down: clockwise, so EOR 2 reverses),
   deliberately not DIRECTION_*, whose order differs.
+
+## 2026-10-03 23:25 — A 12-character filename: DFS says "Bad name", not nothing
+
+- The failure isn't silent. Save level to ":0.$.ABCDEFG" puts "Error 204
+  has occurred !", "Bad name" and "Press any key..." in the message box,
+  and nothing is written: the disc jsbeeb holds afterwards is byte for byte
+  the original (catalogue cycle still &20). The earlier note saw only the
+  catalogue, and the journal's "silently" followed it. Probably that run
+  typed the name with beeb.mjs's `type`, which presses Return itself, and
+  then `key Enter`: the second Return dismisses the error at once, leaving
+  the map (tried; the screen after is just the map).
+- Why: OSFILE gets ":0.$.ABCDEFG0", &1E, &A1, &25... (`hex 1E30 16` after
+  the save: `3a 30 2e 24 2e 41 .. 47 30 1e a1 25`). DFS 1.2 parses the name
+  from &A070, each character read through GSREAD by &A0C9. After the drive
+  and directory, the loop at &A0BA keeps up to seven characters of the
+  leaf; the eighth, the "0", goes from &A0C7 (`CPX #7`, `BEQ`) to &A0A5,
+  `JSR &9FAE`, DFS's "Bad " errors, here &CC "name". A trace of the save
+  runs &A0C7 and &A0A5 once each, then the BRK in page 1 (where DFS builds
+  its errors), then `brk_handler` (&1196) once. The &1E is never reached.
+- So the outcome goes where every error goes: `brk_handler` undoes
+  `level_file`'s text window and SEI (`level_file_done`) and shows the number
+  and DFS's text until a key (`wait_for_key` flushes typed-ahead keys
+  first). Output isn't off around OSFILE; `level_file` only opens the
+  one-line text window M_FILING_WINDOW for the filing system's messages.
+- 13 characters: OSWORD 0 (`input_max_length` 12) refuses the 13th, so
+  ":0.$.ABCDEFGH" leaves ":0.$.ABCDEFG" and a Return at &40-&4C and fails
+  the same way.
+- 11 characters, and shorter names with prefixes, save where they say:
+  ":0.$.ABCDEF", "$.ABCDEFG" and ":0.B.XYZ" were all catalogued with load
+  &25A1, exec &8380, length &A5F. A 12-character line whose name ends early
+  works too: "AB CDEFGHIJK" saved $.AB, since GSREAD stops at the space.
+- Every legal 12-character name fails: 12 is the most a drive, a directory
+  and a seven-character leaf make, so the leaf always gains the "0". (DFS
+  1.2 does take a directory prefix twice: in ":0.$.$.ABCDE" the leaf can
+  take the "0", and then the MOS's GSREAD refuses the &1E as "Bad string",
+  error 253. Tried from BASIC with the same bytes, not in the designer.)
+- Load level overruns the same way (it uses `ask_filename` too), but only
+  after asking for the code, by when `loading` is set, so `brk_handler`
+  replaces the level being edited with a new one, as for any failed load.
+  With LEVEL1 loaded (code 677636), Load ":0.$.ABCDEFG" showed Bad name and
+  then a blank map; LEVEL1's code bytes at &26E1 (CD DC 9C) were gone.
+- Nothing else overruns: `input_number` (3 digits) and `input_editing_code`
+  (6) read into `input_buffer` (16 bytes at &40) and use it there; only
+  `ask_filename` copies the line, into the 12-byte `filename`.
+- Correction to the first section: the OSFILE control block is
+  `osfile_block`, &1E3C; &1E4E is `osfile_template`, copied into it before
+  each call.
+- Saving onto the PIPELINE disc itself: DFS puts a new file after the last
+  catalogued one, the LEVDES stub at &113, so the first level saved lands
+  at &114-&11E, just short of H.GAME (&122), and the second at &11F-&129,
+  over H.GAME's first eight sectors (the four saves above changed sectors
+  &114-&13F). The designer asks for the PIPELINE disc back when it exits,
+  so levels were meant for a disc of their own.
+
+How, from the repository root. `<AGAIN>` stands for the steps from the map
+to the Save level filename prompt, `key F2; wait 1; key ArrowDown 10; wait
+1; key Enter; wait 1; key KeyY; wait 1`, and `<SAVE>` for booting into the
+designer first, `wait 33; key Digit4; key Enter; wait 15; key Space; wait
+2; <AGAIN>`. `type` presses Return after its text. The `ssd` command (new
+in beeb.mjs) writes the disc as it stands.
+
+```
+node tools/beeb.mjs '<SAVE>; trace t12.json; type :0.$.ABCDEFG; shot err12.png; hex 1E30 16; ssd save12.ssd'
+node tools/beeb.mjs '<SAVE>; type :0.$.ABCDEFG; key Enter; wait 1; shot dismissed.png'
+node tools/beeb.mjs '<SAVE>; type :0.$.ABCDEFGH; wait 1; hex 40 16; shot err13.png'
+node tools/beeb.mjs '<SAVE>; type :0.$.ABCDEF; wait 3; <AGAIN>; type $.ABCDEFG; wait 3; <AGAIN>; type :0.B.XYZ; wait 3; <AGAIN>; type AB CDEFGHIJK; wait 3; ssd saves.ssd'
+node tools/beeb.mjs 'wait 33; key Digit4; key Enter; wait 15; key Space; wait 2; key F2; wait 1; key Enter; wait 1; key KeyY; wait 1; type LEVEL1; wait 1; type 677636; wait 4; hex 26E0 8; key F2; wait 1; key Enter; wait 1; key KeyY; wait 1; type :0.$.ABCDEFG; wait 1; type 677636; wait 2; shot loaderr.png; key Space; wait 2; shot blank.png; hex 26E0 8'
+node tools/beeb.mjs --boot no 'type DIM B% 40, N% 40:!B%=N%:B%!2=&25A1:B%!6=&8380:B%!10=&25A1:B%!14=&3000; type $N%=":0.$.ABCDEFG0":N%?13=&1E:N%?14=&A1:A%=0:X%=B%:Y%=B% DIV 256:CALL &FFDD; type PRINT ERR; type $N%=":0.$.$.ABCDE0":N%?13=&1E:N%?14=&A1:A%=0:X%=B%:Y%=B% DIV 256:CALL &FFDD; type PRINT ERR; out'
+python3 -c 'import sys; sys.path.insert(0, "tools"); from dfs import read_catalogue; c = read_catalogue(open("save12.ssd", "rb").read()); print(c.cycle, [(e.full_name, hex(e.start)) for e in c.entries])'
+```
+
+The DFS addresses come from a linear disassembly of
+`node_modules/jsbeeb/public/roms/b/DFS-1.2.rom` (mapped at &8000), checked
+against the save's trace.
