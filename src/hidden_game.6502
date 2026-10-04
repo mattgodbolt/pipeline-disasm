@@ -10,11 +10,14 @@
 ; hand since, so don't regenerate over it.
 
 INCLUDE "os.6502inc"
+INCLUDE "osconst.6502inc"
 INCLUDE "io.6502inc"
 
 SECTION hidden_game, filename="H.GAME", org=&3000
 .game
 {
+INCLUDE "game.6502inc"
+
 ; Zero page. The loader's block copy uses &00-&07 too (copy_return...).
 monster_x = &00                         ; 4 monsters of 4 bytes; x, y in character cells
 monster_y = &01
@@ -153,7 +156,6 @@ step_y = &0124                          ; step's scratch
 saved_extended_vectors = &037F          ; the OS's cassette workspace
 trigger_args = &23AD                    ; 4 bytes a trigger, from io_level_trigger_args
 map = &5800                             ; the level being played's map, copied from io_maps
-SCREEN = &6000                          ; the game's 8K screen
 
 menu_keys = &50                         ; where MENU leaves the ten keys
 copy_return = &00
@@ -161,13 +163,6 @@ copy_from = &02
 copy_to = &04
 copy_count = &06
 objects = game_start                    ; 8 objects of 4 bytes: x, y, icon, uses and flags
-ACTION_USE = 6                          ; the last of the action keys' actions
-ACTION_LEFT = 7                         ; then right, up and down
-ACTION_STOP = 11                        ; from a trigger: the player doesn't step
-KEY_SHIFT = -1                          ; negative INKEY numbers
-KEY_T = -36
-KEY_S = -82
-KEY_SPACE = -99
 bit4_mask = show_map_centre + 1         ; the byte there is &10
 bit6_mask = fire_object_vanishes + 1    ; the byte there is &40
 
@@ -3318,7 +3313,7 @@ NEXT
     BIT MOS_ESCAPE_FLAG                     ; Escape?
     BPL player_turn_no_escape
 .give_up
-    LDX #&FF                            ; SHIFT too?
+    LDX #INKEY_TEST(KEY_SHIFT)          ; SHIFT too?
     JSR key_pressed
     BNE give_up_life
     INX                                 ; one life left, about to be lost
@@ -3388,7 +3383,7 @@ NEXT
     BIT MOS_ESCAPE_FLAG                     ; Escape: lose a life
     BMI give_up
     JSR backpack_keys                   ; the backpack screen's keys
-    LDX #LO(KEY_SPACE)                  ; Space
+    LDX #INKEY_TEST(KEY_SPACE)                  ; Space
     JSR key_pressed
     BNE backpack_screen_loop
 .backpack_screen_done
@@ -3421,10 +3416,10 @@ NEXT
     PLA
     JMP show_map
 .backpack_keys_sound
-    LDX #LO(KEY_S)                      ; S: sound effects
+    LDX #INKEY_TEST(KEY_S)                      ; S: sound effects
     JSR key_pressed
     BEQ backpack_toggle_effects
-    LDX #LO(KEY_T)                      ; T: the tune
+    LDX #INKEY_TEST(KEY_T)                      ; T: the tune
     JSR key_pressed
     BNE backpack_keys_done
     LDA tune_off
@@ -3663,7 +3658,7 @@ NEXT
     BNE show_map_space
     JSR map_view_scroll_right
 .show_map_space
-    LDX #LO(KEY_SPACE)                  ; Space
+    LDX #INKEY_TEST(KEY_SPACE)                  ; Space
     JSR key_pressed
     BNE show_map_loop
     JSR clear_screen                    ; back to the game
@@ -4258,11 +4253,11 @@ NEXT
 
 ; Wait for Space to be pressed and let go.
 .wait_for_space
-    LDX #LO(KEY_SPACE)                  ; Space down...
+    LDX #INKEY_TEST(KEY_SPACE)                  ; Space down...
     JSR key_pressed
     BNE wait_for_space
 .wait_for_space_up
-    LDX #LO(KEY_SPACE)                  ; ...and up
+    LDX #INKEY_TEST(KEY_SPACE)                  ; ...and up
     JSR key_pressed
     BEQ wait_for_space_up
 
