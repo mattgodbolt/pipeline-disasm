@@ -677,3 +677,21 @@ Details in the newest sections of `docs/notes/game.md` and
   the first think and the level starts 26 points up (seen in jsbeeb).
   Reusable trigger 6 may score it again each time (code only).
 - Notes in docs/notes/game.md; the edge test script is kept outside the repo.
+
+## 2026-10-04 09:40 — Merged: MISSION's saves on the PIPELINE disc
+
+- MISSION saves with plain `*SAVE` and never asks for another disc, so on
+  the PIPELINE disc DFS puts each file from &114 on, over the hidden runs.
+  The first mission (52 sectors, &114-&147) takes all of H.GAME and
+  H.GRAPH's first three sectors; the second takes the rest of H.GRAPH and
+  half of H.LEVDES; the third the rest (and on a 40-track disc fails with
+  Disk fault 18 at 28/00, by then too late). A graphics save (16 sectors)
+  takes H.GAME's loader; level saves behave as the Level Designer's.
+- Afterwards the disc still boots to the menu, but the game stops at once
+  (BRK 0 from a mission's bytes at &3000, or a hang on &02 after a graphics
+  save); the Graphics Designer runs with a broken logo, sheet and font after
+  one mission, and both designers end in "Bad program" after two.
+- So one mission save to the game disc is enough to kill the game; the
+  "used disc" point in the jsbeeb PR comment (level saves) understates it.
+- Unverified: whether DFS rewrites the hidden sectors' deleted marks as
+  normal ones (an .ssd can't show it).
