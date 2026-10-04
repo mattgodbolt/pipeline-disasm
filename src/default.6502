@@ -1,15 +1,19 @@
-; DEFAULT: the default graphics set, as the Graphics Designer saves it. It
-; loads it at &4000 and saves &4000-&4F33 back; MISSION loads it to put in a
-; mission, and IO carries the same pictures and names. The set itself, every
-; picture drawn, is src/default.6502inc.
+; DEFAULT: the default graphics set, &F34 bytes loaded at &4000, as the
+; Graphics Designer saves it. The designer loads it at &4000 when it starts,
+; edits it there and saves &4000-&4F33 back; MISSION loads a graphics file
+; like it to put in a mission, and IO carries the same pictures and names.
+; The pictures are numbered as slots, &00-&28 (sprites.6502inc says what
+; each slot is for); the set itself, every picture drawn, is
+; src/default.6502inc.
 ;
-;   &000  slots &00-&27: the graphics (the large sprites &00-&0F, the small
-;         &10-&1F, the large &20-&27)
-;   &E00  MISSION's "names": slot &28, then the names of small sprites
-;         &10-&1E, 12 characters each
+;   &000  slots &00-&27, the graphics: the large sprites &00-&0F (16 x 32
+;         pixels, &80 bytes each), the small &10-&1F (8 x 16, &20 bytes),
+;         the large &20-&27
+;   &E00  what MISSION calls the names: slot &28, then the names of the
+;         objects whose icons are small slots &10-&1E, 12 characters each
 ;
-; The designer's sheet shows the large slots in its own order
-; (slot_of_position in H.GRAPH).
+; The designer's sprite sheet (its grid of every picture) shows the large
+; slots in its own order: slot_of_position in src/hidden_graphic.6502.
 INCLUDE "sprites.6502inc"
 INCLUDE "default.6502inc"
 
