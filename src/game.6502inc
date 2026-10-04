@@ -61,25 +61,22 @@ FIRST_ALTERNATE = (io_alternates - io_tiles) DIV PICTURE_BYTES
 ALTERNATES      = 4       ; cell types with a second picture
 
 ; ---------------------------------------------------------------------------
-; Directions are DIRECTION_* (0-3), as the player faces, monsters go and
-; direction_dx and _dy step. Those tables go on to the four diagonals (4-7),
-; which only an explosion steps to, and DIRECTION_NONE, no step at all. A
-; thrown object's direction is one of DIRECTION_* plus one, so that 0 can mean
-; nothing's in flight.
-DIRECTION_NONE = 8
+; Directions are DIRECTION_LEFT to DIRECTION_DOWN (0-3), as the player faces,
+; monsters go and direction_dx and _dy step. Those tables go on to the four
+; diagonals (4-7), which explosions and Move block step to, and
+; DIRECTION_NONE, no step at all (the same number as MONSTER_GONE, but the
+; game's own, for those tables). A thrown object's direction is one of
+; DIRECTION_* plus one, so that 0 can mean nothing's in flight.
+DIRECTION_NONE = DIRECTION_DOWN_RIGHT + 1
 THROWN_NONE  = 0
 THROWN_LEFT  = DIRECTION_LEFT + 1
 THROWN_RIGHT = DIRECTION_RIGHT + 1
 THROWN_UP    = DIRECTION_UP + 1
 THROWN_DOWN  = DIRECTION_DOWN + 1
 
-; Offsets into the turns table: turned back, straight on, clockwise and
-; anticlockwise. A monster's turning preferences are four 2-bit fields, each
-; one of these divided by 4.
-TURN_BACK          = 0
-TURN_AHEAD         = 4
-TURN_CLOCKWISE     = 8
-TURN_ANTICLOCKWISE = 12
+; The turns table has a row of four directions for each TURN_*
+; (leveldata.6502inc), the turn's row starting at TURN_* * TURN_ROW.
+TURN_ROW = 4
 
 ; ---------------------------------------------------------------------------
 ; The player's actions, as action_table has them. The action keys are tested
@@ -113,19 +110,18 @@ MENU_KEYS         = 10
 ; ---------------------------------------------------------------------------
 ; A level's monsters, objects and triggers, as the game keeps them.
 
-; Monsters (MONSTERS): x and y in character cells (4 to a map cell), a
-; direction, and turning preferences. A direction plus MONSTER_STUCK is a
-; monster that couldn't move; MONSTER_GONE and up, one that isn't out.
-MONSTER_BYTES = 4
+; Monsters (MONSTERS of MONSTER_BYTES): x and y in character cells (4 to a
+; map cell), a direction, and turning preferences. A direction plus
+; MONSTER_STUCK is a monster that couldn't move; MONSTER_GONE and up, one
+; that isn't out.
 MONSTER_STUCK = 4
-MONSTER_GONE  = 8
 
-; Objects (OBJECTS): x, y (x OBJECT_ABSENT while carried or in flight), an
-; icon, and uses and flags. The game reads the uses as bits 0-5, so that
-; OBJECT_NO_CHARGES makes 32 or more, which never run out; OBJECT_NO_THROW's
-; object can still be thrown, but its triggers aren't tried when it lands.
-OBJECT_BYTES = 4
-OBJECT_USES  = &3F
+; Objects (OBJECTS of OBJECT_BYTES): x, y (x OBJECT_ABSENT while carried or
+; in flight), an icon, and uses and flags. The game reads the uses with
+; OBJECT_NO_CHARGES as well as OBJECT_CHARGES, so that it makes 32 or more,
+; which never run out; OBJECT_NO_THROW's object can still be thrown, but its
+; triggers aren't tried when it lands.
+OBJECT_USES  = OBJECT_CHARGES OR OBJECT_NO_CHARGES
 
 ; The backpack: a slot holds an object's number, or is negative for empty.
 ; On the backpack screen its slots are BACKPACK_SPACING characters apart.
@@ -135,18 +131,13 @@ BACKPACK_SPACING = 6
 
 ; Triggers (the designer's puzzles: PUZZLES of them): a flags byte, a place,
 ; and four arguments. Object n's triggers are n, n + OBJECTS, n + 2 * OBJECTS
-; and n + 3 * OBJECTS. The flags' low nibble is the action (PUZZLE_*, an index
-; into trigger_actions), the rest PUZZLE_REUSABLE and the like; IGNORE in a
-; place's x or y matches anywhere along it.
-TRIGGER_ACTION = &0F
-; The fourth argument is the condition.
-CONDITION_DIRECTION      = &80    ; facing (or thrown) the direction in...
-CONDITION_DIRECTION_BITS = &30    ; ...these bits
-CONDITION_CELL           = &40    ; facing (or landing against) the cell type in...
-CONDITION_CELL_BITS      = &0F    ; ...these bits
+; and n + 3 * OBJECTS. The flags' PUZZLE_ACTION is the action (PUZZLE_*, an
+; index into trigger_actions), the rest PUZZLE_REUSABLE and the like; IGNORE
+; in a place's x or y matches anywhere along it. The fourth argument is the
+; condition (CONDITION_*): facing (or thrown) a direction, facing (or landing
+; against) a cell type.
 
 START_LIVES = 3
-LEVEL_SETUP_BYTES = LEVEL_FIELD_SIZES[4]  ; a level's setup: start_x to alternate_cells
 
 ; How far through a level the player is (stage).
 STAGE_COLLECTING = 0

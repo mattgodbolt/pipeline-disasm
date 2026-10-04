@@ -12,14 +12,14 @@ INCLUDE "leveldata.6502inc"
 level           = &25A1
 level_end       = &3000
 
-; Puzzle names, ten characters each, kept as eight in one table and the
-; last two in another.
-level_names     = level                         ; 32 x 8 characters
-level_name_ends = level_names + PUZZLES * 8     ; 32 x 2 characters
+; Puzzle names, PUZZLE_NAME_LENGTH characters each, kept as the first
+; PUZZLE_NAME_HEAD in one table and the rest in another.
+level_names     = level                                     ; 32 x 8 characters
+level_name_ends = level_names + PUZZLES * PUZZLE_NAME_HEAD  ; 32 x 2 characters
 
 ; The fields, in order, then the map. First a three-byte editing code; the
 ; designer won't keep a loaded level unless the user types its six digits.
-level_code      = level_name_ends + PUZZLES * 2
+level_code      = level_name_ends + PUZZLES * (PUZZLE_NAME_LENGTH - PUZZLE_NAME_HEAD)
 level_palette   = level_code + LEVEL_FIELD_OFFSETS[3]
 ; Where the player starts, less 4 in each coordinate.
 level_start_x   = level_code + LEVEL_FIELD_OFFSETS[4] + LEVEL_START_X

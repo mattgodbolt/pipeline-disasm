@@ -97,7 +97,9 @@ box_left_side   = screen_address(MESSAGE_BOX_COLUMN - 1, box_bottom)
 box_right_side  = screen_address(MESSAGE_BOX_COLUMN + MESSAGE_BOX_COLUMNS, box_bottom)
 
 ; The cursor's directions, for moving it and the simulated player:
-; clockwise from left, so EOR 2 turns about.
+; clockwise from left, so EOR 2 turns about. The designer's own numbering:
+; a level's directions (DIRECTION_* in leveldata.6502inc) go left, right,
+; up, down.
 MOVE_LEFT  = 0
 MOVE_UP    = 1
 MOVE_RIGHT = 2
@@ -1520,7 +1522,7 @@ handler_address = jump_to_handler_jmp + 1
 
 ; Choose a monster's direction from the north, south, east, west, dead menu.
 ; In: X = the current direction (DIRECTION_*; 4 and up count as dead).
-; Out: A = the direction chosen (MONSTER_DEAD for dead); Y = record.
+; Out: A = the direction chosen (MONSTER_GONE for dead); Y = record.
 ; Clobbers: X, ptr.
 .choose_direction
     CPX #direction_items_end - direction_items
@@ -1537,12 +1539,12 @@ handler_address = jump_to_handler_jmp + 1
 ; The direction for each item of the direction menu, and the item for each
 ; direction (west, east, north, south, then dead).
 direction_menu = {DIRECTION_UP, DIRECTION_DOWN, DIRECTION_RIGHT,
-    DIRECTION_LEFT, MONSTER_DEAD}
+    DIRECTION_LEFT, MONSTER_GONE}
 .direction_codes
     EQUB direction_menu
 .direction_items
     EQUB FIND(direction_menu, {DIRECTION_LEFT, DIRECTION_RIGHT, DIRECTION_UP,
-        DIRECTION_DOWN, MONSTER_DEAD})
+        DIRECTION_DOWN, MONSTER_GONE})
 .direction_items_end
 
 ; Monster window, Pattern.
@@ -1889,13 +1891,13 @@ direction_menu = {DIRECTION_UP, DIRECTION_DOWN, DIRECTION_RIGHT,
     STA choices, X
     BPL option_graphics_next
 ; The code for each item of the sprites menu (Sprite A, Sprite B, Patterned,
-; and a fourth it hasn't got), and the item for each code. SPRITES_EVEN's
+; and a fourth it hasn't got), and the item for each code. ALTERNATE_EVEN's
 ; item is past the end, so the menu starts at the top for it.
-sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
+sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
 .sprite_codes
     EQUB sprites_menu
 .sprite_items
-    EQUB FIND(sprites_menu, SPRITES_A..SPRITES_B)
+    EQUB FIND(sprites_menu, ALTERNATE_NONE..ALTERNATE_ALL)
 ; Options menu, Puzzle: which one, then its window for ever (its OK pops
 ; back out of here). Help's Find puzzle comes in at edit_puzzle.
 .option_puzzle
@@ -1931,19 +1933,19 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     JSR open_window
     LDY puzzle
     LDA level_puzzle_types, Y
-    AND #PUZZLE_TYPE
+    AND #PUZZLE_ACTION
     JSR menu_select
     STA ptr
     CMP #PUZZLE_SWAP_NEXT
     BNE puzzle_type_store
     LDY record
     LDA level_puzzle_effects+3, Y
-    AND #&FF EOR CONDITION_CHECK_BLOCK
+    AND #&FF EOR CONDITION_CHECK_CELL
     STA level_puzzle_effects+3, Y
 .puzzle_type_store
     LDY puzzle
     LDA level_puzzle_types, Y
-    AND #&FF EOR PUZZLE_TYPE
+    AND #&FF EOR PUZZLE_ACTION
     ORA ptr
     STA level_puzzle_types, Y
     JMP vector_close_window
@@ -1957,7 +1959,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
 .print_puzzle_name_at
     ASL A
     TAY
-    LDX #NAME_HEAD
+    LDX #PUZZLE_NAME_HEAD
 .print_puzzle_name_loop
     LDA level_names, Y
     JSR OSWRCH
@@ -1979,7 +1981,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     LDA #M_OLD_NAME
     JSR vector_print_line1
     JSR print_puzzle_name
-    LDA #NAME_LENGTH
+    LDA #PUZZLE_NAME_LENGTH
     LDX #M_PUZZLE_NAME
     JSR input_text
     JSR pad_input
@@ -1994,7 +1996,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     STA level_names, Y
     INY
     INX
-    CPX #NAME_HEAD
+    CPX #PUZZLE_NAME_HEAD
     BCC puzzle_name_copy
     LDA puzzle
     ASL A
@@ -2108,12 +2110,12 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     PHA
     LDY puzzle
     LDA level_puzzle_types, Y
-    AND #PUZZLE_TYPE
+    AND #PUZZLE_ACTION
     CMP #PUZZLE_SWAP_NEXT
     BEQ puzzle_conditions_check_next    ; ticked: A is nonzero
     PLA
     PHA
-    AND #CONDITION_CHECK_BLOCK
+    AND #CONDITION_CHECK_CELL
 .puzzle_conditions_check_next
     LDY #item_line(I_CHECK_NEXT)
     JSR vector_tick_line
@@ -2138,7 +2140,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
 .unless_swap_next
     LDY puzzle
     LDA level_puzzle_types, Y
-    AND #PUZZLE_TYPE
+    AND #PUZZLE_ACTION
     CMP #PUZZLE_SWAP_NEXT
     BNE unless_swap_next_done
     PLA
@@ -2149,7 +2151,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
 ; Conditions window, Check next: and Check dir.: flags.
 .condition_check_next
     JSR unless_swap_next
-    LDA #CONDITION_CHECK_BLOCK
+    LDA #CONDITION_CHECK_CELL
     BNE condition_toggle_flag
 .condition_check_direction
     LDA #CONDITION_CHECK_DIRECTION
@@ -2196,11 +2198,11 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     JSR unless_swap_next
     LDY record
     LDA level_puzzle_effects+3, Y
-    AND #CONDITION_BLOCK
+    AND #CONDITION_CELL
     TAY
     LDA #W_SELECT_BLOCK
     JSR choose_from_window_at
-    ORA #CONDITION_CHECK_BLOCK
+    ORA #CONDITION_CHECK_CELL
     LDX #CONDITION_CHECK_DIRECTION OR CONDITION_DIRECTION   ; what to keep
     BMI condition_store
 ; Conditions window, Direction: which way the player must be going, which
@@ -2226,7 +2228,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     ASL A
     ASL A
     ORA #CONDITION_CHECK_DIRECTION
-    LDX #CONDITION_CHECK_BLOCK OR CONDITION_BLOCK           ; what to keep
+    LDX #CONDITION_CHECK_CELL OR CONDITION_CELL             ; what to keep
 .condition_store
     STA ptr
     LDY record
@@ -2469,7 +2471,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     LDA #W_PLACE_MONSTER
     LDY #handlers(place_monster_handlers_ptr)
     BNE effect_editor
-; Move monster: +0 direction (DIRECTION_*, or MONSTER_DEAD), +1 monster number
+; Move monster: +0 direction (DIRECTION_*, or MONSTER_GONE), +1 monster number
 ; * 4, the fifth item, All monsters, making it 16.
 .effect_move_monster
     LDA #W_MOVE_MONSTER
@@ -2517,7 +2519,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
 .puzzle_effects
     LDY puzzle
     LDA level_puzzle_types, Y
-    AND #PUZZLE_TYPE
+    AND #PUZZLE_ACTION
     LDY #handlers(effect_handlers_ptr)
     JMP jump_to_handler
 
@@ -2923,7 +2925,8 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     BPL find_puzzle_compare
     JMP vector_close_message_box
 
-; Pad the input buffer with spaces to NAME_LENGTH, from the end of the text.
+; Pad the input buffer with spaces to PUZZLE_NAME_LENGTH, from the end of the
+; text.
 ; In: ptr = the number of characters.
 ; Clobbers: A, Y.
 .pad_input
@@ -2932,7 +2935,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
 .pad_input_loop
     STA input_buffer, Y
     INY
-    CPY #NAME_LENGTH + 1        ; over the Return too
+    CPY #PUZZLE_NAME_LENGTH + 1 ; over the Return too
     BCC pad_input_loop
     RTS
 ; Help menu, Find puzzle: look a puzzle up by name, ignoring case (bit 5),
@@ -2941,7 +2944,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
 .help_find_puzzle
     JSR vector_close_window
     JSR vector_open_message_box
-    LDA #NAME_LENGTH
+    LDA #PUZZLE_NAME_LENGTH
     LDX #M_PUZZLE_NAME
     JSR input_text
     JSR pad_input
@@ -2951,7 +2954,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     LDA record
     ASL A
     ASL A
-    ASL A                       ; times NAME_HEAD
+    ASL A                       ; times PUZZLE_NAME_HEAD
     TAY
     LDX #0
 .find_puzzle_compare_name
@@ -2961,7 +2964,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     BNE find_puzzle_next
     INY
     INX
-    CPX #NAME_HEAD
+    CPX #PUZZLE_NAME_HEAD
     BCC find_puzzle_compare_name
     LDA record
     ASL A
@@ -2973,7 +2976,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     BNE find_puzzle_next
     INY
     INX
-    CPX #NAME_LENGTH
+    CPX #PUZZLE_NAME_LENGTH
     BCC find_puzzle_compare_end
     JSR vector_open_message_box
     LDA #M_NAME_QUOTE           ; Name: "<name>" Puzzle <n>
@@ -3256,10 +3259,10 @@ block_menu = {CELL_FLOOR, CELL_SE_CURVE, CELL_SW_CURVE, CELL_NE_CURVE,
     EQUB 250                    ; time
     EQUB MAP_SIZE / 2, MAP_SIZE / 2             ; finish
     EQUB CELL_LAVA * 16 + CELL_LAVA             ; monsters die in fatal traps
-    EQUB SPRITES_A              ; sprites: the first picture for all four
+    EQUB ALTERNATE_NONE         ; sprites: the first picture for all four
 ; Each monster: in the middle, dead, back and forth.
 .default_monster
-    MONSTER MAP_SIZE / 2, MAP_SIZE / 2, MONSTER_DEAD, PATTERN_BACK_AND_FORTH
+    MONSTER MAP_SIZE / 2, MAP_SIZE / 2, MONSTER_GONE, PATTERN_BACK_AND_FORTH
 
 line1_tab = os_tab(MESSAGE_LEFT, MESSAGE_LINE_1)
 line2_tab = os_tab(MESSAGE_LEFT, MESSAGE_LINE_2)
