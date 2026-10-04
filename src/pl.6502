@@ -130,16 +130,18 @@ CHEAT_FURTHEST_LEVEL = 3            ; steps the start level: 3, the fourth
 
 ; Zero page, once decrypted. BASIC's, and the MOS's line input buffer for the
 ; code goes right at the bottom.
-typed_digits = &00          ; (7) the code as typed, then CR
+typed_digits = &00          ; (CODE_DIGITS + 1) the code as typed, then CR
 digit_pair = &70            ; packing two digits into one byte
 entry_index = &70           ; the puzzle being listed
 key_index = &70             ; which of the unlock keys is being tested
 format_index = &71          ; next character of format_chars to print
 swapped = &72               ; check_code_byte's working
 checks_left = &73           ; check_code_byte's count, a guard against patching
-code_bcd = &80              ; (3) the code typed, as BCD
+code_bcd = &80              ; (CODE_BYTES) the code typed, as BCD
 
 DIGIT_0 = ascii("0")
+CODE_DIGITS = 6             ; an editing code, two digits to a byte
+CODE_BYTES = CODE_DIGITS / 2
 ACTION_WIDTH = 15           ; the action column, padded with spaces
 
 ; The format characters are stored inverted, so they aren't text to anyone
@@ -186,8 +188,8 @@ SECTION pl_decrypted, filename="PLDEC", org=pl.encrypted - 1
     JSR OSWORD
 
     ; Pack the six digits into three BCD bytes, first pair first.
-    LDX #4
-    LDY #2
+    LDX #CODE_DIGITS - 2
+    LDY #CODE_BYTES - 1
 .pack_digits
     LDA typed_digits, X
     SEC
@@ -225,8 +227,10 @@ SECTION pl_decrypted, filename="PLDEC", org=pl.encrypted - 1
     ; Each code byte must match the file's once its bit pairs are swapped
     ; and it's rotated right a bit, last byte first. X is the old *FX200
     ; setting, which OSBYTE hands back: 2, as set at the start (seen in
-    ; jsbeeb), so anyone changing that breaks the check. checks_left goes 2,
-    ; 1, 0, &FF and back to 0 only if all three compares ran.
+    ; jsbeeb), and so the last byte's index; anyone changing that setting
+    ; breaks the check. checks_left goes 2, 1, 0, &FF and back to 0 only if
+    ; all three compares ran.
+ASSERT CODE_BYTES - 1 = 2
 .check_code_byte
     DEC checks_left
     LDA code_bcd, X
@@ -453,7 +457,7 @@ ASSERT BEL >> 1 = CHEAT_FURTHEST_LEVEL
 ; OSWORD 0 for the code: up to six digits, into zero page.
 .read_code_block
     EQUW typed_digits
-    EQUB 6, ascii("0"), ascii("9")
+    EQUB CODE_DIGITS, ascii("0"), ascii("9")
 
 ; Characters print_format_char hands out in turn, stored inverted. The
 ; tens digits in the middle are read directly, not inverted, and never
