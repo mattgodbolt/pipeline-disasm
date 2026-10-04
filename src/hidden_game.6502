@@ -21,7 +21,7 @@ INCLUDE "game.6502inc"
 ; Zero page. The loader's block copy uses &00-&07 too (copy_return...).
 monster_x = &00                         ; MONSTERS of MONSTER_BYTES: x, y in character cells
 monster_y = &01
-monster_direction = &02                 ; DIR_*; + MONSTER_STUCK: stuck; MONSTER_GONE and up: not out
+monster_direction = &02                 ; DIRECTION_*; + MONSTER_STUCK: stuck; MONSTER_GONE and up: not out
 monster_turns = &03                     ; four 2-bit TURN_* fields, tried from the bottom
 thrown_x = &10                          ; a thrown object in flight, in character cells
 thrown_y = &11
@@ -131,7 +131,7 @@ player_screen_high = &85
 player_screen_base = &86                ; the player's top left on the screen
 player_screen_base_high = &87
 player_frame = &88                      ; +&20 a cell walked; bit 7 flips the player's picture
-facing = &89                            ; DIR_*
+facing = &89                            ; DIRECTION_*
 view_x = &8A                            ; the view's top left, in character cells (4 to a map cell)
 view_y = &8B
 sprite_columns = &8E                    ; character cells to draw, less 1
@@ -150,7 +150,7 @@ sprite_skip_y = &9A                     ; and the top
 steps_since_drawn = &9B                 ; steps scrolled in a pipe since the player was last drawn
 
 ; Elsewhere.
-trigger_flags = &0100                   ; TRIGGERS bytes, from io_level_trigger_flags
+trigger_flags = &0100                   ; a byte per trigger, from io_level_trigger_flags
 keys_were_down = &0120                  ; a byte per direction key: 1 if it was down last time
 step_y = &0124                          ; step's scratch
 saved_extended_vectors = &037F          ; over the cassette filing system's workspace
@@ -171,7 +171,7 @@ object_flags = objects + 3
 
 ; The triggers' places and arguments, laid over the end of the game's own
 ; code by setup_level (trigger_places) and just past it.
-trigger_args = trigger_places + 2 * TRIGGERS     ; 4 bytes a trigger
+trigger_args = trigger_places + 2 * PUZZLES     ; 4 bytes a trigger
 trigger_condition = trigger_args + 3
 
 ; Masks for BIT that are other instructions' operands.
@@ -432,7 +432,7 @@ SECTION low_code, org=&0400
     EQUB &F0, &96, &96, &F0             ; CELL_FIRE
     EQUB &00, &00, &00, &00             ; CELL_OBJECT: not shown
 .map_view_player
-    EQUB &C3, &69, &69, &C3             ; DIR_LEFT, and so on
+    EQUB &C3, &69, &69, &C3             ; DIRECTION_LEFT, and so on
     EQUB &3C, &69, &69, &3C
     EQUB &96, &F0, &69, &0F
     EQUB &0F, &69, &F0, &96
@@ -1606,14 +1606,14 @@ NEXT
     TAX
 .move_monster_direction
     PLA
-    BEQ monster_left                    ; DIR_LEFT
-    CMP #DIR_RIGHT
+    BEQ monster_left                    ; DIRECTION_LEFT
+    CMP #DIRECTION_RIGHT
     BEQ monster_right
-    CMP #DIR_UP
+    CMP #DIRECTION_UP
     BEQ monster_up
     CMP #MONSTER_GONE                   ; not out
     BCS next_monster
-    CMP #DIR_DOWN
+    CMP #DIRECTION_DOWN
     BNE monster_stuck
     INC monster_y, X
     JMP monster_moved
