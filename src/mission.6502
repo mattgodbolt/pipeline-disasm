@@ -1,10 +1,31 @@
 ; $.MISSION: the PIPELINE mission generator, by Ian Holmes (with one
 ; procedure by William Reeve), CHAINed by MENU's option 5. A BASIC program
-; that builds a mission - the file the game plays, as IO is - from a
-; graphics file (the Graphics Designer's, as DEFAULT is) and four level
-; files (the Level Designer's, as LEVEL1 is), and edits its text and
-; features. PROCinit (line 440) sizes everything; docs/notes/basic.md has
-; the file layouts.
+; at &1900 that builds a mission - the file the game plays, as IO is - from
+; a graphics file (the Graphics Designer's, as DEFAULT is) and four level
+; files (the Level Designer's, as LEVEL1 is), and edits the mission's name
+; (two lines of text the game shows) and its features (time consumption,
+; mapping ability, backpack size, throwing distance). PROCinit (line 440)
+; sizes everything; docs/notes/basic.md has the file layouts. Escape, then
+; Y, leaves: on disc through */MRUN, back to the menu (PROCquit).
+;
+; The file: lines 10-60 as EQUB records (REMs that LIST in colour, and line
+; 60 hiding the machine code FNn calls), then the BASIC block: start-up and
+; the main menu (lines 70-430); PROCinit and the screen and input helpers
+; (440-1430); loading and saving (1450-2070); the level fields' sizes and
+; the features page (2090-2430); the name page (2450), the catalogue
+; (2520), and errors and quitting (2630-2890).
+;
+; A mission can be locked, with two undocumented keys in the main menu
+; (PROClock). A locked mission can't be saved again, and gives up one of
+; its levels only for that level's editing code: six digits, which the game
+; shows when the player finishes the level, and which the level keeps,
+; scrambled, in its first three fields.
+;
+; The PIPELINE disc keeps the game and both designers (H.GAME, H.GRAPH and
+; H.LEVDES) in sector runs past its last catalogued file, which the
+; catalogue doesn't mention and DFS counts as free space, so saving onto
+; that disc overwrites them (PROCsavemss has how). The catalogued GAME,
+; GRAPHIC and LEVDES are only stubs that read those runs.
 ;
 ; NOT UTF-8: lines 1430 and 2780 hold raw teletext colour codes (bytes
 ; &81-&86) inside REMs, because a BASIC block takes its text byte for byte
@@ -40,8 +61,8 @@ SECTION mission, filename="MISSION", org=&1900, load=&FFFF1900, exec=&FFFF8023
 ; 1170) the way a level stores its code (leveldata.6502inc's code_byte), so
 ; PROCsavelev can compare it with the level's fields 0-2: each of E%'s low
 ; three bytes has its adjacent bits swapped, then is rotated right one
-; place. (Not an unscrambler: the stored code is never turned back into
-; digits.)
+; place. MISSION never turns a stored code back into digits; it scrambles
+; the typed one to compare.
 ; In: E% = the six digits read as hex, &00dddddd.
 ; Out: E%'s low three bytes scrambled.
 ; Clobbers: A, X, swap_temp.
@@ -117,18 +138,30 @@ BASIC
 410:
 420DATAchange name,change features,load graphics,save graphics,load a level,save a level,load a mission,save a mission,see a catalogue
 430:
-; PROCinit: the sizes behind every file MISSION reads and writes (the
-; layouts are in docs/notes/basic.md; io.6502inc computes IO's from the
-; same sizes, and leveldata.6502inc has the 11 fields), and memory for them:
-;   F%   a mission, as saved: names (&134, a graphics file's tail: its last
-;        slot's picture and the object names), text (30), features (5),
-;        then from L% the four levels - each of the 11 fields for all four
-;        levels together, then four &800 maps - and from G% the graphics
-;        (&E00), with room after for a graphics file's names
-;   B%   one level file: puzzle names (320), fields (data, &11F), map
+; PROCinit: the sizes behind every file MISSION reads and writes, and
+; memory for them. The sizes, in bytes:
+;   size    one level: its fields (data) and its &800-byte map
+;   data    one level's 11 fields (DATA 2090 has each one's size)
+;   grfs    a graphics set's pictures
+;   attrs   the features
+;   miss    the mission's name: two halves of 15
+;   names   the tail of a graphics file: the picture for a map cell marked
+;           as holding an object when none is there, then the 15 object
+;           names
+;   puznms  a level file's puzzle names, 32 of 10 characters
+; numlev is the levels in a mission, and opts the options the main menu
+; offers. The memory:
+;   F%   a mission, as saved: names, the name (miss), the features
+;        (attrs), then from L% the four levels - each of the 11 fields for
+;        all four levels together, then the four maps - and from G% the
+;        graphics, with room after them for the tail a graphics file
+;        brings (PROCloadgrf loads the whole file at G%)
+;   B%   one level file: puzzle names, fields, map
 ;   addr where a saved mission reloads, so it ends at &5800 (&242D)
 ;   osc  PROCosc's command buffer
 ; T% is TRUE on tape: OSARGS 0,0 gives the filing system, 1 or 2 for tape.
+; The layouts are in docs/notes/basic.md; io.6502inc computes IO's from the
+; same sizes, and leveldata.6502inc describes the 11 fields.
 440DEFPROCinit
 450Y%=0:A%=0
 460X%=USR(&FFDA)AND&FF
@@ -152,10 +185,11 @@ BASIC
 640PRINT''TAB(1-7*T%)CHR$(134)CHR$(157)CHR$(132);
 650IFT%PRINT"Please wait";ELSEPRINT"Loading Standard Graphics";
 660PRINT":  "CHR$(157)
-; A blank mission: names, text and features cleared; every level's
-; palette (field 3) &31 &22 &14 &00 (3 red, 2 green, 1 blue, 0 black: see
-; palette_entry), fields 4-10 &FF and an empty map; features time 15
-; (shown as 9), mapping 2, backpack 2 (shown as 3), throwing 6, unlocked.
+; A blank mission: names, the mission's name and the features cleared;
+; every level's palette (field 3) &31 &22 &14 &00 (3 red, 2 green, 1 blue,
+; 0 black: see leveldata.6502inc's palette_entry), fields 4-10 &FF and an
+; empty map; features time 15 (shown as 9), mapping 2, backpack 2 (shown
+; as 3), throwing 6, unlocked.
 ; Fields 0-2, the editing codes, are left as memory held them, except
 ; level 0's field 0, which the features' clearing runs into (line 670 ends
 ; at L%+0). The &FF fill starts at numlev*4, inside field 3, which line 760
@@ -181,7 +215,8 @@ BASIC
 ; PROCtitle: the double-height title, yellow on red, and below it a blue
 ; panel from row 4 down (blue background from column 1, yellow text from
 ; column 2, black again at column 38); PROCw sets the text window inside
-; it. C% marks a screen that needs the title redrawing after an error.
+; it. C% is 1 while something else is on the screen (a catalogue or an
+; error box), so that PROCerr knows to call PROCtitle again.
 840DEFPROCtitle
 850PROCcursor(0)
 860VDU26,12:FORN%=1TO2
@@ -190,10 +225,12 @@ BASIC
 890PRINTTAB(0,N%)CHR$(132)CHR$(157)CHR$(131)TAB(38,N%)CHR$(156);:NEXT
 900PROCw:C%=0:ENDPROC
 910DEFPROCw:VDU28,3,23,36,5:ENDPROC
-; PROCline: A% is the key (90 and 91 here are the cursor keys, 138 and
-; 139). Highlights option K% (screen row K%+4: line 230's VDU 26 left the
-; whole screen as the window) with a green background from column 8 and
-; blue text.
+; PROCline: moves the highlight for key A%. Less 48, the digits are 1-9 and
+; the down and up cursor keys (138, 139) are 90 and 91, which step the
+; highlight down and up, wrapping round; before anything is lit they do
+; nothing. Then highlights option K% (screen row K%+4: line 230's VDU 26
+; left the whole screen as the window) with a green background from column
+; 8 and blue text.
 920DEFPROCline:A%=A%-48
 930IFA%>89ANDK%=0ENDPROC
 940IFA%=90A%=K%+1:IFA%>opts A%=1
@@ -203,8 +240,9 @@ BASIC
 980K%=A%:VDU31,7,K%+4,130,157,132
 990ENDPROC
 1000:
-; PROCosc: the parameter is the string indirection $osc, so calling it
-; writes the command straight into the buffer that OSCLI is handed.
+; PROCosc: runs a * command (every load, save and catalogue goes through
+; it). The parameter is the string indirection $osc, so calling it writes
+; the command straight into the buffer that OSCLI is handed.
 1010DEFPROCosc($osc)
 1020X%=osc MOD256:Y%=osc DIV256
 1030CALL&FFF7:ENDPROC
@@ -220,9 +258,10 @@ BASIC
 1110IFA%>min ANDA%<max A$=A$+CHR$(A%)
 1120IFA%=127 A$=LEFT$(A$,LEN(A$)-1)
 1130UNTILA%=13:PROCcursor(0):=A$
-; FNlevel is 0-3. FNn reads the editing code as six digits, taken as hex
-; (EVAL "&0..."), and scrambles it, as levels store their codes, with the
-; code hidden in line 60.
+; FNname asks for a filename (12 characters; 10 on tape). FNlevel asks for
+; a level, 1-4, and returns 0-3. FNn asks for an editing code: six digits,
+; taken as hex (EVAL "&0..."), so each pair becomes one BCD byte, then
+; scrambled as levels store their codes, by the code hidden in line 60.
 1140DEFFNname=FNinput("Enter filename: ",12+2*T%,32,127)
 1150DEFFNlevel=(VAL(FNinput("Which level number ? ",1,48,49+numlev))-1)AND3
 1160DEFFNn
@@ -234,9 +273,11 @@ BASIC
 1200READA$:NEXT:A%=F%?(names+miss+N%)
 1210IFN%=0A%=A%-6ELSEIFN%=2A%=A%+1
 1220=A$+": "+STR$(A%)+STRING$(8," ")
-; PROCbit: shows half A% of the mission text, past its VDU 31 x,y, the 9s
-; (cursor right) showing as gaps. PROCstore puts A$ there, padded to 12,
-; with spaces as 9 so the game's background shows through them.
+; PROCbit: shows, in quotes, the half of the mission's name at offset A%
+; (0 or 15): its 12 characters, skipping the VDU 31,x,y that places it,
+; with the 9s (cursor right) showing as gaps. PROCstore puts A$ there,
+; padded to 12, with spaces as 9 so the game's background shows through
+; them.
 1230DEFPROCbit(A%)
 1240VDU34:FORN%=3TO14
 1250X%=F%?(names+A%+N%)
@@ -259,16 +300,20 @@ BASIC
 ; and the menu jumps to option opts-1 with RETURN pressed: "save a
 ; mission", though on tape, where opts is 8, it's "load a mission". Either
 ; lock stops MISSION saving the mission again or giving up a level without
-; its code; only h's (negative: io_locked) makes the game show the
-; competition entry code at the end. Seen in jsbeeb: i stores 1, h &FF.
+; its code. Only h's matters to the game, which tests the lock byte for
+; negative: at the end of a mission locked with h and played from level 1,
+; it shows a competition entry code.
 1390DEFPROClock:I%=A%*2-209
 1400A%=opts+47:PROCline
 1410A%=13:ENDPROC
 1420:
+; Line 1430 is a REM of teletext codes, which LIST shows as "Hello, Soni" in
+; colour.
 1430REM"ÇHello,ÉSoni
 1440:
 ; PROCloadgrf: a graphics file (DEFAULT, or the Graphics Designer's) goes
-; to G%, and the names after its graphics become the mission's.
+; to G%, and the tail after its graphics (names: see PROCinit) becomes the
+; mission's.
 1450DEFPROCloadgrf(A$)
 1460PROCosc("LOAD "+CHR$(34)+A$+CHR$(34)+" "+STR$~G%)
 1470X%=G%+grfs
@@ -277,10 +322,10 @@ BASIC
 1500ENDPROC
 1510:
 ; PROCsavegrf: puts the names back after the graphics and saves the lot to
-; reload at &4000, where the Graphics Designer works. Onto the PIPELINE
-; disc it goes after the last catalogued file, &114-&123, and its last
-; two sectors are H.GAME's first, the loader: the game then hangs as it
-; starts (seen in jsbeeb; docs/notes/basic.md).
+; reload at &4000, where the Graphics Designer keeps a graphics set. On the
+; PIPELINE disc it lands at sectors &114-&123, past the last catalogued
+; file, and its last two sectors are H.GAME's first, its loader: the game
+; then hangs as it starts (docs/notes/basic.md).
 1520DEFPROCsavegrf
 1530X%=G%+grfs
 1540FORA%=0TOnames-4STEP4
@@ -288,8 +333,9 @@ BASIC
 1560PROCosc("SAVE "+CHR$(34)+FNname+CHR$(34)+" "+STR$~G%+"+"+STR$~(grfs+names)+" 0 4000")
 1570ENDPROC
 1580:
-; PROCloadlev: a level file into slot S%: the map, then each field into
-; its place among the four levels' (field sizes from line 2090).
+; PROCloadlev: a level file into level S% (0-3) of the mission: the map,
+; then each field into its place among the four levels' (field sizes from
+; line 2090).
 1590DEFPROCloadlev
 1600S%=FNlevel:PRINT
 1610PROCosc("LOAD "+CHR$(34)+FNname+CHR$(34)+" "+STR$~B%)
@@ -307,14 +353,15 @@ BASIC
 1730NEXT:pnt=pnt+ext:NEXT
 1740ENDPROC
 1750:
-; PROCsavelev: the reverse. A locked mission (L%?-1, the lock byte, set)
-; gives up a level only for the editing code that scrambles to its fields
-; 0-2; any other goes quietly back to the menu (seen in jsbeeb with IO's
-; level 1: 677637 returns, 677636 carries on). The puzzle names aren't kept
-; in a mission, so they are reset to "Puzzle 1" and on. Saved to reload ending at &3000, exec
-; &8380, as the Level Designer saves a level. As with the designer's, the
-; first saved onto the PIPELINE disc fits at &114-&11E, short of H.GAME's
-; hidden sectors, and a second goes over H.GAME's first eight.
+; PROCsavelev: the reverse, for level S% (0-3). A locked mission (L%?-1,
+; the lock byte, set) gives up a level only for the editing code that
+; scrambles to its fields 0-2; any other code goes quietly back to the menu
+; (IO's level 1 wants 677636). The puzzle names aren't kept in a mission,
+; so they are reset to "Puzzle 1" and on. The file reloads to end at
+; &3000, exec &8380, as the Level Designer saves a level. As with the
+; designer's saves, the first onto the PIPELINE disc fits at sectors
+; &114-&11E, short of H.GAME's, and a second goes over H.GAME's first
+; eight sectors.
 1760DEFPROCsavelev
 1770S%=FNlevel
 1780IFL%?-1PRINT:IFFNn<>L%?S%*65536+L%?(S%+4)*256+L%?(S%+8)ENDPROC
@@ -340,19 +387,20 @@ BASIC
 1970PROCosc("LOAD "+CHR$(34)+FNname+CHR$(34)+" "+STR$~F%)
 1980ENDPROC
 1990:
-; PROCsavemss: places the two halves of the text (VDU 31,18,16 and VDU
-; 31,14,17), refuses a locked mission (quietly, before asking for a name),
-; sets the lock byte to I% and saves to reload at addr, ending at &5800.
-; Nothing asks for another disc first, and on the PIPELINE disc the save
-; destroys the hidden programs, as DFS counts the sectors past the last
-; catalogued file as free. The first mission (&34 sectors) lands at
-; &114-&147, over all of H.GAME and H.GRAPH's first three sectors: the
-; GAME stub then enters the mission's own bytes at &3000, and the Graphics
-; Designer loses its logo, its sheet order and part of its font. A second
-; (&148-&17B) takes the rest of H.GRAPH and half of H.LEVDES, and a third
-; the rest of H.LEVDES before it runs off the 40 formatted tracks. A name
-; already on the disc is refused ("Locked": every file there is). Seen in
-; jsbeeb; docs/notes/basic.md.
+; PROCsavemss: places the two halves of the name (VDU 31,18,16 and VDU
+; 31,14,17: column and row on the game's screen), refuses a locked mission
+; (quietly, before asking for a filename), sets the lock byte to I% and
+; saves to reload at addr, ending at &5800. Nothing asks for another disc
+; first, and on the PIPELINE disc the save destroys the hidden programs,
+; as DFS counts the sectors past the last catalogued file as free. The
+; first mission (&34 sectors) lands at sectors &114-&147, over all of
+; H.GAME and H.GRAPH's first three sectors: the GAME stub still reads its
+; run and jumps to &3000, which then holds the mission's bytes, and the
+; Graphics Designer loses its logo, the table that orders its sprite sheet
+; and part of its font. A second (&148-&17B) takes the rest of H.GRAPH and
+; half of H.LEVDES, and a third the rest of H.LEVDES before it runs off the
+; 40 formatted tracks. A name already on the disc is refused ("Locked":
+; every file there is). docs/notes/basic.md has the details.
 2000DEFPROCsavemss
 2010N%=F%+names
 2020?N%=31:N%?1=18:N%?2=16
@@ -362,14 +410,15 @@ BASIC
 2060PROCosc("SAVE "+CHR$(34)+FNname+CHR$(34)+" "+STR$~F%+"+"+STR$~(names+miss+attrs+numlev*size+grfs)+" 0 "+STR$~addr)
 2070ENDPROC
 2080:
-; The 11 fields of a level, their sizes in bytes.
+; The 11 fields of a level, their sizes in bytes (leveldata.6502inc says
+; what each holds).
 2090DATA1,1,1,4,8,32,16,32,64,64,64
 2100:
 ; The features: names, then for each the input length and the lowest and
-; highest key codes allowed, exclusive: time and throwing two digits,
+; highest key codes allowed, both exclusive: time and throwing two digits,
 ; mapping 0-4, backpack 2-4 (so it holds 2 to 4 things; 1 and 5 are
-; refused, seen in jsbeeb). Line 2390 then wants time 1-16 and throwing
-; 0-63. The fifth triple (a digit 1-3) belongs to no feature.
+; refused). Line 2390 then wants time 1-16 and throwing 0-63. The fifth
+; triple (a digit 1-3) belongs to no feature.
 2110DATA Time consumption,Mapping ability,Backpack size,Throwing distance
 2120DATA 2,47,58,1,47,53,1,49,53,2,47,58,1,48,52
 ; PROCattrs: the features page; the down and up cursor keys move the "]"
@@ -386,12 +435,16 @@ BASIC
 2210K%=GET:IFK%=138ORK%=139PROCarrow
 2220IFK%=13ANDN%<4PROCchangeattr
 2230UNTILK%=13ANDN%=4:ENDPROC
+; PROCarrow: moves the arrow from line N% to the next (K%=138) or the
+; previous (139) of the page's five lines, wrapping round.
 2240DEFPROCarrow
 2250PRINTTAB(0,N%+V%)" "
 2260IFK%=138N%=(N%+1)MOD5
 2270IFK%=139N%=N%-1:IFN%<0N%=4
 2280PRINTTAB(0,N%+V%)"]"
 2290ENDPROC
+; PROCchangeattr: asks for a new value of feature N% until it's in range,
+; stores it (time 6 higher, backpack 1 lower than typed) and shows it.
 2300DEFPROCchangeattr
 2310REPEAT:RESTORE2110
 2320FORH%=0TON%
@@ -407,7 +460,8 @@ BASIC
 2420PRINTTAB(3,N%+V%)FNattr(N%)
 2430ENDPROC
 2440:
-; PROCmiss: shows both halves of the mission text, then asks for each.
+; PROCmiss: shows both halves of the mission's name (menu option 1), then
+; asks for each; an empty answer keeps that half.
 2450DEFPROCmiss:PRINT
 2460PROCbit(0):VDU32
 2470PROCbit(miss/2):PRINT'
@@ -415,7 +469,8 @@ BASIC
 2490A$=FNinput("Second part:",miss/2-3,31,127):IFA$<>""PROCstore(miss/2)
 2500ENDPROC
 2510:
-; PROCviewcat: *CAT of a drive in a scrolling window, paged.
+; PROCviewcat: asks for a drive, 0-3, and shows *CAT of it in a text
+; window in paged mode, then waits for SPACE.
 2520DEFPROCviewcat
 2530A$=FNinput("Which drive ?",1,47,52)
 2540C%=1:VDU28,0,23,39,5
@@ -433,9 +488,10 @@ BASIC
 2650IFERR=17 PROCquit:ENDPROC
 2660PROCreport
 2670ENDPROC
-; PROCquit: on tape a reset; on disc, back to the menu through MRUN. Asking
-; for the PIPELINE disc back is as near as the program comes to saying its
-; files belong on another disc (see PROCsavemss).
+; PROCquit: on tape a reset; on disc, back to the menu through MRUN, which
+; runs !BOOT again. Asking for the PIPELINE disc back is as near as the
+; program comes to saying its files belong on another disc (see
+; PROCsavemss).
 2680DEFPROCquit
 2690PROCw:REPEAT:CLS
 2700A$=LEFT$(FNinput("Are you sure (Y/N) ? ",3,68,90),1)
@@ -446,10 +502,12 @@ BASIC
 2750*/MRUN
 2760END
 2770:
+; Line 2780 is a REM of teletext codes, which LIST shows in colour as "This
+; subroutine was written by William Reeve (mainly)": PROCreport, below.
 2780REM"ÜThis subroutine was written by             ÅWilliamÉReeveÇ(mainly)
 2790:
-; PROCreport (William Reeve's): opens a box from row 20 outwards, a row a
-; frame (rows 20, 21, 19, 22, 18, 23), then shows the error.
+; PROCreport (William Reeve's): opens a white box from row 20 outwards, a
+; row a frame (rows 20, 21, 19, 22, 18, 23), then shows the error.
 2800DEFPROCreport:C%=1
 2810VDU26:FORN%=1TO6
 2820Y%=20-(N% AND1)*N% DIV2+(N% AND1EOR1)*N% DIV2:*FX19
