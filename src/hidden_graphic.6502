@@ -839,10 +839,10 @@ ASSERT window_size - window_address = 2 * WINDOWS
     RTS
 }
 
-; A sprite's size class from its number.
+; A sprite's size from its number.
 ; In:  A = sprite number
-; Out: sprite_width = 2 for the small sprites (&10-&1F), else 4; data_ptr =
-;      graphics (where sprite_address starts from)
+; Out: sprite_width = SMALL_WIDTH for the small sprites (&10-&1F), else
+;      LARGE_WIDTH; data_ptr = graphics (where sprite_address starts from)
 ; Clobbers: X
 .sprite_class
 {
@@ -863,8 +863,8 @@ ASSERT window_size - window_address = 2 * WINDOWS
 
 ; Find a sprite's bytes.
 ; In:  A = sprite number: a sheet position (see slot_of_position), or a slot
-;      when by_slot has bit 7 set; SPRITE_FRAME_A and SPRITE_FRAME_B (with or
-;      without bit 7) are the two frame buffers
+;      while by_slot has bit 7 set; SPRITE_FRAME_A and SPRITE_FRAME_B (with
+;      or without bit 7) are the two frame buffers
 ; Out: data_ptr = its first byte, sprite_width = its width in bytes, A = Y =
 ;      the sprite number
 ; Clobbers: X
@@ -872,24 +872,25 @@ ASSERT window_size - window_address = 2 * WINDOWS
 {
     TAY
     JSR sprite_class
-    CMP #&57                        ; &57 up: a frame buffer
+    CMP #SPRITE_FRAME_A             ; a frame buffer
     BCS frame
     TAY
-    AND #&10
+    AND #&10                        ; &10-&1F: small
     BNE small
     TYA
     BIT by_slot
     BMI slot
     CMP #AFTER_SMALL                ; positions &20-&28 follow &00-&0F in the table
     BCC mapped
-    SBC #&10
+    SBC #AFTER_SMALL - FIRST_SMALL
 .mapped
     TAX
     LDA slot_of_position, X
 
-    ; Large slots &00-&0F are at graphics + slot*&80, &20-&28 from +&A00.
+    ; Large slots &00-&0F are at graphics + slot * LARGE_SPRITE_SIZE, half a
+    ; page each; &20-&28 the same from SET_MORE_LARGE.
 .slot
-    CMP #&20                        ; slots &20 up
+    CMP #MORE_LARGE_SLOT
     BCS high_slot
     LSR A
     TAX
@@ -903,9 +904,9 @@ ASSERT window_size - window_address = 2 * WINDOWS
     RTS
 .frame
     AND #&7F
-    CMP #&58
+    CMP #SPRITE_FRAME_B             ; carry set for the second buffer...
     LDA #&00
-    ROR A
+    ROR A                           ; ...the half page after the first
     STA data_ptr
     LDA #HI(frame_a)
     STA data_ptr+1
@@ -916,21 +917,22 @@ ASSERT window_size - window_address = 2 * WINDOWS
     TAX
     LDA data_ptr+1
     CLC
-    ADC #HI(&A00)                   ; slots &20 on are at +&A00
+    ADC #HI(SET_MORE_LARGE)
     STA data_ptr+1
     TXA
     JMP slot
 
-    ; Small slots &10-&1F are at graphics + &800 + (slot AND &0F)*&20.
+    ; Small slots are at graphics + SET_SMALL + (slot AND &0F) *
+    ; SMALL_SPRITE_SIZE.
 .small
     TYA
     PHA
     LDA data_ptr+1
     CLC
-    ADC #HI(&800)                   ; small sprites start at +&800
+    ADC #HI(SET_SMALL)
     STA data_ptr+1
     PLA
-    ASL A
+    ASL A                           ; times SMALL_SPRITE_SIZE (the &10 bit falls off)
     ASL A
     ASL A
     ASL A
@@ -944,33 +946,41 @@ ASSERT window_size - window_address = 2 * WINDOWS
     TYA
     RTS
 }
+ASSERT LO(graphics) = 0 AND LO(frame_a) = 0
+ASSERT LARGE_SPRITE_SIZE = &80 AND SMALL_SPRITE_SIZE = 1 << 5
+ASSERT LO(SET_SMALL) = 0 AND LO(SET_MORE_LARGE) = 0
 
-; The offset of the last byte of the sprite sprite_width describes.
-; Out: Y = &7F for a large sprite, &1F for a small one
+; The offset of the last byte of a sprite of sprite_width.
+; In:  sprite_width
+; Out: Y = LARGE_SPRITE_SIZE - 1 or SMALL_SPRITE_SIZE - 1
 ; Clobbers: X
 .sprite_last_byte
 {
-    LDY #LARGE_WIDTH*32-1
+    LDY #LARGE_SPRITE_SIZE - 1
     LDX sprite_width
     CPX #SMALL_WIDTH
     BNE done
-    LDY #SMALL_WIDTH*16-1
+    LDY #SMALL_SPRITE_SIZE - 1
 .done
     RTS
 }
 
 ; The byte that fills four MODE 5 pixels with each colour, 0-3.
 .colour_byte
-    EQUB &00, &0F, &F0, &FF
-.grid_back_step
-    EQUW 2*4*ROW - 4*CELL
-    EQUW 4*4*ROW - 4*CELL
+    EQUB mode5_byte("...."), mode5_byte("1111"), mode5_byte("2222"), mode5_byte("3333")
 
-; Draw a sprite magnified in the editing grid, each pixel four screen
-; pixels wide and four lines tall, two sprite rows to a character row; then
-; the grid's frame, if the last sprite drawn was the other size.
-; In:  A = sprite number, bit 7 set to copy it to undo_buffer first (a new
-;      sprite to edit)
+; How far draw_grid steps back on the screen after a column of sprite bytes:
+; up to the top of the grid and four cells (pixels) right. Indexed by
+; sprite_width: small, then large.
+.grid_back_step
+    EQUW SMALL_SPRITE_HEIGHT/2 * ROW - 4*CELL
+    EQUW LARGE_SPRITE_HEIGHT/2 * ROW - 4*CELL
+
+; Draw a sprite magnified in the editing grid: each pixel a cell wide and
+; four lines tall, two sprite rows to a character row. Then draw the grid's
+; frame, unless the frame for this size is there already.
+; In:  A = sprite number, bit 7 set to copy the sprite to undo_buffer first
+;      (a new sprite to edit)
 ; Clobbers: A, X, Y, screen_ptr, data_ptr, temp, count_x, count_y, item,
 ;      mask, sprite_width
 .draw_grid
@@ -995,7 +1005,7 @@ ASSERT window_size - window_address = 2 * WINDOWS
     LDA sprite_width
     STA count_x
 .column
-    LDA sprite_width
+    LDA sprite_width                ; count_y = the column's bytes, one a row
     ASL A
     ASL A
     ASL A
@@ -1004,7 +1014,7 @@ ASSERT window_size - window_address = 2 * WINDOWS
     LDY #&00
     LDA (data_ptr), Y
     STA temp
-    LDX #&88                        ; the first pixel's bits
+    LDX #mode5_byte("3...")         ; the first pixel's bits
     STX mask
 
     ; Shift this pixel's two bits down to make its colour, 0-3.
@@ -1040,7 +1050,7 @@ ASSERT window_size - window_address = 2 * WINDOWS
     DEY
     DEX
     BPL block_line
-    LDA screen_ptr
+    LDA screen_ptr                  ; carry clear from the ROL
     ADC #CELL
     STA screen_ptr
     BCC next_pixel
@@ -1048,13 +1058,13 @@ ASSERT window_size - window_address = 2 * WINDOWS
 .next_pixel
     LSR mask
     BCC pixel
-    LDA screen_ptr                  ; back to the grid's left edge
-    SBC #4*CELL                     ; carry is set from the LSR: back to the grid's left edge
+    LDA screen_ptr                  ; carry set from the LSR: back to this byte's
+    SBC #4*CELL                     ; first cell
     STA screen_ptr
     BCS pixel_done
     DEC screen_ptr+1
 .pixel_done
-    LDA #&01
+    LDA #&01                        ; after a bottom half, down a row
     AND count_y
     BEQ next_byte
     LDA screen_ptr
@@ -1082,56 +1092,57 @@ ASSERT window_size - window_address = 2 * WINDOWS
     BEQ frame
     JMP column
 
-    ; The frame: a large sprite's is 16 cells by 16 rows, a small one's 8 by 8
-    ; in the top left of that, with the rest blanked. A byte of each frame tells
-    ; which one is on the screen already.
+    ; The frame: a large sprite's grid is 16 cells by 16 rows, a small one's
+    ; 8 by 8 in the top left of that, with the rest blanked. A byte of each
+    ; frame tells which one is on the screen already.
 .frame
     LDA sprite_width
     CMP #LARGE_WIDTH
     BEQ large
-    LDA grid_frame_top              ; the small frame's top right corner
-    CMP #&08
+    LDA grid_frame_top
+    CMP #mode5_byte("1...")
     BNE to_small
     RTS
 .to_small
-    LDA #LO(SCREEN + 10*CELL)       ; blank the right half...
+    LDA #LO(SCREEN + 10*CELL)       ; blank the large grid's right half...
     STA screen_ptr
     LDA #HI(SCREEN + 10*CELL)
     STA screen_ptr+1
-    LDA #&12
+    LDA #18                         ; rows
     JSR clear_rows
-    LDA #LO(SCREEN + 9*ROW + CELL)  ; ...and the bottom half
+    LDA #LO(SCREEN + 9*ROW + CELL)  ; ...and the rest of its left half
     STA screen_ptr
     LDA #HI(SCREEN + 9*ROW + CELL)
     STA screen_ptr+1
-    LDA #&09
+    LDA #9
     JSR clear_rows
 .large
     LDA sprite_width
     CMP #LARGE_WIDTH
     BNE draw_frame
-    LDA grid_frame_right            ; the large frame's right edge
-    CMP #&08
+    LDA grid_frame_right
+    CMP #mode5_byte("1...")
     BNE draw_frame
     RTS
 
-    ; The top line, the left edge, the bottom line, then the right edge.
+    ; The top line, the left edge, the bottom line, then the right edge, in
+    ; colour 1.
 .draw_frame
-    LDA #LO(SCREEN + CELL)
+    LDA #LO(SCREEN + CELL)          ; the row above the grid, a cell left of it
     STA screen_ptr
     LDA #HI(SCREEN + CELL)
     STA screen_ptr+1
-    LDY #&07
+    LDY #&07                        ; its last line
     JSR grid_frame_line
-    LDA #&01                        ; the frame is colour 1 in the cell left of the grid's rightmost pixel
+    LDA #mode5_byte("...1")         ; the top left corner
     STA (screen_ptr), Y
     JSR down_a_row
-    LDA sprite_width
+    LDA sprite_width                ; count_y = the grid's rows
     ASL A
     ASL A
     STA count_y
 .left_column
-    LDA #&01                        ; the left edge
+    LDA #mode5_byte("...1")         ; the left edge
     LDY #&07
 .left_line
     STA (screen_ptr), Y
@@ -1140,12 +1151,12 @@ ASSERT window_size - window_address = 2 * WINDOWS
     JSR down_a_row
     DEC count_y
     BNE left_column
-    LDA #&01
+    LDA #mode5_byte("...1")         ; the bottom left corner, on the row's first line
     INY
     STA (screen_ptr), Y
     JSR grid_frame_line
-    JSR width_times_32
-    ADC #&08
+    JSR width_times_32              ; across to the cell after the grid
+    ADC #CELL
     ADC screen_ptr
     STA screen_ptr
     BCC right_side
@@ -1156,7 +1167,7 @@ ASSERT window_size - window_address = 2 * WINDOWS
     ASL A
     STA count_y
 .right_column
-    LDA screen_ptr
+    LDA screen_ptr                  ; up a row
     SEC
     SBC #LO(ROW)
     STA screen_ptr
@@ -1164,7 +1175,7 @@ ASSERT window_size - window_address = 2 * WINDOWS
     SBC #HI(ROW)
     STA screen_ptr+1
     LDY #&07
-    LDA #&08                        ; the right edge: the leftmost pixel of the cell after the grid
+    LDA #mode5_byte("1...")         ; the right edge
 .right_line
     STA (screen_ptr), Y
     DEY
@@ -1174,24 +1185,25 @@ ASSERT window_size - window_address = 2 * WINDOWS
     RTS
 }
 
-; Draw a horizontal line of the editing grid's frame, from its right
-; corner (the leftmost pixel of a cell) back to the cell after the left edge.
-; In:  Y = the line within the character row, screen_ptr = the row, one cell
-;      left of the grid
-; Out: Y = the line in the cell left of the grid
+; Draw a horizontal line of the editing grid's frame in colour 1: the corner,
+; a pixel at the left of the cell after the grid, then back along every cell
+; over (or under) the grid.
+; In:  Y = the line within the character row, screen_ptr = the row, at the
+;      cell left of the grid
+; Out: Y = that line in the cell left of the grid
 ; Clobbers: A, X, temp
 .grid_frame_line
 {
     STY temp
-    JSR width_times_32
+    JSR width_times_32              ; the cell after the grid
     ORA temp
-    ADC #&08
+    ADC #CELL
     TAY
-    LDX #&08                        ; the corner first, then the line
+    LDX #mode5_byte("1...")         ; the corner first...
 .loop
     TXA
     STA (screen_ptr), Y
-    LDX #&0F                        ; colour 1 across the whole byte
+    LDX #mode5_byte("1111")         ; ...then the line
     TYA
     SEC
     SBC #CELL
@@ -1201,7 +1213,7 @@ ASSERT window_size - window_address = 2 * WINDOWS
     RTS
 }
 
-; screen_ptr down a character row.
+; Move screen_ptr down a character row.
 ; Clobbers: A
 .down_a_row
 {
@@ -1215,8 +1227,9 @@ ASSERT window_size - window_address = 2 * WINDOWS
     RTS
 }
 
-; sprite_width times 32: 128 for a large sprite (its grid is 16 cells,
-; 128 bytes, across), 64 for a small one.
+; sprite_width times 32: the editing grid's width in bytes, 128 for a large
+; sprite (16 cells), 64 for a small one.
+; In:  sprite_width
 ; Out: A = the result, carry clear
 .width_times_32
 {
@@ -1228,9 +1241,10 @@ ASSERT window_size - window_address = 2 * WINDOWS
     RTS
 }
 
-; Blank part of the screen: 72 bytes (nine cells) of each of A character
-; rows from screen_ptr. It has no RTS of its own: it runs on into
-; divide_by_5, which does no harm, and returns from there.
+; Blank nine cells (72 bytes) of each of A character rows from screen_ptr.
+; It has no RTS of its own: it runs on into divide_by_5, which does no harm
+; (it just divides the last A), and returns from there.
+; In:  A = rows, screen_ptr = where
 ; Clobbers: A, X, Y, screen_ptr, count_y
 .clear_rows
 {
@@ -1248,25 +1262,28 @@ ASSERT window_size - window_address = 2 * WINDOWS
 }
 
 ; Divide by five: a large sprite's row and column in the sheet.
-; In:  A = sheet index (positions &00-&0F, then &20-&28 less &10)
+; In:  A = an index into slot_of_position (a position &00-&0F, or &20-&28
+;      less &10)
 ; Out: X = A DIV 5, A = A MOD 5
 .divide_by_5
 {
     LDX #&00
 .loop
-    CMP #&05
+    CMP #5
     BCC done
     INX
-    SBC #&05
+    SBC #5
     BCS loop
 .done
     RTS
 }
 
-; Draw a sprite in its place on the sheet: copy its bytes straight to the
-; screen, a character cell (eight bytes of a column) at a time.
+; Draw a sprite in its place on the sheet, copying its bytes straight to the
+; screen a cell (eight bytes of a column) at a time. Also entered at
+; at_screen_ptr, with data_ptr, sprite_width and screen_ptr set, to draw one
+; somewhere else.
 ; In:  A = sprite number
-; Entry at_screen_ptr: data_ptr and sprite_width set, screen_ptr = where
+; Out: carry clear
 ; Clobbers: A, X, Y, screen_ptr, data_ptr, count_x, count_y, sprite_width
 .draw_sheet_sprite
 {
@@ -1285,7 +1302,7 @@ ASSERT window_size - window_address = 2 * WINDOWS
     STA (screen_ptr), Y
     DEY
     BPL byte
-    LDA sprite_width
+    LDA sprite_width                ; the same eight rows of the next column
     ASL A
     ASL A
     ASL A
@@ -1294,7 +1311,7 @@ ASSERT window_size - window_address = 2 * WINDOWS
     BCC next_screen
     INC data_ptr+1
 .next_screen
-    LDA #&08
+    LDA #CELL
     CLC
     ADC screen_ptr
     STA screen_ptr
@@ -1304,10 +1321,10 @@ ASSERT window_size - window_address = 2 * WINDOWS
     DEC count_x
     BNE column
 
-    ; Back to the next eight rows of the sprite; down a row on the screen.
+    ; Back to the first column, eight rows down; on the screen, down a row.
     LDA sprite_width
     LSR A
-    TAX
+    TAX                             ; 1 small, 2 large
     LDA data_ptr
     SEC
     SBC column_rewind-1, X
@@ -1320,24 +1337,25 @@ ASSERT window_size - window_address = 2 * WINDOWS
     ADC row_step-1, X
     STA screen_ptr
     LDA screen_ptr+1
-    ADC #&01
+    ADC #HI(ROW - SMALL_WIDTH*CELL) ; the same for both
     STA screen_ptr+1
     DEC count_y
     BNE row
     RTS
 ; How far draw_sheet_sprite steps back through a sprite after a row of
-; cells, and on the screen to the start of the next row (less a page),
-; indexed by sprite_width / 2: small, then large.
+; cells, and on through the screen to the start of the next row (the low
+; byte), indexed by sprite_width / 2: small, then large.
 .column_rewind
-    EQUB 2*16-8, 4*32-8
+    EQUB SMALL_SPRITE_SIZE - CELL, LARGE_SPRITE_SIZE - CELL
 .row_step
-    EQUB LO(ROW-2*CELL), LO(ROW-4*CELL)
-    EQUB 0
+    EQUB LO(ROW - SMALL_WIDTH*CELL), LO(ROW - LARGE_WIDTH*CELL)
+    EQUB 0                          ; unused
 }
+ASSERT HI(ROW - SMALL_WIDTH*CELL) = HI(ROW - LARGE_WIDTH*CELL)
 
 ; Where a sprite goes on the screen.
-; In:  A = sprite number (a sheet position, or a frame buffer: those are shown
-;      in the animation window)
+; In:  A = sprite number: a sheet position, or a frame buffer (which shows
+;      in Animate's window)
 ; Out: screen_ptr = the top left of its place, A = Y = the sprite number
 ; Clobbers: X
 .sheet_address
@@ -1349,14 +1367,14 @@ ASSERT window_size - window_address = 2 * WINDOWS
     BCC large
     CPY #AFTER_SMALL
     BCC small
-    SBC #&10
-    CMP #&47
+    SBC #AFTER_SMALL - FIRST_SMALL  ; (carry set) an index into slot_of_position...
+    CMP #SPRITE_FRAME_A - (AFTER_SMALL - FIRST_SMALL)   ; ...unless a frame buffer
     BCS preview
 
-    ; Large sprites: 5 to a row, four cells and four character rows each.
+    ; Large sprites: 5 to a row, each 4 cells by 4 rows.
 .large
     JSR divide_by_5
-    LSR A                           ; column * 4 cells
+    LSR A                           ; the column times 32: four cells
     ROR A
     ROR A
     ROR A
@@ -1367,16 +1385,16 @@ ASSERT window_size - window_address = 2 * WINDOWS
 .add_rows
     DEX
     BMI done
-    ADC #HI(4*ROW)                  ; four character rows a row of sprites
-    BCC add_rows
+    ADC #HI(LARGE_SPRITE_HEIGHT/8 * ROW)    ; a row of sprites
+    BCC add_rows                    ; always
 .done
     STA screen_ptr+1
     TYA
     RTS
 
-    ; Small sprites: 4 to a row, two cells and two rows each, four cells apart.
+    ; Small sprites: 4 to a row, each 2 cells by 2 rows, 4 cells apart.
 .small
-    AND #&03
+    AND #&03                        ; the column times 32
     LSR A
     ROR A
     ROR A
@@ -1386,18 +1404,18 @@ ASSERT window_size - window_address = 2 * WINDOWS
     LSR A
     LSR A
     AND #&03
-    TAX
+    TAX                             ; the row
 .small_rows
     DEX
     BMI small_base
     LDA screen_ptr
     CLC
-    ADC #LO(2*ROW)
+    ADC #LO(SMALL_SPRITE_HEIGHT/8 * ROW)
     STA screen_ptr
     LDA screen_ptr+1
-    ADC #HI(2*ROW)
+    ADC #HI(SMALL_SPRITE_HEIGHT/8 * ROW)
     STA screen_ptr+1
-    BCC small_rows
+    BCC small_rows                  ; always
 .small_base
     LDA screen_ptr
     CLC
@@ -1415,6 +1433,7 @@ ASSERT window_size - window_address = 2 * WINDOWS
     TYA
     RTS
 }
+ASSERT LO(LARGE_SPRITE_HEIGHT/8 * ROW) = 0
 
 ; An RTS nothing uses.
 .stray_rts
