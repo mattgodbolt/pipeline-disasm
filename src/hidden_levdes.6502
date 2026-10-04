@@ -2393,7 +2393,8 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     JMP vector_print_message
 
 ; Ask for a filename and set up osfile_block for it; the name is copied with
-; its Return, as OSFILE wants it.
+; its Return, as OSFILE wants it, except that a 12-character name's Return is
+; then overwritten (see filename).
 ; In: A = the message saying what's happening.
 ; Clobbers: A, X, Y, ptr, the input buffer.
 .ask_filename
@@ -2421,8 +2422,11 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
 ; Room for a filename of 12 characters, with an author's mark in it until
 ; then. A 12-character name's Return lands on osfile_block, which
 ; ask_filename then fills in, leaving the name followed by "0" and &1E (the
-; low and high bytes of this address): in jsbeeb, Save level to ":0.$.ABCDEFG"
-; saves nothing; ":0.$.ABCDEF" saves.
+; low and high bytes of this address). The longest DFS name, ":0.$.ABCDEFG",
+; is 12 characters, so typed in full its leaf gains an eighth character, the
+; "0", and DFS refuses it: Save and Load level show "Error 204 has occurred !"
+; and "Bad name" (seen in jsbeeb) and nothing is written; a Load also loses
+; the level being edited, as any failed load does. 11 characters are safe.
 .filename
     EQUS "_Ian Holmes_"
 .filename_end
