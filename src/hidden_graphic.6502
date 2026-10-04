@@ -178,21 +178,22 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
         "........................................................................................",
     }
 
-; The slot each position of the large sprite sheet shows, positions in
-; reading order (5 to a row). Sprite numbers &00-&0F are positions 0-15 and
-; &20-&28 positions 16-24; &10-&1F are the small sprites, which show their own
-; slots.
+; The slot each large position on the sheet shows, positions in reading
+; order (5 to a row): sprite numbers &00-&0F are positions 0-15 and &20-&28
+; positions 16-24. The small sprites, &10-&1F, show their own slots.
 .slot_of_position
     EQUB &00, &01, &02, &03, &04
     EQUB &05, &08, &07, &0A, &0E
     EQUB &24, &26, &25, &27, &0F
     EQUB &06, &28, &0C, &0D, &0B
     EQUB &09, &20, &21, &22, &23
-    SKIP 39                         ; unused
+
+; print_char finds a glyph by its high byte alone, so the font starts a page.
+    ALIGN &100
 
 ; A font of 4x8 characters, &20-&7F, eight to a picture: each four pixels
-; across is a character, stored as a column of eight bytes. print_char
-; exclusive-ORs them on in colour 3. "^~" is a copyright sign.
+; across is a character, stored as a cell (a column of eight bytes).
+; print_char draws them in colour 3. "^~" is a copyright sign.
 .font
     ; space ! " # $ % & '
     SPRITE_COLUMNS {
@@ -328,7 +329,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     }
 
 ; Bit 7 set while each window is open (and its background saved). start
-; clears all twenty bytes; only eight windows exist.
+; clears all twenty bytes; only WINDOWS exist.
 .window_open
     SKIP 20
 
@@ -344,7 +345,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     EQUW SCREEN + 8*CELL            ; OptionsB
     EQUW SCREEN + 16*CELL           ; Environment
     EQUW SCREEN + 24*CELL           ; credits
-    EQUW SCREEN + 21*ROW + 4*CELL   ; select a sprite
+    EQUW SCREEN + 21*ROW + 4*CELL   ; pick a sprite; Animate
     EQUW SCREEN + 22*ROW + 4*CELL   ; questions
     EQUW SCREEN + 22*ROW + 2*CELL   ; names
     EQUW SCREEN + 14*ROW + 12*CELL  ; errors
@@ -359,6 +360,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     EQUB 8*CELL-1, 6
     EQUB 16*CELL-1, 7
     EQUB 16*CELL-1, 6
+ASSERT window_size - window_address = 2 * WINDOWS
 
 ; Point at a window.
 ; In:  A = window number (only bits 0-2 count)
@@ -368,7 +370,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Clobbers: A
 .window_setup
 {
-    AND #&07
+    AND #WINDOWS - 1
     ASL A
     TAY
     LDA #HI(window_store)
@@ -388,23 +390,24 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; Open a window and write text in it.
-; In:  A = window number (bit 7 ignored), X/Y = its text (see CR, TEXT_END)
-; Out: line_count = lines in the text less one, mask = the text's flag byte
-; Clobbers: A, X, Y, screen_ptr, data_ptr, save_ptr, aux_ptr, border_ptr,
-;      count_x, count_y
-; Any open window is closed first, so they never overlap. The window is
-; filled in colour 1 for the title row and colour 3 below, keeping what it
-; covers at window_store.
+; Open a window and write its text in it. Any open window is closed first,
+; so they never overlap; what the window covers is kept at window_store, and
+; it is filled with colour 1 for the title row and colour 3 below, then
+; print_window_text writes the text and draws the frame.
+; In:  A = window number (bit 7 ignored), X/Y = its text (see TEXT_END)
+; Out: screen_ptr = just after the text's last character, line_count =
+;      lines in the text less one, mask = the text's flag byte
+; Clobbers: A, X, Y, data_ptr, save_ptr, aux_ptr, border_ptr, count_x,
+;      count_y
 .open_window
 {
     STX data_ptr
     STY data_ptr+1
     AND #&7F
     PHA
-    LDA #7                          ; the last window
+    LDA #WINDOWS - 1
 
-    ; Close every window, 7 to 0.
+    ; Close every window, the last first.
 .close_others
     PHA
     TAX
@@ -419,7 +422,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     ORA #&80
     STA window_open, X
     JSR window_setup
-    LDX #&0F                        ; the title row is colour 1
+    LDX #mode5_byte("1111")         ; the title row in colour 1
 .fill_row
     LDY count_x
 .fill_byte
@@ -429,7 +432,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA (screen_ptr), Y
     DEY
     BPL fill_byte
-    LDX #&FF                        ; and the rest colour 3
+    LDX #mode5_byte("3333")         ; and the rest in colour 3
     JSR next_window_row
     DEC count_y
     BNE fill_row
@@ -442,13 +445,15 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     PLA
 }
 
-; Write a window's text; open_window's second half.
-; In:  A = window number, data_ptr = the text, screen_ptr and save_ptr = its
-;      corner
-; Out: line_count = lines less one, mask = the flag byte
-; Clobbers: A, X, Y, data_ptr, screen_ptr, save_ptr, border_ptr, count_y
-; Then draws the window's frame in colour 2: a line down its right edge and
+; Write a window's text (open_window's second half), exclusive-ORing it on
+; in colour 3, so that writing it again rubs it out; then draw the window's
+; frame in colour 2: a line down its right edge below the title row, and
 ; along its bottom.
+; In:  A = window number, data_ptr = the text, screen_ptr and save_ptr = its
+;      corner, count_x = its width in bytes less one
+; Out: screen_ptr = just after the text's last character, line_count =
+;      lines less one, mask = the flag byte
+; Clobbers: A, X, Y, data_ptr, save_ptr, aux_ptr, border_ptr, count_y
 .print_window_text
 {
     PHA
@@ -470,16 +475,16 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BEQ new_line
     CLC
     JSR print_char_advance          ; carry clear: exclusive-OR the glyph on
-    BNE next_char                   ; always: screen_ptr is never zero
+    BNE next_char                   ; always: the pointer's last change left it non-zero
 .new_line
     INC line_count
-    LDA save_ptr
+    LDA save_ptr                    ; save_ptr: the start of the line
     CLC
-    ADC #&40
+    ADC #LO(ROW)
     STA save_ptr
     STA screen_ptr
     LDA save_ptr+1
-    ADC #&01
+    ADC #HI(ROW)
     STA save_ptr+1
     STA screen_ptr+1
     BCC next_char
@@ -487,7 +492,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     ; The frame: the rightmost pixel of each row, then the bottom line.
 .frame
     PLA
-    AND #&07
+    AND #WINDOWS - 1
     ASL A
     TAY
     LDA window_address, Y
@@ -495,7 +500,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA window_address+1, Y
     STA border_ptr+1
     LDA window_size+1, Y
-    SBC #&00                        ; carry clear here, so count_y = rows - 1
+    SBC #&00                        ; carry clear from the ASL, so count_y = rows - 1
     STA count_y
 .frame_row
     LDY count_x
@@ -509,28 +514,29 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA border_ptr+1
 .frame_right
     LDA (border_ptr), Y
-    AND #&EE                        ; pixel 3 becomes colour 2
-    ORA #&10
+    AND #mode5_byte("333.")         ; pixel 3 becomes colour 2
+    ORA #mode5_byte("...2")
     STA (border_ptr), Y
     DEY
     DEX
     BPL frame_right
     DEC count_y
     BNE frame_row
-    LDY count_x
+    LDY count_x                     ; the bottom line of each cell of the last row
 .frame_bottom
-    LDA #&F0
+    LDA #mode5_byte("2222")
     STA (border_ptr), Y
     TYA
     SEC
-    SBC #&08
+    SBC #CELL
     TAY
     BCS frame_bottom
     RTS
 }
 
 ; Step both of a window's pointers down a row: save_ptr past the bytes
-; just kept, screen_ptr to the next character row.
+; just kept, screen_ptr to the next character row. Also entered at
+; next_screen_row to step screen_ptr alone.
 ; In:  count_x = the window's width in bytes less one
 ; Clobbers: A
 .next_window_row
@@ -556,7 +562,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Clobbers: A, X, Y, screen_ptr, save_ptr, aux_ptr, count_x, count_y
 .close_all_windows
 {
-    LDX #&07
+    LDX #WINDOWS - 1
 .loop
     TXA
     PHA
@@ -568,7 +574,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; Close a window, putting back what it covered, if it is open.
+; Close a window, if it is open, putting back what it covered.
 ; In:  A = window number (bit 7 ignored)
 ; Clobbers: A, X, Y, screen_ptr, save_ptr, aux_ptr, count_x, count_y
 .close_window
@@ -630,8 +636,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; Print a character and step screen_ptr on a cell.
+; Draw a character and step screen_ptr on to the next cell.
 ; In:  A = character, carry set to store it, clear to exclusive-OR it
+; Out: Z clear
 ; Clobbers: A, aux_ptr
 .print_char_advance
 {
@@ -646,10 +653,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; Draw a character at screen_ptr from the font.
-; In:  A = character (below &20 prints as a space), carry set to store it
-;      (in colour 3 on black), clear to exclusive-OR it with the screen
-;      (on a window, so drawing it again rubs it out)
+; Draw a character from the font at screen_ptr, a cell of it.
+; In:  A = character (a control code draws a space), carry set to store it
+;      (in colour 3 on black), clear to exclusive-OR it with the screen (on
+;      a window, so drawing it again rubs it out)
 ; Clobbers: A, aux_ptr
 .print_char
 {
@@ -663,7 +670,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BCS printable
     LDA #ascii("!")                 ; a control code: a space (carry is clear)
 .printable
-    SBC #ascii(" ")
+    SBC #ascii(" ")                 ; aux_ptr = font + 8 * (A - " ")
     ASL A
     ASL A
     ROL aux_ptr+1
@@ -671,7 +678,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     ROL aux_ptr+1
     TAX
     LDA aux_ptr+1
-    ADC #&1D
+    ADC #HI(font)                   ; the font starts a page
     TAY
     STX aux_ptr
     STY aux_ptr+1
@@ -694,22 +701,23 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     EQUB &00
 }
 
-; Open a window and let the user pick from it: a menu.
+; Open a window and let the user pick from it: a menu. While it runs, the
+; cursor keys give codes and the function keys CODE_F0 up; leaving with Space,
+; Escape or another function key puts the function keys back to strings, but
+; picking with Return doesn't.
 ; In:  A = window number, X/Y = its text; if the text's flag is MENU the lines
 ;      after the title are a list to move along with the cursor keys
 ; Out: A = X = the line picked with Return (1 = the first after the title,
-;      0 if the text has no list), or &FF if left with Space, Escape or a
-;      different function key
+;      0 if the text has no list), or &FF if left with Space, Escape or
+;      another menu's function key
 ; Clobbers: Y, and as open_window
-; The cursor keys are made to give codes while it runs, and the function keys
-; to give CODE_F0 upwards.
 .menu
 {
     PHA
     JSR open_window
     PLA
     PHA
-    AND #&07                        ; count_y = this window's number, for the function key test
+    AND #WINDOWS - 1                ; count_y = this window's number, for the function key test
     STA count_y
     ASL A
     TAY
@@ -751,7 +759,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     TXA
     RTS
 .got_key
-    CMP #&C8                        ; a function key...
+    CMP #FUNCTION_KEY_CODES         ; a function key (f4-f9 repeat f0-f3)...
     BCC not_fkey
     AND #&03
     CMP count_y                     ; ...other than this menu's own closes it
@@ -771,13 +779,13 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BEQ read_key
     JSR invert_menu_row
     DEC item
-    LDA screen_ptr
+    LDA screen_ptr                  ; carry is set from the CMP
     SBC #LO(ROW)
     STA screen_ptr
     LDA screen_ptr+1
     SBC #HI(ROW)
     STA screen_ptr+1
-    BCS highlight
+    BCS highlight                   ; always
 .down
     LDA item
     CLC
@@ -804,16 +812,17 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; Highlight or unhighlight a line of a window, by exclusive-ORing
-; colours 1 and 2 in and redrawing the right edge of the frame.
-; In:  screen_ptr = the line, count_x = the window's width less one
+; Highlight or unhighlight a line of a window by exclusive-ORing colour 1
+; into every pixel (red and yellow, black and blue change places), then
+; put back the frame's right edge, which that changed too.
+; In:  screen_ptr = the line, count_x = the window's width in bytes less one
 ; Clobbers: A, X, Y
 .invert_menu_row
 {
     LDY count_x
 .invert
     LDA (screen_ptr), Y
-    EOR #&0F
+    EOR #mode5_byte("1111")
     STA (screen_ptr), Y
     DEY
     BPL invert
@@ -821,8 +830,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDX #&07
 .border
     LDA (screen_ptr), Y
-    AND #&EE
-    ORA #&10
+    AND #mode5_byte("333.")         ; pixel 3 becomes colour 2
+    ORA #mode5_byte("...2")
     STA (screen_ptr), Y
     DEY
     DEX
