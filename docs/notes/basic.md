@@ -344,3 +344,72 @@ descriptions'.
 - `OSWORD_READ_CHAR_DEFINITION`, `EVENT_VSYNC`, `MODE7_SCREEN`,
   `mode7_address()` and `SOLID_BLOCK` are in osconst.6502inc and
   teletext.6502inc now.
+
+## 2026-10-03 23:36 — Why MENU sets start-up option bit 3
+
+`*FX255 8 247` (line 130) makes sure BREAK on its own doesn't boot the
+disc, so that every BREAK after it ends at BASIC's prompt. Quit is the one
+place the program means to leave, and on a B whose links say BREAK boots,
+it would otherwise start PIPELINE again.
+
+### How MOS 1.20 decides (read from jsbeeb's os.rom)
+
+- &D9D7: the reset code reads the system VIA's IER, which is zero only at
+  power-on (BREAK resets the 6502, not the VIAs; `CALL !-4` leaves it
+  alone too). Otherwise &D9DE-&D9E4 clear memory if `*FX200` has bit 1
+  set, but the break stays a soft one.
+- &DA03-&DA3D: the links (internal keys 2-9) are read every time, but
+  stored in &028F only at power-on and CTRL+BREAK. A plain BREAK, even one
+  that clears memory, keeps whatever `*FX255` left.
+- &DB8B-&DB99: Y = (SHIFT, as bit 3) EOR &028F AND 8, and service call 3
+  boots when Y is 0. So bit 3 set: SHIFT+BREAK boots; bit 3 clear: plain
+  BREAK boots and SHIFT+BREAK doesn't. `*FX255 8 247` is
+  `?&28F = (?&28F AND &F7) EOR 8`: bit 3 set, the rest kept.
+
+### Tested in jsbeeb
+
+tools/beeb.mjs gained `--links HEX` (the B's links as keys 2-9 of row 0,
+read at power-on), `break [shift|ctrl]` and `poke` for this; see its
+header. jsbeeb's B has no links fitted: &028F reads &FF.
+
+- Quit with links &F7 (bit 3 clear, BREAK boots), as on the disc:
+  `node tools/beeb.mjs --links F7 'wait 33; hex 28F 1; key Digit6; wait 0.5;
+  key Enter; wait 1; key KeyY; wait 6; out; hex 28F 1; hex 1900 4'`.
+  &028F is &FF at the menu; after "Are you sure? Yes." the screen shows the
+  BBC Computer banner and BASIC's prompt; &1900 is &0D &FF (memory
+  cleared). The same with the default links.
+- The same with line 130 made `*FX255 0 255` (a no-op, same length) in a
+  scratch copy of the disc: `--disc nofx255.ssd --links F7`, same script.
+  Quit reboots: the !BOOT credits, CHAIN"MENU", &1900 holds MENU again,
+  and &028F is still &F7.
+- A memory-clearing BREAK is soft on a B: with links &F7 at BASIC,
+  `*FX255 8 247`, `*FX200 2`, `break` gives &028F = &FF and &028D = 0;
+  `break ctrl` then gives &F7 and 2 (links read again).
+
+### Master (MOS 3.20, `--model Master`)
+
+- PIPELINE reaches its menu (screenshot). jsbeeb's Master is configured
+  NOBOOT: &028F reads &0F (mode 7, bit 3 set,
+  FDrive 0), and Quit leaves at BASIC's prompt.
+- Bit 3 means the same: with `*FX255 0 247` at BASIC, a plain BREAK boots
+  PIPELINE; with `*CONFIGURE BOOT` but &028F still &0F, a plain BREAK
+  doesn't.
+- But a BREAK that clears memory is a power-on to MOS 3.20: after
+  `*CONFIGURE BOOT` and `*FX200 2`, a plain `break` sets &028D to 1 and
+  boots PIPELINE, the configuration reloaded. So on a Master configured
+  BOOT, MENU's `*FX255` is lost on Quit, and Quit restarts PIPELINE
+  (`--model Master --boot no 'type *CONFIGURE BOOT; prompt 5; break ctrl;
+  wait 33; key Digit6; ...'` shows the !BOOT credits again after "Yes.").
+
+### What else BREAK touches
+
+From the code (only Quit was tried): after line 130 every BREAK clears
+memory (`*FX200,3` from !BOOT, 2 from line 140) and, on a B, stops at
+BASIC. That's Quit, the BREAK key in the menu, the game or the designers,
+PL's resets (BRKV and a wrong code jump to the reset entry), and the
+Graphics Designer's exit on a filing system other than DFS (`*FX200,3`
+and `JMP (&FFFC)`), which so leaves at BASIC after its "Return to menu"
+message. MRUN's way back (`*E.!BOOT`) isn't a BREAK, so bit 3 doesn't
+touch it.
+The Level Designer's back door wants &028F = &CF (DEVELOPERS_LINKS): bit 3
+is MENU's, so it opens for links reading &C7 or &CF.

@@ -68,15 +68,21 @@ BASIC
 100FORN%=0TO?&FFB6-1
 110N%?&200=N%?!&FFB7:NEXT
 120!&202=!&202 AND&FFFF0000ORE%
-; *FX255 8 247 sets start-up option bit 3, so SHIFT+BREAK boots the disc
-; and plain BREAK doesn't, whatever the keyboard links say (seen in jsbeeb:
-; with the bit clear, plain BREAK boots). BREAK also clears memory (*FX200
-; 2), and Escape becomes an ordinary key (*FX229 1). Then keyboard defaults
-; (*FX12 auto-repeat, *FX18 no function key strings, *FX4 1 cursor keys
-; giving 136-139, *FX16 no ADC sampling), flash colours every frame, the
-; disc filing system and directory $ (on the current drive: *DISC doesn't
-; go back to drive 0, seen in jsbeeb), no file messages (*OPT), and *TV255
-; 1: the picture one line up, interlace off.
+; *FX255 8 247 sets start-up option bit 3, so that BREAK on its own never
+; boots the disc (SHIFT+BREAK still does), whatever the keyboard links say:
+; a B reads the links only at power-on and CTRL+BREAK, and a plain BREAK
+; keeps this. With memory cleared on BREAK (*FX200 2), Quit's reset (line
+; 900), the BREAK key and PL's resets all stop at BASIC's prompt rather
+; than start PIPELINE again (tried in jsbeeb with links that make BREAK
+; boot: Quit reached BASIC, and with this line made a no-op it rebooted the
+; disc). A Master takes a BREAK that clears memory as a power-on and reloads
+; its configuration, so on one configured to BOOT, Quit restarts PIPELINE
+; regardless (seen in jsbeeb). Escape becomes an ordinary key (*FX229 1).
+; Then keyboard defaults (*FX12 auto-repeat, *FX18 no function key strings,
+; *FX4 1 cursor keys giving 136-139, *FX16 no ADC sampling), flash colours
+; every frame, the disc filing system and directory $ (on the current
+; drive: *DISC doesn't go back to drive 0, seen in jsbeeb), no file
+; messages (*OPT), and *TV255 1: the picture one line up, interlace off.
 130*FX255 8 247
 140*FX200 2
 150*FX229 1
@@ -200,8 +206,9 @@ BASIC
 840PRINT'CHR$134"Are these keys correct?";
 850UNTILFNyes:RETURN
 ; Option 6, quit: CALL !-4 goes through the 6502's reset vector at &FFFC,
-; which the MOS takes as a BREAK: with *FX200 2 memory is cleared, and the
-; machine is left at BASIC's prompt, not rebooted (seen in jsbeeb).
+; which the MOS takes as a BREAK: with *FX200 2 memory is cleared, and line
+; 130's *FX255 keeps it from booting the disc, so the machine is left at
+; BASIC's prompt (seen in jsbeeb).
 860CLS:FORN%=1TO2
 870PRINTTAB(0,N%)CHR$141CHR$132CHR$157CHR$131"Exiting from Pipeline:  "CHR$156:NEXT
 880PRINT'CHR$134"Are you sure?";

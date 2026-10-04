@@ -3,7 +3,14 @@
 // screenshots, memory dumps, and a record of every address executed (which is
 // what separates code from data when disassembling).
 //
-//   node tools/beeb.mjs [--disc original/pipeline.ssd] [--model B-DFS1.2] SCRIPT...
+//   node tools/beeb.mjs [--disc original/pipeline.ssd] [--model B-DFS1.2]
+//                       [--boot no] [--links HEX] [--econet STATION] SCRIPT...
+//
+// --links HEX fits the B's keyboard links so the OS reads HEX as its start-up
+// options (OSBYTE 255) at power-on and CTRL+BREAK; with bit 3 clear a plain
+// BREAK boots the disc and SHIFT+BREAK doesn't, and the autoboot is plain.
+// --econet STATION fits an Econet interface (no file server), which wakes
+// the NFS in the B's DNFS ROM: it then claims NETV, among other things.
 //
 // Each SCRIPT argument is one or more commands separated by ";":
 //   wait SECS            run for SECS of emulated time (fractions allowed)
@@ -27,35 +34,87 @@
 //   ssd FILE             save drive 0's disc as it is now, as an .ssd, to see what the
 //                        program wrote to it (a sector an .ssd can't hold, say one with
 //                        a CRC error, is left as zeros)
+//   log ADDR             from here on, print the registers and the caller (the
+//                        JSR before the return address on the stack) each time
+//                        the PC reaches ADDR
+//   poke ADDR BYTE...    write bytes (hex) to memory
+//   break [shift|ctrl]   press BREAK, alone or with SHIFT or CTRL held for 1 s
 //
-// The disc is autobooted with SHIFT+BREAK before the script starts, unless
-// --boot no, which leaves the machine at the BASIC prompt with the disc in.
+// The disc is autobooted with SHIFT+BREAK (a power-on reset) before the script
+// starts, unless --boot no, which leaves the machine at the BASIC prompt with
+// the disc in.
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { MachineSession } from "jsbeeb/machine-session";
+import { Econet } from "jsbeeb/src/econet.js";
 import { BBC } from "jsbeeb/src/keymap.js";
 import { toSsdOrDsd } from "jsbeeb/src/disc.js";
+import { findModel } from "jsbeeb/src/models.js";
 
 const CYCLES_PER_SEC = 2_000_000;
 
 const parseAddr = (s) => parseInt(s.replace(/^(&|0x|\$)/i, ""), 16);
+const hex2 = (n) => n.toString(16).toUpperCase().padStart(2, "0");
 const hex4 = (n) => n.toString(16).toUpperCase().padStart(4, "0");
 
-export async function startBeeb({ disc = "original/pipeline.ssd", model = "B-DFS1.2", boot = "yes" } = {}) {
+// jsbeeb's file server needs data the npm package doesn't carry, and nothing
+// here needs one: a stand-in that does nothing, kept across hard resets.
+function fitEconet(session, model, station) {
+    const cpu = session._machine.processor;
+    const noFileServer = { polltime() {}, reset() {} };
+    cpu.econet = new Econet(station, findModel(model).cyclesPerSecond);
+    cpu.filestore = noFileServer;
+    const resetPeripherals = cpu.resetPeripherals.bind(cpu);
+    cpu.resetPeripherals = (hard) => {
+        resetPeripherals(hard);
+        cpu.filestore = noFileServer;
+    };
+    cpu.polltime = cpu.buildPolltime();
+}
+
+// The B's eight links sit in the keyboard matrix as internal keys 2-9, row 0
+// (which the OS's keyboard scan skips). MOS 1.20 reads them into the start-up
+// options with key 9 as bit 0 up to key 2 as bit 7, a fitted link (a key
+// held down) reading as 0. Typing lets go of every key, so `type` fits them
+// again afterwards.
+function fitLinks(session, options) {
+    session.links = options;
+    for (let bit = 0; bit < 8; bit++) {
+        if (!(options & (1 << bit))) session.keyDownRaw([9 - bit, 0]);
+    }
+}
+
+export async function startBeeb({
+    disc = "original/pipeline.ssd",
+    model = "B-DFS1.2",
+    boot = "yes",
+    links,
+    econet,
+} = {}) {
     const session = new MachineSession(model);
+    if (econet !== undefined) fitEconet(session, model, parseInt(econet));
     await session.initialise();
-    await session.boot(30);
+    // Links with bit 3 clear swap the roles of BREAK and SHIFT+BREAK: SHIFT
+    // then stops a boot rather than asking for one.
+    const shiftBoots = links === undefined || (parseAddr(links) & 8) !== 0;
+    if (links !== undefined) fitLinks(session, parseAddr(links));
+    if (!shiftBoots) session.keyDownRaw(BBC.SHIFT);
+    try {
+        await session.boot(30);
+    } finally {
+        if (!shiftBoots) session.keyUpRaw(BBC.SHIFT);
+    }
     session.loadDisc(resolve(disc));
     if (boot === "no") {
         session.drainOutput();
         return session;
     }
-    session.keyDownRaw(BBC.SHIFT);
+    if (shiftBoots) session.keyDownRaw(BBC.SHIFT);
     try {
         session.reset(true);
         await session.runFor(CYCLES_PER_SEC);
     } finally {
-        session.keyUpRaw(BBC.SHIFT);
+        if (shiftBoots) session.keyUpRaw(BBC.SHIFT);
     }
     return session;
 }
@@ -109,8 +168,24 @@ function recordAccesses(session) {
     };
 }
 
+// Prints a line each time the PC reaches addr, until removed.
+function logVisits(session, addr) {
+    const cpu = session._machine.processor;
+    return cpu.debugInstruction.add((pc) => {
+        if (pc !== addr) return false;
+        const [lo, hi] = session.readMemory(0x101 + cpu.s, 2);
+        const caller = (((hi << 8) | lo) - 2) & 0xffff;
+        console.log(
+            `&${hex4(pc)} A=${hex2(cpu.a)} X=${hex2(cpu.x)} Y=${hex2(cpu.y)} S=${hex2(cpu.s)} ` +
+                `from &${hex4(caller)}`,
+        );
+        return false;
+    });
+}
+
 export async function runScript(session, commands) {
     const recorders = [];
+    const logs = [];
     for (const command of commands) {
         const [op, ...args] = command.trim().split(/\s+/);
         switch (op) {
@@ -136,6 +211,7 @@ export async function runScript(session, commands) {
                 break;
             case "type":
                 await session.type(command.trim().slice(5));
+                if (session.links !== undefined) fitLinks(session, session.links);
                 break;
             case "prompt":
                 await session.runUntilPrompt(parseFloat(args[0] ?? "60"), { clear: false });
@@ -173,11 +249,30 @@ export async function runScript(session, commands) {
             case "ssd":
                 writeFileSync(args[0], toSsdOrDsd(session._machine.processor.fdc._drives[0].disc, { force: true }));
                 break;
+            case "log":
+                logs.push(logVisits(session, parseAddr(args[0])));
+                break;
+            case "poke":
+                session.writeMemory(parseAddr(args[0]), args.slice(1).map(parseAddr));
+                break;
+            case "break": {
+                const held = { shift: BBC.SHIFT, ctrl: BBC.CTRL }[args[0]];
+                if (args[0] && !held) throw new Error(`break with what? ${command}`);
+                if (held) session.keyDownRaw(held);
+                try {
+                    session.reset(false);
+                    await session.runFor(CYCLES_PER_SEC);
+                } finally {
+                    if (held) session.keyUpRaw(held);
+                }
+                break;
+            }
             default:
                 throw new Error(`unknown command: ${command}`);
         }
     }
     for (const { file, recorder } of recorders) writeFileSync(file, JSON.stringify(recorder.stop(), null, 0) + "\n");
+    for (const handler of logs) handler.remove();
 }
 
 async function main() {
