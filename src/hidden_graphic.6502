@@ -184,7 +184,7 @@ name_box      = SCREEN + 19*ROW + 4*CELL        ; an object's number and name
 large_sheet   = SCREEN + 20*CELL                ; 5 sprites across, each 4 cells by 4 rows
 small_sheet   = SCREEN + 20*ROW + 21*CELL       ; 4 across, 4 cells apart, each 2 cells by 2 rows
 frame_preview = SCREEN + 23*ROW + 9*CELL        ; Animate's frame, in its window
-logo_screen   = SCREEN + 28*ROW + 18*CELL
+logo_screen   = SCREEN + 28*ROW + 18*CELL       ; the logo, at the bottom right
 ; Two bytes of the editing grid's frame that tell whether it is drawn for a
 ; large sprite or a small one: the small frame's top right corner, and the
 ; top of the large frame's right edge. Each is &08 (a pixel of colour 1 at
@@ -193,7 +193,7 @@ grid_frame_top   = SCREEN + 10*CELL + 7
 grid_frame_right = SCREEN + ROW + 18*CELL
 
 ; Zero page.
-screen_ptr   = &50              ; where on the screen
+screen_ptr   = &50              ; where on the screen to draw
 data_ptr     = &52              ; a sprite's bytes; window text
 save_ptr     = &54              ; where a window's background is kept; a line of its text
 pixel_x      = &56              ; the pixel pixel_address is finding
@@ -204,13 +204,13 @@ temp         = &61
 count_x      = &62
 count_y      = &63
 item         = &64              ; the highlighted menu line, from 0; also scratch
-mask         = &65              ; one pixel of a byte; window text's flag byte
+mask         = &65              ; one pixel's bits in a byte; also window text's flag byte
 sprite_width = &70              ; in bytes: 4 large, 2 small; the height in pixels is 8 times it
 sprite       = &71              ; the selected sprite
 old_sprite   = &72              ; the selection before select_sprite moved it
-cursor_x     = &73              ; the pixel cursor in the editing grid
+cursor_x     = &73              ; the pixel cursor, in the sprite's pixels
 cursor_y     = &74
-old_cursor_x = &75
+old_cursor_x = &75              ; where it was before edit_pixels moved it
 old_cursor_y = &76
 colour       = &77              ; for plotting, 0-3
 repeat_delay = &78              ; the pixel cursor's key repeat, shortening as it repeats
@@ -4261,7 +4261,7 @@ IO_SEGMENT = 6                  ; bytes in each entry
     LDY #&00
     LDA #OSBYTE_FLUSH_BUFFERS       ; empty the keyboard buffer
     JSR OSBYTE
-    LDY #&0F
+    LDY #&0F                        ; sixteen bytes, up to the last CR
     LDA #' '
 .blank
     STA input_buffer, Y
