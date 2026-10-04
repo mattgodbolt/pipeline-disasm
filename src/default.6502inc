@@ -887,7 +887,8 @@ default_icons = {
         "..22113333331133",
         "................"
     },
-    ; &1F, icon 15: the exit, a little man. Nothing to name.
+    ; &1F, icon 15: the exit. No name in the set: its name would sit at &F34,
+    ; just past the set, where the designer writes "Finish Block".
     {
         "....11..22..11..",
         "....1122222211..",
@@ -908,10 +909,12 @@ default_icons = {
     }
 }
 
-; Slots &20-&23: the player. The designer's Animate shows &20 with &21 and
-; &22 with &23 (some upside down).
+; Slots &20-&23: the player, facing left, right, up and down. The game
+; animates them (and the designer's Animate previews it) by alternating each
+; side view with itself upside down, &22 with &23 upside down going up, and
+; &23 with &22 upside down going down.
 default_player = {
-    ; &20, facing left: a yellow and red machine.
+    ; &20, facing left.
     {
         "....11......11......11......11..",
         "....11......11......11......11..",

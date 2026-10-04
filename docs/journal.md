@@ -402,3 +402,27 @@ Details in `docs/notes/levdes.md`.
   direction in the designer is named, in `src/levdes.6502inc` for now; many
   belong in shared includes, which waits for the other reviews so it's done
   once.
+
+## 2026-10-03 23:45 — Merged: the Graphics Designer review
+
+Details in `docs/notes/graphic.md`.
+
+- Corrections: small slot &1F isn't "the man" but object icon 15, which the
+  game draws as the exit; "Finish Block" sits exactly where its name would
+  be (&E80 + 15 * 12 = &F34), so it's the designer's name for the exit, not
+  just an end marker. Slots &20-&23 are the player facing left, right, up
+  and down (not a machine), and &0E/&0F the flame monster's two pictures;
+  Animate previews the game's own animations (side views alternate with
+  themselves upside down). `default.6502inc` on main corrected to match.
+- Also: on tape nothing loads at startup; the pixel cursor never blinks; a
+  window covers at most &5000-&537F; three loop labels were swapped or
+  misnamed; the "unused" `SKIP 39` was an `ALIGN &100` the font relies on;
+  MOS 1.20 only sets the Escape flag itself when the Escape event is
+  disabled, which is why the designer's event handler sets it.
+- The designer now uses `osconst.6502inc`, `io.6502inc` addresses (asserted
+  against its own layout) and `mode5_pictures`; its dump entries fell from
+  5,119 to 1,064 and `build/symbols.json` to 719 KB.
+- Many names it defines (OSBYTE/OSWORD/OSFILE numbers, internal key numbers,
+  VDU and PLOT codes, the graphics set's layout and slot roles) belong in
+  shared includes; that consolidation waits for the game review, so it's
+  done once across all three programs.
