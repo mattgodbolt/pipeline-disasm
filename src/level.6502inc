@@ -17,10 +17,9 @@ level_end       = &3000
 level_names     = level                         ; 32 x 8 characters
 level_name_ends = level_names + PUZZLES * 8     ; 32 x 2 characters
 
-; The fields, in order, then the map.
+; The fields, in order, then the map. First a three-byte editing code; the
+; designer won't keep a loaded level unless the user types its six digits.
 level_code      = level_name_ends + PUZZLES * 2
-; A three-byte editing code; the designer won't keep a loaded level unless
-; the user types its six digits.
 level_palette   = level_code + LEVEL_FIELD_OFFSETS[3]
 ; Where the player starts, less 4 in each coordinate.
 level_start_x   = level_code + LEVEL_FIELD_OFFSETS[4] + LEVEL_START_X
