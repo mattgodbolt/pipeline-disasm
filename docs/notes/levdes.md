@@ -436,3 +436,35 @@ python3 -c 'import sys; sys.path.insert(0, "tools"); from dfs import read_catalo
 The DFS addresses come from a linear disassembly of
 `node_modules/jsbeeb/public/roms/b/DFS-1.2.rom` (mapped at &8000), checked
 against the save's trace.
+
+## 2026-10-04 12:55 — Readability pass
+
+A pass over the designer's source for a reader who hasn't seen these notes.
+The source's comments now stand on their own; nothing here changes what
+the code is understood to do.
+
+- `hidden_levdes.6502`'s header gives the memory map while it runs, the
+  designer's words (block, puzzle, brush, marker, simulator, window, the low
+  code) and the file's layout by address. The effect editors' "+0", "+1"
+  and "+2" are explained once as the puzzle's three effect bytes, the
+  game's A, X and Y.
+- Comments corrected: `files_menu` asks "SURE ?" after an item is chosen
+  (and not for OK), not before the menu opens; `simulate_try_turn`, taking
+  a pipe, returns from `move_cursor` (`simulate_junction` is part of it,
+  reached by a branch, so it has no caller of its own); `reduce_mod_10`
+  doesn't need C clear, as CMP sets it; a new level's default puzzle
+  positions are (32, 32), both coordinates ignored, not "x 32";
+  `choose_record`, `input_number`, `input_text` and `ask_number` also
+  clobber the low code's zero page or `window_ptr`, through the message box.
+- `level.6502inc`'s block table names CELL_SE_CURVE to CELL_NW_CURVE,
+  CELL_WALL_1 and CELL_BARRICADE, which leveldata.6502inc has.
+- The "Names, and where they should live" list above is history: most of
+  those names went into the shared includes under other spellings
+  (ALTERNATE_* for SPRITES_*, MONSTER_GONE, TURN_AHEAD/CLOCKWISE/
+  ANTICLOCKWISE, CONDITION_CELL and CONDITION_CHECK_CELL, PUZZLE_ACTION,
+  PUZZLE_NAME_HEAD, OSBYTE_FUNCTION_KEY_BASE, CRTC_CURSOR_OFF and
+  CRTC_CURSOR_BLINK).
+- Checked in jsbeeb: S in the map reaches `switch_simulate` with C clear,
+  so the Simulate window opens as get_key's kept window (`kept_window` &43)
+  and closes again on the second S.
+- `I_DIRECTION_DEAD` (wdata.6502inc) is defined but nothing uses it.
