@@ -42,16 +42,17 @@ io_time_rate        = io_attrs + 0  ; added to a counter each cycle; the clock t
 io_map_levels       = io_attrs + 1  ; the map (M) works on levels below this
 io_backpack_last    = io_attrs + 2  ; the backpack's last slot: it holds this plus one
 io_throw_distance   = io_attrs + 3  ; how far a thrown object flies, in cells
-io_locked           = io_attrs + 4  ; negative: a finished mission shows an entry code
+io_locked           = io_attrs + 4  ; negative: finishing the mission shows a competition entry
+                                    ; code, made from the score and a checksum of the levels
 
 ; The levels' fields, each stored as IO_LEVELS consecutive entries (level 0's,
 ; then level 1's...): field f of level s is at
 ;   io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[f] + s * LEVEL_FIELD_SIZES[f]
 ; (MISSION's L% + numlev * pnt + S% * ext).
 io_levels             = io_attrs + IO_ATTRS_SIZE
-io_edit_code_high     = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[0]  ; the edit code, which MISSION
-io_edit_code_middle   = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[1]  ; asks for before it saves an
-io_edit_code_low      = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[2]  ; edited level
+io_edit_code_high     = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[0]  ; the editing code, which MISSION
+io_edit_code_middle   = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[1]  ; asks for before it saves a level
+io_edit_code_low      = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[2]  ; out of a locked mission
 io_palettes           = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[3]  ; 4 each: logical << 4 | physical
 io_level_setup        = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[4]  ; 8 each: LEVEL_*
 io_level_objects      = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[5]  ; 32 each: 8 objects of 4 bytes

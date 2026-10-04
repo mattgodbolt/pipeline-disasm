@@ -36,8 +36,9 @@ LAST_SLOT        = &28
 ; What the game makes of the slots (a mission holds slots &00-&27, the set's
 ; first &E00 bytes, as its graphics, and slot &28 apart). Slots &00-&0F are
 ; the map's cell types, &10-&1F the objects' icons.
-SLOT_FLOOR     = &00            ; cell type 0; the game also fills the floor round an
-                                ; icon from its first character cell, so it repeats that
+SLOT_FLOOR     = &00            ; cell type 0. Round an object's icon, the game draws
+                                ; only this picture's first character cell (4 pixels by
+                                ; 8), so a floor looks right only as that cell repeated
 SLOT_MONSTER   = &0E            ; &0E and &0F: the flame monsters' two pictures
 SLOT_EXIT      = FIRST_SMALL_SLOT + EXIT_ICON
 SLOT_PLAYER    = &20            ; &20-&23: the player facing left, right, up and down

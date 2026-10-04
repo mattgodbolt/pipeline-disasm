@@ -11,7 +11,7 @@
 ; and a map:
 ;
 ;   field  bytes
-;   0-2    1 each  the editing code, two digits a field
+;   0-2    1 each  the editing code (see code_byte below), two digits in each
 ;   3      4       the palette: logical colour * 16 + physical, for VDU 19
 ;   4      8       the setup (LEVEL_* below)
 ;   5      32      8 objects, 4 bytes each
@@ -48,9 +48,10 @@ LEVEL_EXIT_Y      = 5
 LEVEL_MONSTER_FOOD = 6  ; low nibble: a cell monsters eat; high: what they leave
 LEVEL_ANIMATE     = 7   ; which squares show cells' second pictures
 
-; LEVEL_ANIMATE has two bits for each cell type with a second picture (5, 8,
-; 7 and A, 5 in the top two): which squares of a checkerboard show it. The
-; designer's menu offers Sprite A, Patterned and Sprite B.
+; LEVEL_ANIMATE has two bits for each cell type with a second picture (cell
+; type 5 in the top two bits, then 8, 7 and A): they say which squares of a
+; checkerboard show the second picture. The designer's menu offers Sprite A,
+; Patterned and Sprite B.
 ALTERNATE_NONE    = 0   ; Sprite A: the first picture everywhere
 ALTERNATE_ODD     = 1   ; Patterned: the second on the odd squares
 ALTERNATE_EVEN    = 2   ; the second on the even squares (not offered)
@@ -108,10 +109,11 @@ OBJECT_VANISHES   = &40   ; gone when used up
 OBJECT_NO_THROW   = &80   ; does nothing when thrown
 ASSERT LEVEL_FIELD_SIZES[5] = OBJECTS * OBJECT_BYTES
 
-; Monsters: x and y in quarter cells, a direction (DIRECTION_LEFT to
-; DIRECTION_DOWN, or MONSTER_GONE when it's off the map; the game adds 4
-; while one's stuck) and four choices of which way to try at a junction
-; (TURN_*), first in bits 0-1. The designer offers four patterns by name.
+; Monsters: x and y in quarter cells (4 times the cell's x and y), a
+; direction (DIRECTION_LEFT to DIRECTION_DOWN, or MONSTER_GONE when it's off
+; the map; the game adds 4 while one's stuck) and four choices of which way
+; to try at a junction (TURN_*), the first in bits 0-1. The designer offers
+; four patterns by name.
 MONSTERS          = 4
 MONSTER_BYTES     = 4
 ASSERT LEVEL_FIELD_SIZES[6] = MONSTERS * MONSTER_BYTES
@@ -151,15 +153,17 @@ PUZZLE_NEXT_BLOCK       = 2     ; the cell in front becomes A
 PUZZLE_SET_LEVELS       = 3     ; the clock becomes X, things to collect Y (but see SET_LEVELS_KEEP_*)
 PUZZLE_THROW_OBJECT     = 4     ; object A is thrown Y cells
 PUZZLE_DETONATE_OBJECT  = 5     ; object A blows up
-PUZZLE_MOVE_MONSTER     = 6     ; monster X / 4 (&10: all) goes direction A
-PUZZLE_PLACE_MONSTER    = 7     ; monster A AND 3 to (A DIV 4, Y DIV 4) going Y AND 3, turns X
+PUZZLE_MOVE_MONSTER     = 6     ; monster X DIV 4 (or all of them, for X = &10) heads in direction A
+PUZZLE_PLACE_MONSTER    = 7     ; monster A AND 3 goes to cell (A DIV 4, Y DIV 4), heading in
+                                ; direction Y AND 3, with turns X
 PUZZLE_TELEPORT         = 8     ; the player to (X + 4, Y + 4)
 PUZZLE_SWAP_NEXT        = 9     ; the cell in front swaps between A and X
 PUZZLE_TURN_ON          = 10    ; triggers A, X and Y can fire again
 PUZZLE_TURN_OFF         = 11    ; triggers A, X and Y can't
 PUZZLE_CHARGE_OBJECT    = 12    ; object A has Y uses, and trigger A can fire again
 PUZZLE_PUSH_CRATES      = 13    ; the player can push A crates
-PUZZLE_MOVE_NEXT_BLOCK  = 14    ; the cell in front is pushed, A (a TURN_* times 4) from the way the player faces
+PUZZLE_MOVE_NEXT_BLOCK  = 14    ; the cell in front is pushed a cell: the way the player
+                                ; faces, turned by A (a TURN_* times 4)
 PUZZLE_DISORIENTATE     = 15    ; left and right, and up and down, swap keys
 
 PUZZLE_REUSABLE = &10           ; it can fire again
@@ -194,9 +198,11 @@ COLOUR_WHITE    = 7
 ; A palette entry, as a level keeps it and VDU_PALETTE takes it apart.
 FUNCTION palette_entry(logical, physical) = logical * 16 + physical
 
-; An editing code from its six digits. Each pair of digits is packed as BCD,
-; then adjacent bits are swapped and the byte rotated right one place.
-FUNCTION code_pair(s) = (CODES(s)[0] - CODES("0")[0]) * 16 + CODES(s)[1] - CODES("0")[0]
+; The editing code: six digits the Level Designer asks for before it loads
+; the level, and MISSION before it saves a level out of a locked mission.
+; The level keeps them scrambled: each pair of digits is packed as BCD, then
+; adjacent bits are swapped and the byte rotated right one place.
+FUNCTION code_pair(s) = (CODES(s)[0] - '0') * 16 + CODES(s)[1] - '0'
 FUNCTION code_swap(b) = ((b AND &55) << 1) OR ((b AND &AA) >> 1)
 FUNCTION code_byte(s) = (code_swap(code_pair(s)) >> 1) OR ((code_swap(code_pair(s)) AND 1) << 7)
 ; A level is written as a list of its parts:

@@ -2,8 +2,8 @@
 # baron's raw outputs (build/files/NAME + NAME.inf) to make the image.
 
 title = "PIPELINE"
-cycle = 0x20
-opt = 3
+cycle = 0x20            # the catalogue's write count, which DFS bumps on every change
+opt = 3                 # *OPT 4,3: SHIFT-BREAK *EXECs !BOOT
 # The catalogue claims an 80 track disc although only 40 tracks were
 # formatted; it's reproduced as found.
 disc_sectors = 800
@@ -11,7 +11,10 @@ image_sectors = 400
 fill = 0xE5
 
 # Catalogue order, which is descending start sector as DFS keeps it.
-# `slack` is what's left in each file's last sector past its end.
+# `slack` is what's left in each file's last sector past its end: DFS writes
+# whole sectors, so these are whatever followed the file in memory when it
+# was saved, kept for the byte-for-byte match. Hex bytes, with XX*N for byte
+# XX repeated N (decimal) times.
 
 [[file]]
 name = "LEVDES"

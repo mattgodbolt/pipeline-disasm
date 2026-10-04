@@ -17,7 +17,7 @@ OSBYTE_FLUSH_BUFFERS      = &0F ; *FX15: X=0 all buffers, 1 just input
 OSBYTE_WAIT_VSYNC         = &13 ; *FX19: wait for the next vertical sync
 OSBYTE_RAISE_ESCAPE       = &7D ; set the Escape flag, as the key would (no event)
 OSBYTE_ACKNOWLEDGE_ESCAPE = &7E ; clear an Escape; X = &FF if there was one, else 0
-OSBYTE_INKEY              = &81 ; X,Y = INKEY argument; X=Y=&FF if a key tested is down
+OSBYTE_INKEY              = &81 ; X, Y = INKEY's argument; for a key test, X = Y = &FF if it's down
 OSBYTE_READ_CHAR_AND_MODE = &87 ; X = the character at the text cursor, Y = the mode
 OSBYTE_INSERT_BUFFER      = &8A ; X = buffer, Y = character
 OSBYTE_OPT                = &8B ; *OPT X, Y
@@ -92,8 +92,9 @@ EVENT_OUTPUT_EMPTY = 0          ; X = the buffer
 EVENT_VSYNC        = 4
 EVENT_ESCAPE       = 6
 
-; Internal key numbers (the keyboard matrix), and the byte INKEY wants to
-; test one: INKEY -(k+1).
+; Internal key numbers (each key's place in the keyboard matrix).
+; INKEY_TEST(k) is the byte OSBYTE_INKEY takes in X to test key k, with
+; Y = &FF: BASIC's INKEY -(k+1).
 KEY_SHIFT  = &00
 KEY_CTRL   = &01
 KEY_3      = &11
@@ -188,8 +189,8 @@ CRTC_START_HIGH           = 12  ; the screen's start address, in units of 8 byte
 CRTC_START_LOW            = 13
 
 ; Values for CRTC_CURSOR_START.
-CRTC_CURSOR_OFF   = &20         ; bits 5-6 01: no cursor
-CRTC_CURSOR_BLINK = &67         ; bits 5-6 11: blinking, from scan line 7, as MODEs 0-6 have it
+CRTC_CURSOR_OFF   = &20         ; bits 5-6 = %01: no cursor
+CRTC_CURSOR_BLINK = &67         ; bits 5-6 = %11: blinking, from scan line 7, as MODEs 0-6 have it
 
 ; Written to the system VIA's port B (SYSVIA_ORB), a byte sets one of the
 ; addressable latch's bits: bits 0-2 say which, bit 3 its value. Latch bits
@@ -236,6 +237,7 @@ FDC_REG_TRACK_DRIVE_0 = &12
 ; (1 = 256 bytes), sector count in bits 0-4.
 FDC_SIZE_256 = 1 << 5
 
-; The 8271's result for a sector carrying a deleted data mark. Every read of a
-; hidden run on the original disc ends with this, never with 0.
+; The 8271's result for a sector carrying a deleted data mark. The hidden
+; programs' sectors all carry one on the original disc, so every read of them
+; ends with this, never with 0.
 FDC_RESULT_DELETED_DATA = &20

@@ -120,7 +120,7 @@ SYSVIA_ACR  = &FE4B
 SYSVIA_PCR  = &FE4C
 SYSVIA_IFR  = &FE4D
 SYSVIA_IER  = &FE4E
-SYSVIA_ORA_NH = &FE4F
+SYSVIA_ORA_NH = &FE4F               ; port A again, without the handshake
 
 ; User VIA: printer port, user port and the second timer pair.
 USRVIA_ORB  = &FE60
@@ -138,7 +138,7 @@ USRVIA_ACR  = &FE6B
 USRVIA_PCR  = &FE6C
 USRVIA_IFR  = &FE6D
 USRVIA_IER  = &FE6E
-USRVIA_ORA_NH = &FE6F
+USRVIA_ORA_NH = &FE6F               ; port A again, without the handshake
 
 ; 8271 floppy disc controller.
 FDC_COMMAND_STATUS = &FE80   ; command on write, status on read
