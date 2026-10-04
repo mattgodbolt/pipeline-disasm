@@ -146,15 +146,6 @@ COLOUR_WHITE    = 7
 FUNCTION code_pair(s) = (CODES(s)[0] - CODES("0")[0]) * 16 + CODES(s)[1] - CODES("0")[0]
 FUNCTION code_swap(b) = ((b AND &55) << 1) OR ((b AND &AA) >> 1)
 FUNCTION code_byte(s) = (code_swap(code_pair(s)) >> 1) OR ((code_swap(code_pair(s)) AND 1) << 7)
-MACRO EDITING_CODE digits
-    EQUB code_byte(digits[0..1]), code_byte(digits[2..3]), code_byte(digits[4..5])
-ENDMACRO
-
-; A monster at a cell, going a direction.
-MACRO MONSTER x, y, direction, pattern
-    EQUB x * 4, y * 4, direction, pattern
-ENDMACRO
-
 ; A level is written as a list of its parts:
 ;
 ;   {
