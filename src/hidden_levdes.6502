@@ -3328,11 +3328,11 @@ line2_tab = os_tab(MESSAGE_LEFT, MESSAGE_LINE_2)
 ; Four-byte VDU sequences, sent last byte first.
 .colour_sequences
 .normal_colours                 ; COLOUR 129 : COLOUR 2, yellow on blue
-    EQUB REVERSE({VDU_COLOUR, 128 + 1, VDU_COLOUR, 2})
+    EQUB REVERSE({VDU_COLOUR, COLOUR_BACKGROUND + 1, VDU_COLOUR, 2})
 .unused_colours                 ; with the next byte, VDU 0 : COLOUR 128 : CLS
-    EQUB REVERSE({VDU_COLOUR, 128, VDU_CLS})
+    EQUB REVERSE({VDU_COLOUR, COLOUR_BACKGROUND, VDU_CLS})
 .highlight_colours              ; COLOUR 131 : COLOUR 0, black on red
-    EQUB REVERSE({VDU_COLOUR, 128 + 3, VDU_COLOUR, 0})
+    EQUB REVERSE({VDU_COLOUR, COLOUR_BACKGROUND + 3, VDU_COLOUR, 0})
 
 ; Find a window or message in WDATA.
 ; In: A = its number.

@@ -85,17 +85,6 @@ SCREEN_ROW      = SCREEN_COLUMNS * 8
 SCREEN_END      = screen + SCREEN_ROWS * SCREEN_ROW
 FUNCTION screen_address(column, row) = screen + row * SCREEN_ROW + column * 8
 
-; VDU codes.
-VDU_NOTHING       = 0
-VDU_RIGHT         = 9           ; the cursor right a character, painting nothing
-VDU_CLS           = 12
-VDU_COLOUR        = 17          ; VDU 17, colour: COLOUR (128 up: background)
-VDU_PALETTE       = 19          ; VDU 19, logical, physical, 0, 0, 0
-VDU_MODE          = 22
-VDU_RESET_WINDOWS = 26
-VDU_TEXT_WINDOW   = 28          ; VDU 28, left, bottom, right, top
-VDU_TAB           = 31          ; VDU 31, x, y
-
 ; The OS's text output still thinks the screen is MODE 1's 40 columns of 640
 ; bytes, so to print at a column and row of ours, TAB to the OS character
 ; that lands there.

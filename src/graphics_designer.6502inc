@@ -5,19 +5,6 @@
 
 ; ---- For osconst.6502inc ----
 
-; VDU codes (wdata.6502 has the same three of these).
-VDU_CLS           = 12
-VDU_GCOL          = 18          ; VDU 18, mode, colour
-VDU_MODE          = 22
-VDU_PLOT          = 25          ; VDU 25, k, x; y;
-VDU_RESET_WINDOWS = 26
-VDU_TEXT_WINDOW   = 28          ; VDU 28, left, bottom, right, top
-
-; PLOT numbers.
-PLOT_MOVE_RELATIVE = 0
-PLOT_DRAW_RELATIVE = 1
-PLOT_MOVE          = 4
-
 ; 6845 CRTC register 10: the cursor's start line, and bits 5-6 its blink
 ; mode, where &20 turns it off.
 CRTC_CURSOR_START = 10

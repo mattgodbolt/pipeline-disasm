@@ -11,6 +11,7 @@
 ; and has no escape for them. An editor that rewrites the file as UTF-8
 ; (Claude's Edit tool does) corrupts them; `make verify` will then point
 ; at those two lines. Edit with sed or a byte-preserving editor.
+INCLUDE "osconst.6502inc"
 INCLUDE "basic.6502inc"
 INCLUDE "teletext.6502inc"
 

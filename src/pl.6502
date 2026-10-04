@@ -429,7 +429,7 @@ SECTION pl_decrypted, filename="PLDEC", org=pl.encrypted - 1
 ; VDU codes, sent from the end backwards: MODE 7; cursor off (6845 register
 ; 10, the cursor start line, := &20); paged mode on.
 .screen_setup
-    EQUB REVERSE({22, 7, 23, 0, 10, &20, 0, 0, 0, 0, 0, 0, 14})
+    EQUB REVERSE({VDU_MODE, 7, VDU_DEFINE, 0, 10, &20, 0, 0, 0, 0, 0, 0, VDU_PAGED_ON})
 .screen_setup_end
 
 ; OSWORD 0 for the filename: up to 12 characters, any printable.
@@ -456,7 +456,7 @@ SECTION pl_decrypted, filename="PLDEC", org=pl.encrypted - 1
 .format_chars
     EQUB inverted({TT_ALPHA_YELLOW, CODES("."), TT_ALPHA_GREEN})
     EQUB inverted({TT_ALPHA_CYAN, TT_ALPHA_MAGENTA, CODES("O"), CR})
-    EQUB inverted({15, BEL, CODES(">")})    ; VDU 15: paged mode off
+    EQUB inverted({VDU_PAGED_OFF, BEL, CODES(">")})
 ; Indexed from 1 (tens + 1): " " for 1-9, then "1", "2", "3".
 .tens_digits
     EQUS " 123"

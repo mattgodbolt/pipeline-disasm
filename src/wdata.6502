@@ -1,5 +1,6 @@
 ; $.WDATA: the Level Designer's windows and messages, loaded at &7000
 ; (format and numbering in wdata.6502inc).
+INCLUDE "osconst.6502inc"
 INCLUDE "levdes.6502inc"
 INCLUDE "wdata.6502inc"
 

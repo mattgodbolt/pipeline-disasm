@@ -75,7 +75,7 @@ SECTION mrun, filename="MRUN", org=&0780, load=&780, exec=&780
 ; characters: the command BASIC runs is "*E.!BOOT  ".
 .boot_command
     EQUS "*E.!BOOT"
-    EQUB 22, 7                  ; VDU 22,7: MODE 7
+    EQUB VDU_MODE, 7            ; MODE 7
     EQUS "  ", CR
 
 .start_basic

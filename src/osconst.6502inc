@@ -148,6 +148,32 @@ ESC = &1B                       ; what OSBYTE &81 gives in Y on Escape
 DEL = &7F
 FUNCTION ctrl(c) = ascii(c) AND &1F
 
+; VDU codes.
+VDU_TEXT_CURSOR   = 4           ; text at the text cursor
+VDU_ENABLE        = 6           ; undo VDU_DISABLE
+VDU_BACKSPACE     = 8
+VDU_RIGHT         = 9           ; cursor right: a space that doesn't paint
+VDU_CLS           = 12
+VDU_PAGED_ON      = 14
+VDU_PAGED_OFF     = 15
+VDU_COLOUR        = 17          ; VDU 17, n: COLOUR n; n + COLOUR_BACKGROUND for the background
+VDU_GCOL          = 18          ; VDU 18, mode, colour
+VDU_PALETTE       = 19          ; VDU 19, logical, physical, 0, 0, 0
+VDU_DISABLE       = 21          ; ignore everything sent to the screen until VDU_ENABLE
+VDU_MODE          = 22
+VDU_DEFINE        = 23          ; VDU 23, 0, register, value, 0, 0, 0, 0, 0, 0: a CRTC register
+VDU_PLOT          = 25          ; VDU 25, k, x; y;
+VDU_RESET_WINDOWS = 26
+VDU_TEXT_WINDOW   = 28          ; VDU 28, left, bottom, right, top
+VDU_TAB           = 31          ; VDU 31, x, y
+VDU_DELETE        = 127         ; back a character and blank it
+COLOUR_BACKGROUND = &80
+
+; PLOT numbers.
+PLOT_MOVE_RELATIVE = 0
+PLOT_DRAW_RELATIVE = 1
+PLOT_MOVE          = 4
+
 ; OSWORD &7F: hand a raw command to the 8271 floppy disc controller via DFS.
 OSWORD_DISC_COMMAND = &7F
 
