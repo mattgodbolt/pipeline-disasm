@@ -1820,16 +1820,22 @@ NEXT
     RTS
 
 ; Clip a picture to the view across: which of its 4 columns, from character
-; x = X, are in the view's 32 from view_x? Character positions wrap round at
-; 256, the map's width, so a view_x from &E2 up is a view running off the
-; map's right edge, or from &F1, one hanging off its left edge.
+; x = X, are in the view's 32 from view_x? Positions wrap round at the map's
+; width, so view_x says which of three kinds of view it is (game.6502inc): on
+; the map; from VIEW_PAST_END, running off its right edge; from
+; VIEW_BEFORE_START, hanging off its left edge. A picture whose left edge is
+; off the map counts as out of view, which is exact for everything on the map:
+; only burn_up's flames go off it (see there). And with view_x at
+; VIEW_PAST_END itself (the player in column 60), a flame at &FF (view column
+; 29) isn't cut at the view's right edge, so its last column lands in view
+; column 0 a character row down.
 ; Out: sprite_skip_x, sprite_columns, sprite_screen; or if none of the
 ; picture is in view, returns from the caller (draw_sprite) instead.
 ; Clobbers: A, clip_position.
 .clip_sprite_x
     STX clip_position
     LDA view_x
-    CMP #&E2                            ; the view runs off an edge of the map?
+    CMP #VIEW_PAST_END                  ; the view runs off an edge of the map?
     BCS clip_sprite_x_wrapped
     CMP clip_position                   ; starts left of the view?
     BCS clip_sprite_left
@@ -1856,13 +1862,14 @@ NEXT
     PLA
     RTS
 
-; The same for rows, from character y = Y and view_y.
+; The same for rows, from character y = Y and view_y. (burn_up's flames go
+; down only to view_y + 28, so none hangs off the bottom at VIEW_PAST_END.)
 ; Out: sprite_skip_y, sprite_rows and sprite_screen_high (added to it); or
 ; returns from draw_sprite.
 .clip_sprite_y
     STY clip_position
     LDA view_y
-    CMP #&E2
+    CMP #VIEW_PAST_END
     BCC clip_sprite_y_on_map
     JMP clip_sprite_y_wrapped
 .clip_sprite_left
@@ -1884,7 +1891,7 @@ NEXT
     STA sprite_columns
     BCS clip_sprite_x_screen
 .clip_sprite_x_wrapped
-    CMP #&F1                            ; hanging off the left edge?
+    CMP #VIEW_BEFORE_START              ; hanging off the left edge?
     BCS clip_sprite_x_far_left
     CMP clip_position
     BCS clip_sprite_left
@@ -1934,7 +1941,7 @@ NEXT
     STA sprite_rows
     BCS clip_sprite_y_screen
 .clip_sprite_y_wrapped
-    CMP #&F1
+    CMP #VIEW_BEFORE_START
     BCS clip_sprite_y_far_up
     CMP clip_position
     BCS clip_sprite_top
@@ -2808,6 +2815,10 @@ WELL_DONE_SHADOW = &0C
     RTS
 
 ; The game is over: flames fill the view from the player outwards, crackling.
+; Near the map's edges, a flame whose top left is off the map isn't drawn
+; (draw_sprite takes it to be out of view), so the lava beyond the map's left
+; and top edges keeps its own picture, and flames reach only 3 characters past
+; its right and bottom edges.
 ; Clobbers: A, X, Y, view_sub_x, view_sub_y, steps, count_across, work0 and
 ; the sprite variables.
 .burn_up
@@ -5826,8 +5837,9 @@ ASSERT P% - action_table = 2 * (ACTION_STOP + 1)
     EQUB ACTION_RIGHT, ACTION_LEFT, ACTION_DOWN, ACTION_UP
 
 ; Each trigger's place, x and y, copied in by setup_level over what was here:
-; bytes left in the file, not code. Their arguments (trigger_args) follow,
-; past the end of what the loader copies, up to IO.
+; bytes left in the file, not code (the start of a strip of LDATA's picture:
+; see leftover). Their arguments (trigger_args) follow, past the end of what
+; the loader copies, up to IO.
 .trigger_places
     EQUB &0C, &0C, &19, &F0, &C0, &80, &33, &77
     EQUB &FF, &FF, &FF, &00, &00, &FF, &FF, &FF
@@ -5841,7 +5853,15 @@ ASSERT P% - action_table = 2 * (ACTION_STOP + 1)
 ASSERT main_code_end = trigger_args AND trigger_args + 4 * PUZZLES = io_start
 ENDSECTION
 
-; Past the end of what the loader copies: leftovers, never used.
+; Past the end of what the loader copies: leftovers, never used. From
+; trigger_places on, the file's last &93 bytes (file offsets &206D-&20FF) are
+; LDATA's bytes at the same offsets: a strip of the Level Designer's title
+; picture, character row 18, columns 13-31 of its 64, through the tops of
+; "esig" in "Designer". The hidden files went onto the disc a whole number of
+; sectors each from one buffer, which had held LDATA: H.GAME's own bytes end
+; at offset &206C, and the rest of its last sector is what LDATA left there.
+; H.GRAPH, next, ends with H.GAME's last bytes and the same strip, and
+; H.LEVDES, last, with H.GRAPH's.
 .leftover
     EQUB &88, &88, &88, &00, &00, &FF, &FF, &FF, &00, &00, &00, &00, &00, &FF, &FF, &FF
     EQUB &00, &00, &10, &F0, &70, &30, &98, &30, &70, &F0, &F0, &F0, &F0, &F0, &F0, &F0

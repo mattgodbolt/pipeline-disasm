@@ -50,6 +50,52 @@ ICON_COLUMN_BYTES    = PICTURE_COLUMN_BYTES / 2
 VIEW_CELLS           = SCREEN_COLUMNS / CHARS_PER_CELL
 ASSERT PICTURE_BYTES = LARGE_SPRITE_SIZE AND ICON_BYTES = SMALL_SPRITE_SIZE
 
+; Positions in character cells (view_x and view_y, the view's top left;
+; monsters; sprites): 64 map cells of 4 make 256, so a position is a byte, and
+; a view off the map's left or top edge has a view_x or view_y from &FF down.
+MAP_CHARS = MAP_SIZE * CHARS_PER_CELL
+ASSERT MAP_CHARS = &100
+
+; The views the game makes. Standing still, the view is half a cell into a
+; map cell (place_player) and the player PLAYER_CHAR characters into the view;
+; the player never leaves the map (stepping into lava or fire kills without
+; the step, and a pipe kills with lava ahead), so the view goes from
+; VIEW_FIRST, -PLAYER_CHAR (the player in the map's first column or row), up
+; through 0 to VIEW_LAST (its last), passing through every value between
+; while walking: &F2-&FF and &00-&EE, but never &EF-&F1. The title and
+; backpack screens put it at CHARS_PER_CELL / 2.
+VIEW_FIRST = MAP_CHARS - PLAYER_CHAR
+VIEW_LAST  = MAP_CHARS - CHARS_PER_CELL - PLAYER_CHAR
+
+; clip_sprite_x and clip_sprite_y sort a view into three kinds by its view_x
+; (or view_y): below VIEW_PAST_END, a view on the map, compared plainly; from
+; VIEW_PAST_END, a view running off the map's right (bottom) edge, where
+; anything past view_x is in view, its far edge not checked; from
+; VIEW_BEFORE_START, one hanging off the left (top) edge, view_x being
+; negative, where nothing is before it.
+;
+; For everything on the map (positions 0 to MAP_CHARS - CHARS_PER_CELL) both
+; are exact, and so would some others be (checked by running draw_sprite for
+; every position at every view the game makes, docs/notes/game.md):
+; - VIEW_PAST_END could be anything from MAP_CHARS - SCREEN_COLUMNS (&E0),
+;   from where the view reaches the map's last column, so the far edge needn't
+;   be checked, to MAP_CHARS - (SCREEN_COLUMNS - CHARS_PER_CELL) (&E4), up to
+;   where a plain view's view_x + 28 doesn't carry. &E2, the middle, is the
+;   first view standing still whose last half cell is off the map. Lower, a
+;   sprite in the map's last column would have its columns past the view's
+;   right edge drawn at its left edge, a row down; higher, sprites near the
+;   map's end would vanish while walking.
+; - VIEW_BEFORE_START could be anything from VIEW_LAST + 1 to VIEW_FIRST,
+;   the views between never being made; &F1 is one short of VIEW_FIRST.
+;   Lower, a view at the map's right edge would show sprites from its left
+;   edge in the lava past it; higher, a view at the left edge would lose the
+;   sprites there.
+VIEW_PAST_END     = (MAP_SIZE - VIEW_CELLS) * CHARS_PER_CELL + CHARS_PER_CELL / 2
+VIEW_BEFORE_START = VIEW_FIRST - 1
+ASSERT MAP_CHARS - SCREEN_COLUMNS <= VIEW_PAST_END AND VIEW_PAST_END <= MAP_CHARS - (SCREEN_COLUMNS - CHARS_PER_CELL)
+ASSERT VIEW_LAST < VIEW_BEFORE_START AND VIEW_BEFORE_START <= VIEW_FIRST
+ASSERT SCREEN_ROWS = SCREEN_COLUMNS      ; the same numbers serve view_y
+
 ; Pictures by number from io_tiles: the cell types' (0-15), the object icons
 ; four to a picture (16-19), the player facing each way (20-23), and the
 ; second pictures of four cell types (24-27). The monsters are drawn with cell

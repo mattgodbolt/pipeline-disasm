@@ -363,3 +363,124 @@ drop_two_and_return, envelope_1 to envelopes. The WELL DONE bitmap is
 drawn as rows of blocks, and ASSERTs pin what the code relies on (the
 objects over game_start's 32 bytes, trigger data running up to io_start,
 the swap's range, the BIT masks' operands).
+
+## 2026-10-03 23:41 — Clipping sprites at the map's edges (&E2 and &F1)
+
+clip_sprite_x and clip_sprite_y compared view_x and view_y with bare &E2
+and &F1. They're now `VIEW_PAST_END` and `VIEW_BEFORE_START` in
+game.6502inc, with `MAP_CHARS`, `VIEW_FIRST` and `VIEW_LAST`, and ASSERTs
+that hold them inside the ranges below. Both values are exact for everything
+on the map; the only thing that shows is in the game-over flames.
+
+The views the game makes:
+
+- Standing still, place_player puts the view half a cell into a map cell
+  (`view_cell * 4 + 2`) with the player PLAYER_CHAR (14) characters in, so
+  view_x = 4 * player_x - 14. Walking scrolls a character at a time through
+  every value between.
+- The player never leaves the map: `move` doesn't step into lava or fire (it
+  kills where the player stands), and in a pipe `pipe_check_ahead` kills
+  with lava ahead. Off the map reads as lava, so view_x runs from &F2 (the
+  player in column 0) round through 0 to &EE (column 63), and &EF-&F1 never
+  happen. The same goes for view_y. Level 1 starts at the right edge
+  (view_x &EA).
+
+What the three cases do (positions are bytes, 256 to the map):
+
+- view_x below &E2: compared plainly, right edge view_x + 28 (+ 3). Right
+  while view_x + 28 doesn't carry (to &E3) for anything at &FC or less.
+- &E2 up to &F0: running off the right edge. Anything right of view_x is
+  taken to be wholly in view, the right edge not checked; right once the
+  view reaches the map's last column (from &E0). Anything left of view_x is
+  clipped or dropped as usual, so the map's first columns don't show in the
+  lava past its end.
+- &F1 up: hanging off the left edge (view_x negative). No left check at all;
+  the right edge is view_x + 31 - 256.
+
+So &E2 could be anything from &E0 to &E4 (it's the middle, and the first
+standing view whose last half cell is off the map: view cell 56), and &F1
+anything from &EF to &F2 (it's one short of the leftmost view). Neither is
+off by one.
+
+How it was checked:
+
+- A small 6502 interpreter (Python, not in the repo) ran draw_sprite from
+  build/files/H.GAME, copied to its run-time address as the loader does, for
+  every view_x the game makes and every X from 0 to &FC (Y in the middle),
+  and the same down, comparing the screen bytes written with an exact clip
+  of the view: all 64009 cases each way match. Patching the two CMP
+  operands, the matches hold for &E0-&E4 and &EF-&F2 and fail outside: at
+  &DF a sprite at &FC with view_x &DF puts a column at the view's left edge
+  a row down; at &E5 a view_x of &E4 loses sprites from &E5 up; at &EE the
+  view at &EE draws X 0-&D in the lava and loses &EB-&FC; at &F3 the view at
+  &F2 loses X 0-&11 and draws &EF-&FC in the lava.
+- The same in the game, with play.mjs (screenshots in build/shots/, not
+  committed). A monster put at (0, 35) with level 1's start view at the
+  right edge, its cell made fire and the monsters' food made 9 so it doesn't
+  eat the lava off the map:
+
+      node tools/play.mjs --disc build/pipeline.ssd 'game; wait 7; poke 2640 00 8C 01 39; poke 25A6 79; poke 2A11 8E; bkey SPACE; wait 9; shot build/shots/phantom-shipped.png'
+
+  shows nothing past the map's edge; with `poke D1C EA` after `wait 7`
+  (VIEW_BEFORE_START lowered to &EA) the monster from the left edge is drawn
+  in the lava at the right (phantom-patched-F1-to-EA.png). With the player
+  at column 59 (view_x &DE), a floor patch and a monster going up and down
+  column 63:
+
+      node tools/play.mjs --disc build/pipeline.ssd 'game; wait 7; poke 25A0 37 10; poke 25A6 79; poke 2640 FC 50 02 00; poke 3108 0 0 0 0; poke 3128 0 0 0 0; poke 3148 0 0 0 0; poke 3168 0 0 0 0; poke 3188 0 0 0 0; poke 31A8 0 0 0 0; poke 31C8 0 0 0 0; poke 31E8 0 0 E0 0; bkey SPACE; wait 9; shot build/shots/overhang-shipped.png'
+
+  draws it cut to two columns at the right edge; with `poke CD3 DC`
+  (VIEW_PAST_END lowered to &DC) its other two columns appear at the left
+  edge a row down (overhang-patched-E2-to-DC.png).
+
+What shows: only burn_up draws off the map. Its flames fill a square round
+the player regardless of the map (X from view_x to view_x + 29, Y from
+view_y - 1 to view_y + 28), and a flame whose top left is past the map's
+edge counts as out of view. So at the left and top edges the lava stays as
+it was, and at the right and bottom the flames reach 3 characters past the
+edge (a flame at &FF drawn whole):
+
+    node tools/play.mjs --disc build/pipeline.ssd 'game; wait 7; bkey SPACE; wait 8; bdown SHIFT; bkey ESCAPE; bup SHIFT; until 125F; shot build/shots/burn-right-edge.png'
+    node tools/play.mjs --disc build/pipeline.ssd 'game; wait 7; poke 25A0 FD FE; bkey SPACE; wait 8; bdown SHIFT; bkey ESCAPE; bup SHIFT; until 125F; shot build/shots/burn-top-left.png'
+
+(SHIFT+Escape ends the game; &125F is burn_up's RTS. Matching each view cell
+against the pictures after the first of these: flames to column 24, lava
+from 25, with the map's last column at 21.) One slip: with view_x exactly &E2 (the
+player in column 60) a flame at X = &FF is view column 29, and with the
+right edge unchecked its fourth column lands in view column 0 a row down.
+Watched in jsbeeb (start at column 60, a hook on draw_sprite diffing screen
+memory round each flame at &FF): a flame at (&FF, &96) changed view cells
+rows 24-27 columns 29-31 and rows 25-28 column 0. It happens in most game
+overs there (about 3 of the last ring's 100 flames) but is lost among the
+flames. Rows can't do it: flames go down only to view_y + 28.
+
+## 2026-10-03 23:43 — H.GAME's leftover is a strip of LDATA's picture
+
+Correcting the first section ("it looks like the tail of some graphics"):
+H.GAME's last &93 bytes, &506D-&50FF (file offsets &206D-&20FF: the 64
+bytes the loader copies as trigger_places, then the uncopied &50AD-&50FF),
+are LDATA's bytes at the same file offsets. LDATA is screen memory from
+&3400 in the Level Designer's 64-column MODE 1, so they're character row 18,
+columns 13 (from its sixth line) to 31: a band through the tops of "esig" in
+"Designer", continuous with the picture round it.
+
+- Searching every built file and the whole .ssd for runs of these bytes
+  (10 or more) finds the whole &93 in LDATA and H.GRAPH, both at offset
+  &206D, and nothing longer than 18 in any other file (24 elsewhere in
+  LDATA, the picture repeating itself). `cmp -l build/files/H.GAME
+  build/files/LDATA | tail -1` says the last difference is byte 8301 (offset
+  &206C); they agree from &206D to H.GAME's end.
+- `cmp -l build/files/H.GRAPH build/files/H.GAME | tail -1`: byte 8236, so
+  H.GRAPH's last &D4 bytes (its leftover, &3ADC-&3BAF, from offset &202C)
+  are H.GAME's at the same offsets: the end of the game's code
+  (error_handler_done's last bytes, trigger_actions, action_table,
+  reverse_moves; &232C-&236C as it runs) and then the same strip of LDATA.
+  docs/notes/levdes.md already has H.LEVDES's last &E1 bytes as H.GRAPH's.
+- So the three hidden files went onto the disc, a whole number of sectors
+  each, from one buffer, which had held LDATA: H.GAME (own bytes to offset
+  &206C), then H.GRAPH (to &202B), then H.LEVDES (to &1E1E), each carrying
+  what the one before left in its last sector. The match is by file offset,
+  not address (LDATA loads at &3400, H.GAME at &3000, H.GRAPH at &1AB0).
+- Drawing it: `tools/beebscreen.py 1 build/files/LDATA OUT.png --columns 64
+  --offset 400 --palette 0,4,3,1` draws the picture; inverting LDATA's
+  &206D-&20FF first shows where the strip is.
