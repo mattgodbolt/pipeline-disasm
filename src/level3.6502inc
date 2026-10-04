@@ -46,7 +46,7 @@ level_3 = {
         {"", PUZZLE_PLACE_BLOCK + PUZZLE_USES_OBJECT, 46, 24, &00, &2E, &17, &EA},
         ; 3: the cell at (43, 36) moves left; when facing up at a wall (7)
         {"", PUZZLE_MOVE_BLOCK + PUZZLE_USES_OBJECT, 43, 37, &00, &2B, &24, &E2},
-        ; 4: pushes the cell in front back; when facing a wall (#)
+        ; 4: pushes the cell in front backwards; when facing a wall (#)
         {"", PUZZLE_MOVE_NEXT_BLOCK + PUZZLE_USES_OBJECT + PUZZLE_OFF, IGNORE, IGNORE, &00, &2A, &0F, &45},
         ; 5: sets the clock to 230
         {"", PUZZLE_SET_LEVELS + PUZZLE_USES_OBJECT, IGNORE, IGNORE, &01, &E6, &00, &06},

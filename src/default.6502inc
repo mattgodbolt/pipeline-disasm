@@ -1261,10 +1261,16 @@ DEFAULT_NAME_LENGTH = 12
 ; The bytes of slots &00-&27, the graphics, as they start a graphics file and
 ; end a mission. (FUNCTIONs rather than macros: baron's symbol dump keeps a
 ; function's frame twice when it's called inside a macro.)
-FUNCTION default_graphics() = CONCAT(mode5_pictures(default_tiles), mode5_pictures(default_icons), mode5_pictures(default_player), mode5_pictures(default_alternates))
+FUNCTION default_graphics() = FLATTEN({
+    mode5_pictures(default_tiles),
+    mode5_pictures(default_icons),
+    mode5_pictures(default_player),
+    mode5_pictures(default_alternates)
+})
 
 ; The bytes of MISSION's names: slot &28 and the object names, as they end a
 ; graphics file and start a mission.
 FUNCTION default_names()
-    ASSERT RANK(CODES(default_object_names)) = 2 AND LEN(default_object_names[0]) = DEFAULT_NAME_LENGTH, "an object's name is 12 characters"
-= CONCAT(mode5_pictures({default_no_object}), FLATTEN(CODES(default_object_names)))
+    names = CODES(default_object_names)
+    ASSERT RANK(names) = 2 AND LEN(names[0]) = DEFAULT_NAME_LENGTH, "an object's name is 12 characters"
+= CONCAT(mode5_pictures({default_no_object}), FLATTEN(names))

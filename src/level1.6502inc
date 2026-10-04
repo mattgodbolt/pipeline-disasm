@@ -67,7 +67,8 @@ level_1 = {
         {"Real Start", PUZZLE_TELEPORT + PUZZLE_REUSABLE, IGNORE + 24, 61, &00, &1B, &1A, &EA},
         ; 14: turns on trigger 15
         {"Monleap on", PUZZLE_TURN_ON + PUZZLE_REUSABLE, 1, 59, &0F, &0F, &0F, &00},
-        ; 15: pushes the cell in front to the left; when facing fire (*)
+        ; 15: pushes the cell in front to the left; when facing fire (*). (The
+        ; designer would show &02 as backwards, but the game turns it left.)
         {"Monleap   ", PUZZLE_MOVE_NEXT_BLOCK + PUZZLE_OFF + PUZZLE_REUSABLE, IGNORE, IGNORE, &02, &00, &00, &5E},
         ; 16: turns off triggers 15 and 21
         {"Monleap of", PUZZLE_TURN_OFF + PUZZLE_REUSABLE, 31, 30, &0F, &15, &0F, &00},

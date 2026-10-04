@@ -72,7 +72,7 @@ level_2 = {
         {"", PUZZLE_PLACE_MONSTER + PUZZLE_REUSABLE, 29, 29, &80, &36, &52, &80},
         ; 16: turns on trigger 17; when facing left
         {"", PUZZLE_TURN_ON + PUZZLE_REUSABLE, 29, 29, &11, &11, &11, &80},
-        ; 17: pushes the cell in front on; when facing a crate (c)
+        ; 17: pushes the cell in front forwards; when facing a crate (c)
         {"", PUZZLE_MOVE_NEXT_BLOCK + PUZZLE_OFF + PUZZLE_REUSABLE, IGNORE + 32, IGNORE + 32, &04, &A0, &A0, &66},
         ; 18: turns off trigger 17; when facing right
         {"", PUZZLE_TURN_OFF + PUZZLE_REUSABLE, 29, 29, &11, &11, &11, &90},

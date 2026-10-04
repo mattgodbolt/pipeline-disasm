@@ -186,7 +186,9 @@ FUNCTION level_names_bytes(level)
 FUNCTION level_fields(level)
     code = level[0]
     triggers = level[5]
-    ASSERT LEN(level[3]) = OBJECTS AND LEN(level[4]) = MONSTERS AND LEN(triggers) = PUZZLES, "a level has 8 objects, 4 monsters and 32 triggers"
+    ASSERT LEN(level[3]) = OBJECTS, "a level has 8 objects"
+    ASSERT LEN(level[4]) = MONSTERS, "a level has 4 monsters"
+    ASSERT LEN(triggers) = PUZZLES, "a level has 32 triggers"
 = {
     code_byte(code[0..1]), code_byte(code[2..3]), code_byte(code[4..5]),
     (0..3) * 16 + level[1],
@@ -202,8 +204,14 @@ FUNCTION level_fields(level)
 ; Map rows' cell types.
 FUNCTION map_cells(rows) = FIND(CODES(MAP_KEY), CODES(rows))
 
+; Packing the map's rows in pairs gives a row of 64 bytes for each pair;
+; this is where each byte of the map, which goes a column at a time, is
+; among those.
+FUNCTION map_column_order() = ((0..MAP_BYTES-1) MOD MAP_COLUMN_BYTES) * MAP_SIZE + (0..MAP_BYTES-1) DIV MAP_COLUMN_BYTES
+
 ; The map's bytes: the even rows' cells in the high nibbles and the odd rows'
 ; in the low, gathered a column at a time.
 FUNCTION level_map_bytes(level)
-    ASSERT LEN(level[6]) = MAP_SIZE AND RANK(CODES(level[6])) = 2 AND LEN(level[6][0]) = MAP_SIZE, "a map is 64 rows of 64 cells"
-= FLATTEN(map_cells(level[6][0..2..]) * 16 + map_cells(level[6][1..3..]))[((0..MAP_BYTES-1) MOD MAP_COLUMN_BYTES) * MAP_SIZE + (0..MAP_BYTES-1) DIV MAP_COLUMN_BYTES]
+    ASSERT LEN(level[6]) = MAP_SIZE AND RANK(CODES(level[6])) = 2, "a map is 64 rows of 64 cells"
+    ASSERT LEN(level[6][0]) = MAP_SIZE, "a map is 64 rows of 64 cells"
+= FLATTEN(map_cells(level[6][0..2..]) * 16 + map_cells(level[6][1..3..]))[map_column_order()]
