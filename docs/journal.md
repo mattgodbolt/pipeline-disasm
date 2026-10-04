@@ -659,3 +659,21 @@ Details in the newest sections of `docs/notes/game.md` and
   working copy (restored from git). Matt is fairly sure which tune it is.
   It isn't named anywhere in the repository, so agents reading it don't
   trip the same error (note in docs/notes/basic.md and at MENU's `.tune`).
+
+## 2026-10-04 09:39 — Merged: monsters at the map's edge
+
+- Confirmed: `cell_at_checked` makes up lava for any cell off the map, so a
+  monster whose food is lava (all four shipped levels: `monster_food` &7A
+  or &AA) eats its way out of an edge for 26 points. `set_cell` writes
+  nothing past the edge, so nothing outside the map is touched (every write
+  logged in jsbeeb). To a monster with other food the edge is a wall.
+- The 26: `score_monster` asks for 25 and `add_points` runs on into
+  `add_point`.
+- In play it doesn't happen: a model of the monster logic, matched to
+  jsbeeb think for think, sends no shipped level's monster (nor any a
+  trigger places) off the map in 3000 thinks. Possible in principle if the
+  player changes a path; not tried.
+- Found: level 2's monster 0 starts on floor, not fire, so it's "gone" at
+  the first think and the level starts 26 points up (seen in jsbeeb).
+  Reusable trigger 6 may score it again each time (code only).
+- Notes in docs/notes/game.md; the edge test script is kept outside the repo.
