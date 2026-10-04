@@ -327,3 +327,48 @@ picture, LDATA) and PL's encrypted bytes, which a test ties to its source.
   into `os.6502inc`; the game's own names for the error pointer and Escape
   flag now use the shared ones. `docs/baron-feedback.md` collects every
   baron issue and wish so far.
+
+## 2026-10-03 21:40 — Phase 2: one description per thing, and reviews
+
+Everything is source; now it gets better rather than bigger. Four agents in
+parallel worktrees, partitioned by file so they can't collide:
+
+- IO built as MISSION builds it: the default graphics set and each level
+  described once (DEFAULT and IO share the pictures; LEVEL1 and IO's level 0
+  share a level description), instead of the same data drawn twice in two
+  notations. It may add names to io/level/sprites includes but not rename
+  any that code uses.
+- A critical review of each big program (the game, the Level Designer, the
+  Graphics Designer): check every comment against the code (and the
+  emulator where unsure), name the magic numbers (directions, cell types,
+  flags, geometry, characters via `ascii()`), tidy structure, and record
+  corrections. A sample of the game's source showed why: sound annotation,
+  but comparisons like `CMP #&01` for a direction.
+
+## 2026-10-03 22:40 — Merged: IO, DEFAULT and LEVEL1 from one description each
+
+Details in `docs/notes/io.md`.
+
+- The default graphics set is described once (`src/default.6502inc`: 41
+  pictures as pixel rows, 15 names) and DEFAULT and IO's three pieces are
+  emitted from it. Each of the four levels is described once
+  (`src/level1.6502inc` to `level4.6502inc`: code, palette, setup, a row per
+  object, monster and trigger, the map as 64 strings), in a format defined
+  once (`src/leveldata.6502inc`, from MISSION's field sizes); LEVEL1 and IO
+  are both built from them, IO interleaving the four levels' fields as
+  MISSION does. `default.6502` and `level1.6502` are a few lines each now.
+- IO's slack on the disc is DEFAULT's bytes &E00-&E2C: MISSION loads the
+  graphics file at the mission's graphics offset, so its names run past the
+  mission's end and the save picks up what follows. The mission text
+  appears nowhere else.
+- Level 1's trigger 15 stores &02 for "push the cell in front": the designer
+  would show that as backwards, but the game turns it anticlockwise.
+- The symbol dump shrank from 1.44 MB to 0.83 MB by making data emitters
+  top-level FUNCTION calls and vectorising per-element loops. Confirmed here:
+  every FUNCTION leaves a null `@` frame in each file including it, and a
+  call inside a MACRO adds another (`docs/symbols-feedback.md`).
+- Left for later: `tools/graphics.py asm` still writes the old picture
+  notation; the Graphics Designer's pictures could use `mode5_pictures`;
+  `disc.toml`'s IO slack could come from DEFAULT; `TILE_*` (designer) and
+  `CELL_*` (game) name the same values differently. The three reviewers were
+  told to merge main and use the shared names.

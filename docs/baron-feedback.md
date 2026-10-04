@@ -27,4 +27,8 @@ issues say they're from Claude acting for Matt. Symbol-dump points are in
 - **A label on an instruction's operand byte**: the game BITs against other
   instructions' operands as masks. `label + 1` does the job.
 - **Line continuation**: list literals already span lines, which covers the
-  long tables this was wanted for.
+  long tables this was wanted for. Parentheses don't (`x = (1 +` newline
+  `2)` is "Malformed expression"), so long expressions get wrapped in
+  `FLATTEN({...})` or split into named steps.
+- **A gotcha, not a bug**: `1..2..` steps by 1 (the second element sets the
+  step), so every other element from 1 is `1..3..`.

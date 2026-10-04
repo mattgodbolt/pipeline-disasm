@@ -100,16 +100,6 @@ PLOT_MOVE_RELATIVE = 0
 PLOT_DRAW_RELATIVE = 1
 PLOT_MOVE          = 4
 
-; The physical colours.
-COLOUR_BLACK   = 0
-COLOUR_RED     = 1
-COLOUR_GREEN   = 2
-COLOUR_YELLOW  = 3
-COLOUR_BLUE    = 4
-COLOUR_MAGENTA = 5
-COLOUR_CYAN    = 6
-COLOUR_WHITE   = 7
-
 ; 6845 CRTC register 10: the cursor's start line, and bits 5-6 its blink
 ; mode, where &20 turns it off.
 CRTC_CURSOR_START = 10

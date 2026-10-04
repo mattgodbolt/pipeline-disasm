@@ -2,13 +2,15 @@
 ; mission's four levels, packed to end at &5800 where the game keeps the map
 ; of the level being played. MISSION (the Mission Generator) saves it with
 ;   l0addr=&5800-numlev*size-grfs-attrs-miss-names
-; and the sizes below are its numlev, size, grfs, attrs, miss and names.
+; and the sizes below are its numlev, size, grfs, attrs, miss and names; a
+; level's fields and map are as leveldata.6502inc has them.
 ; H.GAME loads it with OSFILE and reads it at these addresses, so they're
 ; shared by src/io.6502 (which lays IO out) and src/hidden_game.6502.
+INCLUDE "leveldata.6502inc"
 
 IO_LEVELS        = 4
-IO_LEVEL_FIELDS  = &11F        ; per level, the fields below, interleaved
-IO_MAP_SIZE      = &800        ; per level, 64 x 64 cells of 4 bits
+IO_LEVEL_FIELDS  = LEVEL_FIELDS_SIZE    ; per level, the fields, interleaved
+IO_MAP_SIZE      = MAP_BYTES            ; per level, 64 x 64 cells of 4 bits
 IO_LEVEL_SIZE    = IO_LEVEL_FIELDS + IO_MAP_SIZE
 IO_GRAPHICS_SIZE = &E00        ; 28 pictures of 128 bytes
 IO_ATTRS_SIZE    = 5
@@ -39,46 +41,24 @@ io_throw_distance   = io_attrs + 3  ; how far a thrown object flies, in cells
 io_locked           = io_attrs + 4  ; negative: a finished mission shows an entry code
 
 ; The levels' fields, each stored as IO_LEVELS consecutive entries (level 0's,
-; then level 1's...), in this order. The Level Designer's files hold one
-; level's fields in the same order, and MISSION interleaves them.
+; then level 1's...): field f of level s is at
+;   io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[f] + s * LEVEL_FIELD_SIZES[f]
+; (MISSION's L% + numlev * pnt + S% * ext).
 io_levels             = io_attrs + IO_ATTRS_SIZE
-io_edit_code_high     = io_levels + 0     ; 1 byte each: the level's edit code,
-io_edit_code_middle   = io_levels + 4     ; which MISSION asks for before it
-io_edit_code_low      = io_levels + 8     ; saves an edited level
-io_palettes           = io_levels + 12    ; 4 bytes each: logical << 4 | physical
-io_level_setup        = io_levels + 28    ; 8 bytes each: see below
-io_level_objects      = io_levels + 60    ; 32 each: 8 objects of 4 bytes
-io_level_monsters     = io_levels + 188   ; 16 each: 4 monsters of 4 bytes
-io_level_trigger_flags = io_levels + 252  ; 32 each: a byte per trigger
-io_level_trigger_places = io_levels + 380 ; 64 each: x, y per trigger
-io_level_trigger_args_0 = io_levels + 636 ; 64 each: triggers 0-15, 4 bytes each
-io_level_trigger_args_1 = io_levels + 892 ; 64 each: triggers 16-31, 4 bytes each
-
-; A level's setup bytes.
-LEVEL_START_X     = 0
-LEVEL_START_Y     = 1
-LEVEL_TO_COLLECT  = 2   ; things to collect before the exit opens
-LEVEL_TIME        = 3   ; the clock's starting value
-LEVEL_EXIT_X      = 4
-LEVEL_EXIT_Y      = 5
-LEVEL_MONSTER_FOOD = 6  ; low nibble: a cell monsters eat; high: what they leave
-LEVEL_ANIMATE     = 7   ; which of the animated cells animate
+io_edit_code_high     = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[0]  ; the edit code, which MISSION
+io_edit_code_middle   = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[1]  ; asks for before it saves an
+io_edit_code_low      = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[2]  ; edited level
+io_palettes           = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[3]  ; 4 each: logical << 4 | physical
+io_level_setup        = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[4]  ; 8 each: LEVEL_*
+io_level_objects      = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[5]  ; 32 each: 8 objects of 4 bytes
+io_level_monsters     = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[6]  ; 16 each: 4 monsters of 4 bytes
+io_level_trigger_flags = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[7] ; 32 each: a byte per trigger
+io_level_trigger_places = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[8] ; 64 each: x, y per trigger
+io_level_trigger_args_0 = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[9] ; 64 each: triggers 0-15, 4 bytes each
+io_level_trigger_args_1 = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[10] ; 64 each: triggers 16-31
 
 ; The maps, 64 columns of 32 bytes: column x's cells y and y+1 share a byte,
-; even y in the high nibble.
-;
-; What the game makes of the cell types: 1-5, 8 and 9 are walls of different
-; shapes, and the rest are these. Off the map counts as lava.
-CELL_FLOOR        = 0
-CELL_CRATE        = 6     ; pushed, while the player has pushes left
-CELL_SULPHUR      = 7     ; to be collected, by stepping on it
-CELL_WALL         = 8     ; also what the exit counts as
-CELL_LAVA         = &A    ; deadly
-CELL_JUNCTION     = &B    ; pipes: a junction...
-CELL_PIPE_ACROSS  = &C    ; ...a pipe left and right...
-CELL_PIPE_DOWN    = &D    ; ...and up and down
-CELL_FIRE         = &E    ; deadly: monsters mark their cells with it
-CELL_OBJECT       = &F    ; an object (or the exit): see the level's objects
+; even y in the high nibble. The cell types are CELL_*.
 io_maps = io_levels + IO_LEVELS * IO_LEVEL_FIELDS
 
 ; The graphics, as the Graphics Designer saves them (DEFAULT's first &E00
