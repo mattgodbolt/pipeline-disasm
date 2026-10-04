@@ -327,3 +327,20 @@ picture, LDATA) and PL's encrypted bytes, which a test ties to its source.
   into `os.6502inc`; the game's own names for the error pointer and Escape
   flag now use the shared ones. `docs/baron-feedback.md` collects every
   baron issue and wish so far.
+
+## 2026-10-03 21:40 — Phase 2: one description per thing, and reviews
+
+Everything is source; now it gets better rather than bigger. Four agents in
+parallel worktrees, partitioned by file so they can't collide:
+
+- IO built as MISSION builds it: the default graphics set and each level
+  described once (DEFAULT and IO share the pictures; LEVEL1 and IO's level 0
+  share a level description), instead of the same data drawn twice in two
+  notations. It may add names to io/level/sprites includes but not rename
+  any that code uses.
+- A critical review of each big program (the game, the Level Designer, the
+  Graphics Designer): check every comment against the code (and the
+  emulator where unsure), name the magic numbers (directions, cell types,
+  flags, geometry, characters via `ascii()`), tidy structure, and record
+  corrections. A sample of the game's source showed why: sound annotation,
+  but comparisons like `CMP #&01` for a direction.
