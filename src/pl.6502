@@ -1,6 +1,8 @@
 ; $.PL: &2FC bytes at sector &101, loaded and run at &0400. "Ian's cheat!":
 ; a hidden developer's tool, encrypted, that MENU runs only if W and T are
-; held as it starts (line 290: IF INKEY-36 AND INKEY-34 THEN */PL ...).
+; held down as it starts (line 290: IF INKEY-36 AND INKEY-34 THEN */PL
+; ...). It fills pages 4 to 6, BASIC's workspace, so there's no going back
+; to BASIC: it ends by resetting the machine or jumping into the game.
 ;
 ; What it does, once it has decrypted itself:
 ;
@@ -11,19 +13,23 @@
 ; 2. *LOADs the file - a level file as the Level Designer saves it, like
 ;    LEVEL1, at &25A1 - and checks the code against the three bytes the file
 ;    keeps at &26E1. A wrong code resets the machine.
-; 3. Lists the file's 32 puzzles: number, ten-character name, what the puzzle
-;    does (one of 16 actions) and whether it starts on or off. LEVEL1's code
-;    is 677636.
+; 3. Lists the level's 32 puzzles (what the Level Designer calls the
+;    triggers that make things happen in a level: walk onto one, or use an
+;    object there, and it acts): number, ten-character name, what the
+;    puzzle does (one of 16 actions) and whether it starts on or off.
+;    LEVEL1's code is 677636.
 ; 4. After a key, fills the screen with a fake BASIC "Bad program" error
 ;    until I, N, O and S are held down together; then beeps, *LOADs GAME and
 ;    pokes the game for a cheat before jumping into it at &3000: 31 lives,
 ;    any level to start on from the title screen, and no competition entry
-;    code at the end, so the cheat can't win one.
+;    code at the end (the game shows one after a locked mission such as
+;    the original, played through from level 1), so the cheat can't win
+;    one.
 ;
-; Step 4 can't work on this disc: GAME is now the &D9-byte stub loader at
-; &0900, not the game, so the jump finds no game at &3000 and the machine
-; resets. PL must date from before the game was hidden in uncatalogued
-; sectors. (Seen in jsbeeb: the listing works; the end resets.)
+; Step 4 can't work on this disc: GAME is a &D9-byte stub at &0900 that
+; reads the real game from sectors the catalogue doesn't list
+; (hidden_loader.6502inc), so the jump finds no game at &3000 and the
+; machine resets. PL must date from before the game was hidden that way.
 ;
 ; Against prying: everything after the decryptor is encrypted, with keys
 ; taken from the decryptor's own bytes; BRKV is pointed at the reset code,
@@ -42,7 +48,8 @@ INCLUDE "osconst.6502inc"
 INCLUDE "teletext.6502inc"
 INCLUDE "level.6502inc"
 
-; Zero page. BASIC's, but BASIC is never coming back.
+; Zero page. BASIC's, but BASIC is never coming back. (A number in
+; brackets is a size in bytes.)
 crypt_ptr = &70             ; (2) the decryptor's page pointer
 
 SECTION pl, filename="PL", org=&0400, load=&400, exec=&400
@@ -60,13 +67,13 @@ SECTION pl, filename="PL", org=&0400, load=&400, exec=&400
     STA crypt_ptr+1
     JSR OSBYTE                  ; *FX4,1: no cursor editing, so no copying off the screen
     LDX #2
-    ; BRKV := the reset entry, so any error (BRK) resets the machine.
+    ; Point BRKV at the reset entry, so any error (BRK) resets the machine.
     PLA
     STA BRKV+1
     LDA CPU_NMI_VECTOR, X       ; X=2: the reset entry's low byte
     STA BRKV
     LDA #OSBYTE_BREAK_EFFECT
-    JSR OSBYTE                  ; *FX200,2 (Y is 0 after *FX4, seen in jsbeeb):
+    JSR OSBYTE                  ; *FX200,2 (Y is 0, as *FX4 leaves it):
                                 ; BREAK clears memory
 
     ; Decrypt from `encrypted` to the end of page 6, a byte at a time:
@@ -108,35 +115,50 @@ key_bytes = pl.read_reset_high + 1
 
 
 ; ---------------------------------------------------------------------------
-; What `encrypted` decrypts to, starting with the BMI it completes. Not on
-; the disc: saved as PLDEC so tools/plcrypt.py can check the two agree.
+; What `encrypted` decrypts to. The section starts a byte early, at the
+; decryptor's last byte, a BMI opcode, because the first byte decrypted is
+; that BMI's offset. Not on the disc: saved as PLDEC so tools/plcrypt.py
+; can check the two agree.
 
 ; The level file the cheat reads is laid out as the Level Designer keeps it
 ; (level.6502inc: LEVEL1 on this disc is one): it lists the puzzles' names
 ; (level_names, level_name_ends), checks level_code (see check_code_byte), and
 ; shows each puzzle's action and whether it's PUZZLE_OFF (level_puzzle_types).
 
-; The game as it was when PL was written, a plain file loaded at &3000, and
-; the places the cheat pokes, as H.GAME holds them loaded at &3000 (the game
-; runs that code copied down to &0900 on; the names quoted are
-; hidden_game.6502's).
+; PL expects GAME to be the game itself, a plain file loaded and run at
+; &3000, as H.GAME is loaded before it copies its code down to &0900 and
+; on. The cheat pokes three places in it, given here as addresses in that
+; file, with the names hidden_game.6502 gives them:
+;
+; - game_set_lives: new_game's LDX #START_LIVES : STX lives. The LDX's
+;   operand becomes CHEAT_LIVES.
+; - game_entry_code_test: mission_done_screen's BEQ show_entry_code, which
+;   branches over a JMP wait_for_space. Its offset becomes 0, so both ways
+;   lead to the JMP and the competition entry code is never shown.
+; - game_clear_furthest_level: load_mission's STA furthest_level, which
+;   zeroes it. It becomes two NOPs.
+;
+; furthest_level (game_furthest_level here) is how far the title screen's
+; S key steps the starting level; the cheat sets it to CHEAT_FURTHEST_LEVEL,
+; the fourth level, so every level can be chosen, even after loading
+; another mission.
 GAME_START = &3000
-game_set_lives = &3FC6              ; new_game's LDX #START_LIVES : STX lives,
-CHEAT_LIVES = 31                    ; made LDX #31
-game_entry_code_test = &4874        ; mission_done_screen's BEQ show_entry_code over
-                                    ; JMP wait_for_space, made BEQ +0: no entry code
-game_clear_furthest_level = &4F31   ; load_mission's STA furthest_level, made NOPs
-game_furthest_level = &61           ; furthest_level, how far the title screen's S
-CHEAT_FURTHEST_LEVEL = 3            ; steps the start level: 3, the fourth
+game_set_lives = &3FC6
+CHEAT_LIVES = 31
+game_entry_code_test = &4874
+game_clear_furthest_level = &4F31
+game_furthest_level = &61
+CHEAT_FURTHEST_LEVEL = 3
 
-; Zero page, once decrypted. BASIC's, and the MOS's line input buffer for the
-; code goes right at the bottom.
+; Zero page, once decrypted: BASIC's, as BASIC is never coming back. The
+; code is read from the keyboard straight into the bottom of it. (A number
+; in brackets is a size in bytes.)
 typed_digits = &00          ; (CODE_DIGITS + 1) the code as typed, then CR
 digit_pair = &70            ; packing two digits into one byte
 entry_index = &70           ; the puzzle being listed
 key_index = &70             ; which of the unlock keys is being tested
 format_index = &71          ; next character of format_chars to print
-swapped = &72               ; check_code_byte's working
+swapped = &72               ; check_code_byte's scratch byte
 checks_left = &73           ; check_code_byte's count, a guard against patching
 code_bcd = &80              ; (CODE_BYTES) the code typed, as BCD
 
@@ -166,7 +188,8 @@ SECTION pl_decrypted, filename="PLDEC", org=pl.encrypted - 1
     CLI
     ; Wait for the key last pressed (W or T, held to get here) to be let go;
     ; then, with auto-repeat off and the buffer flushed, nothing still held
-    ; gets typed. (Seen in jsbeeb: letting go of T alone is enough.)
+    ; gets typed. Letting go of that one key is enough: the other can still
+    ; be held.
 .wait_keys_up
     LDA MOS_KEY_PRESSED
     BMI wait_keys_up
@@ -189,7 +212,8 @@ SECTION pl_decrypted, filename="PLDEC", org=pl.encrypted - 1
     LDA #OSWORD_READ_LINE
     JSR OSWORD
 
-    ; Pack the six digits into three BCD bytes, first pair first.
+    ; Pack the six digits into three BCD bytes, two digits to a byte, the
+    ; first pair into code_bcd+0. The loop works from the last pair back.
     LDX #CODE_DIGITS - 2
     LDY #CODE_BYTES - 1
 .pack_digits
@@ -227,11 +251,11 @@ SECTION pl_decrypted, filename="PLDEC", org=pl.encrypted - 1
     JSR OSBYTE                  ; *FX200,2 again: BREAK clears memory
 
     ; Each code byte must match the file's once its bit pairs are swapped
-    ; and it's rotated right a bit, last byte first. X is the old *FX200
-    ; setting, which OSBYTE hands back: 2, as set at the start (seen in
-    ; jsbeeb), and so the last byte's index; anyone changing that setting
-    ; breaks the check. checks_left goes 2, 1, 0, &FF and back to 0 only if
-    ; all three compares ran.
+    ; and it's rotated right one place (as a level stores its code), last
+    ; byte first. X is the old *FX200 setting, which OSBYTE hands back: 2,
+    ; as set at the start, and so the last byte's index; anyone changing
+    ; that setting breaks the check. checks_left goes 2, 1, 0, &FF and back
+    ; to 0 only if all three compares ran.
 ASSERT CODE_BYTES - 1 = 2
 .check_code_byte
     DEC checks_left
@@ -265,7 +289,7 @@ ASSERT CODE_BYTES - 1 = 2
     LDY entry_index
     INY
     TYA
-    PHP
+    PHP                         ; for the decoy check below
     SEC
 .count_tens
     INX
