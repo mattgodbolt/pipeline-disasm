@@ -29,6 +29,8 @@ level_2 = {
         {10, 0, 12, OBJECT_NO_THROW + 8}                     ; 7: Extinguisher
     },
     ; The monsters: x, y, the way they're going, and which ways they try.
+    ; Monster 0's cell isn't fire on the map, so the game takes it as gone at
+    ; the first think (26 points) until trigger 14, 15 or 28 puts it out.
     {
         {21, 30, DIRECTION_LEFT, PATTERN_LEFT_WALL},        ; 0
         {19, 41, DIRECTION_RIGHT, PATTERN_BACK_AND_FORTH},  ; 1

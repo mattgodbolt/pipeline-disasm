@@ -496,3 +496,113 @@ code (0A 0A A0), so `ask_for_mission`'s OSWORD 0, which calls NETV after the
 line, jumps into it and ends on the game's error screen. The first load of
 IO works, since it asks for no name; only L fails.
 Comments at `load_mission` and `ask_for_mission` say so.
+
+## 2026-10-04 09:38 — Monsters at the map's edge
+
+An earlier guess, unchecked: monsters eat lava, off the map reads as lava,
+so a monster walking into the map's edge eats its way out for 26 points.
+That's right, by design rather than by accident, and it writes nothing
+outside the map. But no monster in the shipped levels does it on its own.
+
+From the code:
+
+- `cell_at_checked` answers CELL_LAVA for any X or Y of MAP_SIZE or more
+  without reading anything: a step off column or row 0 gives &FF, one off 63
+  gives 64, and the unsigned compares catch both. It's the same answer for
+  everything: the player (who can't step off), the view (lava's second
+  picture past the edges) and the monsters (`cell_beside_monster` goes
+  through `cell_at`). Without the checks, `map_address` would take x = 64 to
+  &6000 and x = &FF to &77E0 (both screen), and an off-map y into another
+  column's cells.
+- `monster_think` tries its turns. The way off the edge comes back as lava,
+  and `EOR monster_food : AND #&0F` matches it when the food's low nibble is
+  lava. All four shipped levels have that: &7A in levels 1, 2 and 4 (eat
+  lava, leave sulphur) and &AA in level 3 (leave lava). So it does depend on
+  the level. A level whose monsters eat something else gets an edge that
+  acts as a wall.
+- `monster_eats` asks `set_cell_and_draw` to turn the cell past the edge
+  into the leavings, and `set_cell`'s own range checks refuse (carry set,
+  `drop_two_and_return`), so nothing is written or drawn there. Eaten lava
+  on the map would leave sulphur; eating the edge leaves none. Then the
+  monster's own cell is emptied and drawn, and it's MONSTER_GONE. It never
+  moves off the map, so its position never wraps.
+- The 26 points come from `score_monster`: `LDX #25` into `add_points`, which
+  runs on into `add_point` after its loop. Every way a monster goes takes
+  that path: eating, losing its fire cell, or action 6.
+
+Checked in jsbeeb with level 1 as shipped (food &7A). Four monsters, one at
+each edge heading off it, each trying ahead four times (turns &55) from a
+cell made fire: (63, 33) going right, (0, 33) left, (33, 0) up and (33, 63)
+down:
+
+    node tools/play.mjs --disc build/pipeline.ssd 'game; wait 7; poke 2640 FC 84 01 55 00 84 00 55 84 00 02 55 84 FC 03 55; poke 31F0 AE; poke 2A10 8E; poke 2E20 E0; poke 2E3F AE; peek 22 2; bkey SPACE; wait 3; peek 22 2; peek 0 10; hex 5FF0 1; hex 5810 1; hex 5C20 1; hex 5C3F 1'
+
+- The score goes from 0000 to 0104 (four times 26), all four directions
+  become 08, and each monster's own cell is floor, with the other nibble of
+  each byte unchanged (&5FF0 A0, &5810 80, &5C20 00, &5C3F A0).
+- A scratch node script (in build/, not kept) hooked the first think:
+  `monster_eats` ran for each monster, `set_cell` was asked for (33, 64),
+  (33, &FF), (&FF, 33) and (64, 33), and each time returned through
+  `drop_two_and_return`. While they ate, writes went only to zero page, the
+  stack, the OS's workspace in pages 2 and 8 (the eating sound's queue, and
+  whatever interrupts did), the system VIA, the screen (the
+  right-hand monster's cell, in view, redrawn as floor) and four map bytes.
+  A diff of the whole map from before the think to after it: just the four
+  monsters' cells, fire to floor. Screenshots showed the right-hand flame
+  gone and the lava past the edge as it was.
+- The same with `poke 25A6 79` added before `bkey SPACE` (food: barricades)
+  scores nothing. All four are stuck (directions 05 04 06 07, the direction
+  plus MONSTER_STUCK) and stay at the edge.
+
+The shipped levels:
+
+- The edges are mostly pipes, walls and lava. Lava at the edge is on the
+  map, so a monster reaching it eats that, not the edge. 38 (level 1), 54
+  (2), 83 (3) and 17 (4) of the 252 edge cells are floor or objects.
+- A Python model of `monster_think`, `think` and the moves on IO's maps
+  (scratch, not in the repo) matched jsbeeb think for think over the first
+  204 thinks of each level left alone (positions, directions, and level 2's
+  26 below). Run for 3000 cycles in the model, no monster in any level goes
+  off the map. That holds with the maps as shipped, with all the sulphur
+  collected, and with sulphur and crates both gone. In those runs some
+  monsters eat lava on the map instead. Each monster that an action 7
+  trigger places, run from where it's placed, doesn't either. The closest is
+  level 3's trigger 27, which puts monster 3 at (63, 62) going up, back and
+  forth. It runs up and down column 63, but its turns come to the way off
+  the edge only third or fourth, after the way back, which is always open.
+  It ends by eating the lava at (63, 63), on the map.
+- Where it could happen: a flood fill of each monster's reachable cells
+  (floor, objects, sulphur, fire), then the model run for a lone monster from
+  every cell and direction there. Some states lead off the map:
+  - level 1: the top-left pocket at (0, 2) and (2, 0), for monsters 2 and 3,
+    and (0, 35) for monster 1;
+  - level 2: the bottom row (43-61, 63), for monster 0 once trigger 28 puts
+    it at (42, 44);
+  - level 3: the bottom-left corner, for monster 3, and column 63, for
+    triggers 24, 26 and 27's monster 3.
+
+  The levels' own paths never enter those states. The player could steer a
+  monster into one by changing the map (crates, sulphur, triggers, or a
+  fire cell in its way). Not tried in play.
+- Which monsters it catches: one whose first choice is ahead and which heads
+  straight at the edge. A left- or right-wall follower that reaches an edge
+  cell with the edge on its wall side goes at its next think. An edge
+  follower (ahead, then clockwise) goes once something blocks it ahead with
+  the edge on its right.
+
+Found on the way, level 2's monster 0: the map has floor, not fire, at its
+start (21, 30), so the first think takes it as gone and scores 26 as the
+level starts. Checked:
+
+    node tools/play.mjs --disc build/pipeline.ssd 'game; wait 7; poke 49 1; bkey SPACE; wait 2; peek 22 2; peek 0 10'
+
+gives a score of 26 and monster 0's direction 08. Triggers 14, 15 and 28
+bring it back (action 7 moves a fire cell under it). Read from the code, not
+run: trigger 6 (action 6, set monster 0 going down, reusable) on a gone
+monster 0 sets it going with no fire cell, so the next think takes it as
+gone again and scores another 26.
+
+Comments now say this at `cell_at`, `cell_at_checked`, `set_cell`,
+`monster_think` and `monster_eats`, and at level 2's monsters in
+`src/level2.6502inc`. No shared file needed a change: leveldata.6502inc
+already says that off the map counts as lava.

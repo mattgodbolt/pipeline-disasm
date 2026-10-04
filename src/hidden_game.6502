@@ -2111,8 +2111,8 @@ ASSERT CRTC_START_LOW = CRTC_START_HIGH + 1
     RTS
 ASSERT LO(map_view_patterns) = 0
 
-; What's in map cell (X, Y), as the player meets it: off the map is lava,
-; and the exit, while it shows its icon (CELL_OBJECT), is a wall.
+; What's in map cell (X, Y), as the player or a monster meets it: off the map
+; is lava, and the exit, while it shows its icon (CELL_OBJECT), is a wall.
 ; Out: A = the cell type, Z set if it's empty floor; carry set off the map or
 ; at the exit.
 ; Clobbers: X, Y, cell_x, cell_y, map_pointer, cell_low_nibble.
@@ -2129,7 +2129,12 @@ ASSERT LO(map_view_patterns) = 0
     CMP #0
     RTS
 
-; As cell_at but without the exit.
+; As cell_at but without the exit. Off the map is lava made up here, nothing
+; past the edge being read: a step off column or row 0 gives &FF and one off
+; 63 gives MAP_SIZE, and the unsigned compares catch both (map_address would
+; take them into the screen or another column). So the player can't step off,
+; the view shows lava past the edges (cell_picture), and a monster that eats
+; lava eats its way out (monster_think).
 ; Out: A = the cell type, Z set if it's empty floor; carry set off the map.
 ; Clobbers: as cell_at.
 .cell_at_checked
@@ -2200,8 +2205,9 @@ ASSERT LO(map_view_patterns) = 0
     LDY player_y
     LDA #CELL_FLOOR
 
-; Set map cell (X, Y) to type A, if it's on the map. The exit can't be
-; emptied.
+; Set map cell (X, Y) to type A, if it's on the map: a monster eating its way
+; out asks for the cell past the edge (monster_think), which map_address would
+; find in the screen or another column. The exit can't be emptied.
 ; Out: carry set if nothing was written (off the map, or emptying the exit).
 ; Clobbers: A, X, Y, work0, cell_x, cell_y, map_pointer, cell_low_nibble.
 .set_cell
@@ -5486,11 +5492,19 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
     RTS
 
 ; Decide where a monster goes next. If its fire cell has gone (something's
-; been put there), it's gone, for 26 points. Otherwise it tries up to four
+; been put there, or the level's map never had it: level 2's monster 0 goes
+; at the first think), it's gone, for 26 points. Otherwise it tries up to four
 ; ways, each a 2-bit field of its turns (from the bottom) picking from turns:
 ; back, ahead, clockwise or anticlockwise. It goes into an empty cell or an
 ; object's; if the cell is what it eats (monster_food) it turns that into
 ; what it leaves, and is gone. If it can't go anywhere it's stuck.
+; At the map's edge the way off it is lava (cell_at), so a monster that eats
+; lava, as in all four of the shipped mission's levels, eats its way out
+; when its turns come to that way: the lava past the edge stays (set_cell
+; writes only on the map), its own cell is emptied, and it's gone for 26
+; points as for any food. To a monster that eats anything else the edge is
+; a wall. No shipped level's monster goes that way unless the player changes
+; its path (docs/notes/game.md).
 ; In: work0-work3 = its x, y, direction and turns; work4 = its number.
 ; Clobbers: everything.
 .monster_think
@@ -5559,7 +5573,7 @@ ASSERT TURN_ROW = 4
     LSR A
     LSR A
     LSR A
-    JSR set_cell_and_draw
+    JSR set_cell_and_draw               ; (off the map: nothing)
     LDA work4
     ASL A
     ASL A
