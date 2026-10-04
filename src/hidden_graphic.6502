@@ -149,7 +149,8 @@ escape_latch = &7E              ; bit 7: SHIFT-Escape was pressed
 SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 
 ; The PIPELINE logo at the bottom right: 88x24 pixels, which start copies
-; to the screen a character row at a time.
+; to the screen a band (a character row) at a time.
+LOGO_BAND = 22*CELL
 .logo
     SCREEN_PICTURE {
         ".33333333....33333333...3333333.....33333333...3.........33333333...3......3....3333333.",
@@ -177,6 +178,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
         "........................................................................................",
         "........................................................................................",
     }
+ASSERT P% - logo = 3 * LOGO_BAND
 
 ; The slot each large position on the sheet shows, positions in reading
 ; order (5 to a row): sprite numbers &00-&0F are positions 0-15 and &20-&28
@@ -1877,13 +1879,14 @@ ASSERT OBJECT_NAME_LENGTH = 12
 
 ; BRKV points here: show the error's message in the error window, wait for
 ; a key, close any open files and start again.
-; In:  MOS_ERROR_PTR = the error (as the OS leaves it)
+; In:  MOS_ERROR_PTR = the error, as the OS leaves it
 .error_handler
 {
     LDY #&00
     LDX #&00
 
-    ; Copy the message, breaking it into lines of 14 characters.
+    ; Copy the message, breaking it into lines: a CR after the first 14
+    ; characters, then after every 15.
 .copy
     INY
     INX
@@ -1922,12 +1925,14 @@ ASSERT OBJECT_NAME_LENGTH = 12
     JSR close_files                 ; and fall into start
 }
 
-; The entry point, from the GRAPHIC stub; and where errors start again.
-; On first entry it takes over BRKV and the event vector (keeping the old ones
-; in IND1V and IND2V to put back at the end) and enables the Escape event; then
-; sets up MODE 5 and the palette, draws the screen, clears the graphics area and
-; loads DEFAULT (only the first time), and draws the sheet and the first
-; sprite. main_loop then runs until Escape.
+; The entry point, from the GRAPHIC stub, and where errors start again. The
+; first time (BRKV still pointing into the ROMs) it takes over BRKV and the
+; event vector, keeping the old ones in IND1V and IND2V to put back on
+; leaving, and enables the Escape event. Unless the screen is in MODE 5
+; already (as it is after an error, so a changed palette survives), it sets
+; MODE 5 and the palette. Then it draws the screen, the first time clears
+; the graphics area and (on disc) loads DEFAULT, and draws the sheet and the
+; first sprite; main_loop follows.
 .start
 {
     LDA #OSBYTE_CURSOR_EDITING      ; the cursor keys give codes
@@ -1953,14 +1958,14 @@ ASSERT OBJECT_NAME_LENGTH = 12
     LDA #HI(escape_event)
     STA EVNTV+1
     CLI
-    LDA #OSBYTE_ENABLE_EVENT        ; the Escape event
-    STA escape_latch
+    LDA #OSBYTE_ENABLE_EVENT        ; the Escape event; and the latch clear
+    STA escape_latch                ; (the call number has bit 7 clear)
     LDX #EVENT_ESCAPE
     JSR OSBYTE
 .installed
     LDA #OSBYTE_READ_CHAR_AND_MODE  ; the screen mode, into Y
     JSR OSBYTE
-    CPY #&05
+    CPY #5
     BEQ setup
     LDA #VDU_MODE                   ; MODE 5
     JSR OSWRCH
@@ -2022,9 +2027,9 @@ ASSERT OBJECT_NAME_LENGTH = 12
     STA window_open, X
     DEX
     BPL clear_windows
-    LDA #&0A                        ; the cursor off again, after the CLS
+    LDA #CRTC_CURSOR_START          ; the cursor off again, after the CLS
     STA CRTC_ADDR
-    LDA #&20
+    LDA #CRTC_CURSOR_OFF
     STA CRTC_DATA
     LDA #LO(logo)                   ; not needed: the copy below is indexed
     STA data_ptr
@@ -2034,12 +2039,12 @@ ASSERT OBJECT_NAME_LENGTH = 12
 .logo_copy
     LDA logo, Y
     STA logo_screen, Y
-    LDA logo+&B0, Y
-    STA logo_screen+ROW, Y
-    LDA logo+2*&B0, Y
-    STA logo_screen+2*ROW, Y
+    LDA logo + LOGO_BAND, Y
+    STA logo_screen + ROW, Y
+    LDA logo + 2*LOGO_BAND, Y
+    STA logo_screen + 2*ROW, Y
     INY
-    CPY #&B0                        ; a band of 22 cells
+    CPY #LOGO_BAND
     BCC logo_copy
 
     ; The first time only: clear the graphics area and load DEFAULT into it.
@@ -2059,18 +2064,21 @@ ASSERT OBJECT_NAME_LENGTH = 12
     DEX
     BNE clear
     DEX
-    STX graphics_loaded
-    LDA disc_fs                     ; on tape there's no DEFAULT to load: the name becomes ""
+    STX graphics_loaded             ; X = &FF
+    LDA disc_fs
     BMI load_default
-    LDX #&06
+
+    ; On tape nothing is loaded: the set starts empty. The name is made ""
+    ; (the next file on the tape) first, but nothing reads it after this.
+    LDX #6
 .tape_name
-    STA default_name, X
+    STA default_name, X             ; A = 0
     DEX
     BPL tape_name
     LDA #ascii("""")
     STA default_name
     STA default_name+1
-    BNE redraw
+    BNE redraw                      ; always
 .load_default
     LDA #LO(default_name)
     STA osfile_block
@@ -2080,14 +2088,15 @@ ASSERT OBJECT_NAME_LENGTH = 12
     STA graphics_loaded
     JSR osfile_graphics
 
-    ; Redraw everything; the file commands come back here after loading.
+    ; Redraw everything, with the selection back at position 0: also where
+    ; the file commands come back to.
 .redraw
-    BIT disc_fs
+    BIT disc_fs                     ; on tape, clear away the filing system's messages
     BMI cls_done
     LDA #VDU_CLS
     JSR OSWRCH
 .cls_done
-    LDX #12-1                       ; "Finish Block"
+    LDX #LEN(FINISH_BLOCK) - 1
 .mark_end
     LDA finish_block, X
     STA graphics_end, X
@@ -2107,9 +2116,12 @@ ASSERT OBJECT_NAME_LENGTH = 12
     JSR show_colour
 }
 
-; The main loop: one pass each time round, at least two centiseconds apart
-; (select_sprite waits): move the selection, blink the pixel cursor, paint,
-; run a command from a menu or shortcut, and offer to leave on Escape.
+; The main loop, a pass at a time, each at least two centiseconds after the
+; last (select_sprite waits for that, unless CTRL is held) and ending at a
+; vsync: move the selection, paint, run a command from a menu or shortcut,
+; and on Escape (or a latched SHIFT-Escape) ask whether to leave. Each pass
+; starts with the stack as start found it, so a command can give up with a
+; plain JMP to main_loop or command_done.
 .main_loop
 {
     LDX stack_pointer
@@ -2117,10 +2129,10 @@ ASSERT OBJECT_NAME_LENGTH = 12
     JSR close_all_windows
     LDA #&00                        ; move the selection
     JSR select_sprite
-    BMI edit                        ; CTRL held: no blinking
-    LDX cursor_x
-    LDY cursor_y
-    JSR toggle_cursor               ; blink the pixel cursor
+    BMI edit                        ; nothing moved (or CTRL held)
+    LDX cursor_x                    ; the grid was drawn again: put the pixel
+    LDY cursor_y                    ; cursor back on it
+    JSR toggle_cursor
 .edit
     JSR edit_pixels
     LDA colour                      ; commands may use colour as a scratch value
@@ -2134,8 +2146,8 @@ ASSERT OBJECT_NAME_LENGTH = 12
     LDA command_table+1, Y
     STA dispatch+2
 .dispatch
-    JSR &1234                       ; the command (self-modified)
-    LDX #INKEY_TEST(KEY_RETURN)                 ; so a menu choice made with Return doesn't plot too
+    JSR &1234                       ; the command (self-modified; the original's placeholder)
+    LDX #INKEY_TEST(KEY_RETURN)     ; so a menu choice made with Return doesn't plot too
     JSR wait_key_release
 .command_done
     LDA saved_colour
@@ -2143,7 +2155,7 @@ ASSERT OBJECT_NAME_LENGTH = 12
     LDA #OSBYTE_WAIT_VSYNC          ; wait for the vsync, which leaves A = &13...
     JSR OSBYTE
     STA by_slot                     ; ...so by_slot bit 7 is clear again
-    LDA MOS_ESCAPE_FLAG                 ; Escape, or SHIFT-Escape latched
+    LDA MOS_ESCAPE_FLAG             ; Escape, or SHIFT-Escape latched
     ORA escape_latch
     BPL loop
     LSR escape_latch
@@ -2154,7 +2166,7 @@ ASSERT OBJECT_NAME_LENGTH = 12
     LDY #HI(text_escape)
     LDA #WINDOW_QUESTION
     JSR menu                        ; Escape? No/Yes
-    CMP #&02                        ; Yes
+    CMP #2                          ; Yes
     BNE loop
     LDX #LO(text_insert_disc)
     LDY #HI(text_insert_disc)
@@ -2179,9 +2191,9 @@ ASSERT OBJECT_NAME_LENGTH = 12
     STA EVNTV
     LDA IND2V+1
     STA EVNTV+1
-    LDA #OSBYTE_CURSOR_EDITING      ; X = &FF from open_window, so OSBYTE 4,0: cursor keys edit again
-    INX
-    JSR OSBYTE
+    LDA #OSBYTE_CURSOR_EDITING      ; X = 0 from the last OSBYTE_ACKNOWLEDGE_ESCAPE (no
+    INX                             ; Escape was pending), so this is OSBYTE 4,1 and the
+    JSR OSBYTE                      ; cursor keys stay codes; MENU sets that anyway
     LDA #OSBYTE_FUNCTION_KEY_BASE   ; function keys back to strings
     LDX #&01
     JSR OSBYTE
@@ -2190,29 +2202,36 @@ ASSERT OBJECT_NAME_LENGTH = 12
     LDA #OSBYTE_BREAK_EFFECT        ; *FX200,3: on tape, BREAK clears memory...
     LDX #&03
     JSR OSBYTE
-    JMP (CPU_RESET_VECTOR)              ; ...and here is a BREAK
+    JMP (CPU_RESET_VECTOR)          ; ...and here is a BREAK
 .run_mrun
-    LDX #LO(mrun_command)           ; *RUN MRUN, which goes back to the menu
+    LDX #LO(mrun_command)           ; */MRUN, which goes back to the menu
     LDY #HI(mrun_command)
     JMP OSCLI
 .loop
     JMP main_loop
 }
 
-; Written after the graphics set in memory, at graphics_end.
+; Written after the graphics set in memory, at graphics_end, which is where
+; the exit's name would be (SET_NAMES + 15 * OBJECT_NAME_LENGTH): so the
+; name box shows the exit as "16:Finish Block".
+FINISH_BLOCK = "Finish Block"
 .finish_block
-    EQUS "Finish Block"
+    EQUS FINISH_BLOCK
+ASSERT LEN(FINISH_BLOCK) = OBJECT_NAME_LENGTH
+ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAME_LENGTH
 
 ; The colour, kept while a command runs.
 .saved_colour
     EQUB &00
 
-; The commands: read_command's number for each menu item (menu * 8 + item)
-; and CTRL shortcut, and where it goes. no_command is the main loop's own
-; tail (command_done), harmless to call because main_loop resets the
-; stack.
+; The commands, by read_command's number: a menu item is menu * 8 + item
+; (items from 1), a CTRL shortcut its place in shortcut_keys plus one.
+; Numbers with no command go to the main loop's own tail, command_done,
+; which is harmless to call because the main loop resets the stack. A
+; command takes the selected sprite from `sprite`, and may clobber every
+; register and most of zero page.
 .command_table
-    EQUW main_loop.command_done     ; 0: none
+    EQUW main_loop.command_done     ; 0: none (the credits)
     EQUW cmd_flip_x                 ; OptionsA
     EQUW cmd_flip_y
     EQUW cmd_delete
@@ -2239,7 +2258,10 @@ ASSERT OBJECT_NAME_LENGTH = 12
     EQUW main_loop.command_done
 
 ; OptionsA Delete (CTRL-Delete): clear the sprite to colour 0, and an
-; object's name to zeros.
+; object's name to zeros. Drawing the sprite again after show_selection
+; rubs out the selection box, which stays off until the selection moves.
+; In:  sprite
+; Clobbers: everything
 .cmd_delete
 {
     LDA sprite
@@ -2258,7 +2280,7 @@ ASSERT OBJECT_NAME_LENGTH = 12
     BEQ redraw
     JSR name_offset
     LDA #&00
-    LDX #12-1
+    LDX #OBJECT_NAME_LENGTH - 1
 .name
     STA object_names, Y
     INY
