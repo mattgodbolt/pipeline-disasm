@@ -27,8 +27,6 @@ FUNCTION basic_integer(letter) = BASIC_RESIDENT_INTEGERS + 4 * (CODES(letter)[0]
 ; Zero page BASIC leaves to the user, and to the machine code it CALLs.
 BASIC_USER_ZP = &70     ; to &8F
 
-; VDU codes the programs hide things from LIST with: LIST copies a string's
-; bytes (and a REM's, once a quote has started one) straight to the screen.
-VDU_ENABLE  = 6     ; undo VDU_DISABLE
-VDU_DISABLE = 21    ; ignore everything sent to the screen until VDU_ENABLE
-VDU_DELETE  = 127   ; back up one character and blank it
+; The programs hide things from LIST with VDU codes (VDU_DISABLE, VDU_ENABLE
+; and VDU_DELETE, in osconst.6502inc): LIST copies a string's bytes (and a
+; REM's, once a quote has started one) straight to the screen.

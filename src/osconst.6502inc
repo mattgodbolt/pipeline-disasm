@@ -1,44 +1,223 @@
-; MOS call numbers and other constants: OSBYTE and OSWORD numbers, buffers,
-; events, internal key numbers, and the 8271 disc controller's commands as
-; OSWORD &7F passes them. Addresses are in os.6502inc.
+; The machine's numbers, other than addresses (os.6502inc has those), for
+; every piece: OSBYTE, OSWORD and filing system call numbers and their
+; settings, service calls, SOUND channels, buffers and events; internal key
+; numbers and the codes keys give; characters; VDU and PLOT codes; 6845 CRTC
+; registers; screen memory in the modes the pieces use; 6502 opcodes; and
+; the 8271 disc controller's commands as OSWORD &7F passes them. A name here
+; means the same in every piece; a program's own settings (its *FX225 base,
+; its own screen layout) stay in its own include.
 
 ; OSBYTE calls.
-OSBYTE_CURSOR_EDITING   = &04   ; *FX4: X=1 makes the cursor keys type codes
-OSBYTE_AUTO_REPEAT_DELAY = &0B  ; *FX11: X=0 turns auto-repeat off
-OSBYTE_DISABLE_EVENT    = &0D   ; X = event number
-OSBYTE_ENABLE_EVENT     = &0E   ; X = event number
-OSBYTE_FLUSH_BUFFERS    = &0F   ; *FX15: X=0 all buffers, 1 just input
-OSBYTE_INKEY            = &81   ; X,Y = INKEY argument; X=Y=&FF if a key tested is down
-OSBYTE_INSERT_BUFFER    = &8A   ; X = buffer, Y = character
-OSBYTE_BREAK_EFFECT     = &C8   ; *FX200: bit 0 disables Escape, bit 1 clears memory on BREAK
-OSBYTE_ESCAPE_KEY       = &E5   ; *FX229: X=0 Escape key makes an escape condition
-OSBYTE_ESCAPE_EFFECTS   = &E6   ; *FX230: X=1 an escape condition does nothing else
+OSBYTE_CURSOR_EDITING     = &04 ; *FX4: X = CURSOR_KEYS_*
+OSBYTE_AUTO_REPEAT_DELAY  = &0B ; *FX11: X centiseconds before a key repeats; 0 turns auto-repeat off
+OSBYTE_AUTO_REPEAT_PERIOD = &0C ; *FX12: X centiseconds between repeats
+OSBYTE_DISABLE_EVENT      = &0D ; X = event number
+OSBYTE_ENABLE_EVENT       = &0E ; X = event number
+OSBYTE_FLUSH_BUFFERS      = &0F ; *FX15: X=0 all buffers, 1 just input
+OSBYTE_WAIT_VSYNC         = &13 ; *FX19: wait for the next vertical sync
+OSBYTE_RAISE_ESCAPE       = &7D ; set the Escape flag, as the key would (no event)
+OSBYTE_ACKNOWLEDGE_ESCAPE = &7E ; clear an Escape; X = &FF if there was one, else 0
+OSBYTE_INKEY              = &81 ; X,Y = INKEY argument; X=Y=&FF if a key tested is down
+OSBYTE_READ_CHAR_AND_MODE = &87 ; X = the character at the text cursor, Y = the mode
+OSBYTE_INSERT_BUFFER      = &8A ; X = buffer, Y = character
+OSBYTE_OPT                = &8B ; *OPT X, Y
+OSBYTE_SERVICE_CALL       = &8F ; X = the service call, Y its argument
+OSBYTE_WRITE_SHEILA       = &97 ; *FX151: X = offset in page &FE, Y = the value
+OSBYTE_BREAK_EFFECT       = &C8 ; *FX200: bit 0 disables Escape, bit 1 clears memory on BREAK
+OSBYTE_KEYBOARD_STATUS    = &CA ; *FX202: bit 4 clear Caps Lock, bit 5 clear
+                                ; Shift Lock, bit 7 set Shift reverses Caps Lock
+OSBYTE_BELL_DURATION      = &D6 ; *FX214
+OSBYTE_FUNCTION_KEY_BASE  = &E1 ; *FX225: X = f0's code (f1 one more...), or FUNCTION_KEYS_STRINGS
+OSBYTE_ESCAPE_KEY         = &E5 ; *FX229: X=0 Escape key makes an escape condition
+OSBYTE_ESCAPE_EFFECTS     = &E6 ; *FX230: X=1 an escape condition does nothing else
+
+; *FX4's settings: what the cursor keys and COPY do.
+CURSOR_KEYS_EDIT  = 0           ; copy editing
+CURSOR_KEYS_CODES = 1           ; they give codes, &87 (COPY) to &8B
+CURSOR_KEYS_SOFT  = 2           ; COPY and the cursor keys are function keys 11-15
+
+; *FX225's setting for the function keys to give their strings (*KEY), as
+; they do at first.
+FUNCTION_KEYS_STRINGS = 1
+
+; Service calls (OSBYTE_SERVICE_CALL).
+SERVICE_CLAIM_ABSOLUTE = 1      ; claim absolute workspace
+SERVICE_CLAIM_PRIVATE  = 2      ; claim private workspace
 
 ; OSWORD calls.
-OSWORD_READ_LINE = &00          ; YX: buffer address (2), max length, lowest and highest character
+OSWORD_READ_LINE            = &00   ; YX: buffer address (2), max length, lowest and highest character
+OSWORD_READ_INTERVAL_TIMER  = &03   ; YX: 5 bytes
+OSWORD_WRITE_INTERVAL_TIMER = &04   ; YX: 5 bytes
+OSWORD_SOUND                = &07   ; YX: channel, amplitude, pitch, duration (2 bytes each)
 OSWORD_READ_CHAR_DEFINITION = &0A   ; YX: the character, then its 8 rows of pixels, top first
+OSWORD_READ_PALETTE         = &0B   ; YX: logical colour; returns the physical one after it
+OSWORD_WRITE_PALETTE        = &0C   ; YX: logical colour, physical colour, 0, 0, 0
 
-; Buffer numbers for OSBYTE &8A and friends.
+; A SOUND channel number: the channel in the low nibble, flags above it,
+; and in its high byte the number of other channels to wait for.
+SOUND_FLUSH   = &10             ; flush the channel's queue first
+SOUND_SYNC_1  = &01             ; (high byte) wait for one other channel
+CHANNEL_NOISE = 0               ; channels 1-3 are tones
+
+; OSFILE calls, and the object type OSFILE_READ_INFO returns in A.
+OSFILE_SAVE      = &00
+OSFILE_READ_INFO = &05          ; fills the block with the catalogue entry
+OSFILE_LOAD      = &FF
+OSFILE_TYPE_FILE = 1            ; (0 no such object, 2 a directory)
+
+; OSFIND calls: close (Y = handle, 0 for all), or open the file named at YX.
+OSFIND_CLOSE       = &00
+OSFIND_OPEN_INPUT  = &40
+OSFIND_OPEN_UPDATE = &C0
+
+; OSGBPB calls, at the pointer given in the block.
+OSGBPB_WRITE_AT = 1
+OSGBPB_READ_AT  = 3
+
+; OSARGS with A = 0 and Y = 0 reads the current filing system's number;
+; 4 and up are disc (and network) filing systems, below that tape and ROM.
+OSARGS_READ_FS = &00
+FS_DISC        = 4
+
+; FSCV calls.
+FSCV_OPT = &00                  ; *OPT X,Y
+
+; Buffer numbers for OSBYTE &8A and friends. Sound channel n's buffer is
+; BUFFER_SOUND_0 + n.
 BUFFER_KEYBOARD = 0
+BUFFER_SOUND_0  = 4
 
 ; Event numbers.
-EVENT_VSYNC = 4
-EVENT_ESCAPE = 6
+EVENT_OUTPUT_EMPTY = 0          ; X = the buffer
+EVENT_VSYNC        = 4
+EVENT_ESCAPE       = 6
 
 ; Internal key numbers (the keyboard matrix), and the byte INKEY wants to
 ; test one: INKEY -(k+1).
-KEY_I = &25
-KEY_O = &36
-KEY_S = &51
-KEY_N = &55
+KEY_SHIFT  = &00
+KEY_CTRL   = &01
+KEY_3      = &11
+KEY_4      = &12
+KEY_F7     = &16
+KEY_LEFT   = &19
+KEY_F0     = &20
+KEY_T      = &23
+KEY_I      = &25
+KEY_0      = &27
+KEY_DOWN   = &29
+KEY_1      = &30
+KEY_2      = &31
+KEY_R      = &33
+KEY_U      = &35
+KEY_O      = &36
+KEY_UP     = &39
+KEY_A      = &41
+KEY_X      = &42
+KEY_Y      = &44
+KEY_COLON  = &48
+KEY_RETURN = &49
+KEY_S      = &51
+KEY_C      = &52
+KEY_N      = &55
+KEY_DELETE = &59
+KEY_Z      = &61
+KEY_SPACE  = &62
+KEY_B      = &64
+KEY_SLASH  = &68
+KEY_COPY   = &69
+KEY_F1     = &71
+KEY_F2     = &72
+KEY_F3     = &73
+KEY_F6     = &75
+KEY_F8     = &76
+KEY_F9     = &77
+KEY_RIGHT  = &79
 FUNCTION INKEY_TEST(key) = &FF - key
 
-; Characters with no name of their own in a string.
-BEL = 7
-CR = 13
+; The codes OSRDCH returns for the cursor keys after *FX4,1
+; (CURSOR_KEYS_CODES). With *FX4,2 they're function keys 12-15 instead, and
+; give whatever *FX225 made of those.
+KEYCODE_LEFT  = &88
+KEYCODE_RIGHT = &89
+KEYCODE_DOWN  = &8A
+KEYCODE_UP    = &8B
 
 ; A character's code, as a value: ascii("A") is &41.
 FUNCTION ascii(c) = CODES(c)[0]
+
+; Characters with no name of their own in a string, and CTRL with a letter.
+BEL = 7
+CR  = 13
+ESC = &1B                       ; what OSBYTE &81 gives in Y on Escape
+DEL = &7F
+FUNCTION ctrl(c) = ascii(c) AND &1F
+
+; VDU codes.
+VDU_TEXT_CURSOR   = 4           ; text at the text cursor
+VDU_ENABLE        = 6           ; undo VDU_DISABLE
+VDU_BACKSPACE     = 8
+VDU_RIGHT         = 9           ; cursor right: a space that doesn't paint
+VDU_CLS           = 12
+VDU_PAGED_ON      = 14
+VDU_PAGED_OFF     = 15
+VDU_COLOUR        = 17          ; VDU 17, n: COLOUR n; n + COLOUR_BACKGROUND for the background
+VDU_GCOL          = 18          ; VDU 18, mode, colour
+VDU_PALETTE       = 19          ; VDU 19, logical, physical, 0, 0, 0
+VDU_DISABLE       = 21          ; ignore everything sent to the screen until VDU_ENABLE
+VDU_MODE          = 22
+VDU_DEFINE        = 23          ; VDU 23, 0, register, value, 0, 0, 0, 0, 0, 0: a CRTC register
+VDU_PLOT          = 25          ; VDU 25, k, x; y;
+VDU_RESET_WINDOWS = 26
+VDU_TEXT_WINDOW   = 28          ; VDU 28, left, bottom, right, top
+VDU_TAB           = 31          ; VDU 31, x, y
+VDU_DELETE        = 127         ; back a character and blank it
+COLOUR_BACKGROUND = &80
+
+; PLOT numbers.
+PLOT_MOVE_RELATIVE = 0
+PLOT_DRAW_RELATIVE = 1
+PLOT_MOVE          = 4
+
+; 6845 CRTC registers: write the number to CRTC_ADDR, then the value to
+; CRTC_DATA (or VDU_DEFINE, 0, register, value...).
+CRTC_HORIZONTAL_DISPLAYED = 1
+CRTC_HSYNC_POSITION       = 2
+CRTC_VERTICAL_DISPLAYED   = 6
+CRTC_VSYNC_POSITION       = 7
+CRTC_CURSOR_START         = 10  ; the cursor's first scan line, and bits 5-6 how it blinks
+CRTC_START_HIGH           = 12  ; the screen's start address, in units of 8 bytes
+CRTC_START_LOW            = 13
+
+; Values for CRTC_CURSOR_START.
+CRTC_CURSOR_OFF   = &20         ; bits 5-6 01: no cursor
+CRTC_CURSOR_BLINK = &67         ; bits 5-6 11: blinking, from scan line 7, as MODEs 0-6 have it
+
+; Written to the system VIA's port B (SYSVIA_ORB), a byte sets one of the
+; addressable latch's bits: bits 0-2 say which, bit 3 its value. Latch bits
+; 4 and 5 (C0 and C1) set where the hardware wraps the screen round:
+; clearing bit 5 with bit 4 set, as MODE 5 leaves it, wraps it at 8K.
+SCREEN_WRAP_8K = &05
+
+; Screen memory in the modes the pieces use: where it starts, and the bytes
+; in a character row and in a character (in these four-colour modes, two
+; bytes across and eight scan lines down, a column of eight bytes at a time).
+; Every mode's screen runs to SCREEN_MEMORY_END. These are addresses, but
+; they're kept out of os.6502inc: tools/dis6502.py would name every &3000
+; and &5800 operand after them, and most of those aren't the screen. Mode
+; 7's is MODE7_SCREEN, in teletext.6502inc.
+MODE1_SCREEN      = &3000
+MODE1_ROW_BYTES   = 640
+MODE1_CHAR_BYTES  = 16
+MODE5_SCREEN      = &5800
+MODE5_ROW_BYTES   = 320
+MODE5_CHAR_BYTES  = 16
+SCREEN_MEMORY_END = &8000
+
+; 6502 opcodes the programs write or look for.
+OPCODE_BMI           = &30
+OPCODE_RTI           = &40
+OPCODE_LDX_IMMEDIATE = &A2
+OPCODE_NOP           = &EA
 
 ; OSWORD &7F: hand a raw command to the 8271 floppy disc controller via DFS.
 OSWORD_DISC_COMMAND = &7F

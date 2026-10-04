@@ -82,6 +82,10 @@ IND1V = &0230
 IND2V = &0232
 IND3V = &0234
 
+; Where the OS keeps the envelopes ENVELOPE defines, 16 bytes each from
+; envelope 1.
+MOS_ENVELOPES = &08C0
+
 ; Where the OS jumps on an NMI: a filing system puts its handler here.
 MOS_NMI_ROUTINE = &0D00
 

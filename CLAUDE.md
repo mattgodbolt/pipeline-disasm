@@ -32,6 +32,48 @@ with baron pinned by commit; bumping the pin is its own commit.
   the same as the original flux capture `original/E447ED5E.hfe`. Needs
   `npm ci` once.
 
+## Where names live
+
+One definition for each name a piece shares with another piece or with the
+machine (`docs/notes/names.md` has the decisions); a name only one program
+means stays in that program's source or include. `tests/test_symbols.py`
+fails if a scope redefines a name its file already has outside it.
+
+- `src/os.6502inc`: addresses only: MOS entry points, vectors, OS workspace
+  (`MOS_ENVELOPES`...) and hardware registers. Add OS addresses there rather
+  than locally (one name per address). The disassembler names operands from
+  it, except zero page.
+- `src/osconst.6502inc`: the machine's other numbers: OSBYTE, OSWORD,
+  OSFILE, OSFIND, OSGBPB, OSARGS and FSCV calls and their settings
+  (`CURSOR_KEYS_*`...), service calls, SOUND channel flags, buffers, events,
+  internal key numbers (`KEY_*`, tested with `INKEY_TEST()`), the codes keys
+  give (`KEYCODE_*` after *FX4,1), characters (`CR`, `ESC`, `DEL`, `ascii()`,
+  `ctrl()`), VDU and PLOT codes, CRTC registers and cursor settings, screen
+  memory (`MODE1_SCREEN`, `MODE5_SCREEN`, their row and character sizes,
+  `SCREEN_MEMORY_END`: addresses, but kept out of os.6502inc so the
+  disassembler doesn't name every &3000 and &5800 after them), 6502 opcodes,
+  and the 8271's commands.
+- `src/teletext.6502inc`: Mode 7 control codes, `MODE7_SCREEN` and `TT_ROW`.
+- `src/sprites.6502inc`: the graphics set's format (sprite sizes, its layout
+  `SET_*`, slots and their roles `SLOT_*`, `OBJECT_KINDS`,
+  `OBJECT_NAME_LENGTH`, `EXIT_ICON`), then the picture notation
+  (`mode5_pictures`, `mode5_byte`).
+- `src/leveldata.6502inc`: the level format: field sizes, the setup bytes and
+  `ALTERNATE_*`, all 16 `CELL_*`, `DIRECTION_*` with the diagonals,
+  `MONSTER_GONE`, `TURN_*` and `PATTERN_*`, positions, objects, `PUZZLE_*`,
+  `CONDITION_*`, `COLOUR_*` and `palette_entry()`, and the notation the
+  levels are written in.
+- `src/io.6502inc` (IO's layout; it includes leveldata.6502inc and
+  sprites.6502inc), `src/level.6502inc` (where the Level Designer keeps a
+  level; LEVEL1 and PL use it too), `src/basic.6502inc` (BASIC's program
+  format and workspace), `src/hidden_loader.6502inc` (the three stubs),
+  `src/forceabs.6502inc` (macros for absolute addressing of zero page).
+- A program's own: `src/game.6502inc` (INCLUDEd inside the `game` scope, so
+  it must not repeat a shared name), `src/levdes.6502inc` (the Level Designer
+  and WDATA) and `src/wdata.6502inc`. Where a program numbers something its
+  own way (the Level Designer's `MOVE_*`, the game's `DIRECTION_NONE` and
+  `TURN_ROW`), the name is its own and its comment says how it differs.
+
 ## Tools
 
 - `tools/dis6502.py hints/PIECE.toml > src/PIECE.6502`: first-draft
@@ -44,13 +86,6 @@ with baron pinned by commit; bumping the pin is its own commit.
   jsbeeb (run `npm ci` once). `trace FILE` records executed PCs for the
   disassembler's `traces`; `shot`, `dump`, `hex`, `out`, `type`, `key`,
   `prompt`, `until` - see its header.
-- `src/os.6502inc`: MOS entry points, vectors and hardware registers -
-  addresses only. INCLUDE it; add OS names there rather than locally (one
-  name per address). The disassembler names operands from it, except zero
-  page.
-- `src/osconst.6502inc`: OSBYTE/OSWORD numbers, buffers, events, internal
-  key numbers, the 8271's commands, `ascii()`.
-- `src/teletext.6502inc`: Mode 7 control codes and `TT_ROW`.
 - `tools/mode7.py` (Mode 7 binary to `TT_ROW` source), `tools/beebscreen.py`
   (MODE 1/5 screen memory to PNG), `tools/plcrypt.py` (PL's encryption).
   Python tools use the standard library only.
@@ -72,7 +107,6 @@ with baron pinned by commit; bumping the pin is its own commit.
   (&81-&86). Editors that decode as UTF-8 (including Claude's Edit tool)
   silently replace them and break the build; edit it with byte-safe tools
   (sed, or Python reading and writing bytes).
-- `src/forceabs.6502inc`: macros for absolute addressing of zero page.
 
 ## The pieces
 
@@ -96,11 +130,10 @@ with baron pinned by commit; bumping the pin is its own commit.
 | IO | io.6502 (layout in io.6502inc) | the game's data, ending at &5800, built as MISSION builds it from default.6502inc and level1-4.6502inc |
 
 Shared data: `default.6502inc` describes the graphics set once (pictures as
-pixel rows, via `sprites.6502inc`); `level1.6502inc`-`level4.6502inc`
-describe the four levels once each (objects, monsters, triggers, the map as
-strings) in the format `leveldata.6502inc` defines (MISSION's field sizes,
-CELL_*, PUZZLE_*, DIRECTION_*, COLOUR_*). DEFAULT, LEVEL1 and IO are all
-emitted from these.
+pixel rows) in the format `sprites.6502inc` defines; `level1.6502inc`-
+`level4.6502inc` describe the four levels once each (objects, monsters,
+triggers, the map as strings) in the format `leveldata.6502inc` defines.
+DEFAULT, LEVEL1 and IO are all emitted from these.
 
 ## Baron notes
 
@@ -119,7 +152,18 @@ emitted from these.
 - `docs/baron-feedback.md` collects baron issues and wishes; check it before
   filing anything (issues are filed as Claude acting for Matt).
 - The symbol dump also holds FUNCTION and macro parameters under `@...`
-  scopes; anything feeding jsbeeb should drop names starting with `@`.
+  scopes; anything feeding jsbeeb should drop names starting with `@`. Every
+  FUNCTION call leaves a frame of its parameters; a MACRO that calls a
+  FUNCTION leaves null frames in every file that includes it, even if it's
+  never used, so keep such macros out of widely included files. Every file's
+  dump also lists every constant its includes define.
+- A scope may define a name its file already has outside it, and inside the
+  scope the inner one silently wins. Don't rely on it (tests/test_symbols.py
+  fails on it).
+- A file defining FUNCTIONs can be INCLUDEd only once in a program
+  ("Duplicate function arity"); constants may be bound again to the same
+  value. So each program reaches each include by one path: io.6502inc brings
+  sprites.6502inc, and default.6502inc leaves including it to its includer.
 - Named scopes (`.game { ... }`) give dotted symbol paths in the dump; use them
   so labels from overlapping programs (GAME, LEVDES, GRAPHIC and IO overlap in
   memory) stay distinguishable.
@@ -143,8 +187,9 @@ emitted from these.
   every commit on its branch, and writes what it learns to
   `docs/notes/AREA.md` (its own file, so parallel branches don't collide).
   The journal is appended by whoever merges, summarising the notes.
-- Shared files (`src/os.6502inc`, `Makefile`, `src/disc.toml`, `CLAUDE.md`)
-  change on main, not on piece branches. A piece needing shared
+- Shared files (`src/os.6502inc`, `src/osconst.6502inc`, `src/sprites.6502inc`,
+  `src/leveldata.6502inc`, `src/io.6502inc`, `Makefile`, `src/disc.toml`,
+  `CLAUDE.md`) change on main, not on piece branches. A piece needing shared
   definitions from another piece (an entry point, a zero-page variable)
   keeps its own `src/PIECE.6502inc` and says so in its notes.
 - Running the game: the jsbeeb MCP (`.mcp.json`), or headless jsbeeb from

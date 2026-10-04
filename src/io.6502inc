@@ -5,31 +5,35 @@
 ; and the sizes below are its numlev, size, grfs, attrs, miss and names; a
 ; level's fields and map are as leveldata.6502inc has them.
 ; H.GAME loads it with OSFILE and reads it at these addresses, so they're
-; shared by src/io.6502 (which lays IO out) and src/hidden_game.6502.
+; shared by src/io.6502 (which lays IO out) and src/hidden_game.6502. The
+; graphics and names are a graphics set's (sprites.6502inc), less its last
+; slot, which goes with the names.
 INCLUDE "leveldata.6502inc"
+INCLUDE "sprites.6502inc"
 
 IO_LEVELS        = 4
 IO_LEVEL_FIELDS  = LEVEL_FIELDS_SIZE    ; per level, the fields, interleaved
 IO_MAP_SIZE      = MAP_BYTES            ; per level, 64 x 64 cells of 4 bits
 IO_LEVEL_SIZE    = IO_LEVEL_FIELDS + IO_MAP_SIZE
-IO_GRAPHICS_SIZE = &E00        ; 28 pictures of 128 bytes
+IO_GRAPHICS_SIZE = &E00        ; a graphics set's slots &00-&27
 IO_ATTRS_SIZE    = 5
 IO_MISSION_SIZE  = 30          ; the mission text, two halves of 15
-IO_NAMES_SIZE    = &134        ; an extra picture and the object names
+IO_NAMES_SIZE    = &134        ; its slot &28 and the object names
 IO_END           = &5800
+ASSERT IO_GRAPHICS_SIZE = SET_NAMES - LARGE_SPRITE_SIZE
+ASSERT IO_NAMES_SIZE = LARGE_SPRITE_SIZE + OBJECT_KINDS * OBJECT_NAME_LENGTH
 
 io_start = IO_END - IO_LEVELS * IO_LEVEL_SIZE - IO_GRAPHICS_SIZE - IO_ATTRS_SIZE - IO_MISSION_SIZE - IO_NAMES_SIZE
 
 ; The names block, which the Graphics Designer keeps with the graphics (it is
 ; DEFAULT's last &134 bytes): a picture drawn for a map cell marked as
-; holding an object when no object is there, then fifteen 12-character
-; object names.
+; holding an object when no object is there (SLOT_NO_OBJECT), then the
+; OBJECT_KINDS object names, OBJECT_NAME_LENGTH characters each.
 io_no_object_picture = io_start
-IO_NAME_LENGTH       = 12
-io_object_names      = io_no_object_picture + 128
+io_object_names      = io_no_object_picture + LARGE_SPRITE_SIZE
 
-; The mission text: two VDU 31 (TAB) sequences and 12 characters each, with
-; spaces stored as 9 (cursor right) so they don't paint over the background.
+; The mission text: two VDU_TAB sequences and 12 characters each, with
+; spaces stored as VDU_RIGHT so they don't paint over the background.
 io_mission_text = io_start + IO_NAMES_SIZE
 
 ; The mission's attributes, set by MISSION's "change features".
@@ -65,9 +69,10 @@ io_maps = io_levels + IO_LEVELS * IO_LEVEL_FIELDS
 ; bytes). Each 128-byte picture is 4 x 4 character cells of 8 bytes in MODE 5,
 ; stored a column at a time; the object icons are 2 x 2 cells.
 io_graphics      = io_maps + IO_LEVELS * IO_MAP_SIZE
-io_tiles         = io_graphics            ; 16 pictures, one per map cell type
-io_object_icons  = io_graphics + 16 * 128 ; 16 icons of 32 bytes
-io_player        = io_graphics + 20 * 128 ; 4 pictures, facing each way
-io_alternates    = io_graphics + 24 * 128 ; second pictures for cell types 5, 7, 8, A
+io_tiles         = io_graphics + SET_LARGE      ; 16 pictures, one per map cell type
+io_object_icons  = io_graphics + SET_SMALL      ; 16 icons of 32 bytes
+io_player        = io_graphics + SET_MORE_LARGE ; 4 pictures, facing each way (SLOT_PLAYER on)
+io_alternates    = io_player + (SLOT_ALTERNATE - SLOT_PLAYER) * LARGE_SPRITE_SIZE
+                                                ; second pictures for cell types 5, 7, 8, A
 
 ASSERT io_graphics + IO_GRAPHICS_SIZE = IO_END

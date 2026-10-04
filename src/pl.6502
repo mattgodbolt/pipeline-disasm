@@ -37,9 +37,7 @@
 INCLUDE "os.6502inc"
 INCLUDE "osconst.6502inc"
 INCLUDE "teletext.6502inc"
-
-OPCODE_BMI = &30
-OPCODE_NOP = &EA
+INCLUDE "level.6502inc"
 
 ; Zero page. BASIC's, but BASIC is never coming back.
 crypt_ptr = &70             ; (2) the decryptor's page pointer
@@ -109,15 +107,10 @@ key_bytes = pl.read_reset_high + 1
 ; What `encrypted` decrypts to, starting with the BMI it completes. Not on
 ; the disc: saved as PLDEC so tools/plcrypt.py can check the two agree.
 
-; The level file the cheat reads, as the Level Designer lays it out at
-; &25A1 (LEVEL1 on this disc). Outside PL, so addresses.
-puzzle_names = &25A1        ; 32 x 8 characters: the first 8 of each name
-puzzle_name_ends = &26A1    ; 32 x 2 characters: the last 2
-level_code = &26E1          ; 3 bytes: the six-digit code, encoded (see check_code_byte)
-puzzle_flags = &2720        ; 32 bytes: bits 0-3 the action, bit 5 set if it starts off
-PUZZLE_COUNT = 32
-PUZZLE_ACTION = &0F
-PUZZLE_OFF = &20
+; The level file the cheat reads is laid out as the Level Designer keeps it
+; (level.6502inc: LEVEL1 on this disc is one): it lists the puzzles' names
+; (level_names, level_name_ends), checks level_code (see check_code_byte), and
+; shows each puzzle's action and whether it's PUZZLE_OFF (level_puzzle_types).
 
 ; The game as it was when PL was written, a plain file loaded at &3000, and
 ; the places the cheat pokes. What they do is the game's business
@@ -272,30 +265,32 @@ SECTION pl_decrypted, filename="PLDEC", org=pl.encrypted - 1
     JSR print_format_char       ; "."
     JSR print_format_char       ; green
 
-    ; The name: 8 characters from one table, 2 from another.
+    ; The name: PUZZLE_NAME_HEAD characters from one table, the rest from
+    ; another.
     LDA entry_index
     ASL A
     ASL A
     ASL A
     TAY
+ASSERT PUZZLE_NAME_HEAD = 8
     ; Never taken: a pushed P always has B and I set (we're under SEI). A
     ; decoy check.
     PLA
     AND #%10010110
     BEQ reset_machine
-    LDX #8
+    LDX #PUZZLE_NAME_HEAD
 .print_name
-    LDA puzzle_names, Y
+    LDA level_names, Y
     JSR OSWRCH
     INY
     DEX
     BNE print_name
-    LDX #2
+    LDX #PUZZLE_NAME_LENGTH - PUZZLE_NAME_HEAD
     LDA entry_index
     ASL A
     TAY
 .print_name_end
-    LDA puzzle_name_ends, Y
+    LDA level_name_ends, Y
     JSR OSWRCH
     INY
     DEX
@@ -304,7 +299,7 @@ SECTION pl_decrypted, filename="PLDEC", org=pl.encrypted - 1
     ; The action, in cyan: count past (action + 1) zeros in action_names.
     JSR print_format_char       ; cyan
     LDY entry_index
-    LDA puzzle_flags, Y
+    LDA level_puzzle_types, Y
     PHA
     AND #PUZZLE_ACTION
     TAX
@@ -352,7 +347,7 @@ SECTION pl_decrypted, filename="PLDEC", org=pl.encrypted - 1
 
     INC entry_index
     LDA entry_index
-    CMP #PUZZLE_COUNT
+    CMP #PUZZLES
     BEQ listed
     JMP list_entry
 
@@ -426,10 +421,9 @@ SECTION pl_decrypted, filename="PLDEC", org=pl.encrypted - 1
     INC format_index
     RTS
 
-; VDU codes, sent from the end backwards: MODE 7; cursor off (6845 register
-; 10, the cursor start line, := &20); paged mode on.
+; VDU codes, sent from the end backwards: MODE 7; cursor off; paged mode on.
 .screen_setup
-    EQUB REVERSE({22, 7, 23, 0, 10, &20, 0, 0, 0, 0, 0, 0, 14})
+    EQUB REVERSE({VDU_MODE, 7, VDU_DEFINE, 0, CRTC_CURSOR_START, CRTC_CURSOR_OFF, 0, 0, 0, 0, 0, 0, VDU_PAGED_ON})
 .screen_setup_end
 
 ; OSWORD 0 for the filename: up to 12 characters, any printable.
@@ -456,7 +450,7 @@ SECTION pl_decrypted, filename="PLDEC", org=pl.encrypted - 1
 .format_chars
     EQUB inverted({TT_ALPHA_YELLOW, CODES("."), TT_ALPHA_GREEN})
     EQUB inverted({TT_ALPHA_CYAN, TT_ALPHA_MAGENTA, CODES("O"), CR})
-    EQUB inverted({15, BEL, CODES(">")})    ; VDU 15: paged mode off
+    EQUB inverted({VDU_PAGED_OFF, BEL, CODES(">")})
 ; Indexed from 1 (tens + 1): " " for 1-9, then "1", "2", "3".
 .tens_digits
     EQUS " 123"

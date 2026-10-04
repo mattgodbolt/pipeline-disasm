@@ -3,7 +3,7 @@
 ; The GRAPHIC stub reads this from sectors &145-&165, which no catalogue entry
 ; mentions, to &1AB0 and jumps to start. It edits a graphics set - the game's
 ; pictures and the names of its objects - kept at &4000 (src/default.6502 is
-; one; graphics_designer.6502inc names its layout), and goes back to the menu
+; one; sprites.6502inc names its layout), and goes back to the menu
 ; by running /MRUN (on tape it resets the machine instead).
 ;
 ; The screen is MODE 5 at &5800. On the left, the selected sprite magnified
@@ -29,9 +29,7 @@
 
 INCLUDE "os.6502inc"
 INCLUDE "osconst.6502inc"
-INCLUDE "io.6502inc"
-INCLUDE "sprites.6502inc"
-INCLUDE "graphics_designer.6502inc"
+INCLUDE "io.6502inc"                    ; and sprites.6502inc, the graphics set's format
 
 ; In shortcut_keys, an entry below &80 isn't a key (any INKEY_TEST() value is
 ; &80 or more).
@@ -39,7 +37,7 @@ NO_KEY = &57
 
 ; The code f0 gives while a menu runs (OSBYTE_FUNCTION_KEY_BASE), f1-f9 the
 ; codes after it. menu counts any code from FUNCTION_KEY_CODES up as one.
-CODE_F0            = &E0
+KEYCODE_F0         = &E0
 FUNCTION_KEY_CODES = &C8
 
 ; Window text: a flag byte (MENU makes the lines after the first a list to
@@ -86,11 +84,12 @@ UPSIDE_DOWN    = &80            ; in animation_frames: show the frame turned ove
 ; The screen: MODE 5, where a character row is 40 cells of 8 bytes, each cell
 ; four pixels (a byte) across and eight lines down. A MODE 5 text character
 ; is two cells wide; the designer's own font is one.
-SCREEN = &5800
+SCREEN = MODE5_SCREEN
 CELL   = 8
-ROW    = 40 * CELL
+ROW    = MODE5_ROW_BYTES
+ASSERT ROW = 40 * CELL
 
-graphics      = &4000           ; the graphics set
+graphics      = SET_LOAD_ADDRESS    ; the graphics set
 object_names  = graphics + SET_NAMES
 graphics_end  = graphics + SET_SIZE
 slot_28       = graphics + SET_NAMES - LARGE_SPRITE_SIZE    ; the last slot, which IO keeps apart
@@ -102,7 +101,6 @@ IO_GRAPHICS_OFFSET = io_graphics - io_start
 IO_LENGTH          = IO_END - io_start
 ASSERT LO(IO_SLOT_28_OFFSET) = LO(slot_28 - graphics)
 ASSERT LO(IO_NAMES_OFFSET) = LO(SET_NAMES)
-ASSERT IO_NAMES_SIZE = LARGE_SPRITE_SIZE + OBJECT_NAMES * OBJECT_NAME_LENGTH
 ASSERT IO_GRAPHICS_SIZE = slot_28 - graphics
 
 frame_a       = &3E00           ; SPRITE_FRAME_A
@@ -719,7 +717,7 @@ ASSERT window_size - window_address = 2 * WINDOWS
 }
 
 ; Open a window and let the user pick from it: a menu. While it runs, the
-; cursor keys give codes and the function keys CODE_F0 up; leaving with Space,
+; cursor keys give codes and the function keys KEYCODE_F0 up; leaving with Space,
 ; Escape or another function key puts the function keys back to strings, but
 ; picking with Return doesn't.
 ; In:  A = window number, X/Y = its text; if the text's flag is MENU the lines
@@ -751,10 +749,10 @@ ASSERT window_size - window_address = 2 * WINDOWS
     INC item
 .no_list
     LDA #OSBYTE_CURSOR_EDITING      ; the cursor keys give codes
-    LDX #&01
+    LDX #CURSOR_KEYS_CODES
     JSR OSBYTE
-    LDA #OSBYTE_FUNCTION_KEY_BASE   ; f0-f9 give CODE_F0 up
-    LDX #CODE_F0
+    LDA #OSBYTE_FUNCTION_KEY_BASE   ; f0-f9 give KEYCODE_F0 up
+    LDX #KEYCODE_F0
     LDY #&00
     JSR OSBYTE
 .read_key
@@ -767,7 +765,7 @@ ASSERT window_size - window_address = 2 * WINDOWS
     LDA #OSBYTE_ACKNOWLEDGE_ESCAPE  ; if there was an Escape
     JSR OSBYTE
     LDA #OSBYTE_FUNCTION_KEY_BASE   ; function keys back to strings
-    LDX #&01
+    LDX #FUNCTION_KEYS_STRINGS
     LDY #&00
     JSR OSBYTE
     PLA
@@ -788,9 +786,9 @@ ASSERT window_size - window_address = 2 * WINDOWS
     BEQ chosen
     BIT mask
     BPL read_key
-    CMP #CODE_DOWN
+    CMP #KEYCODE_DOWN
     BEQ down
-    CMP #CODE_UP
+    CMP #KEYCODE_UP
     BNE read_key
     LDA item
     BEQ read_key
@@ -1951,7 +1949,7 @@ ASSERT OBJECT_NAME_LENGTH = 12
 .start
 {
     LDA #OSBYTE_CURSOR_EDITING      ; the cursor keys give codes
-    LDX #&01
+    LDX #CURSOR_KEYS_CODES
     JSR OSBYTE
     LDA BRKV+1                      ; BRKV still in the ROMs: not ours yet
     BPL installed
@@ -2211,7 +2209,7 @@ ASSERT OBJECT_NAME_LENGTH = 12
     INX                             ; Escape was pending), so this is OSBYTE 4,1 and the
     JSR OSBYTE                      ; cursor keys stay codes; MENU sets that anyway
     LDA #OSBYTE_FUNCTION_KEY_BASE   ; function keys back to strings
-    LDX #&01
+    LDX #FUNCTION_KEYS_STRINGS
     JSR OSBYTE
     BIT disc_fs
     BMI run_mrun
@@ -2897,10 +2895,10 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     LDY #HI(empty_text)
     JSR open_window
     LDA #OSBYTE_CURSOR_EDITING      ; the cursor keys give codes
-    LDX #&01
+    LDX #CURSOR_KEYS_CODES
     JSR OSBYTE
-    LDA #OSBYTE_FUNCTION_KEY_BASE   ; f0-f9 give CODE_F0 up
-    LDX #CODE_F0
+    LDA #OSBYTE_FUNCTION_KEY_BASE   ; f0-f9 give KEYCODE_F0 up
+    LDX #KEYCODE_F0
     LDY #&00
     JSR OSBYTE
     LDA #OSBYTE_FLUSH_BUFFERS       ; empty the keyboard buffer
@@ -2920,20 +2918,20 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     JMP show_palette.done
 .got_key
     LDY item
-    CMP #CODE_F0
+    CMP #KEYCODE_F0
     BCS done
     CMP #CR
     BEQ done
     CMP #ascii(" ")
     BEQ done
-    CMP #CODE_DOWN
+    CMP #KEYCODE_DOWN
     BNE not_down
     LDX item
     CPX #&03                        ; logical colours 0-3
     BEQ not_down
     INC item
 .not_down
-    CMP #CODE_UP
+    CMP #KEYCODE_UP
     BNE moved
     LDX item
     BEQ moved
@@ -2944,10 +2942,10 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     JSR palette_highlight
     PLA
     LDX #&01                        ; right: the next physical colour
-    CMP #CODE_RIGHT
+    CMP #KEYCODE_RIGHT
     BEQ change
     LDX #&FF                        ; left: the one before
-    CMP #CODE_LEFT
+    CMP #KEYCODE_LEFT
     BNE read_key
 .change
     STX colour_step
@@ -3740,11 +3738,11 @@ ASSERT LO(graphics) = 0 AND HI(graphics) + HI(SET_SIZE) = HI(graphics_end)
 .io
     LDA gbpb_pointer+1
     CMP #HI(slot_28 - graphics)     ; the slot IO keeps apart
-    BNE io_graphics
+    BNE in_io_graphics              ; the rest are among IO's graphics
     LDA #HI(IO_SLOT_28_OFFSET)      ; (the low byte is the same)
     STA gbpb_pointer+1
     RTS
-.io_graphics
+.in_io_graphics
     LDA gbpb_pointer
     CLC
     ADC #LO(IO_GRAPHICS_OFFSET)
@@ -4065,7 +4063,7 @@ ASSERT LO(graphics) = 0 AND HI(graphics) + HI(SET_SIZE) = HI(graphics_end)
 IO_SEGMENT = 6                  ; bytes an entry
 .io_segments
     EQUW slot_28, IO_SLOT_28_OFFSET, LARGE_SPRITE_SIZE
-    EQUW object_names, IO_NAMES_OFFSET, OBJECT_NAMES * OBJECT_NAME_LENGTH
+    EQUW object_names, IO_NAMES_OFFSET, OBJECT_KINDS * OBJECT_NAME_LENGTH
     EQUW graphics, IO_GRAPHICS_OFFSET, IO_GRAPHICS_SIZE         ; slots &00-&27
 .io_segments_end
 
@@ -4195,7 +4193,7 @@ IO_SEGMENT = 6                  ; bytes an entry
 .abandon
     JMP pick_second_sprite.abandon_command
 .got_key
-    CMP #CODE_F0
+    CMP #KEYCODE_F0
     BCS abandon
     CMP #CR
     BNE edit

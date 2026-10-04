@@ -6,10 +6,11 @@
 ; &0900-&23AC, sets up the screen and the sound event, and jumps to the game,
 ; which then loads the mission file IO over the loader (see io.6502inc).
 ;
-; Names for the game's screen, data and OS calls are in game.6502inc. Routine
-; headers say what a routine is for, then In:, Out: and Clobbers: (where
-; "everything" means the registers and whatever zero page the routines it
-; calls use). Text is printed through the OS, placed with TEXT_AT.
+; Names for the game's screen and data are in game.6502inc (the OS's in
+; osconst.6502inc, a level's in leveldata.6502inc). Routine headers say what
+; a routine is for, then In:, Out: and Clobbers: (where "everything" means
+; the registers and whatever zero page the routines it calls use). Text is
+; printed through the OS, placed with TEXT_AT.
 ;
 ; First drafted by tools/dis6502seg.py (hints/hidden_game.toml); edited by
 ; hand since, so don't regenerate over it.
@@ -159,7 +160,7 @@ trigger_flags = &0100                   ; a byte per trigger, from io_level_trig
 keys_were_down = &0120                  ; a byte per direction key: 1 if it was down last time
 step_y = &0124                          ; step's scratch
 saved_extended_vectors = &037F          ; over the cassette filing system's workspace
-map = &5800                             ; the level being played's map, copied from io_maps
+map = IO_END                            ; the level being played's map, copied from io_maps
 
 menu_keys = &50                         ; where MENU leaves the ten keys
 copy_return = &00
@@ -242,9 +243,9 @@ bit6_mask = fire_object_vanishes + 1    ; the byte there is &40
 .message_to_crackers
     EQUS " GET YOUR GRUBBY LITTLE HANDS OFF THIS PROGRAM! "
 
-; VDU 23, 0, CRTC_CURSOR_START, 32, 0, 0, 0, 0, 0, 0, backwards.
+; VDU 23, 0, CRTC_CURSOR_START, CRTC_CURSOR_OFF, 0, 0, 0, 0, 0, 0, backwards.
 .cursor_off_vdu
-    EQUB 0, 0, 0, 0, 0, 0, 32, CRTC_CURSOR_START, 0, VDU_DEFINE
+    EQUB 0, 0, 0, 0, 0, 0, CRTC_CURSOR_OFF, CRTC_CURSOR_START, 0, VDU_DEFINE
 .cursor_off_vdu_end
 
 ; For each of the action keys in the order the game tests them (action_keys),
@@ -2272,12 +2273,13 @@ ASSERT OSBYTE_ENABLE_EVENT DIV 2 = OSWORD_SOUND AND EVENT_OUTPUT_EMPTY = 0 AND H
 ASSERT direction_dy - direction_dx = DIRECTION_NONE + 1
 
 ; Directions turned: indexed by the direction plus TURN_BACK, TURN_AHEAD,
-; TURN_CLOCKWISE or TURN_ANTICLOCKWISE.
+; TURN_CLOCKWISE or TURN_ANTICLOCKWISE times TURN_ROW.
 .turns
     EQUB DIRECTION_RIGHT, DIRECTION_LEFT, DIRECTION_DOWN, DIRECTION_UP     ; back
     EQUB DIRECTION_LEFT, DIRECTION_RIGHT, DIRECTION_UP, DIRECTION_DOWN     ; ahead
     EQUB DIRECTION_UP, DIRECTION_DOWN, DIRECTION_RIGHT, DIRECTION_LEFT     ; clockwise
     EQUB DIRECTION_DOWN, DIRECTION_UP, DIRECTION_LEFT, DIRECTION_RIGHT     ; anticlockwise
+ASSERT P% - turns = (TURN_ANTICLOCKWISE + 1) * TURN_ROW
 
 ; Look at the cell in front of the player: find_front from where they face,
 ; look_at_front at front_x and front_y, look_at at (X, Y).
@@ -2404,14 +2406,14 @@ ASSERT direction_dy - direction_dx = DIRECTION_NONE + 1
 ; Print the name of object icon A.
 ; Clobbers: A, X, Y, work0.
 .print_object_name
-    ASL A                               ; * IO_NAME_LENGTH
+    ASL A                               ; * OBJECT_NAME_LENGTH
     ASL A
     STA work0
     ASL A
     ADC work0
     TAY
-    LDX #IO_NAME_LENGTH - 1
-ASSERT IO_NAME_LENGTH = 12
+    LDX #OBJECT_NAME_LENGTH - 1
+ASSERT OBJECT_NAME_LENGTH = 12
 
 ; Print X + 1 characters from io_object_names + Y.
 ; Clobbers: A, X, Y.
@@ -3883,7 +3885,7 @@ ASSERT SCREEN_COLUMNS / 2 = &10         ; for bit4_mask
     BPL print_selected_object
     LDA #VDU_BACKSPACE                  ; nothing selected: back a character...
     JSR OSWRCH
-    LDY #IO_NAME_LENGTH + 2
+    LDY #OBJECT_NAME_LENGTH + 2
     LDA #ascii(" ")                     ; ...and spaces a character past a name
 .print_selected_blank
     JSR OSWRCH
@@ -4053,7 +4055,7 @@ ASSERT DIRECTION_UP = 2 AND DIRECTION_DOWN = 3 AND CELL_PIPE_DOWN = CELL_PIPE_AC
     BEQ try_push_done
     CMP #CELL_JUNCTION                  ; a junction?
     BNE pipe_check_ahead
-    LDA #TURN_ANTICLOCKWISE             ; anticlockwise first
+    LDA #TURN_ANTICLOCKWISE * TURN_ROW  ; anticlockwise first
     STA work2
 
 ; Try turning anticlockwise, then clockwise, then straight on, for a pipe
@@ -4079,7 +4081,7 @@ ASSERT DIRECTION_UP = 2 AND DIRECTION_DOWN = 3 AND CELL_PIPE_DOWN = CELL_PIPE_AC
     BEQ pipe_junction_found
     LDA work2                           ; then clockwise, then straight on
     SEC
-    SBC #TURN_ANTICLOCKWISE - TURN_CLOCKWISE
+    SBC #(TURN_ANTICLOCKWISE - TURN_CLOCKWISE) * TURN_ROW
     STA work2
     BNE pipe_junction_turn              ; (TURN_BACK: not tried)
     BEQ pipe_reverse                    ; no way on: turn back
@@ -4164,7 +4166,7 @@ ASSERT TURN_ANTICLOCKWISE - TURN_CLOCKWISE = TURN_CLOCKWISE - TURN_AHEAD AND TUR
 .collect_spin
     LDA facing                          ; anticlockwise
     CLC
-    ADC #TURN_ANTICLOCKWISE
+    ADC #TURN_ANTICLOCKWISE * TURN_ROW
     TAY
     LDA turns, Y
     STA facing
@@ -4914,8 +4916,8 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
     TAY                                 ; the trigger * 4, for trigger_args
     LDA trigger_condition, Y            ; the condition
     STA work0
-    BPL throw_trigger_cell              ; CONDITION_DIRECTION?
-    AND #CONDITION_DIRECTION_BITS
+    BPL throw_trigger_cell              ; CONDITION_CHECK_DIRECTION?
+    AND #CONDITION_DIRECTION
     LSR A
     LSR A
     LSR A
@@ -4924,9 +4926,9 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
     BNE trigger_no_match
     LDA work0
 .throw_trigger_cell
-    BIT bit6_mask                       ; CONDITION_CELL?
+    BIT bit6_mask                       ; CONDITION_CHECK_CELL?
     BEQ throw_trigger_fires
-    AND #CONDITION_CELL_BITS
+    AND #CONDITION_CELL
     CMP thrown_picture                  ; what it landed against?
     BNE trigger_no_match
 
@@ -4979,8 +4981,8 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
     TAY                                 ; the trigger * 4, for trigger_args
     LDA trigger_condition, Y            ; the condition
     STA work0
-    BPL use_trigger_cell                ; CONDITION_DIRECTION?
-    AND #CONDITION_DIRECTION_BITS
+    BPL use_trigger_cell                ; CONDITION_CHECK_DIRECTION?
+    AND #CONDITION_DIRECTION
     LSR A
     LSR A
     LSR A
@@ -4992,9 +4994,9 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
     BNE trigger_fails
     LDA work0
 .use_trigger_cell
-    BIT bit6_mask                       ; CONDITION_CELL?
+    BIT bit6_mask                       ; CONDITION_CHECK_CELL?
     BEQ use_trigger_fires
-    AND #CONDITION_CELL_BITS
+    AND #CONDITION_CELL
     CMP front_cell                      ; the cell in front?
     BNE trigger_fails
 .use_trigger_fires
@@ -5025,7 +5027,7 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
     ORA #PUZZLE_OFF
     STA trigger_flags, X
 .trigger_action
-    AND #TRIGGER_ACTION
+    AND #PUZZLE_ACTION
     ASL A
     TAX
     LDA trigger_actions, X
@@ -5054,8 +5056,8 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
 .light_exit_done
     RTS
 
-; Action 14: push the cell in front, direction A (TURN_*) turned from the way
-; the player faces.
+; Action 14: push the cell in front, direction A (a TURN_* times TURN_ROW)
+; turned from the way the player faces.
 .action_push
     JSR front_blocked
     BCS trigger_fails_pop2
@@ -5187,8 +5189,9 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
     BPL blast_cell
     RTS
 
-; Action 3: before the exit's lit, set the clock to X (unless A bit 7 is
-; set) and the number to collect to Y (unless A bit 0 is set).
+; Action 3: before the exit's lit, set the clock to X (unless A has
+; SET_LEVELS_KEEP_TIME) and the number to collect to Y (unless it has
+; SET_LEVELS_KEEP_COLLECTS).
 ; Clobbers: everything.
 .action_set_clock
     JSR trigger_arguments
@@ -5196,11 +5199,12 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
     LDA stage
     BNE action_fails                    ; only before the exit's lit
     PLA
-    BMI set_clock_collect               ; bit 7: keep the clock
+    BMI set_clock_collect               ; SET_LEVELS_KEEP_TIME
     STX time_left
 .set_clock_collect
     LSR A
-    BCS set_clock_sound                 ; bit 0: keep the number
+    BCS set_clock_sound                 ; SET_LEVELS_KEEP_COLLECTS
+ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
     STY to_collect
 .set_clock_sound
     LDA #&96
@@ -5504,8 +5508,9 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
     DEY
     BNE monster_turn_shift
     ROL A                               ; back, ahead, clockwise, anticlockwise...
-    ASL A                               ; ...* 4: TURN_*
+    ASL A                               ; ...* TURN_ROW
     ASL A
+ASSERT TURN_ROW = 4
     ADC work2
     TAY
     LDA turns, Y                        ; the way to try
@@ -5796,7 +5801,7 @@ ASSERT P% - mission_filename = FILENAME_LENGTH + 1
     EQUW action_set_pushes
     EQUW action_push
     EQUW action_swap_keys
-ASSERT P% - trigger_actions = 2 * (TRIGGER_ACTION + 1)
+ASSERT P% - trigger_actions = 2 * (PUZZLE_ACTION + 1)
 
 ; The player's actions, by action number (ACTION_*): nothing, P, D, M, CTRL,
 ; T, Return, the four directions, and nothing again when a trigger has

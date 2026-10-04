@@ -10,14 +10,16 @@
 ;
 ; The designer's sheet shows the large slots in its own order
 ; (slot_of_position in H.GRAPH).
+INCLUDE "sprites.6502inc"
 INCLUDE "default.6502inc"
 
-SECTION default, filename="DEFAULT", org=&4000, load=&4000, exec=&0
+SECTION default, filename="DEFAULT", org=SET_LOAD_ADDRESS, load=SET_LOAD_ADDRESS, exec=&0
 
 .graphics
     EQUB default_graphics()
 .names
+    ASSERT names - graphics = SET_NAMES - LARGE_SPRITE_SIZE
     EQUB default_names()
-    ASSERT P% = &4F34
+    ASSERT P% - graphics = SET_SIZE
 
 ENDSECTION
