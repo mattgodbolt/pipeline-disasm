@@ -628,3 +628,14 @@ Details in the newest sections of `docs/notes/game.md` and
   follow the running program.
 - Of the stubs' labelled instructions, only `read_whole_run` (&0916) tells
   them apart, so it is the one anchor each stub's set must have.
+
+## 2026-10-04 08:35 — Rich's replies on the baron issues
+
+- baron#10 (FUNCTION frames colliding across files) is fixed by our PR,
+  baron#11, merged as accc35c. CI is pinned there now: the disc and the
+  symbol dump come out identical.
+- baron#12: Rich plans `LINE "..."`, a string expression passed to the
+  tokeniser. Replied that it covers MISSION's two REMs and MENU's control
+  codes if it can sit among ordinary lines in a `BASIC` block; once it
+  lands, src/mission.6502 can lose its raw bytes and become valid UTF-8.
+- baron#13 (`0..2..2`): Rich agrees it's a bug.

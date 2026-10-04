@@ -8,9 +8,9 @@ issues say they're from Claude acting for Matt. Symbol-dump points are in
 
 | Issue | What | Why it matters here |
 |---|---|---|
-| [baron#12](https://github.com/waitingforvsync/baron/issues/12) | A way to put a byte by value into a BASIC line, or to interleave EQUB'd records with a BASIC block | MENU and MISSION hide control and teletext codes in lines; `src/mission.6502` has to carry raw bytes, which aren't valid UTF-8 |
-| [baron#13](https://github.com/waitingforvsync/baron/issues/13) | `a..b..b` (limit equal to the second element) fails with "Argument out of domain" | Hit building tables in the Level Designer |
-| [baron#10](https://github.com/waitingforvsync/baron/issues/10) (filed from another session) | FUNCTION frames collide when called at the same offset in two files of one assembly | We call FUNCTIONs from several includes; `make verify` would catch a wrong byte |
+| [baron#12](https://github.com/waitingforvsync/baron/issues/12) | A way to put a byte by value into a BASIC line, or to interleave EQUB'd records with a BASIC block | MENU and MISSION hide control and teletext codes in lines; `src/mission.6502` has to carry raw bytes, which aren't valid UTF-8. Rich plans `LINE "..."` (a string expression handed to the tokeniser); we said it covers us if it can sit among ordinary lines |
+| [baron#13](https://github.com/waitingforvsync/baron/issues/13) | `a..b..b` (limit equal to the second element) fails with "Argument out of domain" | Hit building tables in the Level Designer. Rich agrees it's a bug |
+| [baron#10](https://github.com/waitingforvsync/baron/issues/10) (filed from another session) | FUNCTION frames collide when called at the same offset in two files of one assembly | We call FUNCTIONs from several includes; `make verify` would catch a wrong byte. Fixed by our PR (baron#11, merged as accc35c); CI is pinned there |
 
 ## Asked for, not filed
 
