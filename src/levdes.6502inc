@@ -3,9 +3,10 @@
 ; directions, turns, conditions...) are in leveldata.6502inc, and the OS's in
 ; osconst.6502inc.
 
-; The screen: MODE 1 narrowed to 64 columns of 8 bytes (four pixels), so a
-; character row is 512 bytes, and 32 rows fill &3000-&6FFF. A map cell is a
-; column's byte by four scan lines, two cells to a character row.
+; The screen: MODE 1 narrowed to 64 columns of 8 bytes (each column four
+; pixels wide), so a character row is 512 bytes, and 32 rows fill
+; &3000-&6FFF. A map cell is four pixels (a byte) across by four scan lines
+; down, so a column of a character row holds two cells, one above the other.
 screen          = MODE1_SCREEN
 SCREEN_COLUMNS  = 64
 SCREEN_ROWS     = 32
@@ -21,8 +22,9 @@ FUNCTION os_tab(column, row)
     ASSERT offset MOD MODE1_CHAR_BYTES == 0, "no OS character starts at ", column, ", ", row
 = {VDU_TAB, (offset MOD MODE1_ROW_BYTES) DIV MODE1_CHAR_BYTES, offset DIV MODE1_ROW_BYTES}
 
-; The message box: character rows 14-17 and columns 2-61. print_line1 and
-; print_line2 print on its first and third rows, four columns in.
+; The message box, where the designer prompts and reads input: character
+; rows 14-17 and columns 2-61. print_line1 and print_line2 print on its
+; first and third rows, from column 4.
 MESSAGE_BOX_ROW     = 14
 MESSAGE_BOX_ROWS    = 4
 MESSAGE_BOX_COLUMN  = 2
@@ -43,7 +45,8 @@ KEYCODE_F0          = &80       ; f0-f9: &80-&89
 KEYCODE_CURSOR_DOWN = &8E       ; function key 14
 KEYCODE_CURSOR_UP   = &8F       ; function key 15
 
-; The startup options byte (the keyboard links) that opens the back door.
+; The startup options byte (the keyboard links) that lets an "i" typed at an
+; error leave for BASIC (brk_handler): the authors' back door.
 DEVELOPERS_LINKS = &CF
 ; The designer's own error number for Escape.
 ERROR_ESCAPE_KEY = &1B
