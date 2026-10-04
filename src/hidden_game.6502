@@ -1945,12 +1945,17 @@ NEXT
     STA CRTC_DATA                       ; value
     RTS
 
-; The map view (the M key): the whole 64 x 64 map at a byte (4 pixels) by 4
-; lines a cell, so 32 of its 64 columns at a time, scrolled by moving the
-; screen start a character (and a map column) at a time; screen_start is the
-; leftmost column shown. Draw all 32 columns.
+; The map view (the M key) shows the map a byte (4 pixels) by 4 lines a cell:
+; a character cell holds two cells, one above the other, so the 64 rows fit
+; and 32 of the 64 columns show at a time. Map column x is drawn at SCREEN +
+; 8x, and the screen starts at map column screen_start: so columns x and x +
+; 32 share memory, a character row apart, and only the columns in view are
+; drawn. Scrolling moves the screen's start a character and draws the column
+; that comes into view over the one that went out.
+; Draw all the columns in view.
+; Clobbers: A, X, Y, work0-work3, sprite, sprite_high.
 .draw_map_view
-    LDX #&1F
+    LDX #SCREEN_COLUMNS - 1
 .draw_map_view_loop
     TXA
     PHA
@@ -1963,23 +1968,24 @@ NEXT
     RTS
 
 ; Scroll the map view one column, drawing the column that comes into view.
+; Clobbers: as draw_map_view.
 .map_view_scroll_left
     LDA screen_start                    ; already at the left?
     BEQ map_view_return
     DEC screen_start
-    LDA #&00
+    LDA #0
 .map_view_draw_left
     BEQ draw_map_view_column
 .map_view_scroll_right
     LDA screen_start
-    CMP #&20                            ; already at the right?
+    CMP #MAP_SIZE - SCREEN_COLUMNS      ; already at the right?
     BEQ map_view_return
     INC screen_start
-    LDA #&1F                            ; the rightmost column
+    LDA #SCREEN_COLUMNS - 1             ; the rightmost column
 
 ; Draw map view column A (0-31 across the screen; map column A plus
-; screen_start), top to bottom: two map cells to a character cell.
-; Clobbers: A, X, Y, work0-work3, sprite.
+; screen_start), top to bottom, and set the screen's start.
+; Clobbers: as draw_map_view.
 .draw_map_view_column
     CLC
     ADC screen_start
@@ -1990,28 +1996,28 @@ NEXT
     PLA
     LDY #HI(SCREEN) DIV 8               ; work0 = SCREEN + 8 * column
     STY work1
-    LDY #&00
+    LDY #0
     STY work2
-    LDX #&03
+    LDX #3
 .draw_map_view_address
     ASL work0
     ROL work1
-    LSR A                               ; work2 = map + 32 * map column
+    LSR A                               ; work2 = map + MAP_COLUMN_BYTES * column
     ROR work2
     DEX
     BNE draw_map_view_address
     ADC #HI(map)
     STA work3
-    LDA #&1F                            ; 32 character rows
+    LDA #SCREEN_ROWS - 1                ; counting character rows down
     STA sprite_high
 .draw_map_view_byte
     LDA (work2), Y
     PHA
-    ASL A                               ; the even row's cell...
-    ASL A
-    LDY #&07
+    ASL A                               ; the odd row's cell, in the low nibble,
+    ASL A                               ; in the lower four lines...
+    LDY #CHAR_BYTES - 1
     JSR draw_map_view_cell
-    PLA                                 ; ...and the odd's
+    PLA                                 ; ...and the even row's above it
     LSR A
     LSR A
     JSR draw_map_view_cell
@@ -2030,46 +2036,52 @@ NEXT
 ; Clobbers: A, X.
 .set_screen_start
     JSR wait_vsync
-    LDX #&0C
+    LDX #CRTC_START_HIGH
     LDA screen_start_high
     JSR set_crtc_register
-    INX
+    INX                                 ; CRTC_START_LOW
     LDA screen_start
     JMP set_crtc_register
+ASSERT CRTC_START_LOW = CRTC_START_HIGH + 1
 
-; Wait for the vertical sync (OSBYTE &13). Preserves A.
+; Wait for the vertical sync. Preserves A.
 .wait_vsync
     PHA
-    LDA #&13
+    LDA #OSBYTE_WAIT_VSYNC
     JSR OSBYTE
     PLA
     RTS
 
-; Draw one map cell in the map view: A's bits 2-5 are its type, 4 times;
-; Y the last of its 4 lines. The player's cell shows the player instead.
+; Draw one map cell in the map view: four lines of its pattern, or of the
+; player's if they're there.
+; In: A's bits 2-5 = the cell type; Y = the last of its four lines in the
+; character cell (7 for an odd row, 3 for an even); work0 = the character
+; cell; sprite = the map column; sprite_high = 31 - the character row.
+; Out: Y four lines up.
+; Clobbers: A, X.
 .draw_map_view_cell
-    AND #&3C
+    AND #&0F << 2                       ; the type * 4: its pattern
     TAX
     LDA sprite                          ; the player's cell?
     CMP player_x
     BNE draw_map_view_pattern
-    TYA
+    TYA                                 ; the carry: an odd row
     LSR A
     LSR A
     LSR A
     LDA sprite_high
-    EOR #&1F
-    ROL A
+    EOR #SCREEN_ROWS - 1
+    ROL A                               ; the map row
     CMP player_y
     BNE draw_map_view_pattern
     LDA facing                          ; the player, facing their way
     ASL A
     ASL A
-    ADC #map_view_player - map_view_patterns
+    ADC #map_view_player - map_view_patterns ; (the carry's set)
     TAX
 .draw_map_view_pattern
-    STX draw_map_view_copy + 1          ; self-modified: the pattern
-    LDX #&03
+    STX draw_map_view_copy + 1          ; self-modified: the pattern's low byte
+    LDX #3
 .draw_map_view_copy
     LDA map_view_patterns, X
     STA (work0), Y
@@ -2077,11 +2089,13 @@ NEXT
     DEX
     BPL draw_map_view_copy
     RTS
+ASSERT LO(map_view_patterns) = 0
 
-; What's in map cell (X, Y), as the player meets it: off the map is lava (A),
-; and the exit, while it shows its icon (F), is a wall (8).
-; Returns: A = the cell type, Z set if it's empty floor (0).
-; Clobbers: X, Y, cell_x, cell_y, map_pointer.
+; What's in map cell (X, Y), as the player meets it: off the map is lava,
+; and the exit, while it shows its icon (CELL_OBJECT), is a wall.
+; Out: A = the cell type, Z set if it's empty floor; carry set off the map or
+; at the exit.
+; Clobbers: X, Y, cell_x, cell_y, map_pointer, cell_low_nibble.
 .cell_at
     CPX exit_x
     BNE cell_at_checked
@@ -2092,20 +2106,22 @@ NEXT
     BNE cell_at_exit                    ; a wall
     LDA #CELL_WALL
 .cell_at_exit
-    CMP #&00
+    CMP #0
     RTS
 
-; As cell_at but without the exit. Returns with the carry set off the map.
+; As cell_at but without the exit.
+; Out: A = the cell type, Z set if it's empty floor; carry set off the map.
 .cell_at_checked
-    CPX #&40                            ; off the map?
+    CPX #MAP_SIZE                       ; off the map?
     BCS cell_off_map
-    CPY #&40
+    CPY #MAP_SIZE
     BCC read_map_cell
 .cell_off_map
     LDA #CELL_LAVA                      ; lava
     RTS
 
 ; Read map cell (X, Y), on the map.
+; Out: A = the cell type, Z set if it's empty floor; carry clear.
 .read_map_cell
     STX cell_x
     STY cell_y
@@ -2123,21 +2139,24 @@ NEXT
 .set_cell_return
     RTS
 
-; Put the player in the view at its top left cell (X, Y) + (4, 4), the view
-; showing half a cell beyond: the start of a level, or a teleport.
+; Put the view's top left at map cell (X, Y), and the player VIEW_CELLS / 2
+; cells further on in the middle of it, and empty their cell: the start of a
+; level, or a teleport. (X, Y) become where the level starts again after a
+; life is lost, so a teleport moves that too.
+; Clobbers: A, X, Y, work0, cell_x, cell_y, map_pointer, cell_low_nibble.
 .place_player
     STX start_x
     STY start_y
     TXA
     STA view_cell_x
     PHA
-    ASL A
+    ASL A                               ; * CHARS_PER_CELL
     ASL A
     CLC
-    ADC #&02
+    ADC #CHARS_PER_CELL / 2
     STA view_x                          ; half a cell in
     PLA
-    ADC #&04                            ; the player is 4 cells in
+    ADC #VIEW_CELLS / 2                 ; the player is in the middle
     STA player_x
     TAX
     TYA
@@ -2146,10 +2165,10 @@ NEXT
     ASL A
     ASL A
     CLC
-    ADC #&02
+    ADC #CHARS_PER_CELL / 2
     STA view_y
     PLA
-    ADC #&04
+    ADC #VIEW_CELLS / 2
     STA player_y
     JSR find_front
 
@@ -2157,21 +2176,22 @@ NEXT
 .clear_player_cell
     LDX player_x
     LDY player_y
-    LDA #&00
+    LDA #CELL_FLOOR
 
 ; Set map cell (X, Y) to type A, if it's on the map. The exit can't be
 ; emptied.
-; Clobbers: A, X, Y, work0, cell_x, cell_y, map_pointer.
+; Out: carry set if nothing was written (off the map, or emptying the exit).
+; Clobbers: A, X, Y, work0, cell_x, cell_y, map_pointer, cell_low_nibble.
 .set_cell
-    CPX #&40
+    CPX #MAP_SIZE
     BCS set_cell_return
-    CPY #&40
+    CPY #MAP_SIZE
     BCS set_cell_return
     CPX exit_x
     BNE set_cell_write
     CPY exit_y
     BNE set_cell_write
-    CMP #&00                            ; don't empty the exit
+    CMP #CELL_FLOOR                     ; don't empty the exit
     BEQ set_cell_done
 .set_cell_write
     STA work0
