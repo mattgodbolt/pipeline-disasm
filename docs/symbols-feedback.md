@@ -33,6 +33,12 @@ nothing here is built yet.
   about 370 KB. An option to
   leave them out would help.
 
+- Every FUNCTION leaves a `null` parameter frame (`"@0:46.n": null`) in the
+  dump of every file that includes its definition, used or not; a call made
+  inside a MACRO adds a second frame. Moving data emitters out of macros and
+  into top-level FUNCTION calls, and vectorising per-element loops into list
+  expressions, took this project's dump from 1.44 MB to 0.83 MB.
+
 ## What a consumer would want, at minimum
 
 For each saved section: its filename, run address range (org to end), and
