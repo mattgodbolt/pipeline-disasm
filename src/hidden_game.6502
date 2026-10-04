@@ -3307,26 +3307,27 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
 ; Copy the level's data out of IO into the variables the game plays with: its
 ; setup, its map (to map, where it can change), monsters, objects and
 ; triggers; the backpack starts empty.
+; Clobbers: everything.
 .setup_level
     LDA level
+    ASL A                               ; * LEVEL_SETUP_BYTES
     ASL A
     ASL A
-    ASL A
-    ADC #&07
+    ADC #LEVEL_SETUP_BYTES - 1
     TAY
-    LDX #&07
+    LDX #LEVEL_SETUP_BYTES - 1
 .setup_level_setup
-    LDA io_level_setup, Y               ; the 8 setup bytes, from start_x
+    LDA io_level_setup, Y               ; the setup bytes, from start_x
     STA start_x, X
     DEY
     DEX
     BPL setup_level_setup
     INY
-    TYA
+    TYA                                 ; level * 8: the map's page offset
     PHA
     ADC #HI(io_maps)                    ; the level's map
     STA work1
-    LDY #&00
+    LDY #0
     STY work0
     STY backpack_slot
     STY thrown_direction
@@ -3335,7 +3336,7 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     STY work2
     LDA #HI(map)                        ; goes to map
     STA work3
-    LDX #&08                            ; 8 pages
+    LDX #HI(IO_MAP_SIZE)                ; 8 pages
 .setup_level_map
     LDA (work0), Y
     STA (work2), Y
@@ -3347,9 +3348,9 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     BNE setup_level_map
     PLA
     ASL A                               ; level * 16
-    ADC #&0F
+    ADC #MONSTERS * MONSTER_BYTES - 1
     TAY
-    LDX #&0F
+    LDX #MONSTERS * MONSTER_BYTES - 1
 .setup_level_monsters
     LDA io_level_monsters, Y            ; monsters
     STA monster_x, X
@@ -3359,9 +3360,9 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     INY
     TYA                                 ; level * 32
     ASL A
-    ADC #&1F
+    ADC #OBJECTS * OBJECT_BYTES - 1
     TAY
-    LDX #&1F
+    LDX #OBJECTS * OBJECT_BYTES - 1
 .setup_level_objects
     LDA io_level_objects, Y             ; objects...
     STA objects, X
@@ -3373,35 +3374,39 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     INY
     TYA                                 ; level * 64
     ASL A
-    ADC #&3F
+    ADC #2 * PUZZLES - 1
     TAY
-    LDX #&3F
+    LDX #2 * PUZZLES - 1
 .setup_level_triggers
     LDA io_level_trigger_places, Y      ; triggers' places...
     STA trigger_places, X
-    LDA io_level_trigger_args_0, Y      ; ...and arguments
+    LDA io_level_trigger_args_0, Y      ; ...and arguments, in two halves
     STA trigger_args, X
     LDA io_level_trigger_args_1, Y
-    STA trigger_args + 64, X
+    STA trigger_args + 2 * PUZZLES, X
     DEY
     DEX
     BPL setup_level_triggers
-    LDY #&03
+    LDY #BACKPACK_SLOTS - 1
 .setup_level_backpack
-    STX backpack, Y                     ; X = &FF: every slot empty
+    STX backpack, Y                     ; X = EMPTY_SLOT
     DEY
     BPL setup_level_backpack
     JMP setup_alternate_pictures
+ASSERT LEVEL_SETUP_BYTES = alternate_cells + 1 - start_x AND LEVEL_TIME = time_left - start_x
+ASSERT OBJECTS * OBJECT_BYTES = PUZZLES AND LO(io_maps) = 0 AND LO(IO_MAP_SIZE) = 0
 
 ; One cycle of play: the player's turn, then four frames of the keys being
-; read and things moving, then the monsters are marked on the map as deadly
-; cells (E) until they next move.
+; read and things moving a character, then the monsters are marked on the
+; map as fire (deadly) until they next move. A step ends the cycle early,
+; having moved things itself (move).
+; Clobbers: everything.
 .play_cycle
     JSR player_turn
     LDA player_dead                     ; dead?
     BNE play_cycle_done
     JSR think                           ; think...
-    LDA #&04
+    LDA #CHARS_PER_CELL
     STA work2
 .play_cycle_step
     JSR wait_vsync                      ; ...then four frames
@@ -3415,21 +3420,22 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
 
 ; Move a thrown object on a cell, advance the frame counter, decide where each
 ; monster goes next, and take the monsters off the map.
+; Clobbers: everything.
 .think
     JSR fly_thrown                      ; a thrown object
     LDA frame_counter
     CLC
     ADC #&20
     STA frame_counter
-    LDA #&03
+    LDA #MONSTERS - 1
     STA work4
 .think_monster
     LDA work4                           ; each monster's 4 bytes...
     ASL A
     ASL A
-    ADC #&03
+    ADC #MONSTER_BYTES - 1
     TAX
-    LDY #&03
+    LDY #MONSTER_BYTES - 1
 .think_monster_copy
     LDA monster_x, X                    ; ...to work0-work3
     STA work0, Y
@@ -3440,10 +3446,12 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     JSR monster_think                   ; where it goes
     DEC work4
     BPL think_monster
-    LDA #&00                            ; and take them off the map
+    LDA #CELL_FLOOR                     ; and take them off the map
+
+; Set the cells of the monsters that are out to type A.
 .set_monster_cells
     STA work5
-    LDA #&03
+    LDA #MONSTERS - 1
     STA work4
 .set_monster_cell
     LDA work4
@@ -3451,7 +3459,7 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     ASL A
     TAX
     LDA monster_direction, X            ; not out?
-    CMP #&08
+    CMP #MONSTER_GONE
     BCS set_monster_cell_next
     JSR monster_cell
     LDA work5
@@ -3462,10 +3470,11 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
 .play_cycle_done
     RTS
 
-; Is the key with negative INKEY number X pressed? (OSBYTE &81.)
-; Returns: Z set if it is.
+; Is the key with negative INKEY number X pressed?
+; Out: Z set (X = 0, Y = &FF) if it is.
+; Clobbers: A.
 .key_pressed
-    LDA #&81                            ; INKEY
+    LDA #OSBYTE_INKEY
     LDY #&FF
     JSR OSBYTE
     INX                                 ; &FF + 1 = 0 when pressed
@@ -3475,6 +3484,7 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
 ; The player's turn: Escape gives up a life (with SHIFT, the game). Then look
 ; at what's in front of the player and underneath, try every trigger, and do
 ; an action: the one pressed, or the pipe's move while in a pipe.
+; Clobbers: everything.
 .player_turn
     BIT MOS_ESCAPE_FLAG                 ; Escape?
     BPL player_turn_no_escape
@@ -3486,24 +3496,24 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     STX lives
 .give_up_life
     INC player_dead
-    LDA #&7E                            ; (no more moves)
-    STA pipe_move
-    JMP OSBYTE                          ; acknowledge Escape
+    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE      ; also, as pipe_move, the player isn't
+    STA pipe_move                       ; drawn again
+    JMP OSBYTE
 .player_turn_no_escape
     JSR find_front
     LDX player_x
     LDY player_y
     JSR cell_at                         ; what the player stands on...
     JSR check_pipe_end                  ; ...as it affects pipes
-    LDA #&00
+    LDA #0
 .player_turn_triggers
     PHA
-    LDY #&00                            ; walking onto triggers
+    LDY #0                              ; triggers fired by walking onto them
     JSR use_trigger
     PLA
     CLC
-    ADC #&01
-    CMP #&20                            ; 32 of them
+    ADC #1
+    CMP #PUZZLES                        ; all of them
     BNE player_turn_triggers
     LDX player_x
     LDY player_y
@@ -3521,10 +3531,10 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
 .do_action
     ASL A                               ; action_table
     TAY
-    LDA #&00
+    LDA #ACTION_NONE
     STA action
     LDX action_table, Y
-    LDA action_table+1, Y
+    LDA action_table + 1, Y
 
 ; Jump to X + 256 * A.
 .jump_to
@@ -3532,9 +3542,9 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     STA work1
     JMP (work0)
 
-; CTRL: the backpack screen. The mission, the lives left, the backpack's
-; contents and the selected object's name, the time, level, score and sound
-; settings; see backpack_keys. Space goes back to the game.
+; Action 4, CTRL: the backpack screen. The mission, the lives left, the
+; backpack's contents and the selected object's name, the time, level, score
+; and sound settings; see backpack_keys. Space goes back to the game.
 .backpack_screen
     JSR save_view                       ; remember where the view was
     LDA lives
@@ -3542,7 +3552,7 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     LDA #&80
     JSR print_selected_name             ; no name yet
     JSR selection_position              ; the selection cursor, the player's picture...
-    LDA #HI(io_player + 2 * 128)
+    LDA #HI(player_facing(DIRECTION_UP))
     JSR draw_page_picture               ; ...drawn
     JSR print_status
 .backpack_screen_loop
@@ -3562,6 +3572,7 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
 ; The backpack screen's keys: Z and X (as MENU set them, whatever a trigger
 ; has done to this level's) move the selection, M shows the map, S and T turn
 ; the sound effects and the tune on and off. Called round a loop until Space.
+; Clobbers: everything.
 .backpack_keys
     LDX backpack_slot                   ; the selected object's name
     LDA backpack, X
@@ -3589,29 +3600,29 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     JSR key_pressed
     BNE backpack_keys_done
     LDA tune_off
-    EOR #&01
+    EOR #1
     STA tune_off
     BNE backpack_tune_off
     JSR start_tune                      ; on
-    BNE backpack_show_settings
+    BNE backpack_show_settings          ; (OSWORD returns with Z clear)
 
 ; Show the new setting, then wait a moment so the key doesn't repeat.
 .backpack_tune_off
     JSR flush_buffers                   ; off
 .backpack_show_settings
-    LDX #&18                            ; blank the old setting
-    LDY #&17
-    LDA #&00
+    LDX #24                             ; the floor over the end of the old
+    LDY #23                             ; settings
+    LDA #CELL_FLOOR
     JSR draw_thing_at
     JSR print_sound_settings            ; and print the new
     JMP short_pause                     ; a pause
 .backpack_toggle_effects
     LDA effects_off
-    EOR #&01
+    EOR #1
     STA effects_off
     BPL backpack_show_settings
 .backpack_select_right
-    LDY #&01                            ; right (key_pressed leaves Y = &FF for left)
+    LDY #1                              ; right (key_pressed leaves Y = &FF for left)
 
 ; Move the selection Y (-1 or 1) slots, sliding the cursor (the player's
 ; picture) along below the backpack; off either end it slides all the way
@@ -3630,14 +3641,14 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     BCS backpack_select_wrap_right
 .backpack_select_slide
     STA backpack_slot
-    LDA #&06                            ; six character steps a slot
+    LDA #BACKPACK_SPACING               ; a character a step
     STA work3
 .backpack_slide_cursor
     JSR wait_vsync
     JSR wait_vsync
     LDX work0                           ; rub out...
     LDY work1
-    LDA #HI(io_tiles)                   ; ...with the floor
+    LDA #HI(tile(CELL_FLOOR))           ; ...with the floor
     JSR draw_page_picture
     LDA work0
     CLC
@@ -3645,7 +3656,7 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     STA work0
     TAX
     LDY work1
-    LDA #HI(io_player + 2 * 128)        ; draw it a character on
+    LDA #HI(player_facing(DIRECTION_UP)) ; draw it a character on
     JSR draw_page_picture
     DEC work3
     BNE backpack_slide_cursor
@@ -3655,21 +3666,21 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     LDA io_backpack_last
     BNE backpack_select_wrap
 .backpack_select_wrap_right
-    LDA #&00
+    LDA #0
 .backpack_select_wrap
     PHA
     LDA work2                           ; slide back the other way
-    EOR #&FE
+    EOR #&FE                            ; (1 and -1 swap)
     STA work2
     JSR selection_position
-    LDA #HI(io_tiles)
+    LDA #HI(tile(CELL_FLOOR))
     JSR draw_page_picture
-    LDY #&0B                            ; from below the screen's middle row
+    LDY #11                             ; a row lower
     STY work1
     LDX work0
-    LDA #HI(io_player + 2 * 128)
+    LDA #HI(player_facing(DIRECTION_UP))
     JSR draw_page_picture
-    LDA io_backpack_last                ; six steps for each slot
+    LDA io_backpack_last                ; BACKPACK_SPACING steps for each slot
     ASL A
     STA work3
     ASL A
@@ -3680,35 +3691,41 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     STA backpack_slot
     JSR selection_position
     INY
-    LDA #HI(io_tiles)
+    LDA #HI(tile(CELL_FLOOR))
     JSR draw_page_picture
     JSR selection_position
-    LDA #HI(io_player + 2 * 128)
+    LDA #HI(player_facing(DIRECTION_UP))
 
-; Draw the picture at A * 256 at character position (X, Y).
+; Draw the whole picture at A * 256 at character position (X, Y).
+; Clobbers: A, X, Y and the sprite variables.
 .draw_page_picture
     STA sprite_high
-    LDA #&00
+    LDA #0
     STA sprite
     SEC
     JMP draw_sprite
 
-; The selection cursor's character position: X = slot * 6 + 7, Y = 10.
+; The selection cursor's character position: below the selected slot.
+; Out: X = slot * BACKPACK_SPACING + 7, Y = 10.
+; Clobbers: A.
 .selection_position
     LDA backpack_slot
-    ASL A                               ; * 6
+    ASL A                               ; * BACKPACK_SPACING
     ASL A
     ADC backpack_slot
     ADC backpack_slot
-    ADC #&07                            ; + 7
+    ADC #7
     TAX
-    LDY #&0A
+    LDY #10
     RTS
+ASSERT BACKPACK_SPACING = 6
 
 ; A clear screen with the floor pattern, the frame and the PIPELINE heading,
-; for the title and backpack screens.
+; for the title and backpack screens. Their pictures are drawn at character
+; positions as the view's, with the view half a cell in.
+; Clobbers: everything.
 .draw_screen_frame
-    LDA #&02
+    LDA #CHARS_PER_CELL / 2
     STA view_x
     STA view_y
     DEC fill_screen                     ; fill with the floor pattern
@@ -3716,14 +3733,16 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     INC fill_screen
     JSR draw_title_border
     JSR print_inline
-    EQUB &1F, &00, &09, &11, &02, &11, &80
+    TEXT_AT 8, 3
+    EQUB VDU_COLOUR, 2, VDU_COLOUR, COLOUR_BACKGROUND + 0
     EQUS "PIPELINE"
     NOP
     RTS
 
-; The backpack screen (A is the number of lives; the carry set leaves out the
-; mission text): the mission, a picture of the player for each life, the
-; exit's icon once it's lit, and what's in the backpack.
+; The backpack screen: the mission, a picture of the player for each life,
+; the exit's icon once it's lit, and what's in the backpack.
+; In: A = the number of lives; the carry set to leave out the mission text.
+; Clobbers: everything.
 .draw_backpack_screen
     PHP
     STA work3
@@ -3735,18 +3754,18 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     JSR print_names_text
 .draw_lives
     LDA facing                          ; the player's picture for the way they face
-    LSR A
+    LSR A                               ; * PICTURE_BYTES
     ROR A
     STA sprite
-    LDA #&00
+    LDA #0
     ADC #HI(io_player)
     STA sprite_high
     LDA work3
-    ASL A
+    ASL A                               ; 8 characters apart
     ASL A
     ASL A
     TAX
-    LDY #&1B                            ; along the bottom
+    LDY #27                             ; along the bottom
     SEC
     JSR draw_sprite
     DEC work3
@@ -3755,7 +3774,7 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     BEQ draw_backpack
     JSR draw_exit_icon
 .draw_backpack
-    LDA #&03
+    LDA #BACKPACK_SLOTS - 1
     STA work0
 .draw_backpack_slot
     LDX work0
@@ -3767,44 +3786,45 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     JSR object_icon_picture             ; its icon
     STX sprite
     STY sprite_high
-    LDA work0                           ; at slot * 6 + 7, 7
+    LDA work0                           ; at slot * BACKPACK_SPACING + 7, 7
     ASL A
     ASL A
     ADC work0
     ADC work0
-    ADC #&07
+    ADC #7
     TAX
-    LDY #&07
+    LDY #7
     CLC                                 ; on the floor
     JSR draw_sprite
 .draw_backpack_next
     DEC work0
     BPL draw_backpack_slot
-.map_key_done
+.draw_backpack_done
     RTS
 
-; M: the map, on levels below io_map_levels. Also from the backpack screen.
-.map_key
+; Action 3, M: the map, on levels below io_map_levels.
+.map_screen
     LDA level
     CMP io_map_levels                   ; no map this level?
-    BCS map_key_done
+    BCS draw_backpack_done
     JSR save_view                       ; remember the view
     JSR clear_screen
 
-; The map view, scrolled to put the player in the middle where it can: Z and
-; X scroll it, Space goes back. The SBC's operand, &10, is also used as a
-; mask by BIT (see bit4_mask).
+; The map view (from the backpack screen too), scrolled to put the player in
+; the middle where it can: Z and X scroll it, Space goes back. The SBC's
+; operand, &10, is also used as a mask by BIT (see bit4_mask).
 .show_map
     LDA player_x                        ; player_x - 16...
     SEC
 .show_map_centre
-    SBC #16
+    SBC #SCREEN_COLUMNS / 2
     BCS show_map_clamp
-    LDA #&00
+    LDA #0
 .show_map_clamp
-    CMP #33                             ; ...between 0 and 32
+    CMP #MAP_SIZE - SCREEN_COLUMNS + 1  ; ...between 0 and 32
     BCC show_map_draw
-    LDA #32
+    LDA #MAP_SIZE - SCREEN_COLUMNS
+ASSERT SCREEN_COLUMNS / 2 = &10         ; for bit4_mask
 .show_map_draw
     STA screen_start
     JSR blank_display                   ; draw it with the display off
@@ -3832,19 +3852,22 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
 .show_map_escape
     JMP give_up
 
-; The selected object's name, A, under the backpack: or blank if A is
-; negative.
+; The selected object's name under the backpack, on a band of colour 1; or
+; just the band.
+; In: A = the object, or negative for none.
+; Clobbers: A, X, Y, work0, work1.
 .print_selected_name
     PHA
-    JSR print_inline                    ; TAB(6, 31) COLOUR 129 COLOUR 3
-    EQUB &1F, &06, &1F, &11, &81, &11, &03
+    JSR print_inline
+    TEXT_AT 4, 31
+    EQUB VDU_COLOUR, COLOUR_BACKGROUND + 1, VDU_COLOUR, 3
     NOP
     PLA
     BPL print_selected_object
-    LDA #&08                            ; nothing selected: back a character...
+    LDA #VDU_BACKSPACE                  ; nothing selected: back a character...
     JSR OSWRCH
-    LDY #&0E
-    LDA #&20                            ; ...and 14 spaces
+    LDY #IO_NAME_LENGTH + 2
+    LDA #ascii(" ")                     ; ...and spaces a character past a name
 .print_selected_blank
     JSR OSWRCH
     DEY
@@ -3857,12 +3880,13 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     LDA object_icon, Y
     JSR print_object_name
 .print_selected_done
-    JSR print_inline                    ; COLOUR 128
-    EQUB &11, &80
+    JSR print_inline
+    EQUB VDU_COLOUR, COLOUR_BACKGROUND + 0
     NOP
     RTS
 
 ; Remember where the view is, in work4 and work5, for backpack_screen_done.
+; Clobbers: A.
 .save_view
     LDA view_x
     STA work4
@@ -5650,7 +5674,7 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     EQUW clear_keys_down
     EQUW pick_up
     EQUW drop
-    EQUW map_key
+    EQUW map_screen
     EQUW backpack_screen
     EQUW throw
     EQUW use

@@ -186,8 +186,10 @@ OBJECT_BYTES = 4
 OBJECT_USES  = &3F
 
 ; The backpack: a slot holds an object's number, or is negative for empty.
-BACKPACK_SLOTS = 4
-EMPTY_SLOT     = &FF
+; On the backpack screen its slots are BACKPACK_SPACING characters apart.
+BACKPACK_SLOTS   = 4
+EMPTY_SLOT       = &FF
+BACKPACK_SPACING = 6
 
 ; Triggers (the designer's puzzles: PUZZLES of them): a flags byte, a place,
 ; and four arguments. Object n's triggers are n, n + OBJECTS, n + 2 * OBJECTS
@@ -202,6 +204,7 @@ CONDITION_CELL           = &40    ; facing (or landing against) the cell type in
 CONDITION_CELL_BITS      = &0F    ; ...these bits
 
 START_LIVES = 3
+LEVEL_SETUP_BYTES = LEVEL_FIELD_SIZES[4]  ; a level's setup: start_x to alternate_cells
 
 ; How far through a level the player is (stage).
 STAGE_COLLECTING = 0
