@@ -1,31 +1,99 @@
-; H.GRAPH: the PIPELINE Graphics Designer.
+; H.GRAPH: the PIPELINE Graphics Designer, option 3 on the disc's menu.
 ;
-; The GRAPHIC stub reads this from sectors &145-&165, which no catalogue entry
-; mentions, to &1AB0 and jumps to start. It edits a graphics set - the game's
-; pictures and the names of its objects - kept at &4000 (src/default.6502 is
-; one; sprites.6502inc names its layout), and goes back to the menu
-; by running /MRUN (on tape it resets the machine instead).
+; It edits a graphics set: every picture the game draws, and the names of the
+; objects the player can pick up. A set is &F34 bytes, kept at &4000 while the
+; designer runs; DEFAULT, on the disc, is the set the game comes with
+; (sprites.6502inc has the layout, default.6502inc the pictures). It can also
+; load and save the copy of a set inside IO, the mission file that the
+; Mission Generator (MISSION) builds and the game loads (io.6502inc).
 ;
-; The screen is MODE 5 at &5800. On the left, the selected sprite magnified
-; four times into an editing grid, and under it the current colour and, for
-; an object, its number and name. On the right, the sprite sheet: a 5x5 grid
-; of large sprites (16x32 pixels) and under it a 4x4 grid of small ones
-; (8x16), then the PIPELINE logo. Menus, prompts and errors pop up in windows
-; that keep what they cover at &5000.
+; How it's reached: MENU, the BASIC menu the disc boots into, runs the GRAPHIC
+; stub (*/GRAPHIC), a small loader in the disc's catalogue. The stub reads
+; this program from sectors &145-&165, a run of sectors that no catalogue
+; entry mentions, so that copying the disc's files leaves it behind
+; (hidden_loader.6502inc has the details). It reads it to &1AB0 and jumps to
+; start (&2BAE). H.GRAPH is only the build's name for those sectors. Escape
+; offers to leave: on disc that runs /MRUN, a small program that undoes the
+; designer's changes to the OS and runs the boot file again to bring the menu
+; back; on tape it resets the machine.
 ;
-; Keys: Z X : / move the pixel cursor, 0-3 pick a colour (4 is 0 again),
-; Return plots and Delete clears; the cursor keys pick a sprite; f0-f3 open
-; the menus (OptionsA, OptionsB, Environment and the credits) and CTRL with a
-; key is a shortcut for a menu item; Escape offers to leave.
+; Words used throughout:
+;   slot     a sprite's place in the graphics set, &00-&28. &10-&1F are small
+;            sprites, the rest large. sprites.6502inc's SLOT_* say what the
+;            game uses each for.
+;   sheet    every sprite at once, on the right of the screen, where the
+;            cursor keys move the selection.
+;   sprite number  how the code names a sprite: its position on the sheet,
+;            which isn't its slot (see "Sprite numbers" below); or, while
+;            by_slot is set, a slot.
+;   object   one of the 15 kinds of thing the player can pick up. Small slots
+;            &10-&1E are their icons; each has a 12-character name, which the
+;            designer numbers 1-15. Small slot &1F is the icon the game draws
+;            for the exit, and has no name.
+;   floor    slot 0, the picture of the map's floor (cell type 0).
+;   window   a pop-up box over the screen: a menu, a prompt or an error.
+;   frame    the border round a window or the editing grid; but in Animate, one
+;            picture of an animation.
+;   on tape  the filing system is tape (or ROM), numbered below FS_DISC: no
+;            random access, so no single-sprite loads and saves (see disc_fs).
+;
+; The screen is MODE 5 at &5800. On the left, the editing grid: the selected
+; sprite magnified four times, each pixel a cell (four MODE 5 pixels) wide and
+; four lines tall. Under it, the current colour and, for an object, its number
+; and name. On the right, the sheet: a 5x5 grid of large sprites (16x32
+; pixels) and under it a 4x4 grid of small ones (8x16), then the PIPELINE
+; logo. Windows keep what they cover at &5000 and put it back when they close.
+;
+; Keys: Z and X move the pixel cursor left and right, : and / up and down;
+; 0-3 pick a colour (4 is 0 again); Return plots a pixel in that colour and
+; Delete clears it to colour 0. The cursor keys move the selection on the
+; sheet. f0-f3 open the menus (OptionsA, OptionsB, Environment and the
+; credits), and CTRL with a key is a shortcut for a menu item. Escape asks
+; whether to leave.
 ;
 ; Memory, besides the screen:
 ;   &1AB0-&3ADB  this program; the rest, to &3BAF, is whatever was in memory
-;                after it when it was saved
+;                after it when it was saved (see leftover)
 ;   &3E00, &3E80 two sprite buffers: Animate's frames
 ;   &3F80        the undo copy of the sprite being edited
-;   &4000-&4F33  the graphics set, with "Finish Block" after it (start clears
-;                &4000-&4FFF the first time)
+;   &4000-&4F33  the graphics set, with "Finish Block" after it (see
+;                finish_block; start clears &4000-&4FFF the first time)
 ;   &5000-&537F  what a pop-up window covers (the biggest is &380 bytes)
+;   &50-&65      zero page: pointers, counters and scratch
+;   &70-&7E      zero page: the editor's state (the selection, the pixel
+;                cursor, the colour)
+;
+; The file, in order:
+;   names        keys, window text, windows, sprite numbers, the screen, the
+;                graphics set and IO, zero page
+;   &1AB0        data: the logo, slot_of_position, the font (&1D00), the
+;                windows' places and sizes
+;   &2054        windows (open_window, close_window), keys (key_pressed), text
+;                (print_char), menus (menu)
+;   &22BB        sprites: finding their bytes (sprite_address), drawing them
+;                in the editing grid (draw_grid) and on the sheet
+;                (draw_sheet_sprite, sheet_address)
+;   &2595        the Escape event, the screen's furniture, the window texts
+;   &2A53        showing the sheet, the selection (show_selection) and the
+;                colour; three unused routines
+;   &2B4E        start-up state, error_handler, start (&2BAE), main_loop and
+;                command_table
+;   &2DFE        the commands: OptionsA and OptionsB (cmd_*,
+;                pick_second_sprite, combine_sprites), Def. Colour, Animate
+;   &334B        moving the selection and pacing the main loop
+;                (select_sprite), and the pixel cursor (toggle_cursor)
+;   &3503        files: the Environment menu's loads and saves, IO's pieces;
+;                Obj name and its line input (input_line)
+;   &387F        painting (edit_pixels) and the pixel primitives (plot_pixel,
+;                read_pixel)
+;   &3A41        reading a command (read_command, shortcut_keys)
+;   &3ADC        leftover bytes, not part of the program
+;
+; Routine headers say what a routine is for, then In:, Out: and Clobbers:,
+; leaving out a line with nothing to say. "Clobbers: everything" means the
+; registers and whatever zero page and workspace the routines it calls use.
+; Pictures (the logo, the font) are written as pixels, two characters to a
+; pixel, in sprites.6502inc's mode5_pictures notation.
 
 INCLUDE "os.6502inc"
 INCLUDE "osconst.6502inc"
