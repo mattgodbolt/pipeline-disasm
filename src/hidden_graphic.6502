@@ -1441,7 +1441,8 @@ ASSERT HI(ROW - SMALL_WIDTH*CELL) = HI(ROW - LARGE_WIDTH*CELL)
 ; Where a sprite goes on the screen.
 ; In:  A = sprite number: a sheet position, or a frame buffer (which shows
 ;      in Animate's window)
-; Out: screen_ptr = the top left of its place, A = Y = the sprite number
+; Out: screen_ptr = the top left of its place, Y = the sprite number (and A
+;      too, except for a small sprite)
 ; Clobbers: X
 .sheet_address
 {
@@ -3542,8 +3543,8 @@ PASS_CENTISECONDS = 2
 .key_repeating
     EQUB &00
 
-; The selected sprite's row in the sheet. Its last two bytes are also
-; select_sprite's exit with nothing moved.
+; The selected sprite's row in the sheet. Its return_negative (LDA #&80 :
+; RTS) is also select_sprite's exit when nothing moved.
 ; In:  sprite
 ; Out: X = row (0-4 for the large sprites, 5-8 for the small ones),
 ;      last_column = 4; A = its column for a large sprite, &80 for a small
@@ -4713,8 +4714,9 @@ CURSOR_DELAY_MIN  = 10
     EQUB INKEY_TEST({KEY_F8, KEY_F9, KEY_F6, KEY_F7, KEY_C}), 0, 0, 0                ; Environment
 SHORTCUTS = P% - shortcut_keys
 
-; Which cursor key the selection last saw held (INKEY_TEST() of it, or 0),
-; and a byte nothing uses.
+; &FF if repeat_key found one of the cursor keys held during this pass of
+; select_sprite (it stores key_pressed's result), else 0; then a byte nothing
+; uses.
 .key_held
     EQUB 0, 0
 ; Non-zero while picking a second sprite.
