@@ -2671,26 +2671,36 @@ ASSERT IO_NAME_LENGTH = 12
     ADC #ascii("1")                     ; "1" for level 0
     JMP OSWRCH
 
-; "WELL DONE!" in blocks: 11 rows of 32 bits, a bit a character cell.
+; "WELL DONE!" in blocks: 11 rows of 32 bits, a bit a character cell, the top
+; bit leftmost.
+FUNCTION blocks_byte(row) = SUM(FIND(CODES(".#"), CODES(row)) * {128, 64, 32, 16, 8, 4, 2, 1})
+MACRO BLOCKS row
+    ASSERT LEN(row) = SCREEN_COLUMNS, "a row of blocks is 32 characters"
+    EQUB blocks_byte(row[0..7]), blocks_byte(row[8..15]), blocks_byte(row[16..23]), blocks_byte(row[24..31])
+ENDMACRO
 .well_done_bitmap
-    EQUB %10001011, %10100001, %00000000, %00000000
-    EQUB %10001010, %00100001, %00000000, %00000000
-    EQUB %10001011, %00100001, %00000000, %00000000
-    EQUB %10101010, %00100001, %00000000, %00000000
-    EQUB %01010011, %10111101, %11100000, %00000000
-    EQUB %00000000, %00000000, %00000000, %00000000
-    EQUB %11100011, %00100101, %11010000, %00000000
-    EQUB %10010100, %10110101, %00010000, %00000000
-    EQUB %10010100, %10111101, %10010000, %00000000
-    EQUB %10010100, %10101101, %00000000, %00000000
-    EQUB %11100011, %00100101, %11010000, %00000000
+    BLOCKS "#...#.###.#....#................"
+    BLOCKS "#...#.#...#....#................"
+    BLOCKS "#...#.##..#....#................"
+    BLOCKS "#.#.#.#...#....#................"
+    BLOCKS ".#.#..###.####.####............."
+    BLOCKS "................................"
+    BLOCKS "###...##..#..#.###.#............"
+    BLOCKS "#..#.#..#.##.#.#...#............"
+    BLOCKS "#..#.#..#.####.##..#............"
+    BLOCKS "#..#.#..#.#.##.#................"
+    BLOCKS "###...##..#..#.###.#............"
 
-; The bottom half of a block's character cells: a shadow.
+; A block's character cell: colours 2 and 3, speckled. The cell to its right
+; gets WELL_DONE_SHADOW, two pixels of colour 1, unless the next block covers
+; it.
 .well_done_block
     EQUB &F5, &FE, &FB, &FE, &F7, &FD, &FB, &FF
+WELL_DONE_SHADOW = &0C
 
 ; After a level: clear 13 character rows across the middle of the view and
 ; show WELL DONE! in big letters, then wait 4 seconds.
+; Clobbers: A, X, Y, screen, cell_low_nibble.
 .show_well_done
     LDA view_screen
     STA screen
@@ -2699,12 +2709,12 @@ ASSERT IO_NAME_LENGTH = 12
     ADC #9
     JSR wrap_screen_high
     LDA #13                             ; 13 rows
-    STA cell_low_nibble
+    STA cell_low_nibble                 ; (as a counter)
 .show_well_done_clear
-    LDX #&20
+    LDX #SCREEN_COLUMNS
 .show_well_done_cell
-    LDY #&07
-    LDA #&00
+    LDY #CHAR_BYTES - 1
+    LDA #0
 .show_well_done_blank
     STA (screen), Y
     DEY
@@ -2716,26 +2726,26 @@ ASSERT IO_NAME_LENGTH = 12
     BNE show_well_done_clear
     LDA view_screen                     ; 6 characters in...
     CLC
-    ADC #6 * 8
+    ADC #6 * CHAR_BYTES
     STA screen
     LDA view_screen_high                ; ...ten rows down
     ADC #10
-    AND #&3F
+    AND #&3F                            ; (as good as &1F: the ORA sets bit 5)
     ORA #HI(SCREEN)
     STA screen_high
     LDA #&80                            ; the bitmap's top bit first
-    STA cell_low_nibble
+    STA cell_low_nibble                 ; (as a mask)
 .show_well_done_bit
     LDA well_done_bitmap, X
     AND cell_low_nibble
     BEQ show_well_done_next
-    LDY #&0F                            ; the block's two character cells...
-    LDA #&0C
+    LDY #2 * CHAR_BYTES - 1             ; the shadow in this cell and the next...
+    LDA #WELL_DONE_SHADOW
 .show_well_done_block
     STA (screen), Y
     DEY
     BPL show_well_done_block
-    LDY #&07                            ; ...the lower with its shadow
+    LDY #CHAR_BYTES - 1                 ; ...then the block over it in this one
 .show_well_done_shade
     LDA well_done_block, Y
     STA (screen), Y
@@ -2749,10 +2759,12 @@ ASSERT IO_NAME_LENGTH = 12
     INX
     CPX #well_done_block - well_done_bitmap ; 11 rows of 4 bytes
     BCC show_well_done_bit
-    LDA #200                            ; 4 seconds
-    BITABS                                  ; skip the next LDA
+    LDA #4 * 50                         ; 4 seconds
+    BITABS                              ; (skips the LDA)
 
-; Wait A fiftieths of a second, by the OS's vsync countdown.
+; Wait a second, or (wait_ticks) A fiftieths of a second, by the OS's vsync
+; countdown.
+; Clobbers: A.
 .wait_a_second
     LDA #50
 .wait_ticks
@@ -2762,10 +2774,13 @@ ASSERT IO_NAME_LENGTH = 12
     BNE wait_ticks_loop
     RTS
 
-; A random number from 0 to Y - 1, from the free-running VIA timers.
+; A random number from 0 to Y - 1: A, mixed with the system VIA's timer 1 low
+; byte and the user VIA's timer 2 high byte, modulo Y.
+; In: A, Y.
+; Out: A; the carry clear.
 ; Clobbers: work0.
 .random
-    EOR SYSVIA_T1CL                     ; the timers' low bytes are as good as random
+    EOR SYSVIA_T1CL                     ; free-running: as good as random
     EOR USRVIA_T2CH
     STY work0
 .random_mod
@@ -2776,35 +2791,36 @@ ASSERT IO_NAME_LENGTH = 12
 .random_done
     RTS
 
-; The game is over: the player bursts into flames that spread out across the
-; view, crackling.
+; The game is over: flames fill the view from the player outwards, crackling.
+; Clobbers: A, X, Y, view_sub_x, view_sub_y, steps, count_across, work0 and
+; the sprite variables.
 .burn_up
     JSR wait_a_second
-    LDA view_x                          ; the middle of the view
+    LDA view_x                          ; on the player (a character higher)
     CLC
-    ADC #&0E
-    STA view_sub_x
+    ADC #PLAYER_CHAR
+    STA view_sub_x                      ; (the square's top left)
     LDA view_y
     CLC
-    ADC #&0D
+    ADC #PLAYER_CHAR - 1
     STA view_sub_y
-    LDA #&02                            ; flames spread from 2 cells to 31
-    STA steps
+    LDA #2                              ; a square from 2 characters across
+    STA steps                           ; to 30
 .burn_up_ring
-    LDA #&64                            ; 100 flames a ring
+    LDA #100                            ; 100 flames a ring
     STA count_across
 .burn_up_flame
     LDA USRVIA_T2CL                     ; either flame picture
-    AND #&80
+    AND #PICTURE_BYTES
     STA sprite
     LDY steps
     JSR random
     ADC view_sub_x
     TAX
-    JSR random                          ; within steps of the middle
+    JSR random                          ; somewhere in the square
     ADC view_sub_y
     TAY
-    LDA #HI(io_tiles + &E * 128)
+    LDA #HI(tile(CELL_FIRE))
     STA sprite_high
     SEC
     JSR draw_sprite                     ; a flame
@@ -2812,47 +2828,48 @@ ASSERT IO_NAME_LENGTH = 12
     BNE burn_up_flame
     BIT USRVIA_T2CL                     ; now and then...
     BVC burn_up_next_ring
-    LDY #&04
+    LDY #4                              ; envelope 1-4
     JSR random
     TAX
     INX
-    LDY #&03
+    LDY #3                              ; white noise 4-6, as long
     JSR random
-    ORA #&04
+    ORA #4
     JSR sound_effect                    ; ...a crackle
 .burn_up_next_ring
-    DEC view_sub_x                      ; the ring grows
+    DEC view_sub_x                      ; the square grows
     DEC view_sub_y
     INC steps
     INC steps
     LDA steps
-    CMP #&20
+    CMP #SCREEN_COLUMNS
     BCC burn_up_ring
     RTS
 
 ; Never used.
-.unused_1260
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00
+.burn_up_unused
+    SKIP 36
 
-; The picture for an object cell (F) at (X, Y): the exit's icon, the icon of
-; the object there, or if none, the picture kept for that.
-; Returns: X, Y = the picture's address.
+; The picture for an object cell at map cell (X, Y): the exit's icon, the
+; icon of the object there, or if none, the picture kept for that.
+; Out: X, Y = the picture's address.
+; Clobbers: A, work0, work1.
 .object_picture_at
     CPX exit_x
     BNE object_picture_find
     CPY exit_y
     BNE object_picture_find
 .exit_picture
-    LDX #LO(io_object_icons + 15 * 32)
-    LDY #HI(io_object_icons + 15 * 32)
+    LDX #LO(icon(EXIT_ICON))
+    LDY #HI(icon(EXIT_ICON))
     RTS
 .object_picture_find
     JSR find_object
     BCC no_object_picture
 
-; Object Y / 4's icon.
+; The icon of the object at offset Y in objects.
+; Out: X, Y = the picture's address.
+; Clobbers: A.
 .object_icon_picture
     LDA object_icon, Y
     ORA #&10                            ; &10 + the icon
@@ -2862,16 +2879,15 @@ ASSERT IO_NAME_LENGTH = 12
     LDY #HI(io_no_object_picture)
     RTS
 
-; The game proper starts here, run once. It's also where each level's eight
-; objects are kept, 4 bytes each (see objects), over this code once it has
-; run.
+; The game proper starts here, from the loader, and this runs once: each
+; level's objects are copied over it (objects), and nothing comes back here.
 .game_start
-    EOR #&48                            ; (the first object's x and y, harmless)
+    EOR #&48                            ; (to no purpose: A is loaded next)
     LDA #LO(error_handler)              ; errors go to error_handler
     STA BRKV
     LDA #HI(error_handler)
     STA BRKV + 1
-    LDA #&00
+    LDA #0
     STA score
     STA score_high
     STA effects_off
@@ -2880,13 +2896,14 @@ ASSERT IO_NAME_LENGTH = 12
     STA level
     JSR flush_buffers                   ; no keys waiting
     JSR load_mission                    ; load the mission
+ASSERT P% - game_start = OBJECTS * OBJECT_BYTES
 
-; The title screen, then a game: three lives.
+; The title screen, then a game.
 .new_game
     JSR title_screen
-    LDX #&03                            ; three lives
+    LDX #START_LIVES
     STX lives
-    LDA #&00
+    LDA #0
     STA score
     STA score_high
 
@@ -2904,8 +2921,8 @@ ASSERT IO_NAME_LENGTH = 12
 
 ; The game's main loop, a cycle at a time: the clock ticks at the mission's
 ; rate (not while in a pipe), with warning beeps in the last 20; once the
-; exit is lit (stage 1) the time left is scored and the player has 4 ticks to
-; get clear.
+; exit is lit the time left is scored, and the player has 4 ticks to get
+; clear.
 .game_loop
     LDA time_left
     BEQ time_up                         ; out of time?
@@ -2923,31 +2940,32 @@ ASSERT IO_NAME_LENGTH = 12
     BCS check_dead
     LDA stage
     BNE warn_time_running_out
-    LDA #&00                            ; ...beep
+    LDA #0                              ; ...beep
     JSR sound_beep
     JMP check_dead
 .warn_time_running_out
-    LDX #&02                            ; ...a different beep once the exit is lit
-    LDA #&04
+    LDX #ENVELOPE_VOICE_2               ; ...a noise instead once the exit is lit
+    LDA #4
     JSR sound_effect
 .check_dead
     LDA player_dead
     BNE lose_life
     LDA stage
-    CMP #&01                            ; the exit has just been lit:
+    CMP #STAGE_EXIT_LIT                 ; the exit has just been lit:
     BNE game_loop
-    INC stage                           ; stage 2: run
-    LDX time_left                       ; a point for each tick left
-    JSR add_points
-    LDA #&04                            ; and 4 ticks to get clear
+    INC stage                           ; STAGE_ESCAPING
+    LDX time_left                       ; a point for each tick left, and one
+    JSR add_points                      ; more (add_points)
+    LDA #4                              ; and 4 ticks to get clear
     STA time_left
     BNE game_loop
 
 ; Out of time: with the exit lit, the player is safe 5 or more cells from it,
-; across or down; otherwise they're caught in the blaze (the screen flashes).
+; across or down; otherwise they're caught in the blaze, and the view is
+; wiped to bare floor.
 .time_up
     LDX stage
-    CPX #&02                            ; the exit lit?
+    CPX #STAGE_ESCAPING                 ; the exit lit?
     BNE lose_life
     JSR far_from_exit                   ; far enough across...
     BCS level_complete
@@ -2955,7 +2973,7 @@ ASSERT IO_NAME_LENGTH = 12
     SEC
     JSR far_from_exit                   ; ...or down: safe
     BCS level_complete
-    INC fill_screen                     ; caught in it: flash
+    INC fill_screen                     ; caught in it
     JSR clear_screen
     DEC fill_screen
 
@@ -2971,33 +2989,34 @@ ASSERT IO_NAME_LENGTH = 12
     JSR close_view
     JMP new_game
 .lose_life_again
-    LDX #&09
-    JSR vdu_palette                     ; colour 0 flashes
+    LDX #COLOUR_RED + 8                 ; colour 0 flashes red and cyan
+    JSR vdu_palette
     JSR close_view
     LDA stage                           ; died after lighting the exit?
     BNE next_level
     JMP restart_level
 
-; The level's done: flash the palette, WELL DONE, 100 points.
+; The level's done: flash the palette, WELL DONE, 101 points (add_points).
 .level_complete
     JSR flush_buffers
-    LDA #&05
+    LDA #5
     JSR sound_effect_4
     JSR flash_palette                   ; flash
     JSR show_well_done
-    INC stage                           ; stage 3: done
-    LDX #100                            ; 100 points
+    INC stage                           ; STAGE_DONE
+    LDX #100
     JSR add_points
 
 ; On to the next level, or after the fourth, the end of the mission. Doing a
-; level without losing a life lets the next game start from the next one.
+; level without having lost a life this game lets the next game start from
+; the next one.
 .next_level
     INC level
     LDA level
     CMP #IO_LEVELS                      ; four levels
     BCS mission_complete
     LDX lives
-    CPX #&03                            ; no lives lost...
+    CPX #START_LIVES                    ; no lives lost...
     BCC next_level_screen
     CMP furthest_level                  ; ...so the title can start on the next level
     BCC next_level_screen
@@ -3006,7 +3025,7 @@ ASSERT IO_NAME_LENGTH = 12
     JSR set_level_palette
     LDA lives
     CLC
-    JSR show_edit_code                  ; the backpack screen, with the next level's edit code
+    JSR show_edit_code                  ; the backpack screen, with the finished level's edit code
     JSR wait_for_space                  ; wait for Space
     JMP start_level
 .mission_complete
@@ -3015,16 +3034,17 @@ ASSERT IO_NAME_LENGTH = 12
 
 ; Flash colour 0 through physical colours 7 down to 0, 8 times, a frame each,
 ; then back to the level's palette.
+; Clobbers: A, X, Y, work0, work2, work4.
 .flash_palette
-    LDA #&08
-    LDX #&01
+    LDA #8
+    LDX #1
 
 ; The same A times, X frames a colour.
 .flash_palette_times
     STA work0                           ; flashes
     STX work2                           ; frames a colour
 .flash_palette_cycle
-    LDX #&07
+    LDX #COLOUR_WHITE
 .flash_palette_colour
     JSR vdu_palette                     ; logical 0 = physical X
     LDA work2
@@ -3046,11 +3066,11 @@ ASSERT IO_NAME_LENGTH = 12
 .set_level_palette
     LDA level
 .set_palette
+    ASL A                               ; 4 colours a level
     ASL A
-    ASL A
-    ADC #&03                            ; the level's last colour first
+    ADC #3                              ; the level's last colour first
     TAY
-    LDA #&03
+    LDA #3
     STA work0
 .set_palette_loop
     JSR set_palette_entry
@@ -3062,8 +3082,9 @@ ASSERT IO_NAME_LENGTH = 12
 
 ; VDU 19, X >> 4, X, 0, 0, 0: logical colour X's high nibble is physical
 ; colour X's low.
+; Clobbers: A.
 .vdu_palette
-    LDA #&13                            ; VDU 19
+    LDA #VDU_PALETTE
     JSR OSWRCH
     TXA
     LSR A
@@ -3073,34 +3094,40 @@ ASSERT IO_NAME_LENGTH = 12
     JSR OSWRCH
     TXA
     JSR OSWRCH
-    LDA #&00
+    LDA #0
     JSR OSWRCH
     JSR OSWRCH
     JMP OSWRCH
 
-; Is the player 5 or more cells from the exit, across (X = 2) or down (3)?
-; Returns: carry set if so. Called with the carry set.
+; Is the player 5 or more cells from the exit, across (X = STAGE_ESCAPING)
+; or down (X one more)?
+; In: the carry set.
+; Out: the carry set if so.
+; Clobbers: A.
 .far_from_exit
-    LDA player_x - 2, X                 ; player_x or player_y...
-    SBC exit_x - 2, X                   ; ...less exit_x or exit_y
+    LDA player_x - STAGE_ESCAPING, X    ; player_x or player_y...
+    SBC exit_x - STAGE_ESCAPING, X      ; ...less exit_x or exit_y
     BCS far_from_exit_distance
     EOR #&FF                            ; how far
-    ADC #&01
+    ADC #1
 .far_from_exit_distance
     CMP #5
     RTS
+ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
 
-; Space on the title screen: start, returning from title_screen.
+; Space on the title screen: start, returning from title_screen (the timer is
+; resynchronised twice).
 .title_start
     JSR resync_timer
 
 ; Just after a vsync, with interrupts off, restart the system VIA's timer 1
 ; (the OS's 100 Hz tick) from its latch, keeping its interrupts clear of the
 ; vsync's.
+; Clobbers: A, X, Y.
 .resync_timer
     JSR wait_vsync
     SEI
-    LDY #&09                            ; a little more
+    LDY #9                              ; a little more
     JSR delay
     LDA SYSVIA_T1LL                     ; timer 1 from its latch
     STA SYSVIA_T1LL
@@ -3111,25 +3138,28 @@ ASSERT IO_NAME_LENGTH = 12
 
 ; The title screen: Space starts at the chosen level, S steps the level (up to
 ; furthest_level), L loads another mission.
-; Returns: with level and started_late set.
+; Out: level and started_late set.
+; Clobbers: everything.
 .title_screen
-    LDA #&00                            ; level 1 unless S is pressed
+    LDA #0                              ; level 1 unless S is pressed
     STA started_late
     STA level
     JSR set_level_palette
     JSR draw_title_screen               ; the title screen's pictures
     JSR print_inline
-    EQUB &1F, &13, &10, &11, &03
+    TEXT_AT 6, 13
+    EQUB VDU_COLOUR, 3
     EQUS "Start:"
-    EQUB &1F, &07, &0F
+    TEXT_AT 6, 11                       ; and above it the score
     NOP
     JSR print_score
-    LDX #&01
-    LDA #&0F
-    JSR OSBYTE                          ; flush the keyboard buffer
+    LDX #1                              ; just the input buffers
+    LDA #OSBYTE_FLUSH_BUFFERS
+    JSR OSBYTE
 .title_screen_key
     JSR print_inline
-    EQUB &1F, &05, &11, &11, &02
+    TEXT_AT 18, 13
+    EQUB VDU_COLOUR, 2
     NOP
     JSR print_level                     ; the level to start on
     JSR OSRDCH
@@ -3138,9 +3168,9 @@ ASSERT IO_NAME_LENGTH = 12
 .title_screen_got_key
     AND #&DF                            ; upper case, and Space is 0
     BEQ title_start                     ; Space: start
-    CMP #&53                            ; S...
+    CMP #ascii("S")
     BEQ title_screen_next_level
-    CMP #&4C                            ; L: load a mission
+    CMP #ascii("L")                     ; load a mission
     BNE title_screen_key
     JMP ask_for_mission
 .title_screen_next_level
@@ -3154,17 +3184,18 @@ ASSERT IO_NAME_LENGTH = 12
     STX started_late
     BPL title_screen_key                ; always
 
-; Clear the screen for the title or backpack screens: the frame, the heading,
-; the flames and the player.
+; The title screen (also behind the filename prompt and an error): text on,
+; the frame, the heading, the flames and the player.
+; Clobbers: everything.
 .draw_title_screen
     JSR print_inline
-    EQUB &06, &04, &1A, &11, &80
+    EQUB VDU_ENABLE, VDU_TEXT_CURSOR, VDU_RESET_WINDOWS, VDU_COLOUR, COLOUR_BACKGROUND + 0
     NOP
     JSR draw_screen_frame
     JMP draw_title_pictures
 
-; Return from the caller's caller.
-.return_from_caller
+; Drop the two bytes set_cell_and_draw pushed, and return from it.
+.drop_two_and_return
     PLA
     PLA
     RTS
@@ -3172,10 +3203,11 @@ ASSERT IO_NAME_LENGTH = 12
 ; Empty the cell under monster X / 4.
 .empty_monster_cell
     JSR monster_cell
-    LDA #&00
+    LDA #CELL_FLOOR
 
-; Set map cell (X, Y) to A and draw it. Off the map, nothing happens.
-; Clobbers: A, X, Y and the drawing variables.
+; Set map cell (X, Y) to A and draw it. Off the map (or emptying the exit),
+; nothing happens.
+; Clobbers: A, X, Y, work0, work1 and the drawing variables.
 .set_cell_and_draw
     STA work1                           ; the type
     TXA
@@ -3183,20 +3215,21 @@ ASSERT IO_NAME_LENGTH = 12
     TYA
     PHA
     LDA work1
-    JSR set_cell                        ; off the map?
-    BCS return_from_caller
+    JSR set_cell                        ; nothing written?
+    BCS drop_two_and_return
     PLA
-    ASL A                               ; cell y * 4
+    ASL A                               ; * CHARS_PER_CELL
     ASL A
     TAY
     PLA
     ASL A
-    ASL A                               ; cell x * 4
+    ASL A
     TAX
     LDA work1
 
-; Draw thing A (as thing_picture) at character position (X, Y): a cell's own
-; picture whole, an icon on the floor.
+; Draw cell type A's picture at character position (X, Y): whole, or for an
+; object an icon on the floor.
+; Clobbers: A, X, Y, temp, work0, work1 and the sprite variables.
 .draw_thing_at
     PHA
     STX sprite
@@ -3219,16 +3252,17 @@ ASSERT IO_NAME_LENGTH = 12
 
 ; The exit's icon, top left of the backpack screen once the exit is lit.
 .draw_exit_icon
-    LDA #&04                            ; character position 4, 4
+    LDA #4                              ; character position 4, 4
     STA sprite
     STA sprite_high
     JSR exit_picture
     JMP draw_icon_at
 
-; Start (or restart) the level: facing up, the direction keys as they were,
-; the clock reset, the exit back in place, the player at the start.
+; Start (or restart) the level: facing up, the direction keys as MENU set
+; them, the clock reset, the exit back in place, the player at the start.
+; Clobbers: everything.
 .reset_level
-    LDX #&02                            ; facing up
+    LDX #DIRECTION_UP                   ; facing up
     STX facing
     INX
 .reset_level_keys
@@ -3259,10 +3293,11 @@ ASSERT IO_NAME_LENGTH = 12
     LDY start_y
     JSR place_player
 
-; Forget which direction keys were down (and the action is 0 too).
+; Forget which direction keys were down; also the do-nothing action.
+; Clobbers: A, X.
 .clear_keys_down
-    LDX #&03
-    LDA #&00
+    LDX #3
+    LDA #0
 .clear_keys_down_loop
     STA keys_were_down, X               ; nothing held
     DEX

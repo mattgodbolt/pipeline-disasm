@@ -201,6 +201,8 @@ CONDITION_DIRECTION_BITS = &30    ; ...these bits
 CONDITION_CELL           = &40    ; facing (or landing against) the cell type in...
 CONDITION_CELL_BITS      = &0F    ; ...these bits
 
+START_LIVES = 3
+
 ; How far through a level the player is (stage).
 STAGE_COLLECTING = 0
 STAGE_EXIT_LIT   = 1    ; just lit: the time left is scored
