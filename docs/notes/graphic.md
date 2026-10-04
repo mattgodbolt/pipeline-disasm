@@ -161,3 +161,103 @@ Times are US Central.
   `@` keys; the picture macros in sprites.6502inc add thousands of them, so
   anything reading build/symbols.json for jsbeeb should drop keys with `@`
   (as baron's guide advises).
+
+## 2026-10-03 19:40 — Review: corrections, and what's newly understood
+
+A reviewer's pass over src/hidden_graphic.6502, checking every header and
+comment against the code, and the doubtful ones in jsbeeb (scratch driver
+around tools/beeb.mjs, logging registers at chosen PCs).
+
+Corrections to the earlier notes and comments:
+
+- Small slot &1F isn't "the man": it's object icon 15, which the game
+  draws as the exit (H.GAME's `exit_picture` is `io_object_icons + 15 *
+  32`). "Finish Block" sits exactly where its name would be (&E80 + 15 *
+  12 = &F34), so selecting it shows "16:Finish Block": it's the
+  designer's label for the exit, not only an end marker. Seen in jsbeeb.
+- Slots &20-&23 aren't "a yellow and red machine": they're the player
+  facing left, right, up and down (io_player; the figure in the game's
+  screenshots), and &0E/&0F the flame monster's two pictures. Animate
+  previews the game's own animations: the monster alternates its
+  pictures; the player facing left or right alternates with itself upside
+  down; facing up, &22 alternates with &23 upside down, and facing down
+  &23 with &22 upside down. (default.6502inc on main says Animate shows
+  "&20 with &21": it shows &20 with itself upside down.)
+- On tape nothing is loaded at the start: the set stays empty. The name is
+  changed to `""` first, but nothing reads it afterwards. (jsbeeb: `*LOAD
+  GRAPHIC`, `*TAPE`, `CALL &900`; &4000 stays zero, disc_fs 0, and the
+  sprite commands say "Not available".) The earlier note had it loading
+  the next file.
+- The pixel cursor doesn't blink. main_loop toggles it only when the
+  selection has moved, to put it back on the grid draw_grid just redrew
+  (screenshots 0.4 s apart are identical).
+- After a two-sprite command the selection stays on the sprite picked,
+  not the first (redraw_pair): a Copy of 1 onto 2 leaves 2 selected.
+- The pick window's picture of the first sprite sits to the right of the
+  "to/copy/this/onto" lines (rows 2-5), not on the empty title line.
+- Leaving does OSBYTE 4,1, not 4,0: X is 0 from the OSBYTE &7E before it,
+  since no Escape is pending (a trace of the exit shows X=1 at the call).
+  Harmless: MENU does `*FX4 1` itself.
+- The 39 bytes after slot_of_position aren't unused: they put the font on
+  a page boundary (&1D00), which print_char needs, as it adds only a high
+  byte to find a glyph. Now `ALIGN &100` and `HI(font)`.
+- A character row is 40 cells of 8 bytes (each 4 pixels by 8 lines; a
+  MODE 5 text character is two), not 20. ROW is &140.
+- A pop-up window covers at most &380 bytes: &5000-&537F, not up to &57FF.
+- invert_menu_row exclusive-ORs colour 1 into every pixel (red and yellow,
+  black and blue swap), not "colours 1 and 2".
+- `SBC row_down_step-1,X` and `SBC column_rewind-1,X` never read the RTS
+  before their tables: X is always 1 or more there. Only the expression's
+  base is the RTS.
+- Labels that said the wrong thing: show_selection's `.left` and `.right`
+  were swapped; sheet_column's `.small` and sheet_row's `.large` were the
+  paths for positions &20-&28 (now `.high`); escape_event's `.not_ctrl` is
+  `.not_shift`; `flip_x`/`flip_y` (Flip X's scratch pixel) are
+  `mirror_x`/`mirror_y`.
+- check_filing_system had text_not_available's address hard-coded (`LDX
+  #&78 : LDY #&29`). ask_load_name's tail made `io` and `not_graphics`
+  global symbols; it's `check_io_file` now.
+
+Newly understood:
+
+- Why escape_event sets the Escape flag itself: MOS 1.20's key handler
+  (&E4F0) calls OSEVEN for event 6 and sets the flag (`JSR &E674`, a ROR
+  &FF with carry set) only if OSEVEN returns carry set, which it does
+  (&E494) when the event is disabled. With the event enabled, the
+  handler has to. MENU's line 380 does `*FX229` (0) before running the
+  designer, undoing its earlier `*FX229 1`, so Escape is a real Escape
+  here; `*FX200` is 2.
+- What the SHIFT-Escape latch is for: plain Escape in a menu only cancels
+  it (the menu acknowledges the Escape); SHIFT-Escape cancels and then
+  asks "Escape?", because the latch outlives the acknowledgement. Seen in
+  jsbeeb.
+- Sheet position 0 is slot 0, the floor. The game fills the floor round
+  an object's icon from that picture's first cell alone (`io_tiles, Y` in
+  H.GAME's draw_row_floor_cell), which is why the designer keeps it one
+  4x8 cell repeated.
+- Plotting a pixel, and Delete, draw the sheet's copy of the sprite over
+  its selection box, which stays off until the selection moves (jsbeeb).
+- A palette changed with Def. Colour survives an error, because start
+  leaves the mode and palette alone when the screen is already MODE 5.
+- The VDU list narrows the text window to the top 18 rows so the CLS done
+  on tape (for the filing system's messages) leaves the boxes and logo.
+- `JSR &1234` at main_loop.dispatch is the original's own placeholder
+  operand. Spare bytes: the one after row_step, key_held's second, the
+  three after the OSGBPB block (cleared with it), two after the OSFILE
+  block.
+
+How the source is now:
+
+- Keys use osconst.6502inc's convention, `INKEY_TEST(KEY_X)` with
+  internal key numbers. Names no shared include has yet are in
+  src/graphics_designer.6502inc, by where they should go: OS call
+  numbers, cursor-key codes, `DEL`, `ctrl()`, key numbers, VDU and PLOT
+  codes, CRTC register 10 (osconst.6502inc); the graphics set's layout
+  `SET_*`, sprite sizes and what each slot is, `SLOT_*`
+  (sprites.6502inc). IO's offsets come from io.6502inc's addresses.
+- The logo and font are drawn two characters a pixel and built with
+  sprites.6502inc's `mode5_pictures` (the logo as its three 8-row bands,
+  the screen's own layout). H.GRAPH's symbol-dump entries went from 5,119
+  (4,214 of them `@`) to 1,064 (159), and build/symbols.json from 837,247
+  to 718,726 bytes. sprites.6502inc's SPRITE_COLUMNS and SCREEN_PICTURE
+  now have no users.

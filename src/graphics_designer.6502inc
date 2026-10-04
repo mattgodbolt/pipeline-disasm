@@ -1,0 +1,145 @@
+; Names the Graphics Designer (src/hidden_graphic.6502) needs that belong in
+; shared includes but aren't there yet. Each section says where it would
+; go; move a name there (and delete it here) when another piece needs it.
+; Baron binds a symbol once, so a name can't be in both places.
+
+; ---- For osconst.6502inc ----
+
+; OSBYTE calls.
+OSBYTE_WAIT_VSYNC         = &13 ; *FX19: wait for the next vertical sync
+OSBYTE_RAISE_ESCAPE       = &7D ; set the Escape flag, as the key would (no event)
+OSBYTE_ACKNOWLEDGE_ESCAPE = &7E ; clear an Escape; X=&FF if there was one, else 0
+OSBYTE_READ_CHAR_AND_MODE = &87 ; X = the character at the text cursor, Y = the mode
+OSBYTE_WRITE_SHEILA       = &97 ; *FX151: X = offset in page &FE, Y = the value
+OSBYTE_FUNCTION_KEY_BASE  = &E1 ; *FX225: X = f0's code (f1 one more...); 1 = strings
+
+; OSWORD calls.
+OSWORD_READ_INTERVAL_TIMER  = &03   ; YX: 5 bytes
+OSWORD_WRITE_INTERVAL_TIMER = &04   ; YX: 5 bytes
+OSWORD_READ_PALETTE         = &0B   ; YX: logical colour; returns the physical one after it
+OSWORD_WRITE_PALETTE        = &0C   ; YX: logical colour, physical colour, 0, 0, 0
+
+; OSFILE calls, and the object type OSFILE_READ_INFO returns in A.
+OSFILE_SAVE      = &00
+OSFILE_READ_INFO = &05          ; fills the block with the catalogue entry
+OSFILE_LOAD      = &FF
+OSFILE_TYPE_FILE = 1            ; (0 no such object, 2 a directory)
+
+; OSFIND calls: close (Y = handle, 0 for all), or open the file named at YX.
+OSFIND_CLOSE       = &00
+OSFIND_OPEN_INPUT  = &40
+OSFIND_OPEN_UPDATE = &C0
+
+; OSGBPB calls, at the pointer given in the block.
+OSGBPB_WRITE_AT = 1
+OSGBPB_READ_AT  = 3
+
+; OSARGS with A = 0 and Y = 0 reads the current filing system's number;
+; 4 and up are disc (and network) filing systems, below that tape and ROM.
+OSARGS_READ_FS = &00
+FS_DISC        = 4
+
+; FSCV calls.
+FSCV_OPT = &00                  ; *OPT X,Y
+
+; The codes OSRDCH returns for the cursor keys after *FX4,1.
+CODE_LEFT  = &88
+CODE_RIGHT = &89
+CODE_DOWN  = &8A
+CODE_UP    = &8B
+
+; Characters with no name of their own in a string, and CTRL with a letter.
+DEL = &7F
+FUNCTION ctrl(c) = ascii(c) AND &1F
+
+; Internal key numbers, for INKEY_TEST().
+KEY_SHIFT  = &00
+KEY_CTRL   = &01
+KEY_3      = &11
+KEY_4      = &12
+KEY_F7     = &16
+KEY_LEFT   = &19
+KEY_F0     = &20
+KEY_0      = &27
+KEY_DOWN   = &29
+KEY_1      = &30
+KEY_2      = &31
+KEY_R      = &33
+KEY_U      = &35
+KEY_UP     = &39
+KEY_A      = &41
+KEY_X      = &42
+KEY_Y      = &44
+KEY_COLON  = &48
+KEY_RETURN = &49
+KEY_C      = &52
+KEY_DELETE = &59
+KEY_Z      = &61
+KEY_SPACE  = &62
+KEY_B      = &64
+KEY_SLASH  = &68
+KEY_COPY   = &69
+KEY_F1     = &71
+KEY_F2     = &72
+KEY_F3     = &73
+KEY_F6     = &75
+KEY_F8     = &76
+KEY_F9     = &77
+KEY_RIGHT  = &79
+
+; VDU codes (wdata.6502 has the same three of these).
+VDU_CLS           = 12
+VDU_GCOL          = 18          ; VDU 18, mode, colour
+VDU_MODE          = 22
+VDU_PLOT          = 25          ; VDU 25, k, x; y;
+VDU_RESET_WINDOWS = 26
+VDU_TEXT_WINDOW   = 28          ; VDU 28, left, bottom, right, top
+
+; PLOT numbers.
+PLOT_MOVE_RELATIVE = 0
+PLOT_DRAW_RELATIVE = 1
+PLOT_MOVE          = 4
+
+; 6845 CRTC register 10: the cursor's start line, and bits 5-6 its blink
+; mode, where &20 turns it off.
+CRTC_CURSOR_START = 10
+CRTC_CURSOR_OFF   = &20
+
+; ---- For sprites.6502inc ----
+
+; A graphics set, as the Graphics Designer keeps it at &4000 and saves it
+; (DEFAULT is one): sprites in numbered slots, then the objects' names.
+LARGE_SPRITE_WIDTH  = 16        ; pixels
+LARGE_SPRITE_HEIGHT = 32
+LARGE_SPRITE_SIZE   = LARGE_SPRITE_WIDTH / 4 * LARGE_SPRITE_HEIGHT    ; bytes, four pixels each
+SMALL_SPRITE_WIDTH  = 8
+SMALL_SPRITE_HEIGHT = 16
+SMALL_SPRITE_SIZE   = SMALL_SPRITE_WIDTH / 4 * SMALL_SPRITE_HEIGHT
+OBJECT_NAME_LENGTH  = 12        ; space padded
+OBJECT_NAMES        = 15        ; small slots &10-&1E; &1F has none
+
+SET_LARGE      = &000           ; large slots &00-&0F
+SET_SMALL      = &800           ; small slots &10-&1F
+SET_MORE_LARGE = &A00           ; large slots &20-&28
+SET_NAMES      = &E80
+SET_SIZE       = &F34
+
+FIRST_SMALL_SLOT = &10
+MORE_LARGE_SLOT  = &20
+LAST_SLOT        = &28
+
+; What the game makes of the slots (IO holds slots &00-&27, the set's first
+; &E00 bytes, as its graphics, and slot &28 apart). Slots &00-&0F are the
+; map's cell types, &10-&1F the objects' icons.
+SLOT_FLOOR     = &00            ; cell type 0; the game also fills the floor round an
+                                ; icon from its first character cell, so it repeats that
+SLOT_MONSTER   = &0E            ; &0E and &0F: the flame monsters' two pictures
+SLOT_EXIT      = &1F            ; icon 15, the exit: the one object with no name
+SLOT_PLAYER    = &20            ; &20-&23: the player facing left, right, up and down
+SLOT_ALTERNATE = &24            ; &24-&27: second pictures for cell types 5, 7, 8 and A
+SLOT_NO_OBJECT = &28            ; for an object cell with no object in it
+
+ASSERT SET_SMALL = SET_LARGE + FIRST_SMALL_SLOT * LARGE_SPRITE_SIZE
+ASSERT SET_MORE_LARGE = SET_SMALL + (MORE_LARGE_SLOT - FIRST_SMALL_SLOT) * SMALL_SPRITE_SIZE
+ASSERT SET_NAMES = SET_MORE_LARGE + (LAST_SLOT + 1 - MORE_LARGE_SLOT) * LARGE_SPRITE_SIZE
+ASSERT SET_SIZE = SET_NAMES + OBJECT_NAMES * OBJECT_NAME_LENGTH

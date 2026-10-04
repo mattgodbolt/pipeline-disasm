@@ -2,142 +2,133 @@
 ;
 ; The GRAPHIC stub reads this from sectors &145-&165, which no catalogue entry
 ; mentions, to &1AB0 and jumps to start. It edits a graphics set - the game's
-; sprites and the names of its objects - kept at &4000 (DEFAULT.6502 shows
-; the format), and goes back to the menu by *RUNning MRUN.
+; pictures and the names of its objects - kept at &4000 (src/default.6502 is
+; one; graphics_designer.6502inc names its layout), and goes back to the menu
+; by running /MRUN (on tape it resets the machine instead).
 ;
 ; The screen is MODE 5 at &5800. On the left, the selected sprite magnified
-; four times into an editing grid, and under it the current colour and, for an
-; object, its number and name. On the right, the sprite sheet: a 5x5 grid of
-; large sprites (16x32 pixels) and under it a 4x4 grid of small ones (8x16),
-; then the PIPELINE logo. Menus, prompts and errors pop up in windows that
-; keep what they cover at &5000.
+; four times into an editing grid, and under it the current colour and, for
+; an object, its number and name. On the right, the sprite sheet: a 5x5 grid
+; of large sprites (16x32 pixels) and under it a 4x4 grid of small ones
+; (8x16), then the PIPELINE logo. Menus, prompts and errors pop up in windows
+; that keep what they cover at &5000.
 ;
 ; Keys: Z X : / move the pixel cursor, 0-3 pick a colour (4 is 0 again),
 ; Return plots and Delete clears; the cursor keys pick a sprite; f0-f3 open
 ; the menus (OptionsA, OptionsB, Environment and the credits) and CTRL with a
-; letter is a shortcut for a menu item; Escape offers to leave.
+; key is a shortcut for a menu item; Escape offers to leave.
 ;
 ; Memory, besides the screen:
 ;   &1AB0-&3ADB  this program; the rest, to &3BAF, is whatever was in memory
 ;                after it when it was saved
 ;   &3E00, &3E80 two sprite buffers: Animate's frames
 ;   &3F80        the undo copy of the sprite being edited
-;   &4000-&4F33  the graphics set, with "Finish Block" after it
-;   &5000-&57FF  what the pop-up windows cover
+;   &4000-&4F33  the graphics set, with "Finish Block" after it (start clears
+;                &4000-&4FFF the first time)
+;   &5000-&537F  what a pop-up window covers (the biggest is &380 bytes)
 
 INCLUDE "os.6502inc"
+INCLUDE "osconst.6502inc"
+INCLUDE "io.6502inc"
 INCLUDE "sprites.6502inc"
+INCLUDE "graphics_designer.6502inc"
 
-; Keys, as the negative INKEY numbers OSBYTE &81 scans for.
-KEY_SHIFT  = 256-1
-KEY_CTRL   = 256-2
-KEY_3      = 256-18
-KEY_4      = 256-19
-KEY_F7     = 256-23
-KEY_LEFT   = 256-26
-KEY_F0     = 256-33
-KEY_0      = 256-40
-KEY_DOWN   = 256-42
-KEY_1      = 256-49
-KEY_2      = 256-50
-KEY_R      = 256-52
-KEY_U      = 256-54
-KEY_O      = 256-55
-KEY_UP     = 256-58
-KEY_A      = 256-66
-KEY_X      = 256-67
-KEY_Y      = 256-69
-KEY_COLON  = 256-73
-KEY_RETURN = 256-74
-KEY_S      = 256-82
-KEY_C      = 256-83
-KEY_N      = 256-86
-KEY_DELETE = 256-90
-KEY_Z      = 256-98
-KEY_SPACE  = 256-99
-KEY_B      = 256-101
-KEY_SLASH  = 256-105
-KEY_COPY   = 256-106
-KEY_F1     = 256-114
-KEY_F2     = 256-115
-KEY_F3     = 256-116
-KEY_F6     = 256-118
-KEY_F8     = 256-119
-KEY_F9     = 256-120
-KEY_RIGHT  = 256-122
-NO_KEY     = &57                ; in shortcut_keys: below &80, so not a key
+; In shortcut_keys, an entry below &80 isn't a key (any INKEY_TEST() value is
+; &80 or more).
+NO_KEY = &57
 
-; Codes OSRDCH returns: the cursor keys once OSBYTE 4,1 has made them
-; ordinary keys, and the function keys once OSBYTE &E1 has based them at &E0.
-CODE_LEFT  = &88
-CODE_RIGHT = &89
-CODE_DOWN  = &8A
-CODE_UP    = &8B
-CODE_F0    = &E0
+; The code f0 gives while a menu runs (OSBYTE_FUNCTION_KEY_BASE), f1-f9 the
+; codes after it. menu counts any code from FUNCTION_KEY_CODES up as one.
+CODE_F0            = &E0
+FUNCTION_KEY_CODES = &C8
 
 ; Window text: a flag byte (MENU makes the lines after the first a list to
 ; pick from), then lines ending in CR, then TEXT_END.
-CR       = 13
 TEXT_END = &FF
 MENU     = &FF
 PLAIN    = 0
 
-; Windows, numbered as window_address and window_size list them.
+; Windows, numbered as window_address and window_size list them. A menu's
+; window number is also its function key's number.
 WINDOW_OPTIONS_A   = 0
 WINDOW_OPTIONS_B   = 1
 WINDOW_ENVIRONMENT = 2
 WINDOW_CREDITS     = 3
-WINDOW_PICK        = 4          ; "Select sprite to..." with a picture of it; Animate's
+WINDOW_PICK        = 4          ; "Select sprite to...", and Animate's
 WINDOW_QUESTION    = 5          ; Escape?, Exists, the palette
-WINDOW_INPUT       = 6          ; file and object names
+WINDOW_INPUT       = 6          ; file and object names; "insert disc"
 WINDOW_ERROR       = 7
+WINDOWS            = 8
 
-; Sprite numbers: &00-&0F and &20-&28 are the large sprites' sheet positions,
-; &10-&1F the small ones; the last small one is the man, who has no name.
-FIRST_SMALL = &10
-LAST_SMALL  = &1F
-THE_MAN     = LAST_SMALL
-AFTER_SMALL = &20
-SMALL_WIDTH = 2                 ; sprite_width, in bytes
-LARGE_WIDTH = 4
+; Sprite numbers. On the sheet, &00-&0F and &20-&28 are the large sprites'
+; places in reading order (slot_of_position gives the slot each shows), and
+; &10-&1F the small ones, which show their own slots. While by_slot is set,
+; the code takes sprite numbers as slots instead.
+FIRST_SMALL = FIRST_SMALL_SLOT
+LAST_SMALL  = FIRST_SMALL + 15
+AFTER_SMALL = MORE_LARGE_SLOT   ; the large places after &0F
+LAST_SPRITE = LAST_SLOT
+SMALL_WIDTH = SMALL_SPRITE_WIDTH / 4    ; sprite_width: bytes across
+LARGE_WIDTH = LARGE_SPRITE_WIDTH / 4
+ASSERT SLOT_EXIT = LAST_SMALL
+
+; The sheet: 5 rows of 5 large sprites, then 4 rows of 4 small ones.
+LARGE_COLUMNS = 5
+LARGE_ROWS    = 5
+SMALL_COLUMNS = 4
+SMALL_ROWS    = 4
 
 ; Sprite numbers beyond the sheet: the two buffers Animate shows frames in.
 SPRITE_FRAME_A = &57
 SPRITE_FRAME_B = &58
 UPSIDE_DOWN    = &80            ; in animation_frames: show the frame turned over
 
-; Screen layout: MODE 5, 20 character cells of 8 bytes across each row.
+; The screen: MODE 5, where a character row is 40 cells of 8 bytes, each cell
+; four pixels (a byte) across and eight lines down. A MODE 5 text character
+; is two cells wide; the designer's own font is one.
 SCREEN = &5800
 CELL   = 8
-ROW    = &140
+ROW    = 40 * CELL
 
 graphics      = &4000           ; the graphics set
-; Where its pieces are in an IO file (see io_segments).
-IO_SLOT_28    = &0000
-IO_NAMES      = &0080
-IO_GRAPHICS   = &25D3
-object_names  = graphics + &E80
-graphics_end  = graphics + &F34
-frame_a       = &3E00
-frame_b       = &3E80
+object_names  = graphics + SET_NAMES
+graphics_end  = graphics + SET_SIZE
+slot_28       = graphics + SET_NAMES - LARGE_SPRITE_SIZE    ; the last slot, which IO keeps apart
+
+; Where the set's pieces are in an IO file (see io_segments).
+IO_SLOT_28_OFFSET  = io_no_object_picture - io_start
+IO_NAMES_OFFSET    = io_object_names - io_start
+IO_GRAPHICS_OFFSET = io_graphics - io_start
+IO_LENGTH          = IO_END - io_start
+ASSERT LO(IO_SLOT_28_OFFSET) = LO(slot_28 - graphics)
+ASSERT LO(IO_NAMES_OFFSET) = LO(SET_NAMES)
+ASSERT IO_NAMES_SIZE = LARGE_SPRITE_SIZE + OBJECT_NAMES * OBJECT_NAME_LENGTH
+ASSERT IO_GRAPHICS_SIZE = slot_28 - graphics
+
+frame_a       = &3E00           ; SPRITE_FRAME_A
+frame_b       = frame_a + LARGE_SPRITE_SIZE
 undo_buffer   = &3F80
 window_store  = &5000
-edit_grid     = SCREEN + ROW + 2*CELL
+
+; Places on the screen.
+edit_grid     = SCREEN + ROW + 2*CELL           ; a cell per pixel, two pixel rows to a row
 colour_swatch = SCREEN + 19*ROW + 1*CELL
 name_box      = SCREEN + 19*ROW + 4*CELL
-large_sheet   = SCREEN + 20*CELL
-small_sheet   = SCREEN + 20*ROW + 21*CELL
-frame_preview = SCREEN + 23*ROW + 9*CELL
+large_sheet   = SCREEN + 20*CELL                ; 5 sprites across, each 4 cells by 4 rows
+small_sheet   = SCREEN + 20*ROW + 21*CELL       ; 4 across, 4 cells apart, each 2 by 2
+frame_preview = SCREEN + 23*ROW + 9*CELL        ; Animate's frame, in its window
 logo_screen   = SCREEN + 28*ROW + 18*CELL
 ; Two bytes of the editing grid's frame that tell whether it is drawn for a
-; large sprite or a small one.
+; large sprite or a small one: the small frame's top right corner, and the
+; top of the large frame's right edge. Each is &08 (a pixel of colour 1 at
+; the cell's left) only when that frame is drawn.
 grid_frame_top   = SCREEN + 10*CELL + 7
 grid_frame_right = SCREEN + ROW + 18*CELL
 
 ; Zero page.
 screen_ptr   = &50              ; where on the screen
 data_ptr     = &52              ; a sprite's bytes; window text
-save_ptr     = &54              ; where a window's background is kept
+save_ptr     = &54              ; where a window's background is kept; a line of its text
 pixel_x      = &56
 pixel_y      = &57
 aux_ptr      = &58              ; a glyph; a window's corner; a second sprite
@@ -147,8 +138,8 @@ count_x      = &62
 count_y      = &63
 item         = &64              ; the highlighted menu line, from 0
 mask         = &65              ; one pixel of a byte; window text's flag byte
-sprite_width = &70              ; in bytes: 4 large, 2 small (8 lines tall per byte)
-sprite       = &71              ; the selected sheet position
+sprite_width = &70              ; in bytes: 4 large, 2 small (a sprite is 8 lines tall per byte)
+sprite       = &71              ; the selected sprite
 old_sprite   = &72
 cursor_x     = &73              ; the pixel cursor in the editing grid
 cursor_y     = &74
@@ -157,201 +148,213 @@ old_cursor_y = &76
 colour       = &77              ; for plotting, 0-3
 repeat_delay = &78              ; the pixel cursor's key repeat, shortening as it repeats
 last_column  = &7A              ; of the selected sprite's row in the sheet
-by_slot      = &7B              ; bit 7: sprite numbers are slots, not sheet positions
-border_ptr   = &7C
+by_slot      = &7B              ; bit 7: sprite numbers are slots, not sheet places
+border_ptr   = &7C              ; a window's frame
 escape_latch = &7E              ; bit 7: SHIFT-Escape was pressed
 
 SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 
-; The PIPELINE logo at the bottom right: 88x24 pixels, which start copies
-; to the screen a character row at a time.
+; The PIPELINE logo at the bottom right: 88x24 pixels, drawn two characters
+; a pixel (as default.6502inc draws the game's pictures) in its three bands of
+; eight rows, which start copies to the screen a band (a character row) at a
+; time. mode5_pictures lays each band out as the screen does.
+LOGO_BAND = 22*CELL
 .logo
-    SCREEN_PICTURE {
-        ".33333333....33333333...3333333.....33333333...3.........33333333...3......3....3333333.",
-        "3333333333..3333333333.333333333...3333333333.333.......3333333333.333....333..333333333",
-        "33333333333..33333333..3333333333..333333333..333........33333333..333....333..33333333.",
-        "3333....333.....33.....333....333..333........333...........33.....333....333..333......",
-        "333......333....33.....33......33..333........333...........33.....333....333..333......",
-        "333......333....33.....33......333.333........333...........33.....3333...333..333......",
-        "333......333....33.....33......333.333........333...........33.....33333..333..333......",
-        "333......33.....33.....33......333.333........333...........33.....33333..333..333......",
-        "3333....333.....33.....333....333..333........333...........33.....333333.333..333......",
-        "33333333333.....33.....3333333333..3333333....333...........33.....3333333333..333333...",
-        "3333333333......33.....333333333...33333333...333...........33.....3333333333..3333333..",
-        "333333333.......33.....33333333....3333333....333...........33.....333.333333..333333...",
-        "333.............33.....333.........333........333...........33.....333..33333..333......",
-        "333.............33.....333.........333........333...........33.....333..33333..333......",
-        "333.............33.....333.........333........333...........33.....333...3333..333......",
-        "333.............33.....333.........333........333...........33.....333....333..333......",
-        "333.............33.....333.........333........333...........33.....333....333..333......",
-        "333.............33.....333.........333........333...........33.....333....333..333......",
-        "333..........33333333..333.........333333333..33333333...33333333..333....333..33333333.",
-        "333.........3333333333.333.........3333333333.333333333.3333333333.333....333..333333333",
-        ".3...........33333333...3...........33333333...3333333...33333333...3......3....3333333.",
-        "........................................................................................",
-        "........................................................................................",
-        "........................................................................................",
-    }
+    EQUB mode5_pictures({
+        {
+            "..3333333333333333........3333333333333333......33333333333333..........3333333333333333......33..................3333333333333333......33............33........33333333333333..",
+            "33333333333333333333....33333333333333333333..333333333333333333......33333333333333333333..333333..............33333333333333333333..333333........333333....333333333333333333",
+            "3333333333333333333333....3333333333333333....33333333333333333333....333333333333333333....333333................3333333333333333....333333........333333....3333333333333333..",
+            "33333333........333333..........3333..........333333........333333....333333................333333......................3333..........333333........333333....333333............",
+            "333333............333333........3333..........3333............3333....333333................333333......................3333..........333333........333333....333333............",
+            "333333............333333........3333..........3333............333333..333333................333333......................3333..........33333333......333333....333333............",
+            "333333............333333........3333..........3333............333333..333333................333333......................3333..........3333333333....333333....333333............",
+            "333333............3333..........3333..........3333............333333..333333................333333......................3333..........3333333333....333333....333333............"
+        },
+        {
+            "33333333........333333..........3333..........333333........333333....333333................333333......................3333..........333333333333..333333....333333............",
+            "3333333333333333333333..........3333..........33333333333333333333....33333333333333........333333......................3333..........33333333333333333333....333333333333......",
+            "33333333333333333333............3333..........333333333333333333......3333333333333333......333333......................3333..........33333333333333333333....33333333333333....",
+            "333333333333333333..............3333..........3333333333333333........33333333333333........333333......................3333..........333333..333333333333....333333333333......",
+            "333333..........................3333..........333333..................333333................333333......................3333..........333333....3333333333....333333............",
+            "333333..........................3333..........333333..................333333................333333......................3333..........333333....3333333333....333333............",
+            "333333..........................3333..........333333..................333333................333333......................3333..........333333......33333333....333333............",
+            "333333..........................3333..........333333..................333333................333333......................3333..........333333........333333....333333............"
+        },
+        {
+            "333333..........................3333..........333333..................333333................333333......................3333..........333333........333333....333333............",
+            "333333..........................3333..........333333..................333333................333333......................3333..........333333........333333....333333............",
+            "333333....................3333333333333333....333333..................333333333333333333....3333333333333333......3333333333333333....333333........333333....3333333333333333..",
+            "333333..................33333333333333333333..333333..................33333333333333333333..333333333333333333..33333333333333333333..333333........333333....333333333333333333",
+            "..33......................3333333333333333......33......................3333333333333333......33333333333333......3333333333333333......33............33........33333333333333..",
+            "................................................................................................................................................................................",
+            "................................................................................................................................................................................",
+            "................................................................................................................................................................................"
+        }
+    })
+ASSERT P% - logo = 3 * LOGO_BAND
 
-; The slot each position of the large sprite sheet shows, positions in
-; reading order (5 to a row). Sprite numbers &00-&0F are positions 0-15 and
-; &20-&28 positions 16-24; &10-&1F are the small sprites, which show their own
-; slots.
+; The slot each large position on the sheet shows, positions in reading
+; order (5 to a row): sprite numbers &00-&0F are positions 0-15 and &20-&28
+; positions 16-24. The small sprites, &10-&1F, show their own slots.
 .slot_of_position
     EQUB &00, &01, &02, &03, &04
     EQUB &05, &08, &07, &0A, &0E
     EQUB &24, &26, &25, &27, &0F
     EQUB &06, &28, &0C, &0D, &0B
     EQUB &09, &20, &21, &22, &23
-    SKIP 39                         ; unused
 
-; A font of 4x8 characters, &20-&7F, eight to a picture: each four pixels
-; across is a character, stored as a column of eight bytes. print_char
-; exclusive-ORs them on in colour 3. "^~" is a copyright sign.
+; print_char finds a glyph by its high byte alone, so the font starts a page.
+    ALIGN &100
+
+; A font of 4x8 characters, &20-&7F, eight to a picture (drawn two
+; characters a pixel, so each character is eight across), each stored as a
+; cell: a column of eight bytes. print_char draws them in colour 3. "^~" is a
+; copyright sign.
 .font
-    ; space ! " # $ % & '
-    SPRITE_COLUMNS {
-        ".....3..3.3..33...3.3....3....3.",
-        ".....3..3.3..33..3333.3.3.3..3..",
-        ".....3..3.3.33333.....3.3.3..3..",
-        ".....3.......33..33..3...3......",
-        ".....3......3333...3.3..3.33....",
-        ".............33.333.3.3.3.3.....",
-        ".....3.......33..3....3..3.3....",
-        "................................",
-    }
-    ; ( ) * + , - . /
-    SPRITE_COLUMNS {
-        "..3..3..........................",
-        ".3...3...3...3................3.",
-        ".3....3.333..3................3.",
-        ".3....3..33.333.....333......3..",
-        ".3....3.333..3...............3..",
-        ".3...3...3...3...3.......3..3...",
-        "..3..3...........3.......3......",
-        ".................3..............",
-    }
-    ; 0 1 2 3 4 5 6 7
-    SPRITE_COLUMNS {
-        ".3...3..333.333.3...333.333.333.",
-        "3.3.33....3...3.3...3...3.....3.",
-        "3.3..3....3...3.3...3...3.....3.",
-        "3.3..3..333..33.3.3.333.333..33.",
-        "3.3..3..3.....3.3.3...3.3.3..3..",
-        "3.3..3..3.....3.333...3.3.3..3..",
-        ".3..333.333.333...3.333.333..3..",
-        "................................",
-    }
-    ; 8 9 : ; < = > ?
-    SPRITE_COLUMNS {
-        "333.333...........3......3...33.",
-        "3.3.3.3..........3.......3..3.3.",
-        "3.3.3.3..3...3...3..333...3...3.",
-        "333.333..3...3..3.........3..3..",
-        "3.3...3..........3..333...3..3..",
-        "3.3...3..3...3...3.......3......",
-        "333.333..3...3....3......3...3..",
-        ".............3..................",
-    }
-    ; @ A B C D E F G
-    SPRITE_COLUMNS {
-        ".33.333.33..333.33..333.333.333.",
-        "3.3.3.3.3.3.3...3.3.3...3...3...",
-        "3.3.3.3.3.3.3...3.3.3...3...3...",
-        "3...333.33..3...3.3.33..33..3...",
-        "3.3.3.3.3.3.3...3.3.3...3...3.3.",
-        "3...3.3.3.3.3...3.3.3...3...3.3.",
-        ".33.3.3.33..333.33..333.3...333.",
-        "................................",
-    }
-    ; H I J K L M N O
-    SPRITE_COLUMNS {
-        "3.3.333.333.3.3.3...3.3.3.3.333.",
-        "3.3..3....3.3.3.3...333.3.3.3.3.",
-        "3.3..3....3.33..3...3.3.333.3.3.",
-        "333..3....3.33..3...3.3.333.3.3.",
-        "3.3..3..3.3.3.3.3...3.3.333.3.3.",
-        "3.3..3..3.3.3.3.3...3.3.3.3.3.3.",
-        "3.3.333.333.3.3.333.3.3.3.3.333.",
-        "................................",
-    }
-    ; P Q R S T U V W
-    SPRITE_COLUMNS {
-        "333.333.333.333.333.3.3.3.3.3.3.",
-        "3.3.3.3.3.3.3....3..3.3.3.3.3.3.",
-        "3.3.3.3.3.3.3....3..3.3.3.3.3.3.",
-        "333.3.3.333.333..3..3.3.3.3.3.3.",
-        "3...3.3.33....3..3..3.3.333.333.",
-        "3...33..3.3...3..3..3.3..3..333.",
-        "3.....3.3.3.333..3..333..3..3.3.",
-        "................................",
-    }
-    ; X Y Z [ \ ] ^ _
-    SPRITE_COLUMNS {
-        "3.3.3.3.333.333......33...33....",
-        "3.3.3.3...3.3...3.....3..3......",
-        ".3..333...3.3....3....3.3.33....",
-        ".3...3...3..3....3....3.3.3.....",
-        ".3...3..3...3.....3...3.3.33....",
-        "3.3..3..3...3.....3...3..3......",
-        "3.3..3..333.333......33...33....",
-        "............................3333",
-    }
-    ; ` a b c d e f g
-    SPRITE_COLUMNS {
-        ".33.....3.........3......33.....",
-        ".33.....3.........3......3......",
-        ".3..333.333.333.333.333..3..333.",
-        "333...3.3.3.3...3.3.3.3.333.3.3.",
-        ".3..333.3.3.3...3.3.333..3..3.3.",
-        ".3..3.3.3.3.3...3.3.3....3..333.",
-        "333.333.333.333.333.333..3....3.",
-        "............................333.",
-    }
-    ; h i j k l m n o
-    SPRITE_COLUMNS {
-        "3....3...3..3...33..............",
-        "3...........3....3..............",
-        "333.33...3..3.3..3..3.3.333.333.",
-        "3.3..3...3..3.3..3..333.3.3.3.3.",
-        "3.3..3...3..33...3..3.3.3.3.3.3.",
-        "3.3..3...3..3.3..3..3.3.3.3.3.3.",
-        "3.3.333..3..3.3.333.3.3.3.3.333.",
-        "........33......................",
-    }
-    ; p q r s t u v w
-    SPRITE_COLUMNS {
-        ".................3..............",
-        ".................3..............",
-        "333.333.333.333.333.3.3.3.3.3.3.",
-        "3.3.3.3.3...3....3..3.3.3.3.3.3.",
-        "3.3.3.3.3...333..3..3.3.3.3.3.3.",
-        "333.333.3.....3..3..3.3.3.3.333.",
-        "3.....3.3...333..33.333..3..3.3.",
-        "3.....3.........................",
-    }
-    ; x y z { | } ~ DEL
-    SPRITE_COLUMNS {
-        "..............3..3...3..3.......",
-        ".............3...3...3...3......",
-        "3.3.3.3.333..3...3...3..3.3.....",
-        "3.3.3.3...3.33........3...3.....",
-        ".3..3.3..3...3...3...3..3.3.....",
-        "3.3.333..3...3...3...3...3......",
-        "3.3...3.333...3..3...3..3.......",
-        "....333.........................",
-    }
+    EQUB mode5_pictures({
+        ; space ! " # $ % & '
+        {
+            "..........33....33..33....3333......33..33........33........33..",
+            "..........33....33..33....3333....33333333..33..33..33....33....",
+            "..........33....33..33..3333333333..........33..33..33....33....",
+            "..........33..............3333....3333....33......33............",
+            "..........33............33333333......33..33....33..3333........",
+            "..........................3333..333333..33..33..33..33..........",
+            "..........33..............3333....33........33....33..33........",
+            "................................................................"
+        },
+        ; ( ) * + , - . /
+        {
+            "....33....33....................................................",
+            "..33......33......33......33................................33..",
+            "..33........33..333333....33................................33..",
+            "..33........33....3333..333333..........333333............33....",
+            "..33........33..333333....33..............................33....",
+            "..33......33......33......33......33..............33....33......",
+            "....33....33......................33..............33............",
+            "..................................33............................"
+        },
+        ; 0 1 2 3 4 5 6 7
+        {
+            "..33......33....333333..333333..33......333333..333333..333333..",
+            "33..33..3333........33......33..33......33......33..........33..",
+            "33..33....33........33......33..33......33......33..........33..",
+            "33..33....33....333333....3333..33..33..333333..333333....3333..",
+            "33..33....33....33..........33..33..33......33..33..33....33....",
+            "33..33....33....33..........33..333333......33..33..33....33....",
+            "..33....333333..333333..333333......33..333333..333333....33....",
+            "................................................................"
+        },
+        ; 8 9 : ; < = > ?
+        {
+            "333333..333333......................33............33......3333..",
+            "33..33..33..33....................33..............33....33..33..",
+            "33..33..33..33....33......33......33....333333......33......33..",
+            "333333..333333....33......33....33..................33....33....",
+            "33..33......33....................33....333333......33....33....",
+            "33..33......33....33......33......33..............33............",
+            "333333..333333....33......33........33............33......33....",
+            "..........................33...................................."
+        },
+        ; @ A B C D E F G
+        {
+            "..3333..333333..3333....333333..3333....333333..333333..333333..",
+            "33..33..33..33..33..33..33......33..33..33......33......33......",
+            "33..33..33..33..33..33..33......33..33..33......33......33......",
+            "33......333333..3333....33......33..33..3333....3333....33......",
+            "33..33..33..33..33..33..33......33..33..33......33......33..33..",
+            "33......33..33..33..33..33......33..33..33......33......33..33..",
+            "..3333..33..33..3333....333333..3333....333333..33......333333..",
+            "................................................................"
+        },
+        ; H I J K L M N O
+        {
+            "33..33..333333..333333..33..33..33......33..33..33..33..333333..",
+            "33..33....33........33..33..33..33......333333..33..33..33..33..",
+            "33..33....33........33..3333....33......33..33..333333..33..33..",
+            "333333....33........33..3333....33......33..33..333333..33..33..",
+            "33..33....33....33..33..33..33..33......33..33..333333..33..33..",
+            "33..33....33....33..33..33..33..33......33..33..33..33..33..33..",
+            "33..33..333333..333333..33..33..333333..33..33..33..33..333333..",
+            "................................................................"
+        },
+        ; P Q R S T U V W
+        {
+            "333333..333333..333333..333333..333333..33..33..33..33..33..33..",
+            "33..33..33..33..33..33..33........33....33..33..33..33..33..33..",
+            "33..33..33..33..33..33..33........33....33..33..33..33..33..33..",
+            "333333..33..33..333333..333333....33....33..33..33..33..33..33..",
+            "33......33..33..3333........33....33....33..33..333333..333333..",
+            "33......3333....33..33......33....33....33..33....33....333333..",
+            "33..........33..33..33..333333....33....333333....33....33..33..",
+            "................................................................"
+        },
+        ; X Y Z [ \ ] ^ _
+        {
+            "33..33..33..33..333333..333333............3333......3333........",
+            "33..33..33..33......33..33......33..........33....33............",
+            "..33....333333......33..33........33........33..33..3333........",
+            "..33......33......33....33........33........33..33..33..........",
+            "..33......33....33......33..........33......33..33..3333........",
+            "33..33....33....33......33..........33......33....33............",
+            "33..33....33....333333..333333............3333......3333........",
+            "........................................................33333333"
+        },
+        ; ` a b c d e f g
+        {
+            "..3333..........33..................33............3333..........",
+            "..3333..........33..................33............33............",
+            "..33....333333..333333..333333..333333..333333....33....333333..",
+            "333333......33..33..33..33......33..33..33..33..333333..33..33..",
+            "..33....333333..33..33..33......33..33..333333....33....33..33..",
+            "..33....33..33..33..33..33......33..33..33........33....333333..",
+            "333333..333333..333333..333333..333333..333333....33........33..",
+            "........................................................333333.."
+        },
+        ; h i j k l m n o
+        {
+            "33........33......33....33......3333............................",
+            "33......................33........33............................",
+            "333333..3333......33....33..33....33....33..33..333333..333333..",
+            "33..33....33......33....33..33....33....333333..33..33..33..33..",
+            "33..33....33......33....3333......33....33..33..33..33..33..33..",
+            "33..33....33......33....33..33....33....33..33..33..33..33..33..",
+            "33..33..333333....33....33..33..333333..33..33..33..33..333333..",
+            "................3333............................................"
+        },
+        ; p q r s t u v w
+        {
+            "..................................33............................",
+            "..................................33............................",
+            "333333..333333..333333..333333..333333..33..33..33..33..33..33..",
+            "33..33..33..33..33......33........33....33..33..33..33..33..33..",
+            "33..33..33..33..33......333333....33....33..33..33..33..33..33..",
+            "333333..333333..33..........33....33....33..33..33..33..333333..",
+            "33..........33..33......333333....3333..333333....33....33..33..",
+            "33..........33.................................................."
+        },
+        ; x y z { | } ~ DEL
+        {
+            "............................33....33......33....33..............",
+            "..........................33......33......33......33............",
+            "33..33..33..33..333333....33......33......33....33..33..........",
+            "33..33..33..33......33..3333................33......33..........",
+            "..33....33..33....33......33......33......33....33..33..........",
+            "33..33..333333....33......33......33......33......33............",
+            "33..33......33..333333......33....33......33....33..............",
+            "........333333.................................................."
+        }
+    })
 
 ; Bit 7 set while each window is open (and its background saved). start
-; clears all twenty bytes; only eight windows exist.
+; clears all twenty bytes; only WINDOWS exist.
 .window_open
     SKIP 20
 
 ; The screen address of each pair of pixel rows of the editing grid.
 .grid_row_address
-    FOR r = 0..15
-        EQUW edit_grid + r*ROW
-    NEXT
+    EQUW edit_grid + (0..15) * ROW
 
 ; Each window's top left corner on the screen...
 .window_address
@@ -359,7 +362,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     EQUW SCREEN + 8*CELL            ; OptionsB
     EQUW SCREEN + 16*CELL           ; Environment
     EQUW SCREEN + 24*CELL           ; credits
-    EQUW SCREEN + 21*ROW + 4*CELL   ; select a sprite
+    EQUW SCREEN + 21*ROW + 4*CELL   ; pick a sprite; Animate
     EQUW SCREEN + 22*ROW + 4*CELL   ; questions
     EQUW SCREEN + 22*ROW + 2*CELL   ; names
     EQUW SCREEN + 14*ROW + 12*CELL  ; errors
@@ -374,6 +377,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     EQUB 8*CELL-1, 6
     EQUB 16*CELL-1, 7
     EQUB 16*CELL-1, 6
+ASSERT window_size - window_address = 2 * WINDOWS
 
 ; Point at a window.
 ; In:  A = window number (only bits 0-2 count)
@@ -383,7 +387,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Clobbers: A
 .window_setup
 {
-    AND #&07
+    AND #WINDOWS - 1
     ASL A
     TAY
     LDA #HI(window_store)
@@ -403,23 +407,24 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; Open a window and write text in it.
-; In:  A = window number (bit 7 ignored), X/Y = its text (see CR, TEXT_END)
-; Out: line_count = lines in the text less one, mask = the text's flag byte
-; Clobbers: A, X, Y, screen_ptr, data_ptr, save_ptr, aux_ptr, border_ptr,
-;      count_x, count_y
-; Any open window is closed first, so they never overlap. The window is
-; filled in colour 1 for the title row and colour 3 below, keeping what it
-; covers at window_store.
+; Open a window and write its text in it. Any open window is closed first,
+; so they never overlap; what the window covers is kept at window_store, and
+; it is filled with colour 1 for the title row and colour 3 below, then
+; print_window_text writes the text and draws the frame.
+; In:  A = window number (bit 7 ignored), X/Y = its text (see TEXT_END)
+; Out: screen_ptr = just after the text's last character, line_count =
+;      lines in the text less one, mask = the text's flag byte
+; Clobbers: A, X, Y, data_ptr, save_ptr, aux_ptr, border_ptr, count_x,
+;      count_y
 .open_window
 {
     STX data_ptr
     STY data_ptr+1
     AND #&7F
     PHA
-    LDA #7                          ; the last window
+    LDA #WINDOWS - 1
 
-    ; Close every window, 7 to 0.
+    ; Close every window, the last first.
 .close_others
     PHA
     TAX
@@ -431,10 +436,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     PLA
     PHA
     TAX
-    ORA #&80
+    ORA #&80                        ; bit 7: open
     STA window_open, X
     JSR window_setup
-    LDX #&0F                        ; the title row is colour 1
+    LDX #mode5_byte("1111")         ; the title row in colour 1
 .fill_row
     LDY count_x
 .fill_byte
@@ -444,7 +449,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA (screen_ptr), Y
     DEY
     BPL fill_byte
-    LDX #&FF                        ; and the rest colour 3
+    LDX #mode5_byte("3333")         ; and the rest in colour 3
     JSR next_window_row
     DEC count_y
     BNE fill_row
@@ -457,13 +462,15 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     PLA
 }
 
-; Write a window's text; open_window's second half.
-; In:  A = window number, data_ptr = the text, screen_ptr and save_ptr = its
-;      corner
-; Out: line_count = lines less one, mask = the flag byte
-; Clobbers: A, X, Y, data_ptr, screen_ptr, save_ptr, border_ptr, count_y
-; Then draws the window's frame in colour 2: a line down its right edge and
+; Write a window's text (open_window's second half), exclusive-ORing it on
+; in colour 3, so that writing it again rubs it out; then draw the window's
+; frame in colour 2: a line down its right edge below the title row, and
 ; along its bottom.
+; In:  A = window number, data_ptr = the text, screen_ptr and save_ptr = its
+;      corner, count_x = its width in bytes less one
+; Out: screen_ptr = just after the text's last character, line_count =
+;      lines less one, mask = the flag byte
+; Clobbers: A, X, Y, data_ptr, save_ptr, aux_ptr, border_ptr, count_y
 .print_window_text
 {
     PHA
@@ -485,16 +492,16 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BEQ new_line
     CLC
     JSR print_char_advance          ; carry clear: exclusive-OR the glyph on
-    BNE next_char                   ; always: screen_ptr is never zero
+    BNE next_char                   ; always: the pointer's last change left it non-zero
 .new_line
     INC line_count
-    LDA save_ptr
+    LDA save_ptr                    ; save_ptr: the start of the line
     CLC
-    ADC #&40
+    ADC #LO(ROW)
     STA save_ptr
     STA screen_ptr
     LDA save_ptr+1
-    ADC #&01
+    ADC #HI(ROW)
     STA save_ptr+1
     STA screen_ptr+1
     BCC next_char
@@ -502,7 +509,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     ; The frame: the rightmost pixel of each row, then the bottom line.
 .frame
     PLA
-    AND #&07
+    AND #WINDOWS - 1
     ASL A
     TAY
     LDA window_address, Y
@@ -510,7 +517,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA window_address+1, Y
     STA border_ptr+1
     LDA window_size+1, Y
-    SBC #&00                        ; carry clear here, so count_y = rows - 1
+    SBC #&00                        ; carry clear from the ASL, so count_y = rows - 1
     STA count_y
 .frame_row
     LDY count_x
@@ -524,28 +531,29 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA border_ptr+1
 .frame_right
     LDA (border_ptr), Y
-    AND #&EE                        ; pixel 3 becomes colour 2
-    ORA #&10
+    AND #mode5_byte("333.")         ; pixel 3 becomes colour 2
+    ORA #mode5_byte("...2")
     STA (border_ptr), Y
     DEY
     DEX
     BPL frame_right
     DEC count_y
     BNE frame_row
-    LDY count_x
+    LDY count_x                     ; the bottom line of each cell of the last row
 .frame_bottom
-    LDA #&F0
+    LDA #mode5_byte("2222")
     STA (border_ptr), Y
     TYA
     SEC
-    SBC #&08
+    SBC #CELL
     TAY
     BCS frame_bottom
     RTS
 }
 
 ; Step both of a window's pointers down a row: save_ptr past the bytes
-; just kept, screen_ptr to the next character row.
+; just kept, screen_ptr to the next character row. Also entered at
+; next_screen_row to step screen_ptr alone.
 ; In:  count_x = the window's width in bytes less one
 ; Clobbers: A
 .next_window_row
@@ -571,7 +579,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Clobbers: A, X, Y, screen_ptr, save_ptr, aux_ptr, count_x, count_y
 .close_all_windows
 {
-    LDX #&07
+    LDX #WINDOWS - 1
 .loop
     TXA
     PHA
@@ -583,7 +591,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; Close a window, putting back what it covered, if it is open.
+; Close a window, if it is open, putting back what it covered.
 ; In:  A = window number (bit 7 ignored)
 ; Clobbers: A, X, Y, screen_ptr, save_ptr, aux_ptr, count_x, count_y
 .close_window
@@ -617,12 +625,12 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 }
 
 ; Is a key pressed?
-; In:  X = its negative INKEY number (KEY_...)
+; In:  X = INKEY_TEST() of the key
 ; Out: A = X = &FF and N set if it is, 0 and N clear if not
 ; Clobbers: Y
 .key_pressed
 {
-    LDA #&81
+    LDA #OSBYTE_INKEY
     TAY                             ; Y >= &80: scan for one key
     JSR OSBYTE
     TXA
@@ -630,7 +638,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 }
 
 ; Wait until a key is released, so one press does one thing.
-; In:  X = its negative INKEY number
+; In:  X = INKEY_TEST() of the key
 ; Clobbers: A, Y
 .wait_key_release
 {
@@ -645,8 +653,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; Print a character and step screen_ptr on a cell.
+; Draw a character and step screen_ptr on to the next cell.
 ; In:  A = character, carry set to store it, clear to exclusive-OR it
+; Out: Z clear
 ; Clobbers: A, aux_ptr
 .print_char_advance
 {
@@ -661,10 +670,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; Draw a character at screen_ptr from the font.
-; In:  A = character (below &20 prints as a space), carry set to store it
-;      (in colour 3 on black), clear to exclusive-OR it with the screen
-;      (on a window, so drawing it again rubs it out)
+; Draw a character from the font at screen_ptr, a cell of it.
+; In:  A = character (a control code draws a space), carry set to store it
+;      (in colour 3 on black), clear to exclusive-OR it with the screen (on
+;      a window, so drawing it again rubs it out)
 ; Clobbers: A, aux_ptr
 .print_char
 {
@@ -674,11 +683,11 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDY #&00
     STY aux_ptr+1
     LDX #&00
-    CMP #&20
+    CMP #ascii(" ")
     BCS printable
-    LDA #&21                        ; below &20: a space (carry is clear)
+    LDA #ascii("!")                 ; a control code: a space (carry is clear)
 .printable
-    SBC #&20
+    SBC #ascii(" ")                 ; aux_ptr = font + 8 * (A - " ")
     ASL A
     ASL A
     ROL aux_ptr+1
@@ -686,7 +695,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     ROL aux_ptr+1
     TAX
     LDA aux_ptr+1
-    ADC #&1D
+    ADC #HI(font)                   ; the font starts a page
     TAY
     STX aux_ptr
     STY aux_ptr+1
@@ -709,22 +718,23 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     EQUB &00
 }
 
-; Open a window and let the user pick from it: a menu.
+; Open a window and let the user pick from it: a menu. While it runs, the
+; cursor keys give codes and the function keys CODE_F0 up; leaving with Space,
+; Escape or another function key puts the function keys back to strings, but
+; picking with Return doesn't.
 ; In:  A = window number, X/Y = its text; if the text's flag is MENU the lines
 ;      after the title are a list to move along with the cursor keys
 ; Out: A = X = the line picked with Return (1 = the first after the title,
-;      0 if the text has no list), or &FF if left with Space, Escape or a
-;      different function key
+;      0 if the text has no list), or &FF if left with Space, Escape or
+;      another menu's function key
 ; Clobbers: Y, and as open_window
-; The cursor keys are made to give codes while it runs, and the function keys
-; to give CODE_F0 upwards.
 .menu
 {
     PHA
     JSR open_window
     PLA
     PHA
-    AND #&07                        ; count_y = this window's number, for the function key test
+    AND #WINDOWS - 1                ; count_y = this window's number, for the function key test
     STA count_y
     ASL A
     TAY
@@ -740,23 +750,23 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR invert_menu_row
     INC item
 .no_list
-    LDA #&04                        ; cursor keys give codes
+    LDA #OSBYTE_CURSOR_EDITING      ; the cursor keys give codes
     LDX #&01
     JSR OSBYTE
-    LDA #&E1                        ; f0-f9 give &E0-&E9
-    LDX #&E0
+    LDA #OSBYTE_FUNCTION_KEY_BASE   ; f0-f9 give CODE_F0 up
+    LDX #CODE_F0
     LDY #&00
     JSR OSBYTE
 .read_key
-    LDA #&0F                        ; flush the keyboard buffer
+    LDA #OSBYTE_FLUSH_BUFFERS       ; empty the keyboard buffer
     LDX #&00
     JSR OSBYTE
     JSR OSRDCH
     BCC got_key
 .cancel
-    LDA #&7E                        ; acknowledge any Escape
+    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE  ; if there was an Escape
     JSR OSBYTE
-    LDA #&E1                        ; function keys back to strings
+    LDA #OSBYTE_FUNCTION_KEY_BASE   ; function keys back to strings
     LDX #&01
     LDY #&00
     JSR OSBYTE
@@ -766,13 +776,13 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     TXA
     RTS
 .got_key
-    CMP #&C8                        ; a function key...
+    CMP #FUNCTION_KEY_CODES         ; a function key (f4-f9 repeat f0-f3)...
     BCC not_fkey
     AND #&03
     CMP count_y                     ; ...other than this menu's own closes it
     BNE cancel
 .not_fkey
-    CMP #&20
+    CMP #ascii(" ")
     BEQ cancel
     CMP #CR
     BEQ chosen
@@ -786,13 +796,13 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BEQ read_key
     JSR invert_menu_row
     DEC item
-    LDA screen_ptr
+    LDA screen_ptr                  ; carry is set from the CMP
     SBC #LO(ROW)
     STA screen_ptr
     LDA screen_ptr+1
     SBC #HI(ROW)
     STA screen_ptr+1
-    BCS highlight
+    BCS highlight                   ; always
 .down
     LDA item
     CLC
@@ -808,10 +818,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .chosen
     PLA
     JSR close_window
-    LDA #&0F                        ; flush the keyboard buffer
+    LDA #OSBYTE_FLUSH_BUFFERS       ; empty the keyboard buffer
     LDX #&00
     JSR OSBYTE
-    LDX #KEY_RETURN
+    LDX #INKEY_TEST(KEY_RETURN)
     JSR wait_key_release
     LDX item
     INX
@@ -819,16 +829,17 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; Highlight or unhighlight a line of a window, by exclusive-ORing
-; colours 1 and 2 in and redrawing the right edge of the frame.
-; In:  screen_ptr = the line, count_x = the window's width less one
+; Highlight or unhighlight a line of a window by exclusive-ORing colour 1
+; into every pixel (red and yellow, black and blue change places), then
+; put back the frame's right edge, which that changed too.
+; In:  screen_ptr = the line, count_x = the window's width in bytes less one
 ; Clobbers: A, X, Y
 .invert_menu_row
 {
     LDY count_x
 .invert
     LDA (screen_ptr), Y
-    EOR #&0F
+    EOR #mode5_byte("1111")
     STA (screen_ptr), Y
     DEY
     BPL invert
@@ -836,8 +847,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDX #&07
 .border
     LDA (screen_ptr), Y
-    AND #&EE
-    ORA #&10
+    AND #mode5_byte("333.")         ; pixel 3 becomes colour 2
+    ORA #mode5_byte("...2")
     STA (screen_ptr), Y
     DEY
     DEX
@@ -845,10 +856,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; A sprite's size class from its number.
+; A sprite's size from its number.
 ; In:  A = sprite number
-; Out: sprite_width = 2 for the small sprites (&10-&1F), else 4; data_ptr =
-;      graphics (where sprite_address starts from)
+; Out: sprite_width = SMALL_WIDTH for the small sprites (&10-&1F), else
+;      LARGE_WIDTH; data_ptr = graphics (where sprite_address starts from)
 ; Clobbers: X
 .sprite_class
 {
@@ -869,8 +880,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 
 ; Find a sprite's bytes.
 ; In:  A = sprite number: a sheet position (see slot_of_position), or a slot
-;      when by_slot has bit 7 set; SPRITE_FRAME_A and SPRITE_FRAME_B (with or
-;      without bit 7) are the two frame buffers
+;      while by_slot has bit 7 set; SPRITE_FRAME_A and SPRITE_FRAME_B (with
+;      or without bit 7) are the two frame buffers
 ; Out: data_ptr = its first byte, sprite_width = its width in bytes, A = Y =
 ;      the sprite number
 ; Clobbers: X
@@ -878,24 +889,25 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 {
     TAY
     JSR sprite_class
-    CMP #&57                        ; &57 up: a frame buffer
+    CMP #SPRITE_FRAME_A             ; a frame buffer
     BCS frame
     TAY
-    AND #&10
+    AND #&10                        ; &10-&1F: small
     BNE small
     TYA
     BIT by_slot
     BMI slot
     CMP #AFTER_SMALL                ; positions &20-&28 follow &00-&0F in the table
     BCC mapped
-    SBC #&10
+    SBC #AFTER_SMALL - FIRST_SMALL
 .mapped
     TAX
     LDA slot_of_position, X
 
-    ; Large slots &00-&0F are at graphics + slot*&80, &20-&28 from +&A00.
+    ; Large slots &00-&0F are at graphics + slot * LARGE_SPRITE_SIZE, half a
+    ; page each; &20-&28 the same from SET_MORE_LARGE.
 .slot
-    CMP #&20                        ; slots &20 up
+    CMP #MORE_LARGE_SLOT
     BCS high_slot
     LSR A
     TAX
@@ -909,9 +921,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 .frame
     AND #&7F
-    CMP #&58
+    CMP #SPRITE_FRAME_B             ; carry set for the second buffer...
     LDA #&00
-    ROR A
+    ROR A                           ; ...the half page after the first
     STA data_ptr
     LDA #HI(frame_a)
     STA data_ptr+1
@@ -922,21 +934,22 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     TAX
     LDA data_ptr+1
     CLC
-    ADC #HI(&A00)                   ; slots &20 on are at +&A00
+    ADC #HI(SET_MORE_LARGE)
     STA data_ptr+1
     TXA
     JMP slot
 
-    ; Small slots &10-&1F are at graphics + &800 + (slot AND &0F)*&20.
+    ; Small slots are at graphics + SET_SMALL + (slot AND &0F) *
+    ; SMALL_SPRITE_SIZE.
 .small
     TYA
     PHA
     LDA data_ptr+1
     CLC
-    ADC #HI(&800)                   ; small sprites start at +&800
+    ADC #HI(SET_SMALL)
     STA data_ptr+1
     PLA
-    ASL A
+    ASL A                           ; times SMALL_SPRITE_SIZE (the &10 bit falls off)
     ASL A
     ASL A
     ASL A
@@ -950,33 +963,41 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     TYA
     RTS
 }
+ASSERT LO(graphics) = 0 AND LO(frame_a) = 0
+ASSERT LARGE_SPRITE_SIZE = &80 AND SMALL_SPRITE_SIZE = 1 << 5
+ASSERT LO(SET_SMALL) = 0 AND LO(SET_MORE_LARGE) = 0
 
-; The offset of the last byte of the sprite sprite_width describes.
-; Out: Y = &7F for a large sprite, &1F for a small one
+; The offset of the last byte of a sprite of sprite_width.
+; In:  sprite_width
+; Out: Y = LARGE_SPRITE_SIZE - 1 or SMALL_SPRITE_SIZE - 1
 ; Clobbers: X
 .sprite_last_byte
 {
-    LDY #LARGE_WIDTH*32-1
+    LDY #LARGE_SPRITE_SIZE - 1
     LDX sprite_width
     CPX #SMALL_WIDTH
     BNE done
-    LDY #SMALL_WIDTH*16-1
+    LDY #SMALL_SPRITE_SIZE - 1
 .done
     RTS
 }
 
 ; The byte that fills four MODE 5 pixels with each colour, 0-3.
 .colour_byte
-    EQUB &00, &0F, &F0, &FF
-.grid_back_step
-    EQUW 2*4*ROW - 4*CELL
-    EQUW 4*4*ROW - 4*CELL
+    EQUB mode5_byte("...."), mode5_byte("1111"), mode5_byte("2222"), mode5_byte("3333")
 
-; Draw a sprite magnified in the editing grid, each pixel four screen
-; pixels wide and four lines tall, two sprite rows to a character row; then
-; the grid's frame, if the last sprite drawn was the other size.
-; In:  A = sprite number, bit 7 set to copy it to undo_buffer first (a new
-;      sprite to edit)
+; How far draw_grid steps back on the screen after a column of sprite bytes:
+; up to the top of the grid and four cells (pixels) right. Indexed by
+; sprite_width: small, then large.
+.grid_back_step
+    EQUW SMALL_SPRITE_HEIGHT/2 * ROW - 4*CELL
+    EQUW LARGE_SPRITE_HEIGHT/2 * ROW - 4*CELL
+
+; Draw a sprite magnified in the editing grid: each pixel a cell wide and
+; four lines tall, two sprite rows to a character row. Then draw the grid's
+; frame, unless the frame for this size is there already.
+; In:  A = sprite number, bit 7 set to copy the sprite to undo_buffer first
+;      (a new sprite to edit)
 ; Clobbers: A, X, Y, screen_ptr, data_ptr, temp, count_x, count_y, item,
 ;      mask, sprite_width
 .draw_grid
@@ -1001,7 +1022,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA sprite_width
     STA count_x
 .column
-    LDA sprite_width
+    LDA sprite_width                ; count_y = the column's bytes, one a row
     ASL A
     ASL A
     ASL A
@@ -1010,7 +1031,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDY #&00
     LDA (data_ptr), Y
     STA temp
-    LDX #&88                        ; the first pixel's bits
+    LDX #mode5_byte("3...")         ; the first pixel's bits
     STX mask
 
     ; Shift this pixel's two bits down to make its colour, 0-3.
@@ -1046,7 +1067,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     DEY
     DEX
     BPL block_line
-    LDA screen_ptr
+    LDA screen_ptr                  ; carry clear from the ROL
     ADC #CELL
     STA screen_ptr
     BCC next_pixel
@@ -1054,13 +1075,13 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .next_pixel
     LSR mask
     BCC pixel
-    LDA screen_ptr                  ; back to the grid's left edge
-    SBC #4*CELL                     ; carry is set from the LSR: back to the grid's left edge
+    LDA screen_ptr                  ; carry set from the LSR: back to this byte's
+    SBC #4*CELL                     ; first cell
     STA screen_ptr
     BCS pixel_done
     DEC screen_ptr+1
 .pixel_done
-    LDA #&01
+    LDA #&01                        ; after a bottom half, down a row
     AND count_y
     BEQ next_byte
     LDA screen_ptr
@@ -1088,56 +1109,57 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BEQ frame
     JMP column
 
-    ; The frame: a large sprite's is 16 cells by 16 rows, a small one's 8 by 8
-    ; in the top left of that, with the rest blanked. A byte of each frame tells
-    ; which one is on the screen already.
+    ; The frame: a large sprite's grid is 16 cells by 16 rows, a small one's
+    ; 8 by 8 in the top left of that, with the rest blanked. A byte of each
+    ; frame tells which one is on the screen already.
 .frame
     LDA sprite_width
     CMP #LARGE_WIDTH
     BEQ large
-    LDA grid_frame_top              ; the small frame's top right corner
-    CMP #&08
+    LDA grid_frame_top
+    CMP #mode5_byte("1...")
     BNE to_small
     RTS
 .to_small
-    LDA #LO(SCREEN + 10*CELL)       ; blank the right half...
+    LDA #LO(SCREEN + 10*CELL)       ; blank the large grid's right half...
     STA screen_ptr
     LDA #HI(SCREEN + 10*CELL)
     STA screen_ptr+1
-    LDA #&12
+    LDA #18                         ; rows
     JSR clear_rows
-    LDA #LO(SCREEN + 9*ROW + CELL)  ; ...and the bottom half
+    LDA #LO(SCREEN + 9*ROW + CELL)  ; ...and the rest of its left half
     STA screen_ptr
     LDA #HI(SCREEN + 9*ROW + CELL)
     STA screen_ptr+1
-    LDA #&09
+    LDA #9
     JSR clear_rows
 .large
     LDA sprite_width
     CMP #LARGE_WIDTH
     BNE draw_frame
-    LDA grid_frame_right            ; the large frame's right edge
-    CMP #&08
+    LDA grid_frame_right
+    CMP #mode5_byte("1...")
     BNE draw_frame
     RTS
 
-    ; The top line, the left edge, the bottom line, then the right edge.
+    ; The top line, the left edge, the bottom line, then the right edge, in
+    ; colour 1.
 .draw_frame
-    LDA #LO(SCREEN + CELL)
+    LDA #LO(SCREEN + CELL)          ; the row above the grid, a cell left of it
     STA screen_ptr
     LDA #HI(SCREEN + CELL)
     STA screen_ptr+1
-    LDY #&07
+    LDY #&07                        ; its last line
     JSR grid_frame_line
-    LDA #&01                        ; the frame is colour 1 in the cell left of the grid's rightmost pixel
+    LDA #mode5_byte("...1")         ; the top left corner
     STA (screen_ptr), Y
     JSR down_a_row
-    LDA sprite_width
+    LDA sprite_width                ; count_y = the grid's rows
     ASL A
     ASL A
     STA count_y
 .left_column
-    LDA #&01                        ; the left edge
+    LDA #mode5_byte("...1")         ; the left edge
     LDY #&07
 .left_line
     STA (screen_ptr), Y
@@ -1146,12 +1168,12 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR down_a_row
     DEC count_y
     BNE left_column
-    LDA #&01
+    LDA #mode5_byte("...1")         ; the bottom left corner, on the row's first line
     INY
     STA (screen_ptr), Y
     JSR grid_frame_line
-    JSR width_times_32
-    ADC #&08
+    JSR width_times_32              ; across to the cell after the grid
+    ADC #CELL
     ADC screen_ptr
     STA screen_ptr
     BCC right_side
@@ -1162,7 +1184,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     ASL A
     STA count_y
 .right_column
-    LDA screen_ptr
+    LDA screen_ptr                  ; up a row
     SEC
     SBC #LO(ROW)
     STA screen_ptr
@@ -1170,7 +1192,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     SBC #HI(ROW)
     STA screen_ptr+1
     LDY #&07
-    LDA #&08                        ; the right edge: the leftmost pixel of the cell after the grid
+    LDA #mode5_byte("1...")         ; the right edge
 .right_line
     STA (screen_ptr), Y
     DEY
@@ -1180,24 +1202,25 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; Draw a horizontal line of the editing grid's frame, from its right
-; corner (the leftmost pixel of a cell) back to the cell after the left edge.
-; In:  Y = the line within the character row, screen_ptr = the row, one cell
-;      left of the grid
-; Out: Y = the line in the cell left of the grid
+; Draw a horizontal line of the editing grid's frame in colour 1: the corner,
+; a pixel at the left of the cell after the grid, then back along every cell
+; over (or under) the grid.
+; In:  Y = the line within the character row, screen_ptr = the row, at the
+;      cell left of the grid
+; Out: Y = that line in the cell left of the grid
 ; Clobbers: A, X, temp
 .grid_frame_line
 {
     STY temp
-    JSR width_times_32
+    JSR width_times_32              ; the cell after the grid
     ORA temp
-    ADC #&08
+    ADC #CELL
     TAY
-    LDX #&08                        ; the corner first, then the line
+    LDX #mode5_byte("1...")         ; the corner first...
 .loop
     TXA
     STA (screen_ptr), Y
-    LDX #&0F                        ; colour 1 across the whole byte
+    LDX #mode5_byte("1111")         ; ...then the line
     TYA
     SEC
     SBC #CELL
@@ -1207,7 +1230,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; screen_ptr down a character row.
+; Move screen_ptr down a character row.
 ; Clobbers: A
 .down_a_row
 {
@@ -1221,9 +1244,11 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; sprite_width times 32: 128 for a large sprite (its grid is 16 cells,
-; 128 bytes, across), 64 for a small one.
+; sprite_width times 32: the editing grid's width in bytes, 128 for a large
+; sprite (16 cells), 64 for a small one.
+; In:  sprite_width
 ; Out: A = the result, carry clear
+; Clobbers: nothing else
 .width_times_32
 {
     LDA sprite_width
@@ -1234,9 +1259,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; Blank part of the screen: 72 bytes (nine cells) of each of A character
-; rows from screen_ptr. It has no RTS of its own: it runs on into
-; divide_by_5, which does no harm, and returns from there.
+; Blank nine cells (72 bytes) of each of A character rows from screen_ptr.
+; It has no RTS of its own: it runs on into divide_by_5, which does no harm
+; (it just divides the last A), and returns from there.
+; In:  A = rows, screen_ptr = where
 ; Clobbers: A, X, Y, screen_ptr, count_y
 .clear_rows
 {
@@ -1254,25 +1280,29 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 }
 
 ; Divide by five: a large sprite's row and column in the sheet.
-; In:  A = sheet index (positions &00-&0F, then &20-&28 less &10)
+; In:  A = an index into slot_of_position (a position &00-&0F, or &20-&28
+;      less &10)
 ; Out: X = A DIV 5, A = A MOD 5
+; Clobbers: nothing else
 .divide_by_5
 {
     LDX #&00
 .loop
-    CMP #&05
+    CMP #LARGE_COLUMNS
     BCC done
     INX
-    SBC #&05
+    SBC #LARGE_COLUMNS
     BCS loop
 .done
     RTS
 }
 
-; Draw a sprite in its place on the sheet: copy its bytes straight to the
-; screen, a character cell (eight bytes of a column) at a time.
+; Draw a sprite in its place on the sheet, copying its bytes straight to the
+; screen a cell (eight bytes of a column) at a time. Also entered at
+; at_screen_ptr, with data_ptr, sprite_width and screen_ptr set, to draw one
+; somewhere else.
 ; In:  A = sprite number
-; Entry at_screen_ptr: data_ptr and sprite_width set, screen_ptr = where
+; Out: carry clear
 ; Clobbers: A, X, Y, screen_ptr, data_ptr, count_x, count_y, sprite_width
 .draw_sheet_sprite
 {
@@ -1291,7 +1321,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA (screen_ptr), Y
     DEY
     BPL byte
-    LDA sprite_width
+    LDA sprite_width                ; the same eight rows of the next column
     ASL A
     ASL A
     ASL A
@@ -1300,7 +1330,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BCC next_screen
     INC data_ptr+1
 .next_screen
-    LDA #&08
+    LDA #CELL
     CLC
     ADC screen_ptr
     STA screen_ptr
@@ -1310,10 +1340,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     DEC count_x
     BNE column
 
-    ; Back to the next eight rows of the sprite; down a row on the screen.
+    ; Back to the first column, eight rows down; on the screen, down a row.
     LDA sprite_width
     LSR A
-    TAX
+    TAX                             ; 1 small, 2 large
     LDA data_ptr
     SEC
     SBC column_rewind-1, X
@@ -1326,24 +1356,25 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     ADC row_step-1, X
     STA screen_ptr
     LDA screen_ptr+1
-    ADC #&01
+    ADC #HI(ROW - SMALL_WIDTH*CELL) ; the same for both
     STA screen_ptr+1
     DEC count_y
     BNE row
     RTS
 ; How far draw_sheet_sprite steps back through a sprite after a row of
-; cells, and on the screen to the start of the next row (less a page),
-; indexed by sprite_width / 2: small, then large.
+; cells, and on through the screen to the start of the next row (the low
+; byte), indexed by sprite_width / 2: small, then large.
 .column_rewind
-    EQUB 2*16-8, 4*32-8
+    EQUB SMALL_SPRITE_SIZE - CELL, LARGE_SPRITE_SIZE - CELL
 .row_step
-    EQUB LO(ROW-2*CELL), LO(ROW-4*CELL)
-    EQUB 0
+    EQUB LO(ROW - SMALL_WIDTH*CELL), LO(ROW - LARGE_WIDTH*CELL)
+    EQUB 0                          ; unused
 }
+ASSERT HI(ROW - SMALL_WIDTH*CELL) = HI(ROW - LARGE_WIDTH*CELL)
 
 ; Where a sprite goes on the screen.
-; In:  A = sprite number (a sheet position, or a frame buffer: those are shown
-;      in the animation window)
+; In:  A = sprite number: a sheet position, or a frame buffer (which shows
+;      in Animate's window)
 ; Out: screen_ptr = the top left of its place, A = Y = the sprite number
 ; Clobbers: X
 .sheet_address
@@ -1355,14 +1386,14 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BCC large
     CPY #AFTER_SMALL
     BCC small
-    SBC #&10
-    CMP #&47
+    SBC #AFTER_SMALL - FIRST_SMALL  ; (carry set) an index into slot_of_position...
+    CMP #SPRITE_FRAME_A - (AFTER_SMALL - FIRST_SMALL)   ; ...unless a frame buffer
     BCS preview
 
-    ; Large sprites: 5 to a row, four cells and four character rows each.
+    ; Large sprites: 5 to a row, each 4 cells by 4 rows.
 .large
     JSR divide_by_5
-    LSR A                           ; column * 4 cells
+    LSR A                           ; the column times 32: four cells
     ROR A
     ROR A
     ROR A
@@ -1373,16 +1404,16 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .add_rows
     DEX
     BMI done
-    ADC #HI(4*ROW)                  ; four character rows a row of sprites
-    BCC add_rows
+    ADC #HI(LARGE_SPRITE_HEIGHT/8 * ROW)    ; a row of sprites
+    BCC add_rows                    ; always
 .done
     STA screen_ptr+1
     TYA
     RTS
 
-    ; Small sprites: 4 to a row, two cells and two rows each, four cells apart.
+    ; Small sprites: 4 to a row, each 2 cells by 2 rows, 4 cells apart.
 .small
-    AND #&03
+    AND #&03                        ; the column times 32
     LSR A
     ROR A
     ROR A
@@ -1392,18 +1423,18 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LSR A
     LSR A
     AND #&03
-    TAX
+    TAX                             ; the row
 .small_rows
     DEX
     BMI small_base
     LDA screen_ptr
     CLC
-    ADC #LO(2*ROW)
+    ADC #LO(SMALL_SPRITE_HEIGHT/8 * ROW)
     STA screen_ptr
     LDA screen_ptr+1
-    ADC #HI(2*ROW)
+    ADC #HI(SMALL_SPRITE_HEIGHT/8 * ROW)
     STA screen_ptr+1
-    BCC small_rows
+    BCC small_rows                  ; always
 .small_base
     LDA screen_ptr
     CLC
@@ -1421,6 +1452,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     TYA
     RTS
 }
+ASSERT LO(LARGE_SPRITE_HEIGHT/8 * ROW) = 0
 
 ; An RTS nothing uses.
 .stray_rts
@@ -1428,63 +1460,70 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; The event handler, for Escape (event 6): sets the Escape flag, and the
-; latch too when SHIFT is held, so that a SHIFT-Escape is still seen after
-; the OS acknowledges it.
+; The event handler, for Escape (event 6). With the event enabled the MOS
+; leaves setting the Escape flag to the handler (it sets it itself only
+; when the event is disabled), so this sets it; and when SHIFT is held, the
+; latch too. A menu or prompt that sees the Escape acknowledges it, so plain
+; Escape there just cancels; the latch makes SHIFT-Escape cancel and then
+; offer to leave as well. Other events aren't passed on.
 ; In:  A = event number
 ; Clobbers: nothing
 .escape_event
 {
     PHP
-    CMP #&06
+    CMP #EVENT_ESCAPE
     BNE other_event
-    ROR MOS_ESCAPE_FLAG                 ; carry is set (A >= 6): bit 7 of the Escape flag
+    ROR MOS_ESCAPE_FLAG             ; carry is set from the CMP: bit 7 of the flag
     TXA
     PHA
     TYA
     PHA
-    LDX #KEY_SHIFT
+    LDX #INKEY_TEST(KEY_SHIFT)
     JSR key_pressed
-    BPL not_ctrl
+    BPL not_shift
     STA escape_latch                ; A = &FF
-.not_ctrl
+.not_shift
     PLA
     TAY
     PLA
     TAX
-    LDA #&06
+    LDA #EVENT_ESCAPE
 .other_event
     PLP
     RTS
 }
 
-; VDU codes for the screen's furniture: clear it, and draw boxes in
-; blue round the colour swatch and the name box under the editing grid. &EA
-; ends the list.
+; VDU codes for the screen's furniture: clear it, and draw boxes in blue
+; round the colour swatch and the name box under the editing grid.
+; LAYOUT_END ends the list.
+LAYOUT_END = &EA
 .screen_layout
-    EQUB 26, 12                     ; default windows; clear the screen
-    EQUB 18, 0, 1                   ; GCOL 0,1
-    EQUB 25, 4 : EQUW 24, 380       ; MOVE 24,380
-    EQUB 25, 1 : EQUW 0, 36         ; and round the colour swatch
-    EQUB 25, 1 : EQUW 72, 0
-    EQUB 25, 1 : EQUW 0, -36
-    EQUB 25, 1 : EQUW -72, 0
-    EQUB 28, 0, 17, 19, 0           ; text window: the top 18 rows
-    EQUB 25, 0 : EQUW 96, 4         ; MOVE by 96,4
-    EQUB 25, 1 : EQUW 0, 32         ; and round the name box
-    EQUB 25, 1 : EQUW 488, 0
-    EQUB 25, 1 : EQUW 0, -36
-    EQUB 25, 1 : EQUW -488, 0
-    EQUB &EA
+    EQUB VDU_RESET_WINDOWS, VDU_CLS
+    EQUB VDU_GCOL, 0, 1                             ; draw in colour 1
+    EQUB VDU_PLOT, PLOT_MOVE : EQUW 24, 380         ; round the colour swatch
+    EQUB VDU_PLOT, PLOT_DRAW_RELATIVE : EQUW 0, 36
+    EQUB VDU_PLOT, PLOT_DRAW_RELATIVE : EQUW 72, 0
+    EQUB VDU_PLOT, PLOT_DRAW_RELATIVE : EQUW 0, -36
+    EQUB VDU_PLOT, PLOT_DRAW_RELATIVE : EQUW -72, 0
+    ; Text only in the top 18 rows, so that the CLS on tape (for the filing
+    ; system's messages) leaves these boxes and the logo alone.
+    EQUB VDU_TEXT_WINDOW, 0, 17, 19, 0
+    EQUB VDU_PLOT, PLOT_MOVE_RELATIVE : EQUW 96, 4  ; round the name box
+    EQUB VDU_PLOT, PLOT_DRAW_RELATIVE : EQUW 0, 32
+    EQUB VDU_PLOT, PLOT_DRAW_RELATIVE : EQUW 488, 0
+    EQUB VDU_PLOT, PLOT_DRAW_RELATIVE : EQUW 0, -36
+    EQUB VDU_PLOT, PLOT_DRAW_RELATIVE : EQUW -488, 0
+    EQUB LAYOUT_END
 
 ; The names of the physical colours, eight characters each, for the palette
-; window (seven are shown).
+; window (it shows seven of each).
 .colour_names
     EQUS "Black   Red     Green   Yellow  Blue    Magenta Cyan    White   "
 
 ; Window text. The first byte is the flag (MENU or PLAIN), then lines ending
 ; CR; TEXT_END ends it. The windows that ask for a second sprite leave their
-; title line empty: pick_second_sprite draws the first sprite there.
+; title line empty, and pick_second_sprite draws the first sprite to the
+; right of the short lines below it.
 .text_copy
     EQUB PLAIN, CR
     EQUS "Select sprite", CR, "to", CR, "copy", CR, "this", CR, "onto", CR
@@ -1540,19 +1579,16 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .text_active_colour                 ; unused
     EQUB MENU
     EQUS "ActiCol", CR
-    FOR i = 1..7
-        EQUS "       ", CR
-    NEXT
+    EQUS REPEATED(7, "       " + CHR(CR))
     EQUB TEXT_END
 ; The palette window: show_palette writes the colour names into the blank
-; lines.
+; lines, PALETTE_LINE bytes apart.
+PALETTE_LINE = 8
 .text_palette
     EQUB MENU
     EQUS "Colour ", CR
 .palette_lines
-    FOR i = 0..3
-        EQUS "       ", CR
-    NEXT
+    EQUS REPEATED(4, "       " + CHR(CR))
     EQUB TEXT_END
 .text_remove
     EQUB PLAIN, CR
@@ -1570,6 +1606,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     EQUB MENU
     EQUS "Exists", CR, "Cancel", CR, "Replace", CR
     EQUB TEXT_END
+; The prompts for a file name (whole files and single sprites alike) and an
+; object's name; input_line echoes the reply after the colon.
 .text_load_name
     EQUB PLAIN
     EQUS "Load Sprite File", CR, CR, " Enter Filename", CR, CR, " :"
@@ -1587,13 +1625,14 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     EQUS "E  R  R  O  R  !", CR, CR, "Not available", CR, "with this", CR, "filing system", CR
     EQUB TEXT_END
 ; error_handler copies the error's message into the error window's text,
-; breaking its lines and ending it.
+; breaking its lines and ending it. Until an error has, the text runs on to
+; text_escape's flag byte, which is also TEXT_END. (A message too long for
+; the buffer would run on over text_escape; the filing systems' are short.)
 .text_error
     EQUB PLAIN
     EQUS "E  R  R  O  R  !", CR, CR
 .error_message
-    EQUB REPEATED(61, CODES(" ")[0])
-; The Escape window's flag byte doubles as the end of the error message.
+    EQUB REPEATED(61, ascii(" "))
 .text_escape
     EQUB MENU
     EQUS "Escape?", CR, "No", CR, "Yes", CR
@@ -1603,12 +1642,12 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     EQUS " Return to menu", CR, " Please insert", CR, " Pipeline disc", CR, "and press SPACE", CR
     EQUB TEXT_END
 
-; Draw every sprite in the sheet, positions &28 down to 0 (&10-&1F being the
-; small sprites).
+; Draw every sprite in the sheet, from the last position down to 0 (the
+; small sprites, &10-&1F, among them).
 ; Clobbers: A, X, Y, screen_ptr, data_ptr, count_x, count_y, sprite_width
 .draw_sheet
 {
-    LDA #&28                        ; the last sheet position
+    LDA #LAST_SPRITE
 .loop
     PHA
     JSR draw_sheet_sprite
@@ -1619,12 +1658,13 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; Mark the selected sprite in the sheet with a box in colour 2, and show its
-; number and name under the editing grid if it is an object (a small sprite),
-; or blank them if not.
-; In:  A = sprite number (the selection box is drawn over the sprite; drawing
-;      the sprite again removes it)
-; Clobbers: A, X, Y, screen_ptr, aux_ptr, count_y, sprite_width
+; Mark the selected sprite in the sheet with a box in colour 2, drawn over
+; the sprite (drawing the sprite again removes it); and under the editing
+; grid show its number and name if it is an object (a small sprite), or
+; blank them if not. The exit's "name" is the "Finish Block" that start
+; writes after the names.
+; In:  A = sprite = the selected sprite (the name comes from sprite)
+; Clobbers: A, X, Y, screen_ptr, data_ptr, aux_ptr, count_y, sprite_width
 .show_selection
 {
     JSR sprite_class
@@ -1634,7 +1674,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA sprite_width
     STA count_y
 
-    ; Down each character row: the rightmost pixel of the last cell, the leftmost of the first.
+    ; Down each character row: the rightmost pixel of the last cell, the
+    ; leftmost of the first.
 .column
     LDA sprite_width
     ASL A
@@ -1642,22 +1683,22 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     ASL A
     TAY
     LDX #&07
-.left
+.right_edge
     DEY
     LDA (screen_ptr), Y
-    AND #&EE                        ; pixel 3 becomes colour 2
-    ORA #&10
+    AND #mode5_byte("333.")         ; pixel 3 becomes colour 2
+    ORA #mode5_byte("...2")
     STA (screen_ptr), Y
     DEX
-    BPL left
+    BPL right_edge
     LDY #&07
-.right
+.left_edge
     LDA (screen_ptr), Y
-    AND #&77                        ; pixel 0 becomes colour 2
-    ORA #&80
+    AND #mode5_byte(".333")         ; pixel 0 becomes colour 2
+    ORA #mode5_byte("2...")
     STA (screen_ptr), Y
     DEY
-    BPL right
+    BPL left_edge
     DEC count_y
     LDA count_y
     BEQ bottom
@@ -1676,7 +1717,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     CMP #SMALL_WIDTH
     BEQ small
     TXA                             ; X is 0 here: blank the name box
-    LDY #15*CELL-1
+    LDY #NAME_BOX_CELLS*CELL-1
 .clear_name
     STA name_box, Y
     DEY
@@ -1690,30 +1731,30 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA screen_ptr
     LDA #HI(name_box)
     STA screen_ptr+1
-    LDX #CODES(" ")[0]              ; objects 1-9: no tens
+    LDX #ascii(" ")                 ; objects 1-9: no tens
     LDA sprite
-    CMP #&19
+    CMP #FIRST_SMALL + 9
     BCC tens
-    LDX #CODES("1")[0]
+    LDX #ascii("1")
 .tens
     SEC
     TXA
     JSR print_char_advance
     LDA sprite
     SEC
-    SBC #&0F
-    CMP #&0A
+    SBC #FIRST_SMALL - 1
+    CMP #10
     BCC units
-    SBC #&0A
+    SBC #10
 .units
     SEC                             ; carry set: store the characters
-    ORA #CODES("0")[0]
+    ORA #ascii("0")
     JSR print_char_advance
-    LDA #CODES(":")[0]
+    LDA #ascii(":")
     SEC
     JSR print_char_advance
     JSR name_offset
-    LDX #12-1
+    LDX #OBJECT_NAME_LENGTH - 1
 .name
     LDA object_names, Y
     SEC
@@ -1723,17 +1764,18 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BPL name
     RTS
 }
+NAME_BOX_CELLS = 3 + OBJECT_NAME_LENGTH     ; "16:" and the name
 
-; Draw a horizontal edge of the selection box: line Y of each cell across
-; the sprite, in colour 2.
-; In:  Y = line within the character row, screen_ptr = the row
+; Draw a horizontal edge of the selection box in colour 2: line Y of each
+; cell across the sprite.
+; In:  Y = the line within the character row, screen_ptr = the row
 ; Out: X = 0
 ; Clobbers: A, Y
 .selection_edge
 {
     LDX sprite_width
 .loop
-    LDA #&F0
+    LDA #mode5_byte("2222")
     STA (screen_ptr), Y
     TYA
     CLC
@@ -1744,9 +1786,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; Where an object's name is in object_names.
-; In:  sprite = the small sprite (or, at of_a, A)
-; Out: A = Y = (sprite AND &0F) * 12
+; Where an object's name is in object_names. Also entered at of_a with the
+; sprite in A.
+; In:  sprite = the small sprite
+; Out: A = Y = (sprite AND &0F) * OBJECT_NAME_LENGTH
 ; Clobbers: nothing else
 .name_offset
 {
@@ -1763,9 +1806,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .times_4
     EQUB &00
 }
+ASSERT OBJECT_NAME_LENGTH = 12
 
 ; Unused copies of down_a_row, width_times_32 and clear_rows: nothing
-; calls these three.
+; calls these three. This clear_rows has its RTS.
 .unused_down_a_row
 {
     LDA screen_ptr
@@ -1794,7 +1838,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 {
     STA count_y
 .row
-    LDY #&47
+    LDY #9*CELL-1
     LDA #&00
 .byte
     STA (screen_ptr), Y
@@ -1806,13 +1850,14 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; Fill the colour swatch with the current colour.
+; Fill the colour swatch, two cells, with the current colour.
+; In:  colour
 ; Clobbers: A, X, Y
 .show_colour
 {
     LDX colour
     LDA colour_byte, X
-    LDY #2*CELL-1                   ; two cells
+    LDY #2*CELL-1
 .loop
     STA colour_swatch, Y
     DEY
@@ -1820,22 +1865,24 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; The stack pointer when the designer first started (bit 7 set once it has
-; been saved), for the main loop to reset the stack to.
+; The stack pointer when the designer first started, for the main loop to
+; reset the stack to. It starts 0, and a stack pointer is never that low,
+; so bit 7 set also says it has been saved.
 .stack_pointer
     EQUB &00
 
-; Bit 7 set once the graphics area has been cleared and DEFAULT loaded,
-; so starting again after an error keeps the user's work.
+; Bit 7 set once the graphics area has been cleared (and on disc DEFAULT
+; loaded), so starting again after an error keeps the user's work.
 .graphics_loaded
     EQUB &00
 
-; Bit 7 set if the filing system is a disc one (number 4 or more); the
-; other three bytes are the physical colours for logical 1-3 (blue, yellow,
-; red).
+; Bit 7 set if the filing system is a disc one (FS_DISC up).
 .disc_fs
     EQUB 0
-    EQUB 4, 3, 1
+
+; The physical colours for logical 1-3 (blue, yellow, red); 0 stays black.
+.palette_colours
+    EQUB COLOUR_BLUE, COLOUR_YELLOW, COLOUR_RED
 
 ; The graphics set to start with, and the command that goes back to the menu.
 .default_name
@@ -1845,13 +1892,15 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 
 ; BRKV points here: show the error's message in the error window, wait for
 ; a key, close any open files and start again.
-; In:  MOS_ERROR_PTR = the error (as the OS leaves it)
+; In:  MOS_ERROR_PTR = the error, as the OS leaves it
+; Out: doesn't return: it runs on into start
 .error_handler
 {
     LDY #&00
     LDX #&00
 
-    ; Copy the message, breaking it into lines of 14 characters.
+    ; Copy the message, breaking it into lines: a CR after the first 14
+    ; characters, then after every 15.
 .copy
     INY
     INX
@@ -1859,30 +1908,30 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     AND #&0F
     CMP #&0F
     BNE store
-    LDA #&0D
+    LDA #CR
     STA error_message-1, X
     INX
 .store
     LDA (MOS_ERROR_PTR), Y
     STA error_message-1, X
     BNE copy
-    LDA #&0D
+    LDA #CR
     STA error_message-1, X
-    LDA #&FF
+    LDA #TEXT_END
     STA error_message, X
     JSR close_all_windows
     LDX #LO(text_error)
     LDY #HI(text_error)
     LDA #WINDOW_ERROR
     JSR open_window
-    LDA #&0F                        ; flush the keyboard buffer
+    LDA #OSBYTE_FLUSH_BUFFERS       ; empty the keyboard buffer
     LDX #&00
     LDY #&00
     JSR OSBYTE
 .wait
     JSR OSRDCH                      ; wait for a key, acknowledging any Escape
     BCC restart
-    LDA #&7E                        ; acknowledge Escape
+    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE
     JSR OSBYTE
     JMP wait
 .restart
@@ -1890,15 +1939,18 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR close_files                 ; and fall into start
 }
 
-; The entry point, from the GRAPHIC stub; and where errors start again.
-; On first entry it takes over BRKV and the event vector (keeping the old ones
-; in IND1V and IND2V to put back at the end) and enables the Escape event; then
-; sets up MODE 5 and the palette, draws the screen, clears the graphics area and
-; loads DEFAULT (only the first time), and draws the sheet and the first
-; sprite. main_loop then runs until Escape.
+; The entry point, from the GRAPHIC stub, and where errors start again. The
+; first time (BRKV still pointing into the ROMs) it takes over BRKV and the
+; event vector, keeping the old ones in IND1V and IND2V to put back on
+; leaving, and enables the Escape event. Unless the screen is in MODE 5
+; already (as it is after an error, so a changed palette survives), it sets
+; MODE 5 and the palette. Then it draws the screen, the first time clears
+; the graphics area and (on disc) loads DEFAULT, and draws the sheet and the
+; first sprite; main_loop follows.
+; Out: doesn't return
 .start
 {
-    LDA #&04                        ; cursor keys give codes
+    LDA #OSBYTE_CURSOR_EDITING      ; the cursor keys give codes
     LDX #&01
     JSR OSBYTE
     LDA BRKV+1                      ; BRKV still in the ROMs: not ours yet
@@ -1921,41 +1973,41 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA #HI(escape_event)
     STA EVNTV+1
     CLI
-    LDA #&0E                        ; enable event 6, Escape (A = &0E)
-    STA escape_latch
-    LDX #&06
+    LDA #OSBYTE_ENABLE_EVENT        ; the Escape event; and the latch clear
+    STA escape_latch                ; (the call number has bit 7 clear)
+    LDX #EVENT_ESCAPE
     JSR OSBYTE
 .installed
-    LDA #&87                        ; read the screen mode into Y
+    LDA #OSBYTE_READ_CHAR_AND_MODE  ; the screen mode, into Y
     JSR OSBYTE
-    CPY #&05
+    CPY #5
     BEQ setup
-    LDA #&16                        ; MODE 5
+    LDA #VDU_MODE                   ; MODE 5
     JSR OSWRCH
-    LDA #&05
+    LDA #5
     JSR OSWRCH
     LDA #&03                        ; logical colours 3 to 1
 .palette
     PHA
     TAX
-    LDA disc_fs, X                  ; the physical colour for logical colour X
+    LDA palette_colours-1, X
     JSR write_palette
     PLA
     SEC
     SBC #&01
     BNE palette
 .setup
-    LDA #&97                        ; CRTC register 10: no cursor
-    LDX #&00
-    LDY #&0A
+    LDA #OSBYTE_WRITE_SHEILA        ; no cursor
+    LDX #LO(CRTC_ADDR)
+    LDY #CRTC_CURSOR_START
     JSR OSBYTE
-    LDY #&20
-    INX
+    LDY #CRTC_CURSOR_OFF
+    INX                             ; LO(CRTC_DATA)
     JSR OSBYTE
-    LDA #&00                        ; the filing system's number
+    LDA #OSARGS_READ_FS             ; the filing system's number
     TAY
     JSR OSARGS
-    CMP #&04                        ; carry set for a disc filing system
+    CMP #FS_DISC                    ; carry set for a disc filing system
     LDA #&00
     STA by_slot
     TAY
@@ -1964,7 +2016,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BMI opt
     INY
 .opt
-    LDA #&00                        ; *OPT 1,Y: messages off on disc (Y = 0), on for tape
+    LDA #FSCV_OPT                   ; *OPT 1,Y: messages off on disc (Y = 0), on for tape
     LDX #&01
     JSR fscv
     JSR reset_timer
@@ -1979,7 +2031,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .layout
     INY
     LDA screen_layout, Y
-    CMP #&EA                        ; the end of the list
+    CMP #LAYOUT_END
     BEQ layout_done
     JSR OSWRCH
     JMP layout
@@ -1990,9 +2042,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA window_open, X
     DEX
     BPL clear_windows
-    LDA #&0A                        ; the cursor off again, after the CLS
+    LDA #CRTC_CURSOR_START          ; the cursor off again, after the CLS
     STA CRTC_ADDR
-    LDA #&20
+    LDA #CRTC_CURSOR_OFF
     STA CRTC_DATA
     LDA #LO(logo)                   ; not needed: the copy below is indexed
     STA data_ptr
@@ -2002,12 +2054,12 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .logo_copy
     LDA logo, Y
     STA logo_screen, Y
-    LDA logo+&B0, Y
-    STA logo_screen+ROW, Y
-    LDA logo+2*&B0, Y
-    STA logo_screen+2*ROW, Y
+    LDA logo + LOGO_BAND, Y
+    STA logo_screen + ROW, Y
+    LDA logo + 2*LOGO_BAND, Y
+    STA logo_screen + 2*ROW, Y
     INY
-    CPY #&B0                        ; a band of 22 cells
+    CPY #LOGO_BAND
     BCC logo_copy
 
     ; The first time only: clear the graphics area and load DEFAULT into it.
@@ -2027,35 +2079,39 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     DEX
     BNE clear
     DEX
-    STX graphics_loaded
-    LDA disc_fs                     ; on tape there's no DEFAULT to load: the name becomes ""
+    STX graphics_loaded             ; X = &FF
+    LDA disc_fs
     BMI load_default
-    LDX #&06
+
+    ; On tape nothing is loaded: the set starts empty. The name is made ""
+    ; (the next file on the tape) first, but nothing reads it after this.
+    LDX #6
 .tape_name
-    STA default_name, X
+    STA default_name, X             ; A = 0
     DEX
     BPL tape_name
-    LDA #&22                        ; a quote
+    LDA #ascii("""")
     STA default_name
     STA default_name+1
-    BNE redraw
+    BNE redraw                      ; always
 .load_default
     LDA #LO(default_name)
     STA osfile_block
     LDA #HI(default_name)
     STA osfile_block+1
-    LDA #&FF
+    LDA #OSFILE_LOAD                ; &FF, as graphics_loaded wants too
     STA graphics_loaded
     JSR osfile_graphics
 
-    ; Redraw everything; the file commands come back here after loading.
+    ; Redraw everything, with the selection back at position 0: also where
+    ; the file commands come back to.
 .redraw
-    BIT disc_fs
+    BIT disc_fs                     ; on tape, clear away the filing system's messages
     BMI cls_done
-    LDA #&0C
+    LDA #VDU_CLS
     JSR OSWRCH
 .cls_done
-    LDX #12-1                       ; "Finish Block"
+    LDX #LEN(FINISH_BLOCK) - 1
 .mark_end
     LDA finish_block, X
     STA graphics_end, X
@@ -2075,9 +2131,13 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR show_colour
 }
 
-; The main loop: one pass each time round, at least two centiseconds apart
-; (select_sprite waits): move the selection, blink the pixel cursor, paint,
-; run a command from a menu or shortcut, and offer to leave on Escape.
+; The main loop, a pass at a time, each at least two centiseconds after the
+; last (select_sprite waits for that, unless CTRL is held) and ending at a
+; vsync: move the selection, paint, run a command from a menu or shortcut,
+; and on Escape (or a latched SHIFT-Escape) ask whether to leave. Each pass
+; starts with the stack as start found it, so a command can give up with a
+; plain JMP to main_loop or command_done.
+; Out: doesn't return (leaving the designer, it runs /MRUN or resets)
 .main_loop
 {
     LDX stack_pointer
@@ -2085,10 +2145,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR close_all_windows
     LDA #&00                        ; move the selection
     JSR select_sprite
-    BMI edit                        ; CTRL held: no blinking
-    LDX cursor_x
-    LDY cursor_y
-    JSR toggle_cursor               ; blink the pixel cursor
+    BMI edit                        ; nothing moved (or CTRL held)
+    LDX cursor_x                    ; the grid was drawn again: put the pixel
+    LDY cursor_y                    ; cursor back on it
+    JSR toggle_cursor
 .edit
     JSR edit_pixels
     LDA colour                      ; commands may use colour as a scratch value
@@ -2102,38 +2162,38 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA command_table+1, Y
     STA dispatch+2
 .dispatch
-    JSR &1234                       ; the command (self-modified)
-    LDX #KEY_RETURN                 ; so a menu choice made with Return doesn't plot too
+    JSR &1234                       ; the command (self-modified; the original's placeholder)
+    LDX #INKEY_TEST(KEY_RETURN)     ; so a menu choice made with Return doesn't plot too
     JSR wait_key_release
 .command_done
     LDA saved_colour
     STA colour
-    LDA #&13                        ; wait for the vsync, which leaves A = &13...
+    LDA #OSBYTE_WAIT_VSYNC          ; wait for the vsync, which leaves A = &13...
     JSR OSBYTE
     STA by_slot                     ; ...so by_slot bit 7 is clear again
-    LDA MOS_ESCAPE_FLAG                 ; Escape, or SHIFT-Escape latched
+    LDA MOS_ESCAPE_FLAG             ; Escape, or SHIFT-Escape latched
     ORA escape_latch
     BPL loop
     LSR escape_latch
-    LDA #&7E                        ; acknowledge Escape
+    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE
     JSR OSBYTE
     JSR close_all_windows
     LDX #LO(text_escape)
     LDY #HI(text_escape)
     LDA #WINDOW_QUESTION
     JSR menu                        ; Escape? No/Yes
-    CMP #&02                        ; Yes
+    CMP #2                          ; Yes
     BNE loop
     LDX #LO(text_insert_disc)
     LDY #HI(text_insert_disc)
     LDA #WINDOW_INPUT
     JSR open_window
-    LDA #&0F                        ; flush the keyboard buffer
+    LDA #OSBYTE_FLUSH_BUFFERS       ; empty the keyboard buffer
     JSR OSBYTE
 .wait_key
     JSR OSRDCH                      ; wait for a key, acknowledging any Escape
     PHP
-    LDA #&7E                        ; acknowledge Escape
+    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE
     JSR OSBYTE
     PLP
     BCS wait_key
@@ -2147,40 +2207,47 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA EVNTV
     LDA IND2V+1
     STA EVNTV+1
-    LDA #&04                        ; X = &FF from open_window, so OSBYTE 4,0: cursor keys edit again
-    INX
-    JSR OSBYTE
-    LDA #&E1                        ; function keys back to strings
+    LDA #OSBYTE_CURSOR_EDITING      ; X = 0 from the last OSBYTE_ACKNOWLEDGE_ESCAPE (no
+    INX                             ; Escape was pending), so this is OSBYTE 4,1 and the
+    JSR OSBYTE                      ; cursor keys stay codes; MENU sets that anyway
+    LDA #OSBYTE_FUNCTION_KEY_BASE   ; function keys back to strings
     LDX #&01
     JSR OSBYTE
     BIT disc_fs
     BMI run_mrun
-    LDA #&C8                        ; *FX200,3: on tape, BREAK clears memory...
+    LDA #OSBYTE_BREAK_EFFECT        ; *FX200,3: on tape, BREAK clears memory...
     LDX #&03
     JSR OSBYTE
-    JMP (CPU_RESET_VECTOR)              ; ...and here is a BREAK
+    JMP (CPU_RESET_VECTOR)          ; ...and here is a BREAK
 .run_mrun
-    LDX #LO(mrun_command)           ; *RUN MRUN, which goes back to the menu
+    LDX #LO(mrun_command)           ; */MRUN, which goes back to the menu
     LDY #HI(mrun_command)
     JMP OSCLI
 .loop
     JMP main_loop
 }
 
-; Written after the graphics set in memory, at graphics_end.
+; Written after the graphics set in memory, at graphics_end, which is where
+; the exit's name would be (SET_NAMES + 15 * OBJECT_NAME_LENGTH): so the
+; name box shows the exit as "16:Finish Block".
+FINISH_BLOCK = "Finish Block"
 .finish_block
-    EQUS "Finish Block"
+    EQUS FINISH_BLOCK
+ASSERT LEN(FINISH_BLOCK) = OBJECT_NAME_LENGTH
+ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAME_LENGTH
 
 ; The colour, kept while a command runs.
 .saved_colour
     EQUB &00
 
-; The commands: read_command's number for each menu item (menu * 8 + item)
-; and CTRL shortcut, and where it goes. no_command is the main loop's own
-; tail (command_done), harmless to call because main_loop resets the
-; stack.
+; The commands, by read_command's number: a menu item is menu * 8 + item
+; (items from 1), a CTRL shortcut its place in shortcut_keys plus one.
+; Numbers with no command go to the main loop's own tail, command_done,
+; which is harmless to call because the main loop resets the stack. A
+; command takes the selected sprite from `sprite`, and may clobber every
+; register and most of zero page.
 .command_table
-    EQUW main_loop.command_done     ; 0: none
+    EQUW main_loop.command_done     ; 0: none (the credits)
     EQUW cmd_flip_x                 ; OptionsA
     EQUW cmd_flip_y
     EQUW cmd_delete
@@ -2207,7 +2274,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     EQUW main_loop.command_done
 
 ; OptionsA Delete (CTRL-Delete): clear the sprite to colour 0, and an
-; object's name to zeros.
+; object's name to zeros. Drawing the sprite again after show_selection
+; rubs out the selection box, which stays off until the selection moves.
+; In:  sprite
+; Clobbers: everything
 .cmd_delete
 {
     LDA sprite
@@ -2221,12 +2291,12 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDX sprite_width
     CPX #SMALL_WIDTH
     BNE redraw
-    LDA sprite                      ; the man has no name to clear
-    CMP #THE_MAN
+    LDA sprite                      ; the exit has no name to clear
+    CMP #SLOT_EXIT
     BEQ redraw
     JSR name_offset
     LDA #&00
-    LDX #12-1
+    LDX #OBJECT_NAME_LENGTH - 1
 .name
     STA object_names, Y
     INY
@@ -2243,13 +2313,13 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 
 ; Draw the selected sprite in the editing grid and put the pixel cursor
 ; back on it.
-; In:  carry set to take an undo copy of the sprite first
+; In:  sprite, carry set to take an undo copy of the sprite first
 ; Clobbers: A, X, Y, and as draw_grid
 .redraw_grid
 {
     LDA sprite
     BCC draw
-    ORA #&80
+    ORA #&80                        ; bit 7: take an undo copy
 .draw
     JSR draw_grid
     LDX cursor_x
@@ -2260,6 +2330,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; OptionsA Flip X (CTRL-X): mirror the sprite left to right, pixel by pixel,
 ; swapping each pixel in the left half of a row with its opposite. colour
 ; carries the pixels across (main_loop puts it back).
+; In:  sprite
+; Clobbers: everything
 .cmd_flip_x
 {
     LDA sprite
@@ -2282,8 +2354,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     SBC count_x
     TAX
     LDY count_y
-    STX flip_x
-    STY flip_y
+    STX mirror_x
+    STY mirror_y
     LDA sprite
     JSR read_pixel
     PHA
@@ -2292,8 +2364,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA sprite
     JSR read_pixel
     STA colour
-    LDX flip_x
-    LDY flip_y
+    LDX mirror_x
+    LDY mirror_y
     LDA sprite
     JSR plot_pixel
     LDX count_x
@@ -2308,7 +2380,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BCC pixel
     DEC count_y
     BPL row
-    LDX #&BD                        ; the shortcut, to wait for
+    LDX #INKEY_TEST(KEY_X)          ; the shortcut, to wait for
 
     ; Show the sprite as changed, then wait for the key in X to be released so
     ; a shortcut acts once.
@@ -2326,31 +2398,37 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 }
 
 ; Flip X's mirrored pixel.
-.flip_x
+.mirror_x
     EQUB &00
 
-.flip_y
+.mirror_y
     EQUB &00
 
 ; The OSGBPB block for moving sprites and names to and from files: the
-; handle, the address in memory, the byte count, the pointer in the file.
-.gbpb_block
-    EQUB 0                          ; handle
-    EQUD 0                          ; address
-    EQUD 0                          ; count
-    EQUD 0                          ; pointer
+; handle, the address in memory, the byte count, the pointer in the file;
+; then three spare bytes, which check_filing_system clears with it.
+.gbpb_block                         ; the handle
+    EQUB 0
+.gbpb_address
+    EQUD 0
+.gbpb_count
+    EQUD 0
+.gbpb_pointer
+    EQUD 0
     EQUB 0, 0, 0
 
 ; OptionsA Flip Y (CTRL-Y): turn the sprite upside down.
+; In:  sprite
+; Clobbers: everything
 .cmd_flip_y
 {
     JSR flip_vertically
-    LDX #&BB
+    LDX #INKEY_TEST(KEY_Y)
     JMP cmd_flip_x.redraw
 }
 
 ; Turn the selected sprite upside down, by reversing each column of bytes.
-; In:  sprite = the sprite (Animate uses this on its frame buffers)
+; In:  sprite (Animate uses this on its frame buffers)
 ; Clobbers: A, X, Y, data_ptr, count_x, count_y, sprite_width
 .flip_vertically
 {
@@ -2361,7 +2439,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     ASL A
     ASL A
     ASL A
-    STA count_y
+    STA count_y                     ; a column's bytes
 .column
     LDY count_y
     DEY
@@ -2395,6 +2473,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 
 ; OptionsA Undo (CTRL-U): swap the sprite with the copy taken when it was
 ; selected, so a second Undo puts the changes back.
+; In:  sprite
+; Clobbers: everything
 .cmd_undo
 {
     LDA sprite
@@ -2414,12 +2494,14 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR show_selection
     CLC
     JSR redraw_grid
-    LDX #&CA
+    LDX #INKEY_TEST(KEY_U)
     JMP wait_key_release
 }
 
-; OptionsB Underlay: put this sprite under another - fill the other's
-; colour 0 pixels from this one.
+; OptionsB Underlay (no shortcut): put this sprite under another - fill the
+; other's colour 0 pixels from this one.
+; In:  sprite
+; Clobbers: everything
 .cmd_underlay
 {
     LDX #LO(text_underlay)
@@ -2431,18 +2513,22 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 }
 
 ; OptionsB Backing (CTRL-B): fill the sprite's colour 0 pixels from the
-; background tile (sheet position 0).
+; floor (sheet position 0). No second sprite to pick: it goes straight on.
+; In:  sprite
+; Clobbers: everything
 .cmd_backing
 {
     LDX sprite
     STX combine_test
-    LDA #&00                        ; the background tile
+    LDA #&00                        ; the floor
     CLC
     JMP combine_sprites
 }
 
 ; OptionsB Overlay (CTRL-O): put this sprite over another - copy its
 ; pixels other than colour 0 onto the other.
+; In:  sprite
+; Clobbers: everything
 .cmd_overlay
 {
     LDX #LO(text_overlay)
@@ -2452,12 +2538,13 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     SEC
 }
 
-; Combine two sprites a pixel at a time.
+; Combine two sprites a pixel at a time, then show them both again
+; (redraw_pair).
 ; In:  X = the sprite to change, A = the sprite to take pixels from,
 ;      combine_test = the sprite whose pixels decide, carry set to copy
 ;      combine_test's pixels where they aren't colour 0 (overlay), clear to
 ;      copy A's pixels where combine_test's are colour 0 (underlay, backing)
-; Then shows both sprites again, through redraw_pair.
+; Clobbers: everything
 .combine_sprites
 {
     STX combine_target
@@ -2468,14 +2555,14 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA sprite_width                ; count_x = the last pixel across
     ASL A
     ASL A
-    SBC #&00
+    SBC #&00                        ; (carry clear from the ASL)
     STA count_x
 .column
     LDA sprite_width                ; count_y = the last row
     ASL A
     ASL A
     ASL A
-    SBC #&00
+    SBC #&00                        ; (carry clear from the ASL)
     STA count_y
 .pixel
     LDA combine_test
@@ -2525,6 +2612,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 
 ; OptionsB Remove (CTRL-R): take this sprite from another - clear to 0 the
 ; other's pixels that match this one's.
+; In:  sprite
+; Clobbers: everything
 .cmd_remove
 {
     LDX #LO(text_remove)
@@ -2532,13 +2621,13 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR pick_second_sprite
     STX combine_target
     STA combine_source
-    LDA sprite_width
+    LDA sprite_width                ; count_x = the last pixel across
     ASL A
     ASL A
-    SBC #&00
+    SBC #&00                        ; (carry clear from the ASL)
     STA count_x
 .column
-    LDA sprite_width
+    LDA sprite_width                ; count_y = the last row
     ASL A
     ASL A
     ASL A
@@ -2571,6 +2660,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 }
 
 ; OptionsB Copy (CTRL-COPY): copy this sprite onto another.
+; In:  sprite
+; Clobbers: everything
 .cmd_copy
 {
     LDX #LO(text_copy)
@@ -2587,7 +2678,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 }
 
 ; OptionsB Swap (CTRL-S): swap this sprite with another, and two objects'
-; names with them (not the man's: he has none).
+; names with them (unless one is the exit, which has none).
+; In:  sprite
+; Clobbers: everything
 .cmd_swap
 {
     LDX #LO(text_swap)
@@ -2606,11 +2699,11 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA sprite_width
     CMP #SMALL_WIDTH
     BNE done
-    CPX #THE_MAN
+    CPX #SLOT_EXIT
     BEQ done
     PLA
     PHA
-    CMP #THE_MAN
+    CMP #SLOT_EXIT
     BEQ done
 
     ; Swap the names: data_ptr and aux_ptr hold the two names' offsets now.
@@ -2620,7 +2713,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     PHA
     JSR name_offset.of_a
     STA aux_ptr
-    LDX #12-1                       ; count the name's bytes in data_ptr+1
+    LDX #OBJECT_NAME_LENGTH - 1     ; count the name's bytes in data_ptr+1
     STX data_ptr+1
 .names
     LDY aux_ptr
@@ -2639,9 +2732,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     PLA
 }
 
-; Show both sprites of a two-sprite command as they are now, select the
-; first again and close the picking window.
-; In:  A = the other sprite
+; Show both sprites of a two-sprite command as they are now and close the
+; picking window. The selection stays on the second sprite, the one picked.
+; In:  A = the first sprite (or, for Backing, the floor), sprite = the second
 ; Clobbers: A, X, Y, and as draw_grid
 .redraw_pair
 {
@@ -2658,17 +2751,19 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 }
 
 ; Ask for the second sprite of a two-sprite command: show the question with
-; a picture of this sprite, and let the selection move until Return.
-; In:  X/Y = the question
-; Out: X = the sprite picked, A = this sprite, data_ptr = the picked one's
-;      bytes, aux_ptr = this one's, Y = the offset of their last byte
-; If they are different sizes it says "Wrong Types"; then, as on Escape, it
-; abandons the command and goes back to the main loop.
+; a picture of this sprite, and let the selection move until Return. If the
+; two are different sizes it says "Wrong Types"; then, as on Escape (or
+; f0-f3), it abandons the command and goes back to the main loop.
+; In:  sprite, X/Y = the question
+; Out: sprite = X = the sprite picked, A = the first one, data_ptr = the
+;      picked one's bytes, aux_ptr = the first one's, Y = the offset of
+;      their last byte, carry set
+; Clobbers: everything else
 .pick_second_sprite
 {
     LDA #WINDOW_PICK
     JSR open_window
-    LDX #KEY_RETURN                 ; the Return that chose the command
+    LDX #INKEY_TEST(KEY_RETURN)     ; the Return that chose the command
     JSR wait_key_release
     LDA sprite
     PHA
@@ -2677,11 +2772,11 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA first_address
     LDA data_ptr+1
     STA first_address+1
-    LDA window_address+2*4          ; the picture goes on the window's right, two rows down
+    LDA window_address + 2*WINDOW_PICK      ; the picture goes on the right, two rows down
     CLC
     ADC #LO(2*ROW + 8*CELL)
     STA screen_ptr
-    LDA window_address+2*4+1
+    LDA window_address + 2*WINDOW_PICK + 1
     ADC #HI(2*ROW + 8*CELL)
     STA screen_ptr+1
     JSR draw_sheet_sprite.at_screen_ptr
@@ -2689,10 +2784,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA first_width
 .select
     LDA #&01
-    JSR select_sprite               ; move the selection; function keys escape
+    JSR select_sprite               ; move the selection; f0-f3 raise an Escape
     BIT MOS_ESCAPE_FLAG
     BMI abandon
-    LDX #KEY_RETURN
+    LDX #INKEY_TEST(KEY_RETURN)
     JSR key_pressed
     BPL select
     LDA sprite
@@ -2713,25 +2808,27 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDX #LO(text_wrong_types)
     LDY #HI(text_wrong_types)
     JSR open_window
-    LDA #&0F                        ; flush the keyboard buffer
+    LDA #OSBYTE_FLUSH_BUFFERS       ; empty the keyboard buffer
     LDX #&00
     JSR OSBYTE
 .wait_space
     JSR OSRDCH
     BCS close
-    CMP #&20                        ; until Space
+    CMP #ascii(" ")
     BNE wait_space
 .close
     LDA #WINDOW_ERROR
     JSR close_window
 .abandon
-    PLA                             ; drop this sprite and our return address
+    PLA                             ; drop the first sprite and the return into the command
     PLA
     PLA
+
+    ; Give up a command: also where input_line goes on Escape.
 .abandon_command
     LDA #WINDOW_PICK
     JSR close_window
-    LDA #&7E                        ; acknowledge Escape
+    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE
     JSR OSBYTE
     JMP main_loop.command_done
 }
@@ -2739,12 +2836,13 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Show an error in the error window until a key other than Escape is
 ; pressed, then go back to the main loop.
 ; In:  X/Y = the error's text
+; Out: doesn't return
 .show_error
 {
     STX error_text
     STY error_text+1
 .show
-    LDA #&7E                        ; acknowledge Escape
+    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE
     JSR OSBYTE
     LDA #WINDOW_ERROR
     LDX error_text
@@ -2776,7 +2874,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA osfile_block
     LDX #LO(osfile_block)
     LDY #HI(osfile_block)
-    LDA #&0B
+    LDA #OSWORD_READ_PALETTE
     JSR OSWORD
     LDA osfile_block+1
     RTS
@@ -2785,25 +2883,27 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; A menu with nothing in it: the palette window opens empty and
 ; show_palette fills it.
 .empty_text
-    EQUB &FF, &FF
+    EQUB MENU, TEXT_END
 
 ; Environment Def. Colour (CTRL-C): change the palette. Up and down pick a
 ; logical colour, left and right step its physical colour through the eight;
-; Return, Space, Escape or a function key finish.
+; Return, Space, Escape or a function key finish. The change lasts until
+; the designer next sets MODE 5 (not after an error: see start).
+; Clobbers: everything
 .cmd_def_colour
 {
     LDA #WINDOW_QUESTION
     LDX #LO(empty_text)
     LDY #HI(empty_text)
     JSR open_window
-    LDA #&04                        ; cursor keys give codes
+    LDA #OSBYTE_CURSOR_EDITING      ; the cursor keys give codes
     LDX #&01
     JSR OSBYTE
-    LDA #&E1                        ; f0-f9 give &E0-&E9
-    LDX #&E0
+    LDA #OSBYTE_FUNCTION_KEY_BASE   ; f0-f9 give CODE_F0 up
+    LDX #CODE_F0
     LDY #&00
     JSR OSBYTE
-    LDA #&0F                        ; flush the keyboard buffer
+    LDA #OSBYTE_FLUSH_BUFFERS       ; empty the keyboard buffer
     LDX #&00
     JSR OSBYTE
     LDA #&00
@@ -2814,7 +2914,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .read_key
     JSR OSRDCH
     BCC got_key
-    LDA #&7E                        ; acknowledge Escape
+    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE
     JSR OSBYTE
 .done
     JMP show_palette.done
@@ -2824,12 +2924,12 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BCS done
     CMP #CR
     BEQ done
-    CMP #&20
+    CMP #ascii(" ")
     BEQ done
     CMP #CODE_DOWN
     BNE not_down
     LDX item
-    CPX #&03
+    CPX #&03                        ; logical colours 0-3
     BEQ not_down
     INC item
 .not_down
@@ -2840,7 +2940,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     DEC item
 .moved
     PHA
-    JSR palette_highlight.toggle
+    JSR palette_highlight.toggle    ; off the old line, on the new (or the same)
     JSR palette_highlight
     PLA
     LDX #&01                        ; right: the next physical colour
@@ -2857,11 +2957,11 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     ADC colour_step
     AND #&07
     PHA
-    JSR show_palette
+    JSR show_palette                ; rub out the old names...
     PLA
     LDX item
     JSR write_palette
-    JMP redraw
+    JMP redraw                      ; ...and show the new
 }
 
 ; Set the palette.
@@ -2873,7 +2973,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STX osfile_block
     LDX #LO(osfile_block)
     LDY #HI(osfile_block)
-    LDA #&0C
+    LDA #OSWORD_WRITE_PALETTE
     JMP OSWORD
 }
 
@@ -2882,26 +2982,29 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     EQUB &00
 
 ; Write each logical colour's physical colour's name into the palette
-; window's text, and show the text again in place.
+; window's text, then exclusive-OR the text onto the window again without
+; opening it: so one call shows the names and the next rubs them out, and
+; Def. Colour calls it before and after each change.
+; In:  the palette window open, so count_x = its width less one
 ; Clobbers: A, X, Y, screen_ptr, data_ptr, save_ptr, aux_ptr, border_ptr,
-;      count_y, osfile_block
+;      count_y, osfile_block (its first byte counts the colours)
 .show_palette
 {
-    LDA #&03
+    LDA #&03                        ; logical colours 3 to 0
     STA osfile_block
-    LDA #LO(palette_lines+3*8)
+    LDA #LO(palette_lines + 3*PALETTE_LINE)
     STA save_ptr
-    LDA #HI(palette_lines+3*8)
+    LDA #HI(palette_lines + 3*PALETTE_LINE)
     STA save_ptr+1
 .entry
     LDA osfile_block
     JSR read_palette
-    ASL A                           ; eight characters to each name
+    ASL A                           ; eight characters to each name...
     ASL A
     ASL A
-    ORA #&06                        ; the end of the seventh
+    ORA #PALETTE_LINE - 2           ; ...of which a line takes seven
     TAX
-    LDY #&06
+    LDY #PALETTE_LINE - 2
 .name
     LDA colour_names, X
     STA (save_ptr), Y
@@ -2910,7 +3013,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BPL name
     LDA save_ptr
     SEC
-    SBC #&08
+    SBC #PALETTE_LINE
     STA save_ptr
     BCS next
     DEC save_ptr+1
@@ -2918,11 +3021,11 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     DEC osfile_block
     BPL entry
 
-    ; Rewrite the window's text without opening it again.
-    LDA window_address+2*5
+    ; Write the window's text again, without opening it.
+    LDA window_address + 2*WINDOW_QUESTION
     STA save_ptr
     STA screen_ptr
-    LDA window_address+2*5+1
+    LDA window_address + 2*WINDOW_QUESTION + 1
     STA save_ptr+1
     STA screen_ptr+1
     LDX #LO(text_palette)
@@ -2935,24 +3038,30 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; The parameter block for OSFILE, also used for OSWORD 11 and 12: the
-; filename's address, then load and exec addresses, start (or length) and
-; end (or attributes), four bytes each.
-.osfile_block
-    EQUW 0                          ; filename
-    EQUD 0                          ; load address
-    EQUD 0                          ; exec address
-    EQUD 0                          ; start address, or length
-    EQUD 0                          ; end address, or attributes
+; The parameter block for OSFILE: the filename's address, then the load and
+; exec addresses, the start address (from OSFILE_READ_INFO, the length) and
+; the end address (the attributes), four bytes each; then two spare bytes.
+; The palette routines use its first two bytes for OSWORD's block, and
+; show_palette its first as a counter.
+.osfile_block                       ; the filename's address
+    EQUW 0
+.osfile_load
+    EQUD 0
+.osfile_exec
+    EQUD 0
+.osfile_start                       ; or the length
+    EQUD 0
+.osfile_end                         ; or the attributes
+    EQUD 0
     EQUB 0, 0
 
 ; Where each line of the palette window is, from its corner.
 .palette_row_offset
     EQUW 1*ROW, 2*ROW, 3*ROW, 4*ROW
 
-; Highlight the palette window's selected line.
+; Highlight the palette window's line for a logical colour. Also entered at
+; toggle, to highlight or unhighlight the line highlighted last.
 ; In:  item = the logical colour, 0-3
-; Entry toggle: unhighlight the line highlighted last
 ; Clobbers: A, X, Y, screen_ptr
 .palette_highlight
 {
@@ -2961,10 +3070,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     TAY
     LDA palette_row_offset, Y
     CLC
-    ADC window_address+2*5
+    ADC window_address + 2*WINDOW_QUESTION
     STA highlight_address
     LDA palette_row_offset+1, Y
-    ADC window_address+2*5+1
+    ADC window_address + 2*WINDOW_QUESTION + 1
     STA highlight_address+1
 .toggle
     LDA highlight_address
@@ -2982,13 +3091,19 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .animate_sprite
     EQUB &00
 
-; OptionsA Animate (CTRL-A): for a sprite with a partner, show the two in
-; turn, six vsyncs each, in the animation window and the editing grid until
-; Space or Escape (a function key counts as Escape). The flames, &0E and &0F,
-; alternate; &20 and &21 each alternate with themselves upside down, and &22
-; and &23 with each other upside down. Nothing happens for other sprites.
-; Both frames are copied to frame_a and frame_b first, so the turning upside
-; down doesn't touch the graphics set.
+; How long Animate shows each frame, in vsyncs.
+FRAME_VSYNCS = 6
+
+; OptionsA Animate (CTRL-A): preview how the game animates a picture, a
+; frame every six vsyncs, in the animation window and the editing grid,
+; until Space or Escape (f0-f3 count as Escape). The monster (slots &0E and
+; &0F) alternates its two pictures; the player facing left or right (&20,
+; &21) alternates with itself upside down; facing up or down, &22 alternates
+; with &23 upside down, and &23 with &22 upside down. Nothing happens for
+; other sprites. The frames are copied to frame_a and frame_b first, so
+; turning them over leaves the set alone.
+; In:  sprite
+; Clobbers: everything
 .cmd_animate
 {
     LDA #&FF
@@ -2996,37 +3111,37 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA sprite
     STA animate_sprite
     TAX
-    AND #&10
+    AND #&10                        ; a small sprite: no
     BNE none
     TXA
     JSR slot_index
     TAX
     LDA slot_of_position, X
-    CMP #&24                        ; slots &24-&28: no
+    CMP #SLOT_ALTERNATE             ; slots &24-&28: no
     BCS none
-    CMP #&20                        ; slots &20-&23
-    BCS machine
-    CMP #&0E
+    CMP #SLOT_PLAYER
+    BCS player
+    CMP #SLOT_MONSTER
     BEQ flames
-    CMP #&0F
+    CMP #SLOT_MONSTER + 1
     BEQ flames
 .none
     RTS
 .flames
     PHA
-    AND #&FE                        ; &0E: copy &0E and &0F
-    BNE copy_pair
-.machine
+    AND #&FE                        ; copy both pictures, from the first
+    BNE copy_pair                   ; always
+.player
     PHA
 .copy_pair
-    CMP #&22                        ; &22 and &23 copy both; &20 and &21 copy themselves
-    BCC copy_from
+    CMP #SLOT_PLAYER + 2            ; up and down copy both, from the first;
+    BCC copy_from                   ; left and right copy themselves (and the next)
     AND #&FE
 .copy_from
     JSR sprite_address
     LDY #&00
 .copy
-    LDA (data_ptr), Y               ; two sprites' worth: the frame and the next slot
+    LDA (data_ptr), Y               ; two sprites' worth: this slot and the next
     STA frame_a, Y
     DEY
     BNE copy
@@ -3038,24 +3153,24 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR slot_index
     TAX
     LDA slot_of_position, X
-    CMP #&10
-    BCS machine_frames
-    LDA #&08                        ; the flames' pair of entries
-    BNE chosen
-.machine_frames
-    AND #&03                        ; &20-&23: their own pair
+    CMP #&10                        ; the monster's slots are below, the player's above
+    BCS player_frames
+    LDA #monster_frames - animation_frames
+    BNE chosen                      ; always
+.player_frames
+    AND #&03                        ; the player's: a pair each
     ASL A
 .chosen
     STA frame_index
 .show
     TAX
-    LDA #&06
+    LDA #FRAME_VSYNCS
     STA frame_delay
     LDA animation_frames, X
     STA sprite
     BPL draw                        ; upside down?
     JSR flip_vertically
-    LDA #&06
+    LDA #FRAME_VSYNCS
     STA frame_delay
 .draw
     LDA sprite
@@ -3068,10 +3183,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR menu_keys_escape
     BIT MOS_ESCAPE_FLAG
     BMI stop
-    LDX #KEY_SPACE
+    LDX #INKEY_TEST(KEY_SPACE)
     JSR key_pressed
     BMI stop
-    LDA #&13                        ; wait for the vsync
+    LDA #OSBYTE_WAIT_VSYNC
     JSR OSBYTE
     DEC frame_delay
     BNE wait
@@ -3087,28 +3202,29 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     PLA
     JMP show
 .stop
-    PLA                             ; drop the slot
+    PLA                             ; drop the slot pushed at the start
     LDX animate_sprite
     STX sprite
-    LDA #&7E                        ; acknowledge Escape
+    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE
     JSR OSBYTE
     LDA #WINDOW_PICK                ; by_slot bit 7 clear: sheet positions again
     STA by_slot
     JSR close_window
-    JMP redraw_grid
+    JMP redraw_grid                 ; carry clear from close_window: no undo copy
 }
 
 ; Turn a sheet position into an index into slot_of_position: positions
-; &20-&28 follow &00-&0F.
+; &20-&28 follow &00-&0F. It borrows repeat_key's RTS.
 ; In:  A = a large sprite's position
 ; Out: A = the index
+; Clobbers: nothing else
 .slot_index
 {
     CMP #FIRST_SMALL
     BCC repeat_key.done
     CMP #AFTER_SMALL
     BCC repeat_key.done
-    SBC #&10
+    SBC #AFTER_SMALL - FIRST_SMALL
     RTS
 }
 
@@ -3123,16 +3239,20 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Animate's frames, a pair for each animated slot: SPRITE_FRAME_A or _B,
 ; with UPSIDE_DOWN to show it turned over.
 .animation_frames
-    EQUB SPRITE_FRAME_A, SPRITE_FRAME_A + UPSIDE_DOWN    ; &20
-    EQUB SPRITE_FRAME_A, SPRITE_FRAME_A + UPSIDE_DOWN    ; &21
-    EQUB SPRITE_FRAME_A, SPRITE_FRAME_B + UPSIDE_DOWN    ; &22
-    EQUB SPRITE_FRAME_B, SPRITE_FRAME_A + UPSIDE_DOWN    ; &23
-    EQUB SPRITE_FRAME_B, SPRITE_FRAME_A                  ; &0E, &0F
+    EQUB SPRITE_FRAME_A, SPRITE_FRAME_A + UPSIDE_DOWN    ; &20, the player facing left
+    EQUB SPRITE_FRAME_A, SPRITE_FRAME_A + UPSIDE_DOWN    ; &21, facing right
+    EQUB SPRITE_FRAME_A, SPRITE_FRAME_B + UPSIDE_DOWN    ; &22, facing up
+    EQUB SPRITE_FRAME_B, SPRITE_FRAME_A + UPSIDE_DOWN    ; &23, facing down
+.monster_frames
+    EQUB SPRITE_FRAME_B, SPRITE_FRAME_A                  ; &0E and &0F, the monster
 
-; Read one of the cursor keys that move the selection, with auto-repeat:
-; a press moves at once, then after twenty passes of the main loop every
-; five.
-; In:  X = the key's negative INKEY number
+; The selection's auto-repeat, in passes of the main loop: a press moves it
+; at once, then after REPEAT_DELAY passes, then every REPEAT_RATE.
+REPEAT_DELAY = 20
+REPEAT_RATE  = 5
+
+; Read one of the cursor keys that move the selection, with auto-repeat.
+; In:  X = INKEY_TEST() of the key
 ; Out: Y = &FF (N set) to move now, else 0
 ; Clobbers: A, X
 .repeat_key
@@ -3143,7 +3263,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDY repeat_count                ; 0: time to repeat
     BEQ move
     STY key_repeating
-    CPY #&14                        ; &14: a fresh press
+    CPY #REPEAT_DELAY               ; a fresh press
     BEQ move
 .not_now
     LDY #&00
@@ -3154,22 +3274,25 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; The selection's auto-repeat countdown: &14 while no key is held.
+; The selection's auto-repeat countdown: REPEAT_DELAY while no key is held.
 .repeat_count
     EQUB &00
 
-; Move the selection with the cursor keys, and pace the main loop: it waits
-; until two centiseconds have passed since the last call. If the selection
-; moves, the old sprite is drawn again without its box, the new one is boxed
-; and drawn in the editing grid (with an undo copy).
-; In:  A = 0 normally, else function keys count as Escape (picking a second
-;      sprite)
-; Out: N set if nothing changed (or CTRL is held: then nothing is done)
+; The main loop's pace: a pass takes at least this long.
+PASS_CENTISECONDS = 2
+
+; Move the selection with the cursor keys, and pace the main loop: unless
+; CTRL is held, it waits until PASS_CENTISECONDS have passed since the
+; last call. If the selection moves, the old sprite is drawn again without
+; its box, and the new one boxed and drawn in the editing grid (with an
+; undo copy).
+; In:  A = 0 normally; else, picking a second sprite, f0-f3 raise an Escape
+; Out: N set if nothing moved (or CTRL is held: then nothing is done)
 ; Clobbers: A, X, Y, and as draw_grid
 .select_sprite
 {
     STA select_mode
-    LDX #KEY_CTRL
+    LDX #INKEY_TEST(KEY_CTRL)
     JSR key_pressed
     BMI repeat_key.done             ; CTRL held: return N set (repeat_key's RTS)
     LDA sprite
@@ -3177,7 +3300,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA #&00
     STA key_held
     STA key_repeating
-    LDX #KEY_RIGHT
+    LDX #INKEY_TEST(KEY_RIGHT)
     JSR repeat_key
     BPL left
     JSR sheet_column                ; the last column of the row?
@@ -3187,11 +3310,11 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA sprite
     CMP #FIRST_SMALL
     BNE wrap_right
-    LDA #&20                        ; after &0F comes &20
+    LDA #AFTER_SMALL                ; after &0F comes &20
 .wrap_right
     STA sprite
 .left
-    LDX #KEY_LEFT
+    LDX #INKEY_TEST(KEY_LEFT)
     JSR repeat_key
     BPL left_done
     JSR sheet_column
@@ -3201,18 +3324,18 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA sprite
     CMP #LAST_SMALL
     BNE wrap_left
-    LDA #&0F                        ; before &20 comes &0F
+    LDA #FIRST_SMALL - 1            ; before &20 comes &0F
 .wrap_left
     STA sprite
 .left_done
-    LDX #KEY_DOWN
+    LDX #INKEY_TEST(KEY_DOWN)
     JSR repeat_key
     BPL down_done
     JSR sheet_row
-    CPX #&08                        ; the bottom row of small sprites
+    CPX #LARGE_ROWS + SMALL_ROWS - 1    ; the bottom row of small sprites
     BEQ down_done
     LDA sprite
-    CMP #&28                        ; nothing below the last large sprite
+    CMP #LAST_SPRITE                ; no small sprite below the last large one
     BEQ down_done
     CMP #&0F                        ; &0F, at the start of row 3, has &24 below it...
     BNE not_a
@@ -3229,7 +3352,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .store_down
     STA sprite
 .down_done
-    LDX #KEY_UP
+    LDX #INKEY_TEST(KEY_UP)
     JSR repeat_key
     BPL up_done
     JSR sheet_row
@@ -3248,18 +3371,19 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .step_up
     SEC
     LDA sprite
-    SBC row_down_step-1, X
+    SBC row_down_step-1, X          ; the row above's step (X is 1 or more)
 .store_up
     STA sprite
 
-    ; The auto-repeat: back to &14 while no key is held, else count down.
+    ; The auto-repeat: back to REPEAT_DELAY while no key is held, else
+    ; count down, and after a repeat start again from REPEAT_RATE.
 .up_done
     LDA repeat_count
     BNE delay
-    LDA #&04
+    LDA #REPEAT_RATE - 1
     STA repeat_count
 .delay
-    LDX #&14
+    LDX #REPEAT_DELAY
     LDA key_held
     BEQ store_delay
     LDX repeat_count
@@ -3272,9 +3396,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BEQ wait
     JSR menu_keys_escape
 
-    ; Wait until the interval timer reaches two centiseconds.
+    ; Wait until the interval timer reaches PASS_CENTISECONDS.
 .wait
-    LDA #&03                        ; OSWORD 3: read the interval timer
+    LDA #OSWORD_READ_INTERVAL_TIMER
     JSR reset_timer.osword
     LDX #&04
     LDA #&00
@@ -3285,7 +3409,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     CMP #&00
     BNE waited
     LDA timer_value
-    CMP #&02
+    CMP #PASS_CENTISECONDS
     BCC wait
 .waited
     LDA #&00
@@ -3303,15 +3427,15 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     CMP #SMALL_WIDTH
     BNE changed
     LDX cursor_x
-    CPX #&08
+    CPX #SMALL_SPRITE_WIDTH
     BCC clamp_y
-    LDX #&07
+    LDX #SMALL_SPRITE_WIDTH - 1
     STX cursor_x
 .clamp_y
     LDY cursor_y
-    CPY #&10
+    CPY #SMALL_SPRITE_HEIGHT
     BCC changed
-    LDY #&0F
+    LDY #SMALL_SPRITE_HEIGHT - 1
     STY cursor_y
 .changed
     LDA sprite                      ; and take an undo copy
@@ -3321,15 +3445,17 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; How far down a step moves the selection from each row of the sheet:
-; large rows 0-4, then small rows 0-3. Up uses the row above's. (Some
-; moves are special cases in select_sprite.)
+; How far down a step moves the selection from each row of the sheet (but
+; the last), large rows 0-4 and then small rows 0-2. Up uses the row
+; above's. (Some moves are special cases in select_sprite.)
 .row_down_step
     EQUB 5, 5, &15, 5               ; large rows: &0B-&0E go to &20-&23
     EQUB LO(-&14)                   ; from the bottom large row to the small sprites
     EQUB 4, 4, 4                    ; small rows
 
-; Set the interval timer to zero, the start of the main loop's pacing.
+; Set the interval timer to zero, the start of the main loop's pacing. Also
+; entered at osword, with A = an OSWORD number, to read or write the timer
+; from timer_value.
 ; Clobbers: A, X, Y
 .reset_timer
 {
@@ -3339,7 +3465,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA timer_value, X
     DEX
     BPL clear
-    LDA #&04
+    LDA #OSWORD_WRITE_INTERVAL_TIMER
 .osword
     LDX #LO(timer_value)
     LDY #HI(timer_value)
@@ -3350,50 +3476,54 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .key_repeating
     EQUB &00
 
-; The selected sprite's row in the sheet.
+; The selected sprite's row in the sheet. Its last two bytes are also
+; select_sprite's exit with nothing moved.
+; In:  sprite
 ; Out: X = row (0-4 for the large sprites, 5-8 for the small ones),
 ;      last_column = 4; A = its column for a large sprite, &80 for a small
+; Clobbers: nothing else
 .sheet_row
 {
-    LDX #&04
+    LDX #LARGE_COLUMNS - 1
     STX last_column
     LDA sprite
     CMP #FIRST_SMALL
     BCC sheet_column.large
     CMP #AFTER_SMALL
-    BCS large
+    BCS high
     LSR A
     LSR A
     AND #&03
     CLC
-    ADC #&05
+    ADC #LARGE_ROWS
     TAX
 .return_negative
     LDA #&80
     RTS
-.large
-    SBC #&10
-    BCS sheet_column.large
+.high
+    SBC #AFTER_SMALL - FIRST_SMALL  ; positions &20-&28 follow &00-&0F
+    BCS sheet_column.large          ; always
 }
 
 ; The selected sprite's column in the sheet.
+; In:  sprite
 ; Out: A = column, last_column = the last in its row (4 large, 3 small)
 ; Clobbers: X
 .sheet_column
 {
-    LDA #&04
+    LDA #LARGE_COLUMNS - 1
     STA last_column
     LDA sprite
     CMP #FIRST_SMALL
     BCC large
     CMP #AFTER_SMALL
-    BCS small
+    BCS high
     AND #&03
-    LDX #&03
+    LDX #SMALL_COLUMNS - 1
     STX last_column
     RTS
-.small
-    SBC #&10
+.high
+    SBC #AFTER_SMALL - FIRST_SMALL  ; positions &20-&28 follow &00-&0F
 .large
     JMP divide_by_5
 }
@@ -3401,15 +3531,15 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Where a pixel of the editing grid is on the screen.
 ; In:  X = pixel x, Y = pixel y
 ; Out: screen_ptr = its top line (four lines tall, one byte wide)
-; Clobbers: A
+; Clobbers: A, Y
 .grid_address
 {
     TYA
     PHA
-    AND #&FE
+    AND #&FE                        ; a word a pair of rows
     TAY
     TXA
-    ASL A
+    ASL A                           ; a cell a pixel
     ASL A
     ASL A
     CLC
@@ -3445,15 +3575,16 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; The pixel cursor's four lines: the outer pixels' high bits, top and
-; bottom.
+; The pixel cursor's four lines: colour 2 in the outer pixels, top and bottom
+; (exclusive-ORed, so it shows on any colour).
 .cursor_shape
-    EQUB &90, &00, &00, &90
+    EQUB mode5_byte("2..2"), 0, 0, mode5_byte("2..2")
 
 ; Ask for the name of a file to save to. If it exists it must be a graphics
 ; set or an IO file (setting io_file), and the user is asked whether to
 ; replace it: Cancel abandons the command.
-; Out: input_buffer = the name; io_file bit 7 set for an IO file
+; Out: input_buffer = the name; osfile_block filled (file_info); io_file
+;      bit 7 set for an IO file
 ; Clobbers: A, X, Y, and as open_window
 .ask_save_name
 {
@@ -3466,7 +3597,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR close_window
     JSR file_info
     BCS done
-    CMP #&01                        ; it exists
+    CMP #OSFILE_TYPE_FILE           ; it exists
     BNE new
     JMP file_exists
 .new
@@ -3476,11 +3607,19 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
+; check_filing_system's X: each file command's place in the Environment
+; menu. The sprite commands need random access, which tape hasn't.
+FILE_LOAD_SPRITE = 0
+FILE_SAVE_SPRITE = 1
+FILE_LOAD_FILE   = 2
+FILE_SAVE_FILE   = 3
+
 ; Environment Save File (CTRL-f7): save the graphics set, &4000-&4F33, or
 ; write its three pieces into an IO file in place.
+; Clobbers: everything
 .cmd_save_file
 {
-    LDX #&03
+    LDX #FILE_SAVE_FILE
     JSR check_filing_system
     JSR ask_save_name
     BIT io_file
@@ -3488,18 +3627,18 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDY #&0F                        ; clear the block after the name
     LDA #&00
 .clear
-    STA osfile_block+2, Y
+    STA osfile_load, Y
     DEY
     BPL clear
     LDA #HI(graphics)               ; load and start address &4000...
-    STA osfile_block+3
-    STA osfile_block+11
+    STA osfile_load+1
+    STA osfile_start+1
     CLC
-    ADC #HI(graphics_end - graphics) ; ...end &4F34
-    STA osfile_block+15
+    ADC #HI(SET_SIZE)               ; ...end &4F34
+    STA osfile_end+1
     LDA #LO(graphics_end)
-    STA osfile_block+14
-    LDA #&00                        ; OSFILE 0: save
+    STA osfile_end
+    LDA #OSFILE_SAVE
     JSR osfile_graphics
 .done
     RTS
@@ -3515,18 +3654,23 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR read_block.write
     PLA
     CLC
-    ADC #&06                        ; six bytes an entry...
-    CMP #&12                        ; ...three entries
+    ADC #IO_SEGMENT
+    CMP #io_segments_end - io_segments
     BCC segment
     JSR close_files
     JMP done
 }
+ASSERT LO(graphics) = 0 AND HI(graphics) + HI(SET_SIZE) = HI(graphics_end)
 
 ; Environment Save Sprite (CTRL-f9): write the selected sprite (and an
-; object's name) into its place in an existing graphics set or IO file.
+; object's name) into its place in an existing graphics set or IO file,
+; then redraw everything (start.redraw, so the selection goes back to
+; position 0).
+; In:  sprite
+; Clobbers: everything
 .cmd_save_sprite
 {
-    LDX #&01
+    LDX #FILE_SAVE_SPRITE
     JSR check_filing_system
     JSR ask_save_name
     JSR open_file.update
@@ -3535,11 +3679,11 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR sprite_file_offset
     JSR sprite_last_byte
     INY
-    STY gbpb_block+5
+    STY gbpb_count
     LDA data_ptr
-    STA gbpb_block+1
+    STA gbpb_address
     LDA data_ptr+1
-    STA gbpb_block+2
+    STA gbpb_address+1
     JSR read_block.write
     LDA sprite_width
     CMP #SMALL_WIDTH
@@ -3552,6 +3696,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 
 ; The file to save to exists: check what it is, and ask whether to replace
 ; it. Cancel returns from the command that asked (ask_save_name's caller).
+; Out: as ask_save_name
+; Clobbers: A, X, Y, and as menu
 .file_exists
 {
     JSR ask_load_name.found
@@ -3559,7 +3705,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDY #HI(text_exists)
     LDA #WINDOW_QUESTION
     JSR menu
-    CMP #&02                        ; Replace
+    CMP #2                          ; Replace
     BNE cancel
     JMP ask_save_name.done
 .cancel
@@ -3569,12 +3715,14 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 }
 
 ; Call the filing system control vector.
+; In:  A, X and Y for FSCV
+; Clobbers: as the filing system does
 .fscv
 {
     JMP (FSCV)
 }
 
-; Point gbpb_block at the sprite's place in the file.
+; Point gbpb_block's file pointer at the sprite's place in the file.
 ; In:  data_ptr = the sprite's bytes; io_file
 ; Clobbers: A
 .sprite_file_offset
@@ -3582,32 +3730,32 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA data_ptr
     SEC
     SBC #LO(graphics)
-    STA gbpb_block+9
+    STA gbpb_pointer
     LDA data_ptr+1
     SBC #HI(graphics)
-    STA gbpb_block+10
+    STA gbpb_pointer+1
     BIT io_file
     BMI io
     RTS
 .io
-    LDA gbpb_block+10
-    CMP #HI(&E00)                   ; slot &28, at the start of IO
+    LDA gbpb_pointer+1
+    CMP #HI(slot_28 - graphics)     ; the slot IO keeps apart
     BNE io_graphics
-    LDA #&00
-    STA gbpb_block+10
+    LDA #HI(IO_SLOT_28_OFFSET)      ; (the low byte is the same)
+    STA gbpb_pointer+1
     RTS
 .io_graphics
-    LDA gbpb_block+9
+    LDA gbpb_pointer
     CLC
-    ADC #LO(IO_GRAPHICS)
-    STA gbpb_block+9
-    LDA gbpb_block+10
-    ADC #HI(IO_GRAPHICS)
-    STA gbpb_block+10
+    ADC #LO(IO_GRAPHICS_OFFSET)
+    STA gbpb_pointer
+    LDA gbpb_pointer+1
+    ADC #HI(IO_GRAPHICS_OFFSET)
+    STA gbpb_pointer+1
     RTS
 }
 
-; Point gbpb_block at the object's name in the file.
+; Point gbpb_block's file pointer at the object's name in the file.
 ; In:  sprite = the object; io_file
 ; Out: Y = the name's offset in object_names
 ; Clobbers: A, X
@@ -3621,16 +3769,17 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .io
     TYA
     CLC
-    ADC #LO(IO_NAMES)               ; &E80 in a graphics set, &80 in IO: the same low byte
+    ADC #LO(IO_NAMES_OFFSET)        ; the same low byte as SET_NAMES
     BCC store
     INX
 .store
-    STA gbpb_block+9
-    STX gbpb_block+10
+    STA gbpb_pointer
+    STX gbpb_pointer+1
     RTS
 }
 
-; Unused: read a file's pointer.
+; Unused: read a file's pointer into &8B-&8E (A isn't set here, though
+; OSARGS needs it 0 for that).
 .unused_read_ptr
 {
     LDY gbpb_block
@@ -3639,8 +3788,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 }
 
 ; Clear gbpb_block, and refuse a command the filing system can't do.
-; In:  X = 0 or 1 for the sprite commands, which need random access (not on
-;      tape), 2 or 3 for whole files
+; In:  X = the command, FILE_LOAD_SPRITE to FILE_SAVE_FILE
 ; Clobbers: A, Y
 .check_filing_system
 {
@@ -3655,10 +3803,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .done
     RTS
 .tape
-    CPX #&02
+    CPX #FILE_LOAD_FILE             ; whole files will do
     BCS done
-    LDX #&78
-    LDY #&29
+    LDX #LO(text_not_available)
+    LDY #HI(text_not_available)
     JMP show_error
 }
 
@@ -3676,14 +3824,15 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 
 ; Open the file named by osfile_block for reading; at update, for reading
 ; and writing. A missing file is "Bad File".
+; In:  osfile_block = the filename's address
 ; Out: gbpb_block's handle
 ; Clobbers: A, X, Y
 .open_file
 {
-    LDA #&40
+    LDA #OSFIND_OPEN_INPUT
     BITABS
 .update
-    LDA #&C0
+    LDA #OSFIND_OPEN_UPDATE
     LDX osfile_block
     LDY osfile_block+1
     JSR OSFIND
@@ -3696,10 +3845,13 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 }
 
 ; Environment Load Sprite (CTRL-f8): read the selected sprite (and an
-; object's name) from its place in a graphics set or IO file.
+; object's name) from its place in a graphics set or IO file, then redraw
+; everything (start.redraw, so the selection goes back to position 0).
+; In:  sprite
+; Clobbers: everything
 .cmd_load_sprite
 {
-    LDX #&00
+    LDX #FILE_LOAD_SPRITE
     JSR check_filing_system
     JSR ask_load_name
     JSR open_file
@@ -3708,11 +3860,11 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR sprite_file_offset
     JSR sprite_last_byte
     INY
-    STY gbpb_block+5
+    STY gbpb_count
     LDA data_ptr
-    STA gbpb_block+1
+    STA gbpb_address
     LDA data_ptr+1
-    STA gbpb_block+2
+    STA gbpb_address+1
     JSR read_block
     LDA sprite_width
     CMP #SMALL_WIDTH
@@ -3723,7 +3875,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP start.redraw
 }
 
-; Write the selected object's name to the file, unless it's the man.
+; Write the selected object's name to the file, unless it's the exit.
+; In:  sprite, gbpb_block's handle
+; Clobbers: A, X, Y
 .write_name
 {
     JSR name_transfer
@@ -3732,32 +3886,35 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 }
 
 ; Point gbpb_block at the selected object's name, in memory and in the file.
-; Out: carry set (and nothing done) for the man, who has no name
+; In:  sprite
+; Out: carry set (and nothing done) for the exit, which has no name
 ; Clobbers: A, X, Y
 .name_transfer
 {
     LDA sprite
-    CMP #THE_MAN
+    CMP #SLOT_EXIT
     BNE named
     RTS
 .named
     JSR name_file_offset
-    LDA #12                         ; a name's length
-    STA gbpb_block+5
+    LDA #OBJECT_NAME_LENGTH
+    STA gbpb_count
     JSR name_offset
     TYA
     CLC
     ADC #LO(object_names)
-    STA gbpb_block+1
+    STA gbpb_address
     LDA #HI(object_names)
     ADC #&00
-    STA gbpb_block+2
+    STA gbpb_address+1
     CLC
 .done
     RTS
 }
 
-; Read the selected object's name from the file, unless it's the man.
+; Read the selected object's name from the file, unless it's the exit.
+; In:  sprite, gbpb_block's handle
+; Clobbers: A, X, Y
 .read_name
 {
     JSR name_transfer
@@ -3765,31 +3922,33 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 }
 
 ; Read the block gbpb_block describes from the file; at write, write it.
+; In:  gbpb_block: handle, address, count and pointer
 ; Clobbers: A, X, Y
 .read_block
 {
-    LDA #3
+    LDA #OSGBPB_READ_AT
     BITABS
 .write
-    LDA #1
+    LDA #OSGBPB_WRITE_AT
     LDX #LO(gbpb_block)
     LDY #HI(gbpb_block)
     JMP OSGBPB
 }
 
 ; Close all open files.
+; Clobbers: A, Y
 .close_files
 {
-    LDA #&00
-    TAY
+    LDA #OSFIND_CLOSE
+    TAY                             ; all of them
     JMP OSFIND
 }
 
 ; Ask for the name of a file to load from: it must exist ("No Such File")
-; and, on a disc, be a graphics set (loading at &40xx, &Fxx long) or an IO
-; file (&33xx long) - anything else is "Bad File".
-; Entry found: just check what the file is
-; Out: io_file bit 7 set for an IO file
+; and, on disc, be a graphics set (loading at &40xx, &Fxx long) or an IO
+; file (&33xx long); anything else is "Bad File". Also entered at found, to
+; check what an existing file is.
+; Out: osfile_block filled (file_info); io_file bit 7 set for an IO file
 ; Clobbers: A, X, Y, and as open_window
 .ask_load_name
 {
@@ -3802,7 +3961,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR close_window
     JSR file_info
     BCS found
-    CMP #&01                        ; not there
+    CMP #OSFILE_TYPE_FILE           ; not there
     BNE cmd_load_file.no_file
 .found
     LDA #&00
@@ -3811,38 +3970,46 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BMI disc
     RTS
 .disc
-    LDA osfile_block+3              ; the load address's second byte
+    LDA osfile_load+1
     CMP #HI(graphics)
-    BNE not_graphics
-    LDA osfile_block+11
-    CMP #HI(graphics_end - graphics) ; the length's
-    BNE not_graphics
+    BNE check_io_file
+    LDA osfile_start+1              ; the length's
+    CMP #HI(SET_SIZE)
+    BNE check_io_file
     RTS
 }
 
 ; Bit 7 set when the file being loaded or saved is IO, not a graphics set.
+; (It sits in the middle of ask_load_name.)
 .io_file
     EQUB &00
-.not_graphics
-    LDA osfile_block+11
-    CMP #&33                        ; an IO file is &33xx long
+
+; ask_load_name's end: a file that isn't a graphics set had better be IO.
+; Out: as ask_load_name (or "Bad File", not returning)
+; Clobbers: A
+.check_io_file
+{
+    LDA osfile_start+1              ; the length's
+    CMP #HI(IO_LENGTH)
     BEQ io
     JMP bad_file
 .io
     LDA #&FF
     STA io_file
     RTS
+}
 
 ; Environment Load File (CTRL-f6): load a graphics set, or the three pieces
-; of one from an IO file.
+; of one from an IO file, then redraw everything (start.redraw).
+; Clobbers: everything
 .cmd_load_file
 {
-    LDX #&02
+    LDX #FILE_LOAD_FILE
     JSR check_filing_system
     JSR ask_load_name
     BIT io_file
     BMI load_io
-    LDA #&FF                        ; OSFILE &FF: load
+    LDA #OSFILE_LOAD
     JSR osfile_graphics
     JMP start.redraw
 .no_file
@@ -3852,26 +4019,29 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 }
 
 ; Point gbpb_block at one of the pieces of an IO file.
-; In:  X = 0, 6 or 12: the piece's entry in io_segments
+; In:  X = the piece's entry's offset in io_segments: 0, IO_SEGMENT or
+;      2 * IO_SEGMENT
 ; Clobbers: A
 .set_segment
 {
     LDA io_segments, X
-    STA gbpb_block+1
+    STA gbpb_address
     LDA io_segments+1, X
-    STA gbpb_block+2
+    STA gbpb_address+1
     LDA io_segments+2, X
-    STA gbpb_block+9
+    STA gbpb_pointer
     LDA io_segments+3, X
-    STA gbpb_block+10
+    STA gbpb_pointer+1
     LDA io_segments+4, X
-    STA gbpb_block+5
+    STA gbpb_count
     LDA io_segments+5, X
-    STA gbpb_block+6
+    STA gbpb_count+1
     RTS
 }
 
-; Load the graphics set's three pieces from an IO file.
+; Load the graphics set's three pieces from an IO file, then redraw
+; everything (start.redraw).
+; Clobbers: everything
 .load_io
 {
     JSR open_file
@@ -3883,8 +4053,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR read_block
     PLA
     CLC
-    ADC #&06
-    CMP #&12
+    ADC #IO_SEGMENT
+    CMP #io_segments_end - io_segments
     BCC segment
     JSR close_files
     JMP start.redraw
@@ -3892,14 +4062,20 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 
 ; Where the graphics set is in an IO file (as MISSION builds it): each piece's
 ; address in the set, its offset in the file and its length.
+IO_SEGMENT = 6                  ; bytes an entry
 .io_segments
-    EQUW graphics + &E00, IO_SLOT_28, &80       ; large slot &28
-    EQUW object_names, IO_NAMES, 15*12          ; the names
-    EQUW graphics, IO_GRAPHICS, &E00            ; slots &00-&27
+    EQUW slot_28, IO_SLOT_28_OFFSET, LARGE_SPRITE_SIZE
+    EQUW object_names, IO_NAMES_OFFSET, OBJECT_NAMES * OBJECT_NAME_LENGTH
+    EQUW graphics, IO_GRAPHICS_OFFSET, IO_GRAPHICS_SIZE         ; slots &00-&27
+.io_segments_end
 
-; Read the catalogue entry of the file named in input_buffer (OSFILE 5).
+; Read the catalogue entry of the file named in input_buffer
+; (OSFILE_READ_INFO). On tape it does nothing, returning through
+; cmd_obj_name's RTS.
+; In:  input_buffer = the name
 ; Out: carry set if the filing system isn't a disc one (nothing read); else
-;      carry clear, A = the object type (1 for a file), osfile_block filled
+;      carry clear, A = the object type (OSFILE_TYPE_FILE for a file),
+;      osfile_block filled
 ; Clobbers: X, Y
 .file_info
 {
@@ -3910,26 +4086,27 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     SEC
     BIT disc_fs
     BPL cmd_obj_name.done
-    LDA #&05
+    LDA #OSFILE_READ_INFO
 }
 
 ; OSFILE on the graphics set at &4000.
-; In:  A = OSFILE reason (0 save, &FF load, 5 read catalogue entry),
-;      osfile_block's name and, to save, its start and end
-; Out: carry clear
-; Clobbers: A, X, Y
+; In:  A = OSFILE_SAVE, OSFILE_LOAD or OSFILE_READ_INFO; osfile_block's name
+;      and, to save, its start and end
+; Out: carry clear; A as OSFILE leaves it (for OSFILE_READ_INFO, the
+;      object type)
+; Clobbers: X, Y
 .osfile_graphics
 {
     LDX #&00
-    STX osfile_block+6              ; exec address 0: load where we say
+    STX osfile_exec                 ; exec address 0: load where we say
     LDX #LO(graphics)
-    STX osfile_block+2
+    STX osfile_load
     LDX #HI(graphics)
-    STX osfile_block+3
+    STX osfile_load+1
     BIT disc_fs
     BMI call
     PHA
-    LDA #&0C                        ; on tape, clear the screen for the filing system's messages
+    LDA #VDU_CLS                    ; on tape, clear the screen for the filing system's messages
     JSR OSWRCH
     PLA
 .call
@@ -3941,6 +4118,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 }
 
 ; The "Bad File" error.
+; Out: doesn't return
 .bad_file
 {
     LDX #LO(text_bad_file)
@@ -3948,7 +4126,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP show_error
 }
 
-; OptionsA Obj name (CTRL-N): rename the selected object (not the man).
+; OptionsA Obj name (CTRL-N): rename the selected object (not the exit).
+; In:  sprite
+; Clobbers: everything
 .cmd_obj_name
 {
     LDA sprite_width
@@ -3958,7 +4138,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 .small
     LDA sprite
-    CMP #THE_MAN
+    CMP #SLOT_EXIT
     BEQ done
     LDA #WINDOW_INPUT
     LDX #LO(text_object_name)
@@ -3972,43 +4152,43 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA object_names, Y
     INY
     INX
-    CPX #12
+    CPX #OBJECT_NAME_LENGTH
     BCC copy
     LDA #WINDOW_INPUT
     JSR close_window
     LDA sprite
-.show
     JMP show_selection
 }
 
 ; The line input_line edits: twelve characters, padded with spaces, and a
-; CR after the sixteen bytes it clears.
+; CR after the sixteen bytes it clears (which a filename stops at).
 .input_buffer
-    SKIP 12
+    SKIP OBJECT_NAME_LENGTH
     EQUB CR, CR, CR, CR, CR
 
 ; Read a line of up to input_limit characters into input_buffer, echoing
 ; it at screen_ptr. Delete rubs out a character, CTRL-U the lot; Return
-; ends it; Escape or a function key abandons the command.
+; ends it; Escape or a function key abandons the command
+; (pick_second_sprite.abandon_command).
 ; In:  screen_ptr = where to echo it (open_window leaves it after the text)
-; Out: input_buffer, Y = its length
+; Out: input_buffer, padded with spaces; Y = its length
 ; Clobbers: A, X, screen_ptr, aux_ptr
 .input_line
 {
-    LDY #12
+    LDY #OBJECT_NAME_LENGTH         ; the longest a name can be, file or object
     STY input_limit
     LDY #&00
-    LDA #&0F                        ; flush the keyboard buffer
+    LDA #OSBYTE_FLUSH_BUFFERS       ; empty the keyboard buffer
     JSR OSBYTE
     LDY #&0F
-    LDA #&20
+    LDA #ascii(" ")
 .blank
     STA input_buffer, Y
     DEY
     BPL blank
     INY
 .read
-    LDA #&20                        ; the end of the line, so far
+    LDA #ascii(" ")                 ; a space after the line: what a rub-out leaves
     STA input_buffer, Y
     JSR OSRDCH
     BCC got_key
@@ -4021,15 +4201,15 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BNE edit
     RTS
 .edit
-    AND #&7F
-    CMP #&15                        ; CTRL-U
+    AND #&7F                        ; the cursor keys' codes become control codes, ignored
+    CMP #ctrl("U")
     BNE not_wipe
     TYA
     TAX
     BNE rub_out
     BEQ read
 .not_wipe
-    CMP #&7F                        ; Delete
+    CMP #DEL
     BNE add
     CPY #&00
     BEQ read
@@ -4050,7 +4230,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BNE rub_out
     JMP read
 .add
-    CMP #&20
+    CMP #ascii(" ")
     BCC read
     CPY input_limit
     BCS read
@@ -4060,17 +4240,26 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP read
 }
 
-; The longest line input_line takes.
+; The longest line input_line takes (always OBJECT_NAME_LENGTH).
 .input_limit
     EQUB &00
 
-; Paint: move the pixel cursor with Z X : /, accelerating as a key is held;
+; The pixel cursor's key repeat, in trips round key_delay's loop: it starts
+; at CURSOR_DELAY, and each move shortens it by CURSOR_DELAY_STEP down to
+; CURSOR_DELAY_MIN.
+CURSOR_DELAY      = &B9
+CURSOR_DELAY_STEP = 10
+CURSOR_DELAY_MIN  = 10
+
+; Paint: move the pixel cursor with Z X : /, faster as a key is held;
 ; choose the colour with 0-4; plot with Return or clear with Delete. Does
-; nothing while CTRL is held, for the shortcuts.
+; nothing while CTRL is held, for the shortcuts. Plotting draws the sprite
+; again on the sheet, which rubs out its selection box until it moves.
+; In:  sprite, cursor_x, cursor_y, colour
 ; Clobbers: A, X, Y, and as draw_sheet_sprite
 .edit_pixels
 {
-    LDX #KEY_CTRL
+    LDX #INKEY_TEST(KEY_CTRL)
     JSR key_pressed
     BPL move
     RTS
@@ -4087,69 +4276,69 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA count_y
     DEC count_x
     DEC count_y
-    LDX #KEY_X
+    LDX #INKEY_TEST(KEY_X)
     JSR key_pressed
     BPL not_right
     LDX cursor_x
     CPX count_x
     BCS not_right
-    LDX #KEY_X
+    LDX #INKEY_TEST(KEY_X)
     JSR key_delay
     INC cursor_x
 .not_right
-    LDX #KEY_Z
+    LDX #INKEY_TEST(KEY_Z)
     JSR key_pressed
     BPL not_left
     LDX cursor_x
     BEQ not_left
-    LDX #KEY_Z
+    LDX #INKEY_TEST(KEY_Z)
     JSR key_delay
     DEC cursor_x
 .not_left
-    LDX #KEY_SLASH
+    LDX #INKEY_TEST(KEY_SLASH)
     JSR key_pressed
     BPL not_down
     LDY cursor_y
     CPY count_y
     BCS not_down
-    LDX #KEY_SLASH
+    LDX #INKEY_TEST(KEY_SLASH)
     JSR key_delay
     INC cursor_y
 .not_down
-    LDX #KEY_COLON
+    LDX #INKEY_TEST(KEY_COLON)
     JSR key_pressed
     BPL not_up
     LDY cursor_y
     BEQ not_up
-    LDX #KEY_COLON
+    LDX #INKEY_TEST(KEY_COLON)
     JSR key_delay
     DEC cursor_y
 .not_up
-    LDX #KEY_1
+    LDX #INKEY_TEST(KEY_1)
     JSR key_pressed
     BPL not_1
     LDA #&01
     STA colour
     JSR show_colour
 .not_1
-    LDX #KEY_2
+    LDX #INKEY_TEST(KEY_2)
     JSR key_pressed
     BPL not_2
     LDA #&02
     STA colour
     JSR show_colour
 .not_2
-    LDX #KEY_3
+    LDX #INKEY_TEST(KEY_3)
     JSR key_pressed
     BPL not_3
     LDA #&03
     STA colour
     JSR show_colour
 .not_3
-    LDX #KEY_4
+    LDX #INKEY_TEST(KEY_4)
     JSR key_pressed
     BMI colour_0
-    LDX #KEY_0
+    LDX #INKEY_TEST(KEY_0)
     JSR key_pressed
     BPL not_0
 
@@ -4170,10 +4359,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .moved
     LDA repeat_delay
     SEC
-    SBC #&0A                        ; down to a minimum of 10
-    CMP #&0A
+    SBC #CURSOR_DELAY_STEP
+    CMP #CURSOR_DELAY_MIN
     BCS delay_ok
-    LDA #&0A
+    LDA #CURSOR_DELAY_MIN
 .delay_ok
     STA repeat_delay
     LDX cursor_x
@@ -4184,10 +4373,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR toggle_cursor               ; ...and rub it out at the old
     JMP plot_keys
 .still
-    LDA #&B9                        ; the delay before a held key first repeats
+    LDA #CURSOR_DELAY
     STA repeat_delay
 .plot_keys
-    LDX #KEY_DELETE
+    LDX #INKEY_TEST(KEY_DELETE)
     JSR key_pressed
     BPL not_delete
     LDA colour
@@ -4199,7 +4388,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA colour
     RTS
 .not_delete
-    LDX #KEY_RETURN
+    LDX #INKEY_TEST(KEY_RETURN)
     JSR key_pressed
     BPL done
 
@@ -4223,7 +4412,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR plot_pixel
     LDA sprite
     BNE not_background
-    JSR repeat_background           ; the background tile repeats every eight bytes
+    JSR repeat_background           ; position 0 repeats its 4x8 cell
 .not_background
     LDA sprite
     JSR draw_sheet_sprite
@@ -4231,13 +4420,16 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; Sheet position 0 is the background: a 4x8 pixel tile repeated. Copy the
-; eight bytes just changed through the whole sprite and redraw it.
+; Sheet position 0 shows slot 0, the floor; the game fills the floor round an
+; object's icon from that picture's first cell alone, so the designer keeps
+; it one 4x8 pixel cell repeated. Copy the cell just changed through the
+; whole sprite, and draw the grid again.
 ; In:  data_ptr = the byte plot_pixel changed
+; Clobbers: A, X, Y, and as redraw_grid
 .repeat_background
 {
     LDA data_ptr
-    AND #&F8
+    AND #&F8                        ; the start of its cell
     STA data_ptr
     LDY #&07
 .read
@@ -4245,11 +4437,11 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA background_tile, Y
     DEY
     BPL read
-    LDY #&7F
+    LDY #LARGE_SPRITE_SIZE - 1
     LDX #&07
 .fill
     LDA background_tile, X
-    STA graphics, Y
+    STA graphics + SET_LARGE, Y     ; slot 0
     DEX
     TXA
     AND #&07
@@ -4260,14 +4452,14 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JMP redraw_grid
 }
 
-; The background tile's eight bytes.
+; The background tile's eight bytes: the cell repeat_background repeats.
 .background_tile
     EQUB &00, &00, &00, &00, &00, &00, &00, &00
 
-; The pixel cursor's key repeat: wait while the key is held, up to
-; repeat_delay * 256 trips round a loop.
-; In:  X = the key's negative INKEY number
-; Clobbers: A, X, Y
+; The pixel cursor's key repeat: wait while the key is held, for up to
+; repeat_delay polls of it with a 256-trip spin between them.
+; In:  X = INKEY_TEST() of the key
+; Clobbers: A, X, Y, temp, count_x
 .key_delay
 {
     STX temp
@@ -4290,12 +4482,12 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 
 ; The bits of each of the four pixels in a MODE 5 byte.
 .pixel_mask
-    EQUB &88, &44, &22, &11
+    EQUB mode5_byte("3..."), mode5_byte(".3.."), mode5_byte("..3."), mode5_byte("...3")
 
 ; Find a pixel of a sprite.
 ; In:  A = sprite, X = pixel x, Y = pixel y
 ; Out: data_ptr = its byte, A = mask = its bits
-; Clobbers: X, Y, pixel_x, pixel_y
+; Clobbers: X, Y, pixel_x, pixel_y, sprite_width
 .pixel_address
 {
     STX pixel_x
@@ -4305,7 +4497,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     ASL A
     ASL A
     ASL A
-    TAY
+    TAY                             ; a column's bytes
     LDA pixel_x
     LSR A
     LSR A
@@ -4317,9 +4509,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     CLC
     ADC data_ptr
     STA data_ptr
-    BCC column
+    BCC column                      ; always: no sprite crosses a page
 .got_column
-    LDA pixel_y
+    LDA pixel_y                     ; columns start at multiples of their size
     ORA data_ptr
     STA data_ptr
     LDA pixel_x
@@ -4332,7 +4524,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 
 ; Set a pixel of a sprite to colour.
 ; In:  A = sprite, X = pixel x, Y = pixel y, colour
-; Clobbers: A, X, Y, data_ptr, temp, mask
+; Clobbers: A, X, Y, data_ptr, temp, mask, pixel_x, pixel_y, sprite_width
 .plot_pixel
 {
     JSR pixel_address
@@ -4351,7 +4543,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Read a pixel of a sprite.
 ; In:  A = sprite, X = pixel x, Y = pixel y
 ; Out: A = its colour, 0-3
-; Clobbers: X, Y, data_ptr, mask
+; Clobbers: X, Y, data_ptr, mask, pixel_x, pixel_y, sprite_width
 .read_pixel
 {
     JSR pixel_address
@@ -4375,23 +4567,23 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 }
 
-; Each menu's text, and the function key that opens it.
+; Each menu's text, and the function key that opens it, by window number.
 .menu_text
     EQUW text_options_a, text_options_b, text_environment, text_credits
 .menu_keys
-    EQUB KEY_F0, KEY_F1, KEY_F2, KEY_F3
+    EQUB INKEY_TEST({KEY_F0, KEY_F1, KEY_F2, KEY_F3})
 
 ; Read a command: a CTRL shortcut, or a choice from the menu whose function
 ; key is pressed.
 ; Out: A = the command's number in command_table (menu * 8 + item), 0 for
 ;      the credits, or &FF for none
-; Clobbers: X, Y, and as menu
+; Clobbers: X, Y, temp, and as menu
 .read_command
 {
-    LDX #KEY_CTRL
+    LDX #INKEY_TEST(KEY_CTRL)
     JSR key_pressed
     BPL menus
-    LDA #24-1                       ; from the last of shortcut_keys
+    LDA #SHORTCUTS - 1              ; from the last of shortcut_keys
     STA temp
 .shortcut
     LDY temp
@@ -4409,7 +4601,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA temp
     RTS
 .menus
-    LDA #&03                        ; from the last menu, the credits
+    LDA #WINDOW_CREDITS             ; from the last menu, the credits
 .menu_key
     PHA
     TAY
@@ -4450,33 +4642,35 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; The CTRL shortcuts, in command order from command 1; entries that aren't
 ; keys (below &80) have none.
 .shortcut_keys
-    EQUB KEY_X, KEY_Y, KEY_DELETE, KEY_U, KEY_A, KEY_N, NO_KEY, NO_KEY   ; OptionsA
-    EQUB KEY_S, KEY_COPY, KEY_O, NO_KEY, KEY_R, KEY_B, NO_KEY, NO_KEY    ; OptionsB
-    EQUB KEY_F8, KEY_F9, KEY_F6, KEY_F7, KEY_C, 0, 0, 0                  ; Environment
+    EQUB INKEY_TEST({KEY_X, KEY_Y, KEY_DELETE, KEY_U, KEY_A, KEY_N}), NO_KEY, NO_KEY ; OptionsA
+    EQUB INKEY_TEST({KEY_S, KEY_COPY, KEY_O}), NO_KEY, INKEY_TEST({KEY_R, KEY_B}), NO_KEY, NO_KEY ; OptionsB
+    EQUB INKEY_TEST({KEY_F8, KEY_F9, KEY_F6, KEY_F7, KEY_C}), 0, 0, 0                ; Environment
+SHORTCUTS = P% - shortcut_keys
 
-; Which cursor key the selection last saw held.
+; Which cursor key the selection last saw held (INKEY_TEST() of it, or 0),
+; and a byte nothing uses.
 .key_held
     EQUB 0, 0
 ; Non-zero while picking a second sprite.
 .select_mode
     EQUB 0
-; The interval timer, as OSWORD 3 reads it.
+; The interval timer, as OSWORD_READ_INTERVAL_TIMER reads it.
 .timer_value
     EQUB 0, 0, 0, 0, 0
 
 ; While picking a second sprite or animating, f0-f3 count as Escape: raise
-; one (OSBYTE &7D) if any of them is pressed.
+; one if any of them is pressed.
 ; Clobbers: A, X, Y
 .menu_keys_escape
 {
-    LDA #&03
+    LDA #WINDOW_CREDITS             ; f3 down to f0
 .loop
     PHA
     TAY
     LDX menu_keys, Y
     JSR key_pressed
     BPL next
-    LDA #&7D                        ; raise an Escape
+    LDA #OSBYTE_RAISE_ESCAPE
     JSR OSBYTE
 .next
     PLA
