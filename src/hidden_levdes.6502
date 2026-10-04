@@ -62,7 +62,7 @@ loading         = &67           ; nonzero while a level loads, so an error
                                 ; clears what was half loaded
 simulate_window = &68           ; W_SIMULATE+1 while the simulator is on, else
                                 ; 0: less 1, the window the main loop keeps
-direction       = &69           ; the simulated player's way (DIR_*)
+direction       = &69           ; the simulated player's way (MOVE_*)
 travelling      = &6A           ; nonzero while it travels along pipes
 in_main_loop    = &6B           ; &FF while the main loop waits for a key, so
                                 ; function keys come back as keys rather than
@@ -93,10 +93,10 @@ message_box     = screen_address(MESSAGE_BOX_COLUMN, MESSAGE_BOX_ROW)
 
 ; The cursor's directions, for moving it and the simulated player:
 ; clockwise from left, so EOR 2 turns about.
-DIR_LEFT  = 0
-DIR_UP    = 1
-DIR_RIGHT = 2
-DIR_DOWN  = 3
+MOVE_LEFT  = 0
+MOVE_UP    = 1
+MOVE_RIGHT = 2
+MOVE_DOWN  = 3
 
 SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 
@@ -715,27 +715,27 @@ saved_rdchv = rdchv_filter + 1
     LDA key_pressed
     RTS
 
-; Move the cursor a cell (and these are cursor_handlers, by DIR_*). Crossing
-; the middle of the screen moves the kept window to the other side.
+; Move the cursor a cell (and these are cursor_handlers, by MOVE_*).
+; Crossing the middle of the screen moves the kept window to the other side.
 ; Out: C set if the cursor didn't move (though a bounce in a pipe can leave
 ; it clear).
 ; Clobbers: A, X, Y, ptr, work, screen_ptr, the low code's zero page.
 .cursor_left
-    LDY #DIR_LEFT
+    LDY #MOVE_LEFT
     JSR move_cursor
     BCS cursor_move_done
     CPX #MAP_SIZE/2 - 1
     BEQ reopen_window
     RTS
 .cursor_right
-    LDY #DIR_RIGHT
+    LDY #MOVE_RIGHT
     JSR move_cursor
     BCS cursor_move_done
     CPX #MAP_SIZE/2
     BEQ reopen_window
     RTS
 .cursor_up
-    LDY #DIR_UP
+    LDY #MOVE_UP
     JSR move_cursor
     BCS cursor_move_done
     CPY #MAP_SIZE/2 - 1
@@ -743,7 +743,7 @@ saved_rdchv = rdchv_filter + 1
 .cursor_move_done
     RTS
 .cursor_down
-    LDY #DIR_DOWN
+    LDY #MOVE_DOWN
     JSR move_cursor
     BCS cursor_move_done
     CPY #MAP_SIZE/2
@@ -773,7 +773,7 @@ saved_rdchv = rdchv_filter + 1
     RTS
 
 ; The cell next to the cursor.
-; In: Y = a direction, DIR_*.
+; In: Y = a direction, MOVE_*.
 ; Out: X, Y = its position.
 ; Clobbers: A.
 .neighbour
@@ -800,7 +800,7 @@ saved_rdchv = rdchv_filter + 1
 ; travelling until it comes out. Anything else stops it. Shift lets it go
 ; anywhere on the map regardless, and stops any travelling. While travelling
 ; it takes a step of that instead (simulate_travel).
-; In: Y = a direction, DIR_*.
+; In: Y = a direction, MOVE_*.
 ; Out: C clear and X, Y = the new position if it moved. Going into a pipe it
 ; doesn't return: it finishes the cursor_* routine that called it and goes
 ; on in get_key.
@@ -913,7 +913,7 @@ saved_rdchv = rdchv_filter + 1
     BCC move_to_neighbour       ; the two pipes
 .simulate_bounce
     PLA
-    EOR #2                      ; the opposite direction (DIR_*)
+    EOR #2                      ; the opposite direction (MOVE_*)
     STA direction
     RTS
 .simulate_collect
@@ -1514,7 +1514,7 @@ handler_address = jump_to_handler_jmp + 1
     BPL show_monster_window
 
 ; Choose a monster's direction from the north, south, east, west, dead menu.
-; In: X = the current direction (COMPASS_*; 4 and up count as dead).
+; In: X = the current direction (DIRECTION_*; 4 and up count as dead).
 ; Out: A = the direction chosen (MONSTER_DEAD for dead); Y = record.
 ; Clobbers: X, ptr.
 .choose_direction
@@ -1531,13 +1531,13 @@ handler_address = jump_to_handler_jmp + 1
     RTS
 ; The direction for each item of the direction menu, and the item for each
 ; direction (west, east, north, south, then dead).
-direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
-    MONSTER_DEAD}
+direction_menu = {DIRECTION_UP, DIRECTION_DOWN, DIRECTION_RIGHT,
+    DIRECTION_LEFT, MONSTER_DEAD}
 .direction_codes
     EQUB direction_menu
 .direction_items
-    EQUB FIND(direction_menu, {COMPASS_WEST, COMPASS_EAST, COMPASS_NORTH,
-        COMPASS_SOUTH, MONSTER_DEAD})
+    EQUB FIND(direction_menu, {DIRECTION_LEFT, DIRECTION_RIGHT, DIRECTION_UP,
+        DIRECTION_DOWN, MONSTER_DEAD})
 .direction_items_end
 
 ; Monster window, Pattern.
@@ -2441,7 +2441,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
 ; its OK.
 
 ; Place monster: +0 x * 4 + monster number (0-3), +1 pattern, +2 y * 4 +
-; direction (COMPASS_*, one of the four).
+; direction (DIRECTION_*, one of the four).
 .effect_place_monster
     JSR vector_close_window
     LDY record
@@ -2464,7 +2464,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     LDA #W_PLACE_MONSTER
     LDY #handlers(place_monster_handlers_ptr)
     BNE effect_editor
-; Move monster: +0 direction (COMPASS_*, or MONSTER_DEAD), +1 monster number
+; Move monster: +0 direction (DIRECTION_*, or MONSTER_DEAD), +1 monster number
 ; * 4, the fifth item, All monsters, making it 16.
 .effect_move_monster
     LDA #W_MOVE_MONSTER
@@ -2480,7 +2480,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     LDA #W_THROW_OBJECT
     LDY #handlers(throw_handlers_ptr)
     BNE effect_editor
-; Move block: +0 direction (COMPASS_*, any of the eight), +1 x, +2 y.
+; Move block: +0 direction (DIRECTION_*, any of the eight), +1 x, +2 y.
 .effect_move_block
     LDA #W_MOVE_BLOCK
     LDY #handlers(move_block_handlers_ptr)
@@ -2676,7 +2676,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     RTS
 
 ; Choose from the compass window, four directions or eight.
-; In: A = the current direction, COMPASS_*; X = 4 or 8.
+; In: A = the current direction, DIRECTION_*; X = 4 or 8.
 ; Out: A = the direction chosen.
 ; Clobbers: X, Y, ptr, the low code's zero page.
 .choose_compass_direction
@@ -2698,9 +2698,9 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     RTS
 ; The direction for each item.
 .compass_codes
-    EQUB COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST
-    EQUB COMPASS_NORTH_WEST, COMPASS_NORTH_EAST
-    EQUB COMPASS_SOUTH_WEST, COMPASS_SOUTH_EAST
+    EQUB DIRECTION_UP, DIRECTION_DOWN, DIRECTION_RIGHT, DIRECTION_LEFT
+    EQUB DIRECTION_UP_LEFT, DIRECTION_UP_RIGHT
+    EQUB DIRECTION_DOWN_LEFT, DIRECTION_DOWN_RIGHT
 .compass_codes_end
 
 ; Detonate object: +0 object number, +2 the same times 4.
@@ -3014,10 +3014,10 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
 .input_max_char
     EQUB &FF
 
-; The pipe each direction (DIR_*) can go into.
+; The pipe each direction (MOVE_*) can go into.
 .pipe_across
     EQUB CELL_PIPE_ACROSS, CELL_PIPE_DOWN, CELL_PIPE_ACROSS, CELL_PIPE_DOWN
-; A direction's step: dy for DIR_* n is at direction_dy+n, dx at
+; A direction's step: dy for MOVE_* n is at direction_dy+n, dx at
 ; direction_dx+n, the two tables overlapping.
 .direction_dy
     EQUB 0
@@ -3242,8 +3242,8 @@ block_menu = {CELL_FLOOR, CELL_SE_CURVE, CELL_SW_CURVE, CELL_NE_CURVE,
 ; rules and sprites.
 .default_header
     EDITING_CODE "123456"
-    EQUB palette_entry(0, BLACK), palette_entry(1, BLUE)
-    EQUB palette_entry(2, YELLOW), palette_entry(3, RED)
+    EQUB palette_entry(0, COLOUR_BLACK), palette_entry(1, COLOUR_BLUE)
+    EQUB palette_entry(2, COLOUR_YELLOW), palette_entry(3, COLOUR_RED)
     EQUB MAP_SIZE / 2 - 4, MAP_SIZE / 2 - 4     ; start (32, 32)
     EQUB 0                      ; collectables needed
     EQUB 250                    ; time
@@ -4438,8 +4438,8 @@ ENDSECTION
 
 ; Black, blue, yellow and red for the title, as set_palette_entry wants them.
 .title_palette
-    EQUB palette_entry(3, RED), palette_entry(2, YELLOW)
-    EQUB palette_entry(1, BLUE), palette_entry(0, BLACK)
+    EQUB palette_entry(3, COLOUR_RED), palette_entry(2, COLOUR_YELLOW)
+    EQUB palette_entry(1, COLOUR_BLUE), palette_entry(0, COLOUR_BLACK)
 .load_wdata_command
     EQUS "L.WDATA", CR
 .load_ldata_command

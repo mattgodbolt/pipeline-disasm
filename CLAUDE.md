@@ -91,9 +91,16 @@ with baron pinned by commit; bumping the pin is its own commit.
 | WARNING, SCREEN | warning/screen.6502 | Mode 7 warning page (as rows); MODE 5 loading picture |
 | WDATA | wdata.6502 (+ wdata.6502inc) | the Level Designer's windows and messages |
 | LDATA | ldata.6502 | the Level Designer's title picture (raw MODE 1 screen, narrowed to 64 columns) |
-| LEVEL1 | level1.6502 (+ level.6502inc) | a level in the designer's save format, loaded by MISSION; the game's first level |
-| DEFAULT | default.6502 (+ sprites.6502inc) | the default graphics set as pixel pictures: 41 sprites and 15 object names |
-| IO | io.6502 (+ io.6502inc) | the game's data, ending at &5800: names, mission text, attributes, four levels' fields and maps, graphics; pictures and maps drawn in source |
+| LEVEL1 | level1.6502 (data in level1.6502inc) | a level in the designer's save format, loaded by MISSION; the game's first level |
+| DEFAULT | default.6502 (data in default.6502inc) | the default graphics set: 41 sprites and 15 object names |
+| IO | io.6502 (layout in io.6502inc) | the game's data, ending at &5800, built as MISSION builds it from default.6502inc and level1-4.6502inc |
+
+Shared data: `default.6502inc` describes the graphics set once (pictures as
+pixel rows, via `sprites.6502inc`); `level1.6502inc`-`level4.6502inc`
+describe the four levels once each (objects, monsters, triggers, the map as
+strings) in the format `leveldata.6502inc` defines (MISSION's field sizes,
+CELL_*, PUZZLE_*, DIRECTION_*, COLOUR_*). DEFAULT, LEVEL1 and IO are all
+emitted from these.
 
 ## Baron notes
 

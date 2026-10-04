@@ -1,0 +1,173 @@
+; Level 1: the first of IO's four, and LEVEL1 on the disc, a level as the
+; Level Designer saved it, its triggers named. Written as leveldata.6502inc
+; describes; src/level1.6502 and src/io.6502 make their bytes from this.
+level_1 = {
+    ; The editing code: MISSION wants it before it saves a locked mission's
+    ; level, and the game shows it once the level's done.
+    "677636",
+    ; The palette: logical colours 0-3.
+    {COLOUR_BLACK, COLOUR_BLUE, COLOUR_YELLOW, COLOUR_RED},
+    ; The setup.
+    {
+        62, 35,                         ; the player starts here
+        124,                            ; sulphur to collect before the exit opens
+        250,                            ; the clock
+        31, 28,                         ; the exit
+        CELL_SULPHUR * 16 + CELL_LAVA,  ; a monster reaching lava (~) goes out, leaving sulphur (o)
+        %00000111                       ; second pictures: o on odd squares, ~ on all
+    },
+    ; The objects: x, y, icon, uses and flags.
+    {
+        {32, 30, 0, OBJECT_NO_THROW + 2},                                        ; 0: Remote C.D.1
+        {57, 15, 3, OBJECT_NO_CHARGES + OBJECT_NO_THROW + 2},                    ; 1: Blueprints
+        {24, 30, 8, OBJECT_VANISHES + OBJECT_NO_THROW + 1},                      ; 2: Space Burger
+        {31, 47, 13, OBJECT_NO_THROW + 1},                                       ; 3: Detonator
+        {12, 48, 5, OBJECT_VANISHES + 1},                                        ; 4: Spanner
+        {38, 46, 4, 10},                                                         ; 5: Mallet
+        {54, 36, 2, OBJECT_NO_THROW + 3},                                        ; 6: Remote C.D.3
+        {30, 38, 14, OBJECT_NO_CHARGES + OBJECT_VANISHES + OBJECT_NO_THROW + 1}  ; 7: Explosives
+    },
+    ; The monsters: x, y, the way they're going, and which ways they try.
+    {
+        {45, 32, DIRECTION_UP, PATTERN_FOLLOW_EDGES},  ; 0
+        {8, 31, DIRECTION_RIGHT, PATTERN_LEFT_WALL},   ; 1
+        {1, 5, DIRECTION_UP, PATTERN_FOLLOW_EDGES},    ; 2
+        {15, 3, DIRECTION_DOWN, PATTERN_FOLLOW_EDGES}  ; 3
+    },
+    ; The triggers: name, action and flags, where, the action's A, X and Y,
+    ; and a condition.
+    {
+        ; 0: the cell at (31, 33) moves right; when facing down at a marker (@)
+        {"First Door", PUZZLE_MOVE_BLOCK + PUZZLE_USES_OBJECT + PUZZLE_REUSABLE, 31, 32, &01, &1F, &21, &F9},
+        ; 1: takes the player to (31, 30)
+        {"Telept Bck", PUZZLE_TELEPORT + PUZZLE_USES_OBJECT + PUZZLE_REUSABLE, IGNORE, IGNORE, &00, &1B, &1A, &00},
+        ; 2: lets the player push 15 crates
+        {"Strength  ", PUZZLE_PUSH_CRATES + PUZZLE_USES_OBJECT + PUZZLE_REUSABLE, IGNORE, IGNORE, &0F, &00, &00, &00},
+        ; 3: blows up object 7; when facing a wall (=)
+        {"Detonate  ", PUZZLE_DETONATE_OBJECT + PUZZLE_USES_OBJECT, 31, IGNORE + 47, &07, &00, &1C, &48},
+        ; 4: (7, 48) becomes a pipe across (-); when facing left at a pipe down (|)
+        {"Boob Obj 1", PUZZLE_PLACE_BLOCK + PUZZLE_USES_OBJECT, 6, 46, &0C, &07, &30, &CD},
+        ; 5: the cell in front becomes the floor (.); when facing a crate (c)
+        {"Hammer    ", PUZZLE_NEXT_BLOCK + PUZZLE_USES_OBJECT + PUZZLE_REUSABLE, IGNORE, IGNORE, &00, &00, &00, &46},
+        ; 6: swaps the direction keys
+        {"Puzzle 7  ", PUZZLE_DISORIENTATE + PUZZLE_USES_OBJECT + PUZZLE_OFF, IGNORE, IGNORE, &15, &15, &15, &00},
+        ; 7: turns on trigger 21; when facing up
+        {"Tel Bck On", PUZZLE_TURN_ON + PUZZLE_REUSABLE, 38, 9, &15, &15, &15, &A0},
+        ; 8: takes the player to (47, 31); when facing right
+        {"Telept Est", PUZZLE_TELEPORT + PUZZLE_REUSABLE, 22, 61, &00, &2B, &1B, &90},
+        ; 9: sets the clock to 250; when facing left
+        {"Recharge  ", PUZZLE_SET_LEVELS + PUZZLE_REUSABLE, 30, 33, &01, &FA, &00, &80},
+        ; 10: (7, 48) becomes a pipe across (-); when facing left at a pipe down (|)
+        {"Boob obj 1", PUZZLE_PLACE_BLOCK + PUZZLE_USES_OBJECT, 6, 46, &0C, &07, &30, &CD},
+        ; 11: (31, 49) becomes a wall (=); when facing up
+        {"Booby 1   ", PUZZLE_PLACE_BLOCK, 31, 48, &08, &1F, &31, &A0},
+        ; 12: (9, 48) becomes a pipe across (-); when facing left at a pipe down (|)
+        {"Boob Obj 2", PUZZLE_PLACE_BLOCK + PUZZLE_USES_OBJECT, 6, 46, &0C, &09, &30, &CD},
+        ; 13: takes the player to (31, 30); when facing up at lava (~)
+        {"Real Start", PUZZLE_TELEPORT + PUZZLE_REUSABLE, IGNORE + 24, 61, &00, &1B, &1A, &EA},
+        ; 14: turns on trigger 15
+        {"Monleap on", PUZZLE_TURN_ON + PUZZLE_REUSABLE, 1, 59, &0F, &0F, &0F, &00},
+        ; 15: pushes the cell in front to the left; when facing fire (*). (The
+        ; designer would show &02 as backwards, but the game turns it left.)
+        {"Monleap   ", PUZZLE_MOVE_NEXT_BLOCK + PUZZLE_OFF + PUZZLE_REUSABLE, IGNORE, IGNORE, &02, &00, &00, &5E},
+        ; 16: turns off triggers 15 and 21
+        {"Monleap of", PUZZLE_TURN_OFF + PUZZLE_REUSABLE, 31, 30, &0F, &15, &0F, &00},
+        ; 17: (31, 47) becomes a wall (=); when facing up at the floor (.)
+        {"Repl Obj 4", PUZZLE_PLACE_BLOCK, 31, 48, &08, &1F, &2F, &E0},
+        ; 18: throws object 4, 57 cells; when facing left
+        {"Throw Obj ", PUZZLE_THROW_OBJECT, 11, 46, &04, &09, &39, &8D},
+        ; 19: takes the player to (38, 10); when facing right
+        {"Telept Et2", PUZZLE_TELEPORT + PUZZLE_REUSABLE, 19, 61, &00, &22, &06, &90},
+        ; 20: the cell at (49, 0) moves right; when facing up
+        {"One way 2 ", PUZZLE_MOVE_BLOCK, 51, 2, &01, &31, &00, &A0},
+        ; 21: takes the player to (41, 7); when facing fire (*)
+        {"Tel Bck   ", PUZZLE_TELEPORT + PUZZLE_OFF + PUZZLE_REUSABLE, IGNORE, IGNORE, &00, &25, &03, &4E},
+        ; 22: (4, 16) becomes the floor (.); when facing right at a marker (@)
+        {"3rd door  ", PUZZLE_PLACE_BLOCK + PUZZLE_USES_OBJECT, 3, 16, &00, &04, &10, &D9},
+        ; 23: (19, 47) becomes a pipe across (-); when facing down
+        {"One way   ", PUZZLE_PLACE_BLOCK, 19, 53, &0C, &13, &2F, &B0},
+        ; 24: the cell at (24, 53) moves left; when facing down at a marker (@)
+        {"2nd door  ", PUZZLE_MOVE_BLOCK + PUZZLE_USES_OBJECT, 24, 52, &00, &18, &35, &F9},
+        ; 25: puts monster 0 at (42, 9) going right, back and forth; when facing up
+        {"Relocate  ", PUZZLE_PLACE_MONSTER, 49, 25, &A8, &B1, &25, &A0},
+        ; 26: (41, 0) becomes lava (~); when facing right
+        {"Order 1   ", PUZZLE_PLACE_BLOCK, 41, 4, &0A, &29, &00, &90},
+        ; 27: (43, 0) becomes lava (~); when facing right
+        {"Order 2   ", PUZZLE_PLACE_BLOCK, 43, 5, &0A, &2B, &00, &90},
+        ; 28: (45, 0) becomes lava (~); when facing right
+        {"Order 3   ", PUZZLE_PLACE_BLOCK, 45, 5, &0A, &2D, &00, &90},
+        ; 29: (47, 0) becomes lava (~); when facing right
+        {"Order 4   ", PUZZLE_PLACE_BLOCK, 47, 4, &0A, &2F, &00, &90},
+        ; 30: (40, 10) becomes the floor (.); when facing down at a marker (@)
+        {"4th door  ", PUZZLE_PLACE_BLOCK + PUZZLE_USES_OBJECT, 40, 9, &00, &28, &0A, &F9},
+        ; 31: (61, 2) becomes a marker (@); when facing right
+        {"One way 3 ", PUZZLE_PLACE_BLOCK, 59, 0, &09, &3D, &02, &90}
+    },
+    ; The map.
+    {
+        "~=.~~~~~~~=====~~~~~~~=~~~~=~~~.--+..#o..........@..-----------+",
+        "~........=.............==o.....=o.|7r#|----------|..LLL**...*or|",
+        "...~~~~~.=.o.====.7r7r.=..=.==.==o|JL#|....c...o.|r|......o*..r|",
+        "~.~r##7~.=..o..*=.LJLJ.=..=.==....|..#|..*.o.~.c.|r|.....*..*.r|",
+        "~.~####~.=....=.=......=..=.==..=.|7r#|..o.c.*...|r|**..*...*.r|",
+        "~*~####~.======.====...=..=.==..=.|JLJ|-.*...o.c..r|.....*....r|",
+        "~.~L##J=...........===.o..=...===.|..~-|----------r|.....*..*.r|",
+        "~.~~=~~==.=====.==.....=..=.....=.|7r7................*...*...-+",
+        "=....=.......==.==.o.o.=..=o==..o.|JL#o..|===|===|==*..**....*~=",
+        "~=o=....===............=..=o==....|..J.=.|......$o$~=*~~~=~*===.",
+        "~===.==o====..=.==.o.o==..=====.=.|7r..=@|=========+---------|.|",
+        "=..........==.=.==.=.===...==oo.=.|JL--=o+-+.......|.........|.-",
+        "=.r7..~~~~.==......=.=.....==o=.o.|..|.------------++--------+..",
+        "=.LJ.~~~.~...o...===.=.===.====.=.|7r..+----+.......|...r..7.|.|",
+        "=....=~~|=.............oo=........|..|.|..+---------+..rJ..L7+-+",
+        "~=..=o~~|~.~~~~..===o=======ooo.==+--+c|cc|||..r.7....rJr$.7L7..",
+        "~oo.@o~~|~.o..=.................==...|....|||.rJ|L7..rJrJ..L7L7.",
+        "~...~~~~|~~~~~~=o=~~~~=.=o-----+==.+-+.o..--+r.-+-o##JrJr..7L7L7",
+        "~~~~~~+-+|-------------|----------+|+-....||r###|####.JrJ..L7L.#",
+        "~+----|----------+~~~+-|----------|+|c....||#J..|L###..........#",
+        "~|~~~~|.....|~~~~|~~~|.....|-..-.-|-+c|c-c||#7....##=.======.==~",
+        "~.----+.---|-----|---+.+---------.+---|--+||#####.##=.=......=.~",
+        "~=====~====.|--------+.|.......|..+---+.||||#.oc#.##=.=.oooo.=.~",
+        "=..o..=.=..=....=|J.L|.+-------|--|----+||||#.c...##=.=.o..o.=.~",
+        "=.===.=....=..=.=|...|.|****.......====|||||#...#.##=.=.oooo.=.~",
+        "=.=...==..=.....=|...|.|**...........==|||+-.####.##=........=.~",
+        "=.=.===.....oo..=|...|.|*.............=|||||#o.o..##=.========.~",
+        "=.=...=.oo=....==|...|.|*..@.......~..=|||||#$$$$~##=.------+=.~",
+        "=.===.=.......=.=|7.r|.|......r$7......|||||.oo.o@##========|=.~",
+        "=.=.$.=...o.=...=+-+=|||.....rJ.L7......|||||.....##=......=|=.~",
+        "=.=.=====.......##7|#|||$....#..$#.....-|||+|..o..##=.=.oo.=|=.~",
+        "=.=.o.=.*......|-.||-||-c....#...#.....-|||+|.o.o.##=.=....=|=.~",
+        "=.===.=....o....##J|=|||...L##7.r##J...-|||-+*....##=.====.=|=.~",
+        "=.=...=...o$o...=+-+L|||....L#o@.#J.....||+--------+=..........=",
+        "=o=.===..o$c$o..=|+--+||...*.LJ.LJ.c...||.--------+|==========.=",
+        "..=.o....o$o$o..=||r=7||=.............*||-........||..........$=",
+        "~~~=====.ccccccc=||#.#||=.............*||+-----+..||.o$o.=======",
+        "~~~~~~~=.@@@@@@@=||=.=||==...........**|||$.$.$|..||..o..=~~~~~~",
+        "~~~~~~~=........=||=.=||====..$....****|||.$.$.+-.|+----------+~",
+        "~~~+--+=.@.@.@..=||#.#|+-------.-------+||+-----|.|...~~~~~~~~|~",
+        "~~~|~~|==========||L=J|r7$.$.$r.7$.$.$+-+||.-|.---+...~~~~~~~~|~",
+        "ooo|~~+-.|-------++--+|JL7$.$rJ|L7$.$r|+-+|.|-----------------+~",
+        ".~.+-+..-------------|-----++---------+|+-++-+-+---------------+",
+        "...~.|.~###7..-|.----++----||-------.--+|r7|######+--+~~+----+~|",
+        ".~.~...~####7.|-------------|-------....|##+-+#+#+|--|---+-+~|~|",
+        "..*~~|~~###################..##+-+######|##|#|#|#||Jr|7~||~|~|~|",
+        "*....|......-..............##.===|#...$#|##|#+-|-+|rJ.L7||~|~|~|",
+        ".o.*o|##|###~.###.r|#7..r7.##.=$=-#.~..#|##+---+----.o.--+-|-+-+",
+        ".o...|~|+|~#$.#o#.#...7.LJ.##.=.=.o....#|##|#+--+#|L7.rJ||~+-+~|",
+        "..*..|##|###~#oo..#.7.#.r7.##.......o..#|##|#|##|#|7L|J~|+-----+",
+        "*....|J...L#o####.#.#.#.LJ.###.........#|LJ|#+-+|-|--|--------+|",
+        ".*...|..~..#o.....#.#.#....#############+--|---||#+-+|~~|~r7~|||",
+        ".o.*.|7...r#.###oo#.#.#7.r~###ooo####..c@.r|7L#||#|+-|-+|rJL7|||",
+        "..*..|L7.rJ#.#o.##~.~.#.@@ccccc.#####..c@rJ.L7L|+-+|#+----..--+|",
+        "*.*.*|7o.or#.##...#.J.#J.L~####.#####..crJ...L7+-+-+#|~||L7rJ|~|",
+        "*...*|L7.rJ#..#.o.#...J...L####.#####..rJ..o..L7L|#+-|-+|~LJ~|~|",
+        ".**..|.L.J.##.#.#.#o#J.ro7.####.#####.rJ.......L7|#|#+-+|~+--+r|",
+        ".***.|7o.or#..o.#.o############.ccccc......o....-+#+-+~||+|~~rJ.",
+        "..o..+######o#..##........ccccc.################J+---|-|||+~rJ..",
+        "~-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~........+-+-++-+-+--o...",
+        "~|~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~........|||+|---|---.|||",
+        "~|~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~|.......||+||~~~+----+||",
+        "~|~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~+-|--|--++-++---------+|",
+        "~+-------------------------------------------------------------+"
+    }
+}

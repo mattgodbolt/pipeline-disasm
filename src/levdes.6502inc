@@ -1,40 +1,34 @@
 ; Names the Level Designer (hidden_levdes.6502) and its windows (wdata.6502)
 ; use that no shared include has yet. Some belong in shared includes in the
-; end: the cell types and level flags in level.6502inc (whose TILE_* names
-; are wrong for 6, 8, 9, A, B, E and F), the OS numbers and key numbers in
-; osconst.6502inc. docs/notes/levdes.md lists them.
+; end: the cell types, directions and level flags in leveldata.6502inc, the
+; OS numbers and key numbers in osconst.6502inc. docs/notes/levdes.md lists
+; them.
 
-; The map's cell types: the game's names (io.6502inc's CELL_*) where it has
-; them, and the designer's own block menu names in the comments. The keys
-; 0-9 and A-F pick the block menu's items in order, which isn't this order.
-CELL_FLOOR       = &0           ; Blank
-CELL_SE_CURVE    = &1           ; SE curve: the four curves are wall shapes
-CELL_SW_CURVE    = &2           ; SW curve
-CELL_NE_CURVE    = &3           ; NE curve
-CELL_NW_CURVE    = &4           ; NW curve
-CELL_WALL_1      = &5           ; Wall 1
-CELL_CRATE       = &6           ; Crate
-CELL_SULPHUR     = &7           ; Collectable
-CELL_WALL        = &8           ; Wall 2
-CELL_BARRICADE   = &9           ; Barricade
-CELL_LAVA        = &A           ; Fatal trap
-CELL_JUNCTION    = &B           ; Junction, of pipes
-CELL_PIPE_ACROSS = &C           ; Horz.Pipe
-CELL_PIPE_DOWN   = &D           ; Vert.Pipe
-CELL_FIRE        = &E           ; S.Monster: the designer marks monsters with it
-CELL_OBJECT      = &F           ; Marker: the start, finish and objects
+; The map's cell types, as the designer's block menu names them. The game's
+; names (CELL_* in leveldata.6502inc) are for the same blocks:
+;   0 CELL_FLOOR        Blank           8 CELL_WALL         Wall 2
+;   1-4 (below)         SE..NW curve    9 (below)           Barricade
+;   5 (below)           Wall 1          A CELL_LAVA         Fatal trap
+;   6 CELL_CRATE        Crate           B CELL_JUNCTION     Junction
+;   7 CELL_SULPHUR      Collectable     C CELL_PIPE_ACROSS  Horz.Pipe
+;   E CELL_FIRE         S.Monster       D CELL_PIPE_DOWN    Vert.Pipe
+;   F CELL_OBJECT       Marker: the start, finish and objects
+; The keys 0-9 and A-F pick the block menu's items in order, which isn't
+; this order.
+CELL_SE_CURVE    = &1           ; the four curves are wall shapes
+CELL_SW_CURVE    = &2
+CELL_NE_CURVE    = &3
+CELL_NW_CURVE    = &4
+CELL_WALL_1      = &5
+CELL_BARRICADE   = &9
 
-; Compass directions, as a level keeps them for monsters and for the puzzles
-; that move things or check which way the player is going.
-COMPASS_WEST       = 0
-COMPASS_EAST       = 1
-COMPASS_NORTH      = 2
-COMPASS_SOUTH      = 3
-COMPASS_NORTH_WEST = 4          ; the diagonals only for Move block
-COMPASS_NORTH_EAST = 5
-COMPASS_SOUTH_WEST = 6
-COMPASS_SOUTH_EAST = 7
-MONSTER_DEAD       = 8          ; a walking monster's direction when it's gone
+; The diagonal directions, which only Move block uses, after
+; leveldata.6502inc's DIRECTION_LEFT, RIGHT, UP and DOWN (0-3).
+DIRECTION_UP_LEFT    = 4
+DIRECTION_UP_RIGHT   = 5
+DIRECTION_DOWN_LEFT  = 6
+DIRECTION_DOWN_RIGHT = 7
+MONSTER_DEAD         = 8        ; a walking monster's direction when it's gone
 
 ; Turns, relative to the way a monster is going: the two-bit fields of a
 ; monster's pattern (first choice in bits 0-1), and Move next block's
@@ -78,15 +72,6 @@ SPRITES_ODD       = 1           ; Patterned: the odd squares
 SPRITES_EVEN      = 2           ; (not offered)
 SPRITES_B         = 3           ; Sprite B: the second everywhere
 
-; Physical colours, for VDU 19.
-BLACK   = 0
-RED     = 1
-GREEN   = 2
-YELLOW  = 3
-BLUE    = 4
-MAGENTA = 5
-CYAN    = 6
-WHITE   = 7
 ; A palette entry as set_palette_entry (and a level) keeps it.
 FUNCTION palette_entry(logical, physical) = logical * 16 + physical
 
