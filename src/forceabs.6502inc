@@ -1,8 +1,17 @@
-; Absolute addressing of a zero-page operand. Baron always picks the
-; shorter zero-page encoding when it can, and has no syntax to ask for the
-; absolute one, so where the original code used it (sometimes for the
-; cycle, sometimes just because) these macros emit it byte for byte.
-; Generated from tools/dis6502.py's opcode table.
+; Absolute addressing of a zero-page operand: `LDA_ABS &70` assembles to
+; AD 70 00 where `LDA &70` gives A5 70. Baron always picks the shorter
+; zero-page encoding when it can and has no syntax to ask for the absolute
+; one, so these macros write the instruction out byte for byte. The indexed
+; forms take the register as a second argument: `LDA_ABS &70, X`.
+;
+; tools/dis6502.py and tools/dis6502seg.py write these (and INCLUDE this
+; file) when a binary has such an instruction, so that a first draft
+; reassembles identically; tests/test_dis6502.py's round trip of every built
+; binary relies on that. No finished source in src/ uses them:
+; PIPELINE's own code never addresses zero page absolutely.
+;
+; There is one macro for each instruction tools/dis6502.py's opcode table
+; has in both a zero-page and an absolute form, plain and indexed.
 
 MACRO ADC_ABS addr
     EQUB &6D : EQUW addr
