@@ -101,6 +101,7 @@ MAP_COLUMN_BYTES = MAP_SIZE / 2
 ; picture. The view is 8 map cells across and down, the player in the middle;
 ; it's offset by half a cell, so half a cell more shows at each edge.
 CHARS_PER_CELL       = 4
+PLAYER_CHAR          = (SCREEN_COLUMNS - CHARS_PER_CELL) / 2 ; the player's top left, from the view's
 PICTURE_BYTES        = CHARS_PER_CELL * CHARS_PER_CELL * CHAR_BYTES
 PICTURE_COLUMN_BYTES = CHARS_PER_CELL * CHAR_BYTES
 ICON_BYTES           = PICTURE_BYTES / 4

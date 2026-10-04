@@ -1129,10 +1129,12 @@ SECTION main_code, org=&0900
     ORA tune_together
     ASL A                               ; ...unless voice 1 plays alone
 
-; A is the channel a voice plays on (1 or 2), or 0 if it isn't playing.
-; A note's high nibble is a step of a semitone; the voice on channel 1 is an
-; octave above the other, and each voice's last note is pitched higher still.
-; The voice's channel is also its envelope.
+; Play the next note of the voice on channel A, if that's the channel that
+; ran dry. Channel 1 plays voice 1, an octave above voice 2 on channel 2; each
+; voice's last note is pitched nearly another octave up. The voice's channel
+; is also its envelope.
+; In: A = the channel (1 or 2), or 0 if the voice isn't playing.
+; Clobbers: A, X, Y, the tune block.
 .play_voice
     BEQ play_voice_done
     CMP empty_channel                   ; the channel that ran dry?
@@ -1143,7 +1145,7 @@ SECTION main_code, org=&0900
     STA tune_channel                    ; (tune_channel as scratch)
     DEX
     TXA
-    ASL A                               ; voice 2's notes are 32 on
+    ASL A                               ; * TUNE_VOICE_BYTES: voice 2's notes
     ASL A
     ASL A
     ASL A
@@ -1153,27 +1155,27 @@ SECTION main_code, org=&0900
     STX tune_channel                    ; the channel...
     STX tune_amplitude                  ; ...and the same envelope
     TAX
-    LDY #&00
+    LDY #0
     STY tune_channel_high
     STY tune_amplitude_high
     STY tune_pitch_high
     STY tune_duration_high
-    LDA tune, X                         ; a note: pitch step, duration
+    LDA tune, X                         ; a note: semitones, duration
     PHA
     AND #&F0
-    LSR A                               ; 4 to a semitone
+    LSR A                               ; * SEMITONE
     LSR A
     ADC tune_transpose
-    ADC #&21                            ; the tune's lowest note
+    ADC #TUNE_LOWEST
     LDY tune_channel
     DEY
     BNE play_voice_last_note
-    ADC #&30                            ; voice 1 an octave up
+    ADC #OCTAVE                         ; voice 1 an octave up
 .play_voice_last_note
     LDX tune_position, Y                ; the voice's last note...
-    CPX #&1E
+    CPX #TUNE_NOTES
     BNE play_voice_note
-    ADC #&2F                            ; ...a little under an octave up
+    ADC #OCTAVE - 1                     ; ...a little under an octave up
 .play_voice_note
     STA tune_pitch
     PLA
@@ -1184,11 +1186,12 @@ SECTION main_code, org=&0900
 .sound_tune_block
     LDX #LO(tune_channel)
     LDY #HI(tune_channel)
-    LDA #7
+    LDA #OSWORD_SOUND
     JMP OSWORD
 
-; Add A to picture: halved for an icon (Y is picture_size and is incremented
-; twice here and in the caller, so it stays negative for a 4x4 picture).
+; Add A to picture, halved for an icon: to skip columns or rows of a picture.
+; In: Y = picture_size + 1, from the caller's INY. This increments it again,
+; and it stays negative for a whole picture.
 .skip_picture_columns
     INY                                 ; an icon's columns are half as big
     BMI advance_picture
@@ -1202,7 +1205,8 @@ SECTION main_code, org=&0900
 .play_voice_done
     RTS
 
-; The player's picture alternates as they walk.
+; Count a cell walked: every four, the player's picture turns upside down or
+; back (see draw_player).
 .next_player_frame
     LDA player_frame
     CLC
@@ -1223,8 +1227,8 @@ SECTION main_code, org=&0900
 
 ; The address of each cell type's picture.
 .tile_addresses
-FOR n = 0..15
-    EQUW io_tiles + n * 128
+FOR type = 0..15
+    EQUW tile(type)
 NEXT
 
 ; What to add to a cell type's picture address on squares that show its
@@ -1238,84 +1242,90 @@ NEXT
 .alternate_offsets_odd
     EQUW 0, 0, 0, 0
 
-; Monster A: rub it out with the floor picture, or draw it, with a picture
-; whose low byte the caller has put in sprite (the monsters' two frames are
-; cell types E and F's pictures).
+; Rub out monster A, with the floor picture.
+; Clobbers: A, X, Y and the sprite variables.
 .erase_monster
     JSR monster_position
-    LDA #HI(io_tiles)
+    LDA #HI(tile(CELL_FLOOR))
     STA sprite_high
-    LDA #LO(io_tiles)
+    LDA #LO(tile(CELL_FLOOR))
     STA sprite
     SEC
     JMP draw_sprite
+
+; Draw monster A: the monsters' two frames are cell types E's and F's
+; pictures, so the caller puts 0 or PICTURE_BYTES in sprite for the low byte.
+; Clobbers: A, X, Y and the sprite variables.
 .draw_monster
     JSR monster_position
-    LDA #HI(io_tiles + &E * 128)
+    LDA #HI(tile(CELL_FIRE))
     STA sprite_high
     SEC
     JMP draw_sprite
 
-; Draw the player in the middle of the view: their picture for the way they
-; face (up and down alternate between two), drawn upside down every other
-; step.
-; Clobbers: A, X, Y, picture, player_screen, draw_step.
+; Draw the player in the middle of the view, facing their way. Every four
+; cells walked (player_frame's bit 7) the picture is drawn upside down, and
+; facing up or down the other of the two up and down pictures is used.
+; Clobbers: A, X, Y, picture, player_screen, player_screen_base, draw_step,
+; count_across, count_down, steps_since_drawn.
 .draw_player
     LDA player_frame
-    AND #&80                            ; every other step: flipped
+    AND #&80                            ; flipped?
     STA picture
     STA draw_step
-    LDA facing                          ; left 0, right 1: &5400, &5480
+    LDA facing                          ; * PICTURE_BYTES: left or right...
     LSR A
     ROR A
-    BCC draw_player_picture             ; up and down: &5500 or &5580...
-    EOR picture                         ; ...alternating
+    BCC draw_player_picture
+    EOR picture                         ; ...or up and down, swapped when flipped
 .draw_player_picture
     STA picture
     LDA #HI(io_player)
-    ADC #&00
+    ADC #0
     STA picture_high
-    LDA #LO(14 * 8)                     ; the view's 14th character across...
+    LDA #LO(PLAYER_CHAR * ROW_BYTES + PLAYER_CHAR * CHAR_BYTES)
     ADC view_screen
     STA player_screen
     STA player_screen_base
-    LDA #HI(14 * &100 + 14 * 8)         ; ...and down: the middle
+    LDA #HI(PLAYER_CHAR * ROW_BYTES + PLAYER_CHAR * CHAR_BYTES)
     ADC view_screen_high
     BPL draw_player_screen
-    SBC #&1F
+    SBC #HI(SCREEN_SIZE) - 1            ; (the carry's clear)
 .draw_player_screen
     STA player_screen_high
     STA player_screen_base_high
     BNE draw_player_at
 
-; Rub out the edge of the player's picture that scrolling left behind, as the
-; view moves a character towards one side, then draw the player again in the
-; middle. Inside a pipe the player isn't drawn, and only the first few steps'
-; trails are rubbed out.
+; As the view scrolls a character, the player, drawn in screen memory, scrolls
+; with it: rub out the edge of their picture that's left behind, on the side
+; away from the way the view moves, then draw them again in the middle. Inside
+; a pipe the player isn't drawn, so only the first few steps (the width of
+; the picture left from before) are rubbed out.
+; Clobbers: as draw_player, with draw_step_high.
 .rub_out_below_player
     LDA player_screen_base
     STA player_screen
     LDA player_screen_base_high         ; the player's bottom row...
     CLC
-    ADC #&03
+    ADC #CHARS_PER_CELL - 1
     BPL rub_out_row
-    SBC #&1F
+    SBC #HI(SCREEN_SIZE) - 1            ; (the carry's clear)
 .rub_out_row
     STA player_screen_high
-    LDY #&00                            ; ...across
+    LDY #0                              ; ...across
     STY draw_step_high
-    LDA #&08
+    LDA #CHAR_BYTES
     STA draw_step
     BNE rub_out_trail
 .rub_out_right_of_player
     LDA player_screen_base              ; the player's right column...
     CLC
-    ADC #&18
+    ADC #(CHARS_PER_CELL - 1) * CHAR_BYTES
     STA player_screen
     LDA player_screen_base_high
-    ADC #&00
+    ADC #0
     BPL rub_out_right_wrapped
-    SBC #&1F
+    SBC #HI(SCREEN_SIZE) - 1            ; (the carry's clear)
 .rub_out_right_wrapped
     BNE rub_out_column
 .rub_out_left_of_player
@@ -1324,7 +1334,7 @@ NEXT
     LDA player_screen_base_high
 .rub_out_column
     STA player_screen_high
-    LDY #&00                            ; ...down
+    LDY #LO(ROW_BYTES)                  ; ...down
     STY draw_step
     INY
     STY draw_step_high
@@ -1333,27 +1343,27 @@ NEXT
     LDA pipe_move
     BEQ rub_out_trail_draw
     INX
-    CPX #&05                            ; ...rub out only the first few
+    CPX #CHARS_PER_CELL + 1             ; ...rub out only the first few
     BCC rub_out_trail_draw
     RTS
 .rub_out_trail_draw
     STX steps_since_drawn
-    LDX #&04
+    LDX #CHARS_PER_CELL
 .rub_out_trail_cell
-    LDY #&07
+    LDY #CHAR_BYTES - 1
 .rub_out_trail_copy
-    LDA io_tiles, Y                     ; floor
+    LDA tile(CELL_FLOOR), Y             ; floor
     STA (player_screen), Y
     DEY
     BPL rub_out_trail_copy
-    LDA draw_step
+    LDA draw_step                       ; the next cell along
     CLC
     ADC player_screen
     STA player_screen
     LDA draw_step_high
     ADC player_screen_high
     BPL rub_out_trail_next
-    SBC #&1F
+    SBC #HI(SCREEN_SIZE) - 1            ; (the carry's clear)
 .rub_out_trail_next
     STA player_screen_high
     DEX
@@ -1366,10 +1376,14 @@ NEXT
     BNE rub_out_row
 
 ; Draw the player's picture at player_screen: 4 x 4 character cells, a column
-; at a time. draw_step nonzero draws it flipped top to bottom by copying each
-; column's bytes backwards with a self-modified LDA abs,X.
+; at a time. With draw_step nonzero it's drawn upside down, each column's
+; bytes copied backwards by a self-modified LDA abs,X. Inside a pipe it isn't
+; drawn at all.
+; In: picture, player_screen, draw_step.
+; Clobbers: A, X, Y, picture, player_screen, count_across, count_down,
+; steps_since_drawn.
 .draw_player_at
-    LDX #&1F                            ; the last byte of a column, for flipping
+    LDX #PICTURE_COLUMN_BYTES - 1       ; the last byte of a column, for flipping
     LDA picture
     STA draw_player_flipped_copy + 1    ; self-modified: flipped pictures copy from here
     LDA picture_high
@@ -1378,14 +1392,14 @@ NEXT
     BEQ draw_player_cells
     RTS
 .draw_player_cells
-    STA steps_since_drawn
-    LDA #&03
-    STA count_across
-    STA count_down
+    STA steps_since_drawn               ; (A = 0) drawn now
+    LDA #CHARS_PER_CELL - 1
+    STA count_across                    ; (counting rows down a column)
+    STA count_down                      ; (counting columns)
 .draw_player_cell
     LDA draw_step                       ; flipped?
     BNE draw_player_flipped
-    LDY #&07
+    LDY #CHAR_BYTES - 1
 .draw_player_copy
     LDA (picture), Y
     STA (player_screen), Y
@@ -1393,7 +1407,7 @@ NEXT
     BPL draw_player_copy
     LDA picture
     CLC
-    ADC #&08
+    ADC #CHAR_BYTES
     STA picture
     BCC draw_player_down
     INC picture_high
@@ -1407,46 +1421,48 @@ NEXT
     BPL draw_player_cell
     TXA                                 ; flipped: the next column's last byte
     CLC
-    ADC #&40
+    ADC #2 * PICTURE_COLUMN_BYTES
     TAX
     LDA player_screen                   ; the next column across...
     CLC
-    ADC #&08
+    ADC #CHAR_BYTES
     STA player_screen
     BCC draw_player_wrap
     INC player_screen_high
 .draw_player_wrap
     LDA player_screen_high              ; ...back up to the top
     SEC
-    SBC #&04
+    SBC #CHARS_PER_CELL
     CMP #HI(SCREEN)
     BCS draw_player_column
-    ADC #&20
+    ADC #HI(SCREEN_SIZE)
 .draw_player_column
     STA player_screen_high
-    LDA #&03
+    LDA #CHARS_PER_CELL - 1
     STA count_across
     DEC count_down
     BPL draw_player_cell
-.return_0AD0
+.draw_player_at_done
     RTS
 .draw_player_flipped
-    LDY #&00
+    LDY #0
 .draw_player_flipped_copy
     LDA &FFFF, X                        ; self-modified: the picture
     DEX
     STA (player_screen), Y
     INY
-    CPY #&08
+    CPY #CHAR_BYTES
     BNE draw_player_flipped_copy
     BEQ draw_player_down
 
-; Redraw the whole view from the map: fill the screen with stripes, then draw
-; it in from both sides a column and a row at a time, waiting for a vsync each
-; step, as a level starts.
+; Redraw the whole view from the map: hatch the screen, then draw the map in
+; from the edges, a column from each side and a row from each side in turn, a
+; frame a step. The middle 4 x 4 characters are left for the player. For the
+; start of a level, after a teleport, and back from the backpack or the map.
+; In: the screen cleared, with the view at its top left; view_cell_x and _y.
 ; Clobbers: A, X, Y and the drawing variables.
 .redraw_view
-    LDA #&00                            ; steps in from the edges
+    LDA #0                              ; steps in from the edges
     STA steps
     STA count_across
     STA screen
@@ -1454,8 +1470,8 @@ NEXT
     STA steps_since_drawn
     LDA #HI(SCREEN)
     STA screen_high
-    LDA #&FF                            ; &7F, &3F, &1F...: stripes
-    CLC
+    LDA #&FF                            ; &7F, &BF, &DF...: one bit clear, moving
+    CLC                                 ; along, makes a diagonal hatch
 .redraw_view_stripes
     ROR A
     STA (screen), Y
@@ -1474,12 +1490,12 @@ NEXT
     STA screen
     LDA #HI(SCREEN)
     STA screen_high
-    LDA #&00
+    LDA #0
     STA strip_cells_down
     TYA
-    ADC #&02                            ; the view's left edge is half a cell in
+    ADC #CHARS_PER_CELL / 2             ; the view's left edge is half a cell in
     PHA
-    AND #&03
+    AND #CHARS_PER_CELL - 1
     STA view_sub_x
     PLA
     LSR A
@@ -1490,7 +1506,7 @@ NEXT
     LDA view_cell_y
     STA cell_y
     JSR draw_column                     ; a column
-    LDA #&00
+    LDA #0
     STA screen
     STA strip_cells
     LDA steps                           ; and a row, from the top, then the bottom
@@ -1501,9 +1517,9 @@ NEXT
     ADC #HI(SCREEN)
     STA screen_high
     PLA
-    ADC #&02
+    ADC #CHARS_PER_CELL / 2
     PHA
-    AND #&03
+    AND #CHARS_PER_CELL - 1
     STA view_sub_y
     PLA
     LSR A
@@ -1516,15 +1532,17 @@ NEXT
     JSR draw_row                        ; a row
     JSR wait_vsync                      ; one step a frame
     LDA count_across                    ; the other side
-    EOR #&1F
+    EOR #SCREEN_COLUMNS - 1
     STA count_across
     INC steps
     LDA steps
-    CMP #&1C                            ; 28 steps meet in the middle
+    CMP #SCREEN_COLUMNS - CHARS_PER_CELL ; all but the player's middle four
     BCC redraw_view_step
     JMP draw_player
 
-; Monster A's position: X, Y = its x and y in character cells.
+; Monster A's position.
+; Out: X, Y = its x and y in character cells.
+; Clobbers: A.
 .monster_position
     ASL A
     ASL A
@@ -1536,30 +1554,30 @@ NEXT
     RTS
 
 ; Move everything that moves by itself one character cell: a thrown object,
-; then each monster that's out, in the direction it's going (8 and up: not
-; out; 4-7: stuck, drawn without moving).
+; then each monster that's out, the way it's going (one that's stuck is drawn
+; where it is).
 ; Clobbers: A, X, Y, monster_index and the drawing variables.
 .move_things
     LDA player_dead                     ; nothing moves while the player dies
     BNE move_things_done
     LDA thrown_direction                ; something thrown?
     BEQ move_monsters
-    CMP #&01
+    CMP #THROWN_LEFT
     BEQ thrown_left
-    CMP #&02
+    CMP #THROWN_RIGHT
     BEQ thrown_right
-    CMP #&03
+    CMP #THROWN_UP
     BEQ thrown_up
-    INC thrown_y                        ; 4: down
+    INC thrown_y                        ; THROWN_DOWN
     JMP draw_thrown
 .thrown_left
-    DEC thrown_x                        ; 1: left
+    DEC thrown_x
     JMP draw_thrown
 .thrown_right
-    INC thrown_x                        ; 2: right
+    INC thrown_x
     JMP draw_thrown
 .thrown_up
-    DEC thrown_y                        ; 3: up
+    DEC thrown_y
 .draw_thrown
     LDA thrown_picture
     STA sprite
@@ -1569,16 +1587,16 @@ NEXT
     LDY thrown_y
     JSR draw_icon_on_floor              ; drawn on the floor
 .move_monsters
-    LDA #&03
+    LDA #MONSTERS - 1
     STA monster_index
 .move_monster
     LDA monster_index
-    ASL A
+    ASL A                               ; * MONSTER_BYTES
     ASL A
     TAX
     LDA monster_direction, X            ; its direction
     PHA
-    CMP #&04                            ; 4 and up: it doesn't move
+    CMP #MONSTER_STUCK                  ; stuck or gone: it doesn't move
     BCS move_monster_direction
     TXA
     PHA
@@ -1588,28 +1606,28 @@ NEXT
     TAX
 .move_monster_direction
     PLA
-    BEQ monster_left
-    CMP #&01
+    BEQ monster_left                    ; DIR_LEFT
+    CMP #DIR_RIGHT
     BEQ monster_right
-    CMP #&02
+    CMP #DIR_UP
     BEQ monster_up
-    CMP #&08                            ; 8 and up: not out
+    CMP #MONSTER_GONE                   ; not out
     BCS next_monster
-    CMP #&03
+    CMP #DIR_DOWN
     BNE monster_stuck
-    INC monster_y, X                    ; 3: down
+    INC monster_y, X
     JMP monster_moved
 .monster_left
-    DEC monster_x, X                    ; 0: left
+    DEC monster_x, X
     JMP monster_moved
 .monster_right
-    INC monster_x, X                    ; 1: right
+    INC monster_x, X
     JMP monster_moved
 .monster_up
-    DEC monster_y, X                    ; 2: up
+    DEC monster_y, X
 .monster_moved
     LDA frame_counter                   ; the monsters' frame
-    AND #&80
+    AND #PICTURE_BYTES
     STA sprite
     LDA monster_index
     JSR draw_monster                    ; draw it
@@ -1619,27 +1637,29 @@ NEXT
     RTS
 .monster_stuck
     LDA frame_counter                   ; stuck: draw it where it is
-    AND #&80
+    AND #PICTURE_BYTES
     STA sprite
     LDA monster_index
     JSR draw_monster
     JMP next_monster
 
-; Copy the part of the 4x4 picture at sprite that clip_sprite_x and _y found
-; to be in the view to sprite_screen, a column of character cells at a time.
+; Copy the part of the whole picture at sprite that clip_sprite_x and _y
+; found to be in the view to sprite_screen, a column of character cells at a
+; time. The skips are added without a carry into the high byte: no picture
+; the game draws starts far enough into a page to need one.
 ; Clobbers: A, Y, sprite, sprite_screen, sprite_column, sprite_row.
 .draw_sprite_clipped
     LDA sprite_columns
     STA sprite_column
     LDA sprite_skip_x                   ; past the columns cut off...
-    LSR A
+    LSR A                               ; * PICTURE_COLUMN_BYTES
     ROR A
     ROR A
     ROR A
     ADC sprite
     STA sprite
     LDA sprite_skip_y                   ; ...and the rows
-    ASL A
+    ASL A                               ; * CHAR_BYTES
     ASL A
     ASL A
     ADC sprite
@@ -1648,7 +1668,7 @@ NEXT
     LDA sprite_rows
     STA sprite_row
 .draw_sprite_cell
-    LDY #&07
+    LDY #CHAR_BYTES - 1
 .draw_sprite_copy
     LDA (sprite), Y
     STA (sprite_screen), Y
@@ -1661,7 +1681,7 @@ NEXT
 .draw_sprite_next_row
     LDA sprite
     CLC
-    ADC #&08
+    ADC #CHAR_BYTES
     STA sprite
     BCC draw_sprite_count_rows
     INC sprite_high
@@ -1669,8 +1689,8 @@ NEXT
     DEC sprite_row
     BPL draw_sprite_cell
     LDA sprite_rows                     ; past the rows cut off at the bottom
-    EOR #&03
-    ASL A
+    EOR #CHARS_PER_CELL - 1
+    ASL A                               ; * CHAR_BYTES
     ASL A
     ASL A
     ADC sprite
@@ -1680,7 +1700,7 @@ NEXT
 .draw_sprite_next_column
     LDA sprite_screen
     CLC
-    ADC #&08
+    ADC #CHAR_BYTES
     STA sprite_screen
     BCC draw_sprite_back_to_top
     INC sprite_screen_high
@@ -1688,28 +1708,30 @@ NEXT
     LDA sprite_screen_high              ; back to the top
     CLC
     SBC sprite_rows
-    AND #&1F
+    AND #HI(SCREEN_SIZE) - 1
     ORA #HI(SCREEN)
     STA sprite_screen_high
     DEC sprite_column
     BPL draw_sprite_column
     RTS
 
-; Never called.
+; Never called: in_icon_border for a sprite's column and row.
 .sprite_in_icon_border
     LDA sprite_column
     JSR in_icon_border
     BEQ in_icon_border_done
     LDA sprite_row
 
-; Is position A (1-4, counting in from the far edge) of a map cell outside an
-; icon? An icon, picture_size 1, covers only the middle two of four.
-; Returns: Z set if it's outside.
+; Is position A of a map cell's 4 columns or rows outside an icon (which
+; covers only the middle two), when picture_size says it's an icon?
+; In: A = 1-4, counting from either edge; picture_size.
+; Out: Z set if it's outside an icon.
+; Clobbers: A.
 .in_icon_border
     CMP picture_size
     BEQ in_icon_border_done
     SEC
-    SBC #&03
+    SBC #CHARS_PER_CELL - 1
     CMP picture_size
 .in_icon_border_done
     RTS
@@ -1722,45 +1744,46 @@ NEXT
     PHA
     TYA
     PHA
-    LDX #&0F
-    LDY #&1F
+    LDX #ICON_COLUMN_BYTES - 1
+    LDY #ICON_BYTES - 1
 .draw_icon_right_half
     LDA (sprite), Y                     ; the icon's right column...
-    STA io_tiles + 2 * 32 + 8, X
+    STA tile(CELL_FLOOR) + 2 * PICTURE_COLUMN_BYTES + CHAR_BYTES, X
     DEY
     DEX
     BPL draw_icon_right_half
-    LDX #&0F
+    LDX #ICON_COLUMN_BYTES - 1
 .draw_icon_left_half
     LDA (sprite), Y                     ; ...and left, into the floor's middle
-    STA io_tiles + 1 * 32 + 8, X
+    STA tile(CELL_FLOOR) + 1 * PICTURE_COLUMN_BYTES + CHAR_BYTES, X
     DEY
     DEX
     BPL draw_icon_left_half
-    LDA #LO(io_tiles)                   ; draw the floor picture
+    LDA #LO(tile(CELL_FLOOR))           ; draw the floor picture
     STA sprite
-    LDA #HI(io_tiles)
+    LDA #HI(tile(CELL_FLOOR))
     STA sprite_high
     PLA
     TAY
     PLA
     TAX
-    SEC                                 ; returning to restore_floor_picture
-    LDA #HI(restore_floor_picture - 1)
+    SEC                                 ; draw_sprite: a whole picture
+    LDA #HI(restore_floor_picture - 1)  ; then return to restore_floor_picture
     PHA
     LDA #LO(restore_floor_picture - 1)
     PHA
 
-; Draw a 4x4 picture at character position (X, Y) on the map (4 to a map
-; cell), whatever of it is in the view: sprite is the picture, and with the
-; carry clear it's an icon on a floor picture instead (draw_icon_on_floor).
+; Draw a picture at character position (X, Y) on the map, as much of it as
+; is in the view.
+; In: sprite = a whole picture with the carry set; or with it clear, an icon,
+; drawn in the middle of a floor picture (draw_icon_on_floor).
 ; Clobbers: A, X, Y and the sprite variables.
 .draw_sprite
     BCC draw_icon_on_floor
-    LDA #&03                            ; 4 x 4 cells, none cut off
+    LDA #CHARS_PER_CELL - 1             ; 4 x 4 cells, none cut off
     STA sprite_columns
     STA sprite_rows
-    LDA #&00
+    LDA #0
     STA sprite_screen_high
     STA sprite_skip_x
     STA sprite_skip_y
@@ -1769,40 +1792,43 @@ NEXT
     JMP draw_sprite_clipped
 
 ; Put back the middle two columns of the floor picture, which are all the
-; same as its last column's last character cell.
+; same as its last character cell (the floor is one cell's pattern).
+; Clobbers: A, X, Y.
 .restore_floor_picture
-    LDY #&3F
-    LDX #&07
+    LDY #2 * PICTURE_COLUMN_BYTES - 1
+    LDX #CHAR_BYTES - 1
 .restore_floor_loop
-    LDA io_tiles + 3 * 32 + 3 * 8, X    ; the floor's last character cell
-    STA io_tiles + 1 * 32, Y
+    LDA tile(CELL_FLOOR) + PICTURE_BYTES - CHAR_BYTES, X ; the floor's last character cell
+    STA tile(CELL_FLOOR) + PICTURE_COLUMN_BYTES, Y
     DEX
     TXA
-    AND #&07
+    AND #CHAR_BYTES - 1
     TAX
     DEY
     BPL restore_floor_loop
     RTS
 
-; Which of a picture's 4 columns at character x = X are in the view (32
-; columns from view_x, which wraps round to &E2-&FF as the view goes past the
-; map's left edge)? Sets sprite_skip_x, sprite_columns and sprite_screen, or
-; if none are, returns from the caller (draw_sprite) instead.
+; Clip a picture to the view across: which of its 4 columns, from character
+; x = X, are in the view's 32 from view_x? Character positions wrap round at
+; 256, the map's width, so a view_x from &E2 up is a view running off the
+; map's right edge, or from &F1, one hanging off its left edge.
+; Out: sprite_skip_x, sprite_columns, sprite_screen; or if none of the
+; picture is in view, returns from the caller (draw_sprite) instead.
 .clip_sprite_x
     STX clip_position
     LDA view_x
-    CMP #&E2                            ; the view hangs off the map's left edge?
+    CMP #&E2                            ; the view runs off an edge of the map?
     BCS clip_sprite_x_wrapped
     CMP clip_position                   ; starts left of the view?
     BCS clip_sprite_left
-    ADC #&1C                            ; the view's last column but 3
+    ADC #SCREEN_COLUMNS - CHARS_PER_CELL ; the view's last column but 3
     CMP clip_position                   ; ends right of the view?
     BCC clip_sprite_right
 .clip_sprite_x_screen
     TXA                                 ; wholly in view
     SEC
     SBC view_x
-    ASL A
+    ASL A                               ; * CHAR_BYTES
     ASL A
     ASL A
     ADC view_screen
@@ -1818,8 +1844,9 @@ NEXT
     PLA
     RTS
 
-; The same for rows, from character y = Y and view_y: sets sprite_skip_y,
-; sprite_rows and the high byte of sprite_screen.
+; The same for rows, from character y = Y and view_y.
+; Out: sprite_skip_y, sprite_rows and sprite_screen_high (added to it); or
+; returns from draw_sprite.
 .clip_sprite_y
     STY clip_position
     LDA view_y
@@ -1829,29 +1856,29 @@ NEXT
 .clip_sprite_left
     SBC clip_position
 .clip_sprite_left_cells
-    CMP #&04                            ; wholly out of view
+    CMP #CHARS_PER_CELL                 ; wholly out of view
     BCS clip_sprite_out_of_view
     STA sprite_skip_x                   ; the columns cut off
-    EOR #&03
+    EOR #CHARS_PER_CELL - 1
     STA sprite_columns
     LDA view_screen
     STA sprite_screen
     RTS
 .clip_sprite_right
-    ADC #&03
+    ADC #CHARS_PER_CELL - 1             ; the view's last column
     CMP clip_position
     BCC clip_sprite_out_of_view
     SBC clip_position
     STA sprite_columns
     BCS clip_sprite_x_screen
 .clip_sprite_x_wrapped
-    CMP #&F1
+    CMP #&F1                            ; hanging off the left edge?
     BCS clip_sprite_x_far_left
     CMP clip_position
     BCS clip_sprite_left
     BCC clip_sprite_x_screen
 .clip_sprite_x_far_left
-    ADC #&1B
+    ADC #SCREEN_COLUMNS - CHARS_PER_CELL - 1 ; (the carry's set)
     CMP clip_position
     BCC clip_sprite_right
     BCS clip_sprite_x_screen
@@ -1859,7 +1886,7 @@ NEXT
     LDA view_y
     CMP clip_position
     BCS clip_sprite_top
-    ADC #&1C
+    ADC #SCREEN_ROWS - CHARS_PER_CELL
     CMP clip_position
     BCC clip_sprite_bottom
 .clip_sprite_y_screen
@@ -1870,23 +1897,23 @@ NEXT
     ADC view_screen_high
     ADC sprite_screen_high
 .clip_sprite_y_wrap
-    AND #&1F
+    AND #HI(SCREEN_SIZE) - 1
     ORA #HI(SCREEN)
     STA sprite_screen_high
     RTS
 .clip_sprite_top
     SBC clip_position
-    CMP #&04
+    CMP #CHARS_PER_CELL
     BCS clip_sprite_out_of_view
     STA sprite_skip_y
-    EOR #&03
+    EOR #CHARS_PER_CELL - 1
     STA sprite_rows
     LDA view_screen_high
     ADC sprite_screen_high
     STA sprite_screen_high
     BNE clip_sprite_y_wrap
 .clip_sprite_bottom
-    ADC #&03
+    ADC #CHARS_PER_CELL - 1
     CMP clip_position
     BCS clip_sprite_bottom_cells
     JMP clip_sprite_out_of_view
@@ -1901,15 +1928,16 @@ NEXT
     BCS clip_sprite_top
     BCC clip_sprite_y_screen
 .clip_sprite_y_far_up
-    ADC #&1B
+    ADC #SCREEN_ROWS - CHARS_PER_CELL - 1 ; (the carry's set)
     CMP clip_position
     BCC clip_sprite_bottom
     BCS clip_sprite_y_screen
 
-; CRTC register 1, characters displayed per row, to 0: the display goes blank.
+; Turn the display off: CRTC register 1, characters displayed per row, to 0.
+; Out: A = 0, X = CRTC_HORIZONTAL_DISPLAYED.
 .blank_display
-    LDX #&01
-    LDA #&00
+    LDX #CRTC_HORIZONTAL_DISPLAYED
+    LDA #0
 
 ; CRTC register X = A.
 .set_crtc_register
@@ -3793,7 +3821,7 @@ NEXT
 
 ; Into a pipe: it carries the player on with this move.
 .move_into_pipe
-    JSR return_0AD0                     ; (just an RTS)
+    JSR draw_player_at_done             ; (just an RTS)
     LDA facing                          ; carried on by this move
     CLC
     ADC #ACTION_LEFT
