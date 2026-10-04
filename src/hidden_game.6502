@@ -413,36 +413,37 @@ SECTION low_code, org=&0400
 .low_code
 
 ; What the map view (the M key) draws for each cell type: 4 pixels by 4 lines,
-; a byte a line. Then the player, facing each way.
+; a byte (four MODE 5 pixels) a line. Then the player, facing each way.
 .map_view_patterns
-    EQUB &00, &00, &00, &00
-    EQUB &10, &30, &70, &F0
+    EQUB &00, &00, &00, &00             ; CELL_FLOOR
+    EQUB &10, &30, &70, &F0             ; 1-4: curved walls
     EQUB &80, &C0, &E0, &F0
     EQUB &F0, &70, &30, &10
     EQUB &F0, &E0, &C0, &80
-    EQUB &F0, &F0, &F0, &F0
-    EQUB &06, &69, &69, &06
-    EQUB &FF, &FF, &66, &66
-    EQUB &1F, &2F, &4F, &8F
-    EQUB &FF, &60, &60, &FF
-    EQUB &60, &90, &90, &60
-    EQUB &06, &0F, &0F, &06
-    EQUB &00, &0F, &0F, &00
-    EQUB &06, &06, &06, &06
-    EQUB &F0, &96, &96, &F0
-    EQUB &00, &00, &00, &00
+    EQUB &F0, &F0, &F0, &F0             ; 5: a wall
+    EQUB &06, &69, &69, &06             ; CELL_CRATE
+    EQUB &FF, &FF, &66, &66             ; CELL_SULPHUR
+    EQUB &1F, &2F, &4F, &8F             ; CELL_WALL
+    EQUB &FF, &60, &60, &FF             ; 9: a wall
+    EQUB &60, &90, &90, &60             ; CELL_LAVA
+    EQUB &06, &0F, &0F, &06             ; CELL_JUNCTION
+    EQUB &00, &0F, &0F, &00             ; CELL_PIPE_ACROSS
+    EQUB &06, &06, &06, &06             ; CELL_PIPE_DOWN
+    EQUB &F0, &96, &96, &F0             ; CELL_FIRE
+    EQUB &00, &00, &00, &00             ; CELL_OBJECT: not shown
 .map_view_player
-    EQUB &C3, &69, &69, &C3
+    EQUB &C3, &69, &69, &C3             ; DIR_LEFT, and so on
     EQUB &3C, &69, &69, &3C
     EQUB &96, &F0, &69, &0F
     EQUB &0F, &69, &F0, &96
 
-; Clear the game screen, &6000-&7FFF, to black, or with fill_screen set to the
-; pattern of the floor's top left character cell; reset the hardware scroll
-; and set up the CRTC for the game's 32 x 32 character screen.
+; Clear the game screen to black, or with fill_screen set to the floor
+; picture's first character cell over and over; reset the hardware scroll and
+; set up the CRTC for the game's screen. The display is off meanwhile.
+; Out: screen_start and view_screen at the top of the screen.
 ; Clobbers: A, X, Y, work0, work1.
 .clear_screen
-    JSR blank_display                   ; turn the display off while the screen is redrawn
+    JSR blank_display
     TAY                                 ; A = 0
     STA work0
     STA view_screen
@@ -450,28 +451,30 @@ SECTION low_code, org=&0400
     LDA #HI(SCREEN)
     STA work1
     STA view_screen_high
-    LDA #HI(SCREEN) DIV 8
+    LDA #HI(SCREEN) DIV 8               ; the CRTC counts in 8 bytes
     STA screen_start_high
-    LDX #&07
+    LDX #CHAR_BYTES - 1
 .clear_screen_loop
     LDA fill_screen                     ; black...
     BEQ clear_screen_store
     INX
     TXA                                 ; ...or the floor's pattern
-    AND #&07
+    AND #CHAR_BYTES - 1
     TAX
-    LDA io_tiles, X
+    LDA tile(CELL_FLOOR), X
 .clear_screen_store
     STA (work0), Y
     INY
     BNE clear_screen_loop
     INC work1
-    BPL clear_screen_loop
+    BPL clear_screen_loop               ; to SCREEN_END
 
-; Program CRTC registers 1-9 from crtc_values: 1 last, so the display comes
-; back on (blank_display turns it off with R1 = 0) once the rest is set.
+; Program CRTC registers 1-9 from crtc_values, then the start address. R1 is
+; last, so the display comes back on (blank_display turns it off with R1 = 0)
+; once the rest is set.
+; Clobbers: A, X.
 .setup_crtc
-    LDX #&09
+    LDX #crtc_values_end - crtc_values
 .setup_crtc_loop
     LDA crtc_values - 1, X              ; register X
     JSR set_crtc_register
@@ -479,19 +482,19 @@ SECTION low_code, org=&0400
     BNE setup_crtc_loop
     JMP set_screen_start
 
-; Find the picture for map cell (cell_x, cell_y): off the map, the second
-; lava picture; an object's icon (with picture_size 1, to be drawn on the
-; floor); or the cell's own picture.
-; Returns: picture, picture_size. Clobbers: A, X, Y, temp.
+; Find the picture for map cell (cell_x, cell_y): off the map, lava's second
+; picture; an object's icon, to be drawn on the floor; or the cell's own.
+; Out: picture; picture_size negative for a whole picture, 1 for an icon.
+; Clobbers: A, X, Y, temp, work0, work1, map_pointer, cell_low_nibble.
 .cell_picture
-    LDA #&80
+    LDA #&80                            ; a whole picture
     STA picture_size
     LDX cell_x
     LDY cell_y
     JSR cell_at_checked                 ; carry set: off the map
     BCC cell_picture_on_map
-    LDX #LO(io_alternates + 3 * 128)    ; outside the map is lava
-    LDY #HI(io_alternates + 3 * 128)
+    LDX #LO(io_alternates + 3 * PICTURE_BYTES) ; outside the map is lava (its second picture)
+    LDY #HI(io_alternates + 3 * PICTURE_BYTES)
     BCS cell_picture_found
 .cell_picture_on_map
     LDX cell_x
@@ -502,9 +505,13 @@ SECTION low_code, org=&0400
     STY picture_high
     RTS
 
-; Find the picture for a thing to draw at map cell (X, Y): A is a cell type
-; (0-15), &10 + an object icon, or &20 + a player picture.
-; Returns: X, Y = the picture's address. Clobbers: A, temp.
+; Find the picture for a thing at map cell (X, Y).
+; In: A = a cell type (0-15), &10 + an object's icon, or &20 + a player
+; picture (which nothing asks for).
+; Out: X, Y = the picture's address. For a cell type, also Z set for a whole
+; picture, clear for an icon to draw on the floor (with picture and
+; picture_size 1 set for it).
+; Clobbers: A, temp, work0, work1.
 .thing_picture
     CMP #&20
     BCS player_picture
@@ -518,16 +525,19 @@ SECTION low_code, org=&0400
     JSR object_picture_at               ; the object here's icon
     STX picture
     STY picture_high
-    CPY #HI(io_no_object_picture)       ; none here?
+    CPY #HI(io_no_object_picture)       ; none here: a whole picture
     BEQ cell_type_picture_done
-    LDA #&01                            ; draw the icon on the floor
+    LDA #1                              ; draw the icon on the floor
     STA picture_size
 .cell_type_picture_done
     RTS
 
-; The picture for cell type A at (X, Y). Four cell types have a second
-; picture, used on the squares alternate_cells picks: alternate_offsets has
-; the difference to add for them, on even and odd squares of a checkerboard.
+; The picture for cell type A at map cell (X, Y). ALTERNATES cell types have a
+; second picture, used on the squares alternate_cells picks: alternate_offsets
+; has the difference to add for them, on even and odd squares of a
+; checkerboard.
+; Out: X, Y = the picture's address; A = 0.
+; Clobbers: temp.
 .tile_picture
     PHA
     STY temp
@@ -538,8 +548,8 @@ SECTION low_code, org=&0400
     PLA
     PHA
     PHP
-    LDX #&0A
-    LDY #&04
+    LDX #2 + 2 * ALTERNATES             ; X = 2 + 2 * the type's place, or 0
+    LDY #ALTERNATES
 .tile_picture_find
     DEX
     DEX
@@ -552,7 +562,7 @@ SECTION low_code, org=&0400
     TXA
     BEQ tile_picture_add
     BCC tile_picture_offset
-    ADC #&07                            ; odd squares' offsets are 8 bytes on
+    ADC #alternate_offsets_odd - alternate_offsets_even - 1 ; (the carry's set)
 .tile_picture_offset
     TAX
 .tile_picture_add
@@ -566,13 +576,13 @@ SECTION low_code, org=&0400
     ADC tile_addresses + 1, Y
     TAY
     LDX temp
-    LDA #&00
+    LDA #0
     RTS
 
-; Player picture A AND 3: io_player + 128 times that.
+; Player picture A AND 3: player_facing(A AND 3).
 .player_picture
-    AND #&03
-    LSR A
+    AND #3
+    LSR A                               ; * PICTURE_BYTES
     ROR A
     TAX
     LDY #HI(io_player)
@@ -581,11 +591,11 @@ SECTION low_code, org=&0400
 .player_picture_done
     RTS
 
-; Object icon A AND 15: io_object_icons + 32 times that.
+; Object icon A AND 15: icon(A AND 15).
 .icon_picture
     LDY #HI(io_object_icons)
     AND #&0F
-    LSR A
+    LSR A                               ; * ICON_BYTES
     ROR A
     ROR A
     ROR A
@@ -598,21 +608,22 @@ SECTION low_code, org=&0400
 ; A character cell of floor round an icon, which only covers the middle
 ; of its map cell.
 .draw_row_floor_cell
-    LDA io_tiles, Y
+    LDA tile(CELL_FLOOR), Y
     STA (screen), Y
     DEY
     BPL draw_row_floor_cell
     BMI draw_row_part_next
 
-; Draw one character row of the picture at picture across X character cells,
-; from screen. X negative skips the picture's first two columns and draws
-; ~X (the view's left edge cuts the first cell in half). view_sub_y is the
-; row within the picture; draw_step counts the columns to the picture's
-; right edge, for the floor round an icon.
+; Draw one character row of a map cell's picture across X character cells
+; from screen: the cell's whole width, or with X = ~2 its last two columns
+; (the view's left edge cuts the first cell in half). An icon is drawn with
+; the floor round it.
+; In: picture, picture_size (as cell_picture leaves them); view_sub_y = the
+; row within the map cell; draw_step = the columns to the cell's right edge.
 ; Clobbers: A, X, Y, picture, screen, draw_step, picture_stride.
 .draw_row_part
-    LDA #&20
-    LDY picture_size                    ; a 4x4 picture's columns are 32 bytes apart...
+    LDA #PICTURE_COLUMN_BYTES
+    LDY picture_size                    ; a whole picture's columns are 32 bytes apart...
     BMI draw_row_part_stride
     LSR A                               ; ...an icon's 16
 .draw_row_part_stride
@@ -621,7 +632,7 @@ SECTION low_code, org=&0400
     BPL draw_row_part_first_row
     EOR #&FF                            ; cut off: draw ~X cells
     TAX
-    LDA #&40                            ; past the first two columns
+    LDA #2 * PICTURE_COLUMN_BYTES       ; past the first two columns
     INY
     BMI draw_row_part_skip
     LSR A
@@ -631,9 +642,9 @@ SECTION low_code, org=&0400
     LDA view_sub_y                      ; the row within the picture
     INY
     BMI draw_row_part_offset
-    LSR A
+    LSR A                               ; (an icon's rows are 1 and 2: 0 and 1)
 .draw_row_part_offset
-    ASL A
+    ASL A                               ; * CHAR_BYTES
     ASL A
     ASL A
     ADC picture
@@ -641,13 +652,13 @@ SECTION low_code, org=&0400
     BCC draw_row_part_loop
     INC picture_high
 .draw_row_part_loop
-    LDY #&07                            ; beyond an icon's edge?
+    LDY #CHAR_BYTES - 1                 ; beside an icon?
     LDA draw_step
     JSR in_icon_border
     BEQ draw_row_floor_cell
-    LDA view_sub_y                      ; or below it?
+    LDA view_sub_y                      ; or above or below it?
     CLC
-    ADC #&01
+    ADC #1
     JSR in_icon_border
     BEQ draw_row_floor_cell
 .draw_row_part_copy
@@ -668,61 +679,65 @@ SECTION low_code, org=&0400
     BNE draw_row_part_loop
     RTS
 
-; Move screen one character cell right, wrapping round the 8K screen.
+; Move screen one character cell right, wrapping round the screen.
+; Clobbers: A.
 .next_screen_cell
     LDA screen
     CLC
-    ADC #&08
+    ADC #CHAR_BYTES
     STA screen
     BCC next_screen_cell_done
     LDA screen_high
 
-; Set screen's high byte to A plus the carry, wrapped into &60-&7F.
+; Set screen's high byte to A plus the carry, wrapped round the screen.
 .wrap_screen_high_carry
-    ADC #&00
+    ADC #0
 .wrap_screen_high
-    AND #&1F
+    AND #HI(SCREEN_SIZE) - 1
     ORA #HI(SCREEN)
     STA screen_high
 .next_screen_cell_done
     RTS
 
-; Draw a whole character row across the view: row view_sub_y of map cells
-; cell_x to cell_x + 8, at screen. The view's left and right edges cut the
-; first and last cells in half (view_sub_x is always 2 when moving up or
-; down, the only time a row is drawn).
-; Clobbers: A, X, Y, cell_x, strip_cells, picture, screen, temp.
+; Draw a character row across the view: row view_sub_y of map cells cell_x
+; to cell_x + VIEW_CELLS, at screen. The view's left and right edges cut the
+; first and last cells in half (the view is always half a cell in across
+; when a row is drawn: walking up or down, or redrawing the view).
+; In: cell_x, cell_y, view_sub_y, screen; strip_cells = 0.
+; Clobbers: A, X, Y, cell_x, strip_cells, screen, the picture variables,
+; draw_step, temp, work0, work1, map_pointer, cell_low_nibble.
 .draw_row
     JSR cell_picture
-    LDY #&04
-    LDX #&04
+    LDY #CHARS_PER_CELL                 ; columns to the cell's right edge
+    LDX #CHARS_PER_CELL                 ; columns to draw
     LDA strip_cells
     BNE draw_row_not_first
-    LDX #&FD
-    LDY #&02                            ; the first cell: its right half
+    LDX #&FF EOR 2                      ; the first cell: its right half
+    LDY #2
     BNE draw_row_cell
 .draw_row_not_first
-    CMP #&08
+    CMP #VIEW_CELLS
     BNE draw_row_cell
-    LDX #&02                            ; the last cell: its left half
+    LDX #2                              ; the last cell: its left half
 .draw_row_cell
     STY draw_step
     JSR draw_row_part
     INC strip_cells
     INC cell_x
     LDA strip_cells
-    CMP #&09
+    CMP #VIEW_CELLS + 1
     BNE draw_row
     RTS
 
 ; Point map_pointer at the byte holding map cell (cell_x, cell_y): the map is
-; stored a column at a time, 32 bytes a column, two cells a byte.
-; Returns: map_pointer, cell_low_nibble (cell_y odd). Clobbers: A, Y.
+; stored a column at a time, MAP_COLUMN_BYTES a column, two cells a byte.
+; Out: map_pointer; cell_low_nibble = 1 for an odd cell_y, in the low nibble.
+; Clobbers: A, Y.
 .map_address
     LDA cell_x
-    LDY #&00
+    LDY #0
     STY map_pointer_high
-    LDY #&05
+    LDY #5                              ; * MAP_COLUMN_BYTES
 .map_address_times_32
     ASL A
     ROL map_pointer_high
@@ -738,46 +753,50 @@ SECTION low_code, org=&0400
     INC map_pointer_high
 .map_address_nibble
     LDA cell_y
-    AND #&01
+    AND #1
     STA cell_low_nibble
     LDA map_pointer_high
     CLC
     ADC #HI(map)                        ; + map
     STA map_pointer_high
     RTS
+ASSERT MAP_COLUMN_BYTES = 1 << 5 AND LO(map) = 0
 
 ; As draw_row_floor_cell, for a column.
 .draw_column_floor_cell
-    LDA io_tiles, Y
+    LDA tile(CELL_FLOOR), Y
     STA (screen), Y
     DEY
     BPL draw_column_floor_cell
     BMI draw_column_part_next
 
-; Draw one character column of the picture at picture down X character cells,
-; from screen; as draw_row_part, with view_sub_x the column within the
-; picture.
+; Draw one character column of a map cell's picture down X character cells
+; from screen: as draw_row_part, with X = ~2 for the cell's last two rows (cut
+; by the view's top edge).
+; In: picture, picture_size; view_sub_x = the column within the map cell;
+; draw_step = the rows to the cell's bottom edge.
+; Clobbers: A, X, Y, picture, screen, draw_step.
 .draw_column_part
     LDY picture_size
     TXA
     BPL draw_column_part_first_column
     EOR #&FF
     TAX
-    LDA #&10                            ; past the first two rows
+    LDA #2 * CHAR_BYTES                 ; past the first two rows
     JSR skip_picture_columns
 .draw_column_part_first_column
     LDA view_sub_x                      ; the column within the picture
     INY
     BMI draw_column_part_offset
-    LSR A
+    LSR A                               ; (an icon's columns are 1 and 2: 0 and 1)
 .draw_column_part_offset
-    LSR A
+    LSR A                               ; * PICTURE_COLUMN_BYTES
     ROR A
     ROR A
     ROR A
     INY
     BMI draw_column_part_add
-    ROR A
+    ROR A                               ; an icon's: * ICON_COLUMN_BYTES
 .draw_column_part_add
     CLC
     ADC picture
@@ -785,13 +804,13 @@ SECTION low_code, org=&0400
     BCC draw_column_part_loop
     INC picture_high
 .draw_column_part_loop
-    LDY #&07
+    LDY #CHAR_BYTES - 1                 ; above or below an icon?
     LDA draw_step
     JSR in_icon_border
     BEQ draw_column_floor_cell
-    LDA view_sub_x
+    LDA view_sub_x                      ; or beside it?
     CLC
-    ADC #&01
+    ADC #1
     JSR in_icon_border
     BEQ draw_column_floor_cell
 .draw_column_part_copy
@@ -801,7 +820,7 @@ SECTION low_code, org=&0400
     BPL draw_column_part_copy
     LDA picture                         ; on to the next row
     CLC
-    ADC #&08
+    ADC #CHAR_BYTES
     STA picture
     BCC draw_column_part_next
     INC picture_high
@@ -816,34 +835,36 @@ SECTION low_code, org=&0400
     BNE draw_column_part_loop
     RTS
 
-; Draw a whole character column down the view: column view_sub_x of map cells
-; cell_y to cell_y + 8, at screen.
+; Draw a character column down the view: column view_sub_x of map cells
+; cell_y to cell_y + VIEW_CELLS, at screen, the first and last cut in half.
+; In: cell_x, cell_y, view_sub_x, screen; strip_cells_down = 0.
+; Clobbers: as draw_row, with cell_y and strip_cells_down.
 .draw_column
     JSR cell_picture
-    LDY #&04
-    LDX #&04
+    LDY #CHARS_PER_CELL                 ; rows to the cell's bottom edge
+    LDX #CHARS_PER_CELL                 ; rows to draw
     LDA strip_cells_down
     BNE draw_column_not_first
-    LDX #&FD
-    LDY #&02
+    LDX #&FF EOR 2                      ; the first cell: its bottom half
+    LDY #2
     BNE draw_column_cell
 .draw_column_not_first
-    CMP #&08
+    CMP #VIEW_CELLS
     BNE draw_column_cell
-    LDX #&02
+    LDX #2                              ; the last cell: its top half
 .draw_column_cell
     STY draw_step
     JSR draw_column_part
     INC strip_cells_down
     INC cell_y
     LDA strip_cells_down
-    CMP #&09
+    CMP #VIEW_CELLS + 1
     BNE draw_column
     RTS
 
-; Scroll the view one character cell, by moving the CRTC's start address and
-; the view's top left on the screen, wrapping round the 8K screen.
-; Clobbers: A.
+; Scroll the view a character cell right, left, up or down: move the CRTC's
+; start address and the view's top left on the screen, wrapping round.
+; Clobbers: A, X.
 .scroll_right
     INC view_x                          ; the view moves right
     INC screen_start                    ; the CRTC starts a character on
@@ -852,7 +873,7 @@ SECTION low_code, org=&0400
 .scroll_right_screen
     LDA view_screen                     ; and so does the view's top left
     CLC
-    ADC #&08
+    ADC #CHAR_BYTES
     STA view_screen
     BCC scroll_done
     INC view_screen_high
@@ -872,16 +893,16 @@ SECTION low_code, org=&0400
 .scroll_left_screen
     LDA view_screen
     SEC
-    SBC #&08
+    SBC #CHAR_BYTES
     STA view_screen
     BCS scroll_done
     DEC view_screen_high
     LDA view_screen_high
-    CMP #HI(SCREEN) - 1
+    CMP #HI(SCREEN) - 1                 ; off the start: wrap round
     BNE scroll_done
-    LDA #HI(SCREEN + &1FFF)
+    LDA #HI(SCREEN_END - 1)
     STA view_screen_high
-    LDA #HI(SCREEN + &1FFF) DIV 8
+    LDA #HI(SCREEN_END - 1) DIV 8
     STA screen_start_high
 .scroll_done
     JMP set_screen_start
@@ -889,17 +910,17 @@ SECTION low_code, org=&0400
     DEC view_y                          ; the view moves up
     DEC view_screen_high
     SEC
-    LDA screen_start                    ; a character row is 32 cells
-    SBC #&20
+    LDA screen_start                    ; a character row is 32 of the CRTC's 8 bytes
+    SBC #ROW_BYTES / 8
     STA screen_start
     BCS scroll_up_done
     DEC screen_start_high
     LDA screen_start_high
-    CMP #HI(SCREEN) DIV 8 - 1
+    CMP #HI(SCREEN) DIV 8 - 1           ; off the start: wrap round
     BNE scroll_up_done
-    LDA #HI(SCREEN + &1FFF)
+    LDA #HI(SCREEN_END - 1)
     STA view_screen_high
-    LDA #HI(SCREEN + &1FFF) DIV 8
+    LDA #HI(SCREEN_END - 1) DIV 8
     STA screen_start_high
 .scroll_up_done
     JMP set_screen_start
@@ -908,12 +929,12 @@ SECTION low_code, org=&0400
     INC view_screen_high
     CLC
     LDA screen_start
-    ADC #&20
+    ADC #ROW_BYTES / 8
     STA screen_start
     BCC scroll_up_done
     INC screen_start_high
     LDA screen_start_high
-    CMP #HI(SCREEN + &2000) DIV 8
+    CMP #HI(SCREEN_END) DIV 8           ; off the end: wrap round
     BNE scroll_up_done
     LDA #HI(SCREEN)
     STA view_screen_high
@@ -921,37 +942,40 @@ SECTION low_code, org=&0400
     STA screen_start_high
     BNE scroll_up_done
 
-; Walk the player a cell down: scroll the view down a character row at a
-; time, drawing each new bottom row and moving everything else on screen.
-; Clobbers: A, X, Y and most of the drawing variables.
+; Walk the player a cell down: scroll the view a character row at a time,
+; four times, drawing each new bottom row of map cells. The player, drawn on
+; the screen, would scroll with it, so each step rubs out their trail and
+; draws them back in the middle; and things that move by themselves move a
+; character a step.
+; Clobbers: A, X, Y and the drawing variables.
 .walk_down
     JSR next_player_frame               ; the player's walking picture
-    LDA #&02                            ; the view's top is half way through a cell
+    LDA #2                              ; the new row is half way through a cell
     STA view_sub_y
-    LDX #&03
+    LDX #CHARS_PER_CELL - 1
     STX steps
 .walk_down_step
     JSR scroll_down
     JSR rub_out_above_player            ; rub out the trail behind the player
-    LDA view_screen_high
-    SEC
-    SBC #&01
+    LDA view_screen_high                ; the view's bottom row: the screen being 32
+    SEC                                 ; rows round, the one above its top
+    SBC #1
     JSR wrap_screen_high
-    LDA view_screen                     ; the new row is just above the top, in memory
+    LDA view_screen
     STA screen
-    LDA #&00
+    LDA #0
     STA strip_cells
     LDA view_cell_x
-    STA cell_x                          ; the cells 8 below the top
+    STA cell_x                          ; the cells VIEW_CELLS below the top
     LDA view_cell_y
     CLC
-    ADC #&08
+    ADC #VIEW_CELLS
     STA cell_y
     JSR draw_row
     JSR move_things                     ; monsters and thrown objects
     INC view_sub_y                      ; the next row down...
     LDA view_sub_y
-    AND #&03
+    AND #CHARS_PER_CELL - 1
     STA view_sub_y
     BNE walk_down_next
     INC view_cell_y                     ; ...in the next cell
@@ -960,15 +984,15 @@ SECTION low_code, org=&0400
     BPL walk_down_step
     RTS
 
-; Walk a cell up.
+; Walk a cell up, drawing each new top row.
 .walk_up
     JSR next_player_frame
-    LDA #&01
+    LDA #1
     STA view_sub_y
-    LDX #&03
+    LDX #CHARS_PER_CELL - 1
     STX steps
 .walk_up_step
-    LDA #&00
+    LDA #0
     STA strip_cells
     LDA view_cell_x
     STA cell_x
@@ -982,18 +1006,18 @@ SECTION low_code, org=&0400
     STA screen_high
     JSR draw_row
     JSR move_things
-    LDA screen_high
-    CLC
-    ADC #&1F
+    LDA screen_high                     ; (to no purpose: screen_high is set
+    CLC                                 ; afresh before it's next used)
+    ADC #SCREEN_ROWS - 1
     BPL walk_up_wrapped
-    SBC #&1F
+    SBC #SCREEN_ROWS - 1
 .walk_up_wrapped
     STA screen_high
     DEC view_sub_y
     LDA view_sub_y
-    AND #&03
+    AND #CHARS_PER_CELL - 1
     STA view_sub_y
-    CMP #&03
+    CMP #CHARS_PER_CELL - 1
     BNE walk_up_next
     DEC view_cell_y
 .walk_up_next
@@ -1001,27 +1025,27 @@ SECTION low_code, org=&0400
     BPL walk_up_step
     RTS
 
-; Walk a cell right.
+; Walk a cell right, drawing each new right-hand column.
 .walk_right
     JSR next_player_frame
-    LDA #&02
+    LDA #2
     STA view_sub_x
-    LDX #&03
+    LDX #CHARS_PER_CELL - 1
     STX steps
 .walk_right_step
     LDA view_cell_x
     CLC
-    ADC #&08
+    ADC #VIEW_CELLS
     STA cell_x
     LDA view_cell_y
     STA cell_y
-    LDA #&00
+    LDA #0
     STA strip_cells_down
     JSR scroll_right
     JSR rub_out_left_of_player
-    LDA view_screen
+    LDA view_screen                     ; the view's last column
     CLC
-    ADC #&F8
+    ADC #(SCREEN_COLUMNS - 1) * CHAR_BYTES
     STA screen
     LDA view_screen_high
     JSR wrap_screen_high_carry
@@ -1029,7 +1053,7 @@ SECTION low_code, org=&0400
     JSR move_things
     INC view_sub_x
     LDA view_sub_x
-    AND #&03
+    AND #CHARS_PER_CELL - 1
     STA view_sub_x
     BNE walk_right_next
     INC view_cell_x
@@ -1038,15 +1062,15 @@ SECTION low_code, org=&0400
     BPL walk_right_step
     RTS
 
-; Walk a cell left.
+; Walk a cell left, drawing each new left-hand column.
 .walk_left
     JSR next_player_frame
-    LDA #&01
+    LDA #1
     STA view_sub_x
-    LDX #&03
+    LDX #CHARS_PER_CELL - 1
     STX steps
 .walk_left_step
-    LDA #&00
+    LDA #0
     STA strip_cells_down
     LDA view_cell_x
     STA cell_x
@@ -1062,9 +1086,9 @@ SECTION low_code, org=&0400
     JSR move_things
     DEC view_sub_x
     LDA view_sub_x
-    AND #&03
+    AND #CHARS_PER_CELL - 1
     STA view_sub_x
-    CMP #&03
+    CMP #CHARS_PER_CELL - 1
     BNE walk_left_next
     DEC view_cell_x
 .walk_left_next
@@ -1072,14 +1096,17 @@ SECTION low_code, org=&0400
     BPL walk_left_step
     RTS
 
-; The cell types with a second picture: lava, the thing to collect, and
-; two more. alternate_pictures has their second pictures, in the same order.
+; The cell types with a second picture; alternate_pictures has their second
+; pictures, in the same order. They're what the Level Designer calls the fatal
+; trap, the collectable, wall two and wall one, and alternate_cells has their
+; bits in the reverse order, wall one at the top.
 .alternate_cell_types
-    EQUB &0A, &07, &08, &05
+    EQUB CELL_LAVA, CELL_SULPHUR, CELL_WALL, 5
+ASSERT P% - alternate_cell_types = ALTERNATES
 
 ; Copied but never used.
 .low_code_unused
-    EQUB &00, &00, &00, &00, &00, &00
+    SKIP 6
 .low_code_end
 ENDSECTION
 
@@ -1184,15 +1211,15 @@ SECTION main_code, org=&0900
     RTS
 
 ; The second pictures of alternate_cell_types, as picture numbers counted from
-; io_tiles. The CRTC values overlap the last: setup_crtc reads from
-; crtc_values - 1 with X from 9 down to 1.
+; io_tiles (io_alternates has them in the order 5, 7, 8, A).
 .alternate_pictures
-    EQUB &1B, &19, &1A, &18                 ; A, 7, 8, 5: pictures 27, 25, 26, 24
+    EQUB FIRST_ALTERNATE + 3, FIRST_ALTERNATE + 1, FIRST_ALTERNATE + 2, FIRST_ALTERNATE
 
 ; CRTC registers 1-9: 32 characters across and 32 rows of 8 lines, the screen
 ; centred.
 .crtc_values
-    EQUB 32, 45, 36, 38, 0, 32, 34, 1, 7
+    EQUB SCREEN_COLUMNS, 45, 36, 38, 0, SCREEN_ROWS, 34, 1, 7
+.crtc_values_end
 
 ; The address of each cell type's picture.
 .tile_addresses

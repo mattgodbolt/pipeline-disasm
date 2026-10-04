@@ -73,6 +73,7 @@ CHAR_BYTES     = 8
 ROW_BYTES      = &100
 SCREEN_COLUMNS = ROW_BYTES / CHAR_BYTES
 SCREEN_ROWS    = SCREEN_SIZE / ROW_BYTES
+ASSERT SCREEN_END = &8000         ; loops end when the high byte goes negative
 
 ; Text goes through the OS, which still thinks the screen is MODE 5's: from
 ; &5800, rows of 320 bytes, characters 16 bytes (two of the game's character
@@ -115,6 +116,7 @@ FUNCTION icon(n) = io_object_icons + n * ICON_BYTES
 FUNCTION player_facing(direction) = io_player + direction * PICTURE_BYTES
 EXIT_ICON       = 15
 FIRST_ALTERNATE = (io_alternates - io_tiles) DIV PICTURE_BYTES
+ALTERNATES      = 4       ; cell types with a second picture
 
 ; ---------------------------------------------------------------------------
 ; Directions, as the player faces, monsters go and direction_dx and _dy step;
