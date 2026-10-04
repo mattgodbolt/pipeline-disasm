@@ -466,7 +466,8 @@ columns 13 (from its sixth line) to 31: a band through the tops of "esig" in
 
 - Searching every built file and the whole .ssd for runs of these bytes
   (10 or more) finds the whole &93 in LDATA and H.GRAPH, both at offset
-  &206D, and nothing longer than 18 elsewhere. `cmp -l build/files/H.GAME
+  &206D, and nothing longer than 18 in any other file (24 elsewhere in
+  LDATA, the picture repeating itself). `cmp -l build/files/H.GAME
   build/files/LDATA | tail -1` says the last difference is byte 8301 (offset
   &206C); they agree from &206D to H.GAME's end.
 - `cmp -l build/files/H.GRAPH build/files/H.GAME | tail -1`: byte 8236, so
