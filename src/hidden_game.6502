@@ -5837,8 +5837,9 @@ ASSERT P% - action_table = 2 * (ACTION_STOP + 1)
     EQUB ACTION_RIGHT, ACTION_LEFT, ACTION_DOWN, ACTION_UP
 
 ; Each trigger's place, x and y, copied in by setup_level over what was here:
-; bytes left in the file, not code. Their arguments (trigger_args) follow,
-; past the end of what the loader copies, up to IO.
+; bytes left in the file, not code (the start of a strip of LDATA's picture:
+; see leftover). Their arguments (trigger_args) follow, past the end of what
+; the loader copies, up to IO.
 .trigger_places
     EQUB &0C, &0C, &19, &F0, &C0, &80, &33, &77
     EQUB &FF, &FF, &FF, &00, &00, &FF, &FF, &FF
@@ -5852,7 +5853,15 @@ ASSERT P% - action_table = 2 * (ACTION_STOP + 1)
 ASSERT main_code_end = trigger_args AND trigger_args + 4 * PUZZLES = io_start
 ENDSECTION
 
-; Past the end of what the loader copies: leftovers, never used.
+; Past the end of what the loader copies: leftovers, never used. From
+; trigger_places on, the file's last &93 bytes (file offsets &206D-&20FF) are
+; LDATA's bytes at the same offsets: a strip of the Level Designer's title
+; picture, character row 18, columns 13-31 of its 64, through the tops of
+; "esig" in "Designer". The hidden files went onto the disc a whole number of
+; sectors each from one buffer, which had held LDATA: H.GAME's own bytes end
+; at offset &206C, and the rest of its last sector is what LDATA left there.
+; H.GRAPH, next, ends with H.GAME's last bytes and the same strip, and
+; H.LEVDES, last, with H.GRAPH's.
 .leftover
     EQUB &88, &88, &88, &00, &00, &FF, &FF, &FF, &00, &00, &00, &00, &00, &FF, &FF, &FF
     EQUB &00, &00, &10, &F0, &70, &30, &98, &30, &70, &F0, &F0, &F0, &F0, &F0, &F0, &F0

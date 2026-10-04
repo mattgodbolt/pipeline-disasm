@@ -453,3 +453,33 @@ memory round each flame at &FF): a flame at (&FF, &96) changed view cells
 rows 24-27 columns 29-31 and rows 25-28 column 0. It happens in most game
 overs there (about 3 of the last ring's 100 flames) but is lost among the
 flames. Rows can't do it: flames go down only to view_y + 28.
+
+## 2026-10-03 23:43 — H.GAME's leftover is a strip of LDATA's picture
+
+Correcting the first section ("it looks like the tail of some graphics"):
+H.GAME's last &93 bytes, &506D-&50FF (file offsets &206D-&20FF: the 64
+bytes the loader copies as trigger_places, then the uncopied &50AD-&50FF),
+are LDATA's bytes at the same file offsets. LDATA is screen memory from
+&3400 in the Level Designer's 64-column MODE 1, so they're character row 18,
+columns 13 (from its sixth line) to 31: a band through the tops of "esig" in
+"Designer", continuous with the picture round it.
+
+- Searching every built file and the whole .ssd for runs of these bytes
+  (10 or more) finds the whole &93 in LDATA and H.GRAPH, both at offset
+  &206D, and nothing longer than 18 elsewhere. `cmp -l build/files/H.GAME
+  build/files/LDATA | tail -1` says the last difference is byte 8301 (offset
+  &206C); they agree from &206D to H.GAME's end.
+- `cmp -l build/files/H.GRAPH build/files/H.GAME | tail -1`: byte 8236, so
+  H.GRAPH's last &D4 bytes (its leftover, &3ADC-&3BAF, from offset &202C)
+  are H.GAME's at the same offsets: the end of the game's code
+  (error_handler_done's last bytes, trigger_actions, action_table,
+  reverse_moves; &232C-&236C as it runs) and then the same strip of LDATA.
+  docs/notes/levdes.md already has H.LEVDES's last &E1 bytes as H.GRAPH's.
+- So the three hidden files went onto the disc, a whole number of sectors
+  each, from one buffer, which had held LDATA: H.GAME (own bytes to offset
+  &206C), then H.GRAPH (to &202B), then H.LEVDES (to &1E1E), each carrying
+  what the one before left in its last sector. The match is by file offset,
+  not address (LDATA loads at &3400, H.GAME at &3000, H.GRAPH at &1AB0).
+- Drawing it: `tools/beebscreen.py 1 build/files/LDATA OUT.png --columns 64
+  --offset 400 --palette 0,4,3,1` draws the picture; inverting LDATA's
+  &206D-&20FF first shows where the strip is.
