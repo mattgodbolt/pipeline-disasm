@@ -546,8 +546,9 @@ saved_rdchv = rdchv_filter + 1
     ORA work+1                  ; direction
     STA level_puzzle_effects+2, Y
 ; The OK item of an editing window: close it and return from the routine
-; that runs the window's menu, whose JSR jump_to_handler led here, dropping
-; the choice it pushed first if it did (menu_ok_drop_choice).
+; that runs the window's menu (the one whose JSR jump_to_handler led here),
+; which ends that editor. menu_ok_drop_choice is for the loops that push the
+; choice before that JSR: it drops the choice too.
 .menu_ok_drop_choice
     PLA
 .menu_ok
@@ -1050,9 +1051,9 @@ saved_rdchv = rdchv_filter + 1
 ; The editor proper, after the title: a blank level, then commands for ever.
 ; Each time round, get_key moves the cursor and plots until another key
 ; comes; hex_key handles that key if it's 0-9, A-F or cursor up or down (all
-; choosing the brush), and do_command if it's a function key. Errors come back to main_reset_input, which puts
-; rdchv_filter back; a function key pressed anywhere else comes back to
-; main_dispatch (check_function_key).
+; choosing the brush), and do_command if it's a function key. Errors come
+; back to main_reset_input, which puts rdchv_filter back; a function key
+; pressed anywhere else comes back to main_dispatch (check_function_key).
 .main
     JSR new_level
 .main_reset_input
@@ -1078,7 +1079,8 @@ saved_rdchv = rdchv_filter + 1
 
 ; In the main loop, 0-9 and A-F choose the brush, the block menu's item of
 ; that number, with a beep; and the cursor up and down keys open the block
-; menu, the key put back for it to move the bar.
+; menu, putting the key back in the keyboard buffer so that the menu's bar
+; moves at once.
 ; In: A = the key.
 ; Clobbers: A, X, Y, ptr, the low code's zero page.
 .hex_key
@@ -1226,8 +1228,9 @@ handler_address = jump_to_handler_jmp + 1
     BNE jump_to_handler
 
 ; Switch the simulator on or off. With C clear (the S key, in get_key) the
-; Simulate window opens or closes too, as get_key's kept window; with C set
-; (Help) the main loop's get_key sees to it.
+; Simulate window opens or closes too, as get_key's kept window, unless
+; get_key is keeping another; with C set (Help) the main loop's get_key sees
+; to it.
 ; Clobbers: A, X, Y, the low code's zero page.
 .switch_simulate
     LDA simulate_window
@@ -1621,8 +1624,8 @@ direction_menu = {DIRECTION_UP, DIRECTION_DOWN, DIRECTION_RIGHT,
     STA level_monsters+3, Y
     JMP show_monster_window
 
-; Choose a monster's pattern: one of four presets, or Special, four choices
-; of which way to turn made one by one.
+; Choose a monster's pattern: one of four presets, or Special, which asks
+; for its four choices of which way to turn one at a time.
 ; In: A = the current pattern.
 ; Out: A = the new one; Y = record.
 ; Clobbers: X, ptr, choices, the low code's zero page.
@@ -1683,7 +1686,8 @@ direction_menu = {DIRECTION_UP, DIRECTION_DOWN, DIRECTION_RIGHT,
 ; Out: A = the turn chosen.
 ; Clobbers: X, Y, ptr, the low code's zero page.
 .choose_relative_direction
-    EOR #1                      ; the menu's order: turn to item and back
+    EOR #1                      ; the menu swaps each pair of turns, so EOR 1
+                                ; turns a turn into its item and back
     TAY
     LDA #W_RELATIVE_DIRECTION
     JSR choose_from_window_at
@@ -2861,8 +2865,9 @@ sprites_menu = {ALTERNATE_NONE, ALTERNATE_ALL, ALTERNATE_ODD, ALTERNATE_EVEN}
     RTS
 
 ; Turn on and turn off puzzle: +0, +1 and +2 are puzzles A, B and C, asked
-; as 1-32 and kept as 0-31. "Single:" is ticked when they're all the same, and choosing it
-; makes them so (B and C copy A); choosing it again does nothing.
+; as 1-32 and kept as 0-31. "Single:" is ticked when they're all the same,
+; and choosing it makes them so (B and C copy A); choosing it again does
+; nothing.
 .effect_turn_puzzle
     LDA #0
 .effect_turn_puzzle_loop
@@ -3535,8 +3540,8 @@ line2_tab = os_tab(MESSAGE_LEFT, MESSAGE_LINE_2)
     LSR A
     RTS
 
-; Pixel art for the font and the map's blocks, a character a pixel as
-; mode1_byte() takes them.
+; Pixel art for the font and the map's blocks: a character for each pixel,
+; as mode1_byte() (levdes.6502inc) takes them.
 ; A glyph: eight rows of eight pixels, kept as the left four pixels of each
 ; row and then the right four, as they go on the screen.
 MACRO GLYPH r0, r1, r2, r3, r4, r5, r6, r7
