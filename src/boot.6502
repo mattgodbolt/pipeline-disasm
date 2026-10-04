@@ -8,9 +8,17 @@
 ;   be used to stop the game and look at it.
 ; - ?&224=?(&24+!&FFB7): &FFB7 holds the address of the MOS's table of
 ;   default vector contents, and &24 is NETV's offset in it (as in page 2),
-;   so this puts back the low byte of NETV. Nothing on the disc touches NETV;
-;   presumably it undoes something a ROM or earlier program installed. MENU
-;   goes further, restoring every vector but BRKV the same way.
+;   so this puts back the low byte of NETV. That byte is all a ROM changes
+;   to claim NETV through the extended vectors (making it &FF36, where MOS
+;   1.20's default is &FFA6), and Econet's NFS does that at every reset, so
+;   this disconnects the NFS; nothing on the disc touches NETV. Presumably
+;   it's because OSWORD 0 calls NETV after every line it reads, and the
+;   game reads a file name that way while its code fills page &0D, where
+;   the extended vectors are kept. In jsbeeb with Econet fitted it changes
+;   nothing seen: the NFS ignores those calls, MENU restores every vector
+;   but BRKV anyway, and the game's own service calls, when it loads IO,
+;   have the NFS claim NETV again before that read, which then jumps through
+;   game code.
 ; - CHAIN"MENU" runs the BASIC menu.
 
 INCLUDE "osconst.6502inc"   ; CR: *EXEC lines end with one, as typed

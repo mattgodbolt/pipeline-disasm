@@ -270,3 +270,79 @@ scripts using its `startBeeb`). Corrections first, then what was confirmed.
   RETURN)".
 - !BOOT's NETV claim: the only &24 &02 byte pairs on the disc are in IO
   and LEVEL1's level data, not code.
+
+## 2026-10-03 23:37 — What !BOOT's NETV line undoes
+
+`?&224=?(&24+!&FFB7)` disconnects an Econet NFS from NETV. What that
+protects isn't settled: in jsbeeb it changes nothing that can be seen.
+
+### What claims NETV, and how
+
+- jsbeeb's B carries Acorn's DNFS ROM ("DFS,NET": NFS 3.60 and DFS 1.20,
+  in `roms/b/DFS-1.2.rom`). Its NFS switches itself off at service call 1
+  if it finds no Econet interface (&8105-&8117 test the ADLC at &FEA0 and
+  set bit 7 of its byte at &0DF0+ROM), which is why NETV has always read
+  &FFA6 here.
+- With an interface fitted, NFS's service call 2 handler (&82C5) claims
+  NETV at every reset: OSBYTE &A8 for the extended vector table (&0D9F),
+  then `LDY #&36 : STY &0224` (&8332) and NETV's extended entry at &0DD5 =
+  &9080, ROM &0E. Only the low byte is written: the default (&FFA6) and
+  the extended entry (&FF36) share the high byte, as every vector's do.
+  So !BOOT undoes exactly what the NFS does, one byte for one byte.
+- NFS 3.60's NETV handler (&9080) takes reasons 0-8 and returns at once
+  for any other (&908A `CMP #9 : BCS`).
+
+### What MOS 1.20 calls NETV for
+
+Every call goes through `JMP (&0224)` at &E57E:
+
+- &E0B6 OSWRCH (A=4), &E57C OSRDCH (A=6) and &E79D OSBYTE/OSWORD
+  (A=7/8), each only while the NFS has set its interception flag (&0260,
+  &025F, &025E: OSBYTE &D0, &CF, &CE), as in *REMOTE.
+- &E1A7 printer events, before UPTV with the same reason (called from the
+  VDU driver at &C596 and &C5A1, and from the 100 Hz interrupt at &DE3E
+  unless &02D2 says the printer is dormant). PIPELINE doesn't print.
+- &E96F OSWORD 0, with A = &0D, after every line ended with RETURN.
+
+### Tested in jsbeeb
+
+tools/beeb.mjs gained `--econet STATION` (fits jsbeeb's Econet with no
+file server, which wakes the NFS) and `log ADDR`; see its header.
+
+- At BASIC with Econet: `node tools/beeb.mjs --econet 1 --boot no 'type
+  PRINT ~!&224 AND &FFFF; prompt 5; out'` prints FF36; &0DD5 holds 80 90 0E.
+- Every NETV call from boot to the menu: `--econet 1 --boot no 'log E57E;
+  break shift; wait 33; out; hex 224 2'`. Eight calls, all A=&0D from
+  &E96F, one per line of !BOOT read (Y = its length); seven go to the NFS,
+  the eighth (`CHAIN"MENU"`) to the RTS. NETV is &FFA6 at the menu.
+- The same with the line blanked to `*|` in a scratch copy of the disc: the
+  same eight calls, the menu as before, NETV &FFA6 at the menu (MENU's
+  vector loop). So the line has no effect in jsbeeb.
+- The hazard it would guard: the game's title screen reads a mission file
+  name with OSWORD 0 (`ask_for_mission`) while its code fills &0D00-&1CFF,
+  so &0DD5-&0DD7 hold game bytes (0A 0A A0). With NETV at &FF36 the MOS's
+  extended vector entry jumps through them. That's what happens with
+  Econet: `--econet 1 'wait 33; key Digit1; wait 0.5; key Enter; wait 15;
+  hex 224 2; key KeyL; wait 2; type IO; key Enter; wait 6; shot X.png'`
+  shows NETV &FF36 at the title and, after the name, the game's error
+  screen with a garbage message and "Press SPACE:". Without Econet the
+  same script loads IO and returns to the title; with Econet and `poke 224
+  A6` before the L, likewise.
+- But it's the game that hands NETV back to the NFS: NETV is &FFA6 at
+  &3000 (`until 3000; hex 224 2`), and logging OSBYTE (`log E772`) shows the
+  game's `OSBYTE &8F` with X=2 (from &2253, `load_mission` re-claiming
+  workspace for the DFS) running NFS's service 2 handler again (its OSBYTE
+  &FD from &82DE, &A8 from &832B) before NETV reads &FF36. Neither !BOOT's
+  line nor MENU's loop can prevent that, so on a B with Econet the title
+  screen's L always ends in that error screen, whatever they do.
+
+### How strongly
+
+That the line targets a ROM's extended-vector claim on NETV, in practice
+the NFS's, is well supported: it is the exact inverse of NFS 3.60's store,
+and nothing on the disc writes NETV. Why it is in !BOOT, before
+CHAIN"MENU", when MENU restores every vector a moment later, isn't: no
+NETV call in between does anything the NFS objects to. Perhaps it predates
+MENU's loop, or it is belt and braces. Not tried: other NFS versions (3.34 was the usual
+B one), ANFS on a Master (jsbeeb's headless Master has no NFS ROM), and
+Econet traffic, whose NMIs would run game code at &0D00.
