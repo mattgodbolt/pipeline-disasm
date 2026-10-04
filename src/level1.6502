@@ -1,6 +1,11 @@
-; $.LEVEL1: the first level, as the Level Designer saves a level (layout in
-; level.6502inc). The level itself is src/level1.6502inc, which IO's first
-; level is made from too. Its editing code is 677636.
+; $.LEVEL1: the first level, as the Level Designer saves a level: &A5F bytes
+; loaded at &25A1, where the designer keeps the level it's editing (layout in
+; level.6502inc). The designer loads it to edit, once given its six-digit
+; editing code, 677636; MISSION *LOADs it to put in a mission. The exec
+; address, &8380, means nothing: the designer saves every level with it.
+; The file holds the 32 trigger names (the designer's; a mission doesn't
+; keep them), then the level's 11 fields, then its map. The level itself is
+; src/level1.6502inc, which IO's first level is made from too.
 INCLUDE "level.6502inc"
 INCLUDE "level1.6502inc"
 

@@ -4,12 +4,13 @@
 ; description (src/default.6502 and src/io.6502).
 ;
 ; Each picture is rows of pixels, two characters a pixel (a MODE 5 pixel is
-; twice as wide as it is tall), "." for logical colour 0 and "1" to "3" the
-; others. The Graphics Designer shows them black, blue, yellow and red; in
-; the game each level's palette says. Large pictures are 16 x 32 pixels (4 x 4
-; character cells), small ones 8 x 16; sprites.6502inc's mode5_pictures
-; stores them a column of cells at a time, the way the designer and the game
-; read them.
+; twice as wide as it is tall, so a picture looks in the source as it does
+; on the screen), "." for logical colour 0 and "1" to "3" the others. The
+; Graphics Designer shows them black, blue, yellow and red; in the game,
+; each level's palette sets the colours. Large pictures are 16 x 32 pixels,
+; small ones 8 x 16. sprites.6502inc's mode5_pictures turns them into bytes
+; the way the designer and the game read them: four pixels a byte, a column
+; four pixels wide from top to bottom, then the next column to the right.
 ;
 ; The designer numbers the pictures as slots, &00-&28; the game uses them by
 ; slot too, so each slot has a part to play (as sprites.6502inc names them):
@@ -21,19 +22,25 @@
 ;   &28      large: a cell marked as holding an object that isn't there
 ;
 ; and the names of icons 0-14. A graphics file is slots &00-&27 (&E00 bytes,
-; default_graphics()) then MISSION's "names" (&134 bytes, default_names()): slot
-; &28 and the object names. A mission keeps the names first and the graphics
-; last.
+; default_graphics()) then what MISSION calls the names (&134 bytes,
+; default_names()): slot &28 and the object names. A mission keeps the names
+; first and the graphics last.
 ;
 ; The map key characters in brackets are the ones level maps are drawn with
 ; (MAP_KEY in leveldata.6502inc).
 ;
-; Whatever includes this includes sprites.6502inc first (io.6502inc does).
+; Below, in slot order: default_tiles, default_icons, default_player,
+; default_alternates and default_no_object, then default_object_names, and
+; last the two FUNCTIONs that make a graphics file's two parts. Whatever
+; includes this must include sprites.6502inc first, for mode5_pictures
+; (io.6502inc brings it).
 
 ; Slots &00-&0F: a picture for each type of map cell, by type.
 default_tiles = {
-    ; &00, cell 0, the floor: blue girders. The Graphics Designer also repeats
-    ; it behind every sprite.
+    ; &00, cell 0, the floor: blue girders. The game fills the floor round an
+    ; object's icon from this picture's first 4 x 8 pixel block alone, so the
+    ; picture is that block repeated, and the Graphics Designer keeps it so:
+    ; a pixel changed in one block is copied to all of them.
     {
         "....11......11......11......11..",
         "....11......11......11......11..",
@@ -561,8 +568,9 @@ default_tiles = {
         "....11......332233223333....11..",
         "....11........33333333......11.."
     },
-    ; &0F, cell F ($): an object's cell, which shows the object's icon instead;
-    ; this is the flames' second frame, monsters flickering between E and F.
+    ; &0F, cell F ($): never drawn as a cell, as an object's cell shows the
+    ; object's icon (or slot &28) instead. The game uses it as the flames'
+    ; second frame: monsters flicker between &0E and this.
     {
         "....11......11......11......11..",
         "....11......11......11..........",
@@ -887,8 +895,8 @@ default_icons = {
         "..22113333331133",
         "................"
     },
-    ; &1F, icon 15: the exit. No name in the set: its name would sit at &F34,
-    ; just past the set, where the designer writes "Finish Block".
+    ; &1F, icon 15: the exit. No name in the set: the designer shows it as
+    ; "Finish Block", which it writes at &F34, just past the set.
     {
         "....11..22..11..",
         "....1122222211..",
@@ -910,9 +918,10 @@ default_icons = {
 }
 
 ; Slots &20-&23: the player, facing left, right, up and down. The game
-; animates them (and the designer's Animate previews it) by alternating each
-; side view with itself upside down, &22 with &23 upside down going up, and
-; &23 with &22 upside down going down.
+; animates the player by drawing the picture upside down for every other
+; four cells walked. Facing left or right that's the same picture turned
+; over; facing up it alternates &22 with &23 upside down, and facing down
+; &23 with &22 upside down. The designer's Animate previews the same.
 default_player = {
     ; &20, facing left.
     {
@@ -984,7 +993,7 @@ default_player = {
         "....11......11......11......11..",
         "....11......11......11......11.."
     },
-    ; &22, going up or down...
+    ; &22, facing up (and, upside down, the other frame facing down).
     {
         "....11......11......11......11..",
         "....11......11......11......11..",
@@ -1019,8 +1028,7 @@ default_player = {
         "....11......11......11......11..",
         "....11......11......11......11.."
     },
-    ; &23, ...and the other step (each also drawn upside down every other
-    ; step).
+    ; &23, facing down (and, upside down, the other frame facing up).
     {
         "....11......11......11......11..",
         "....11......11......11......11..",
@@ -1269,8 +1277,8 @@ FUNCTION default_graphics() = FLATTEN({
     mode5_pictures(default_alternates)
 })
 
-; The bytes of MISSION's names: slot &28 and the object names, as they end a
-; graphics file and start a mission.
+; The bytes of what MISSION calls the names: slot &28 and the object names,
+; as they end a graphics file and start a mission.
 FUNCTION default_names()
     names = CODES(default_object_names)
     ASSERT RANK(names) = 2 AND LEN(names[0]) = OBJECT_NAME_LENGTH, "an object's name is 12 characters"

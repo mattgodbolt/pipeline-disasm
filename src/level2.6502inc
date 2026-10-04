@@ -1,23 +1,29 @@
-; Level 2: the second of IO's four. Written as leveldata.6502inc describes;
-; src/io.6502 makes its bytes from this. A mission doesn't keep its levels'
-; trigger names (MISSION names them "Puzzle 1" to "Puzzle 32" when it saves
-; one as a level file), so these have none.
+; Level 2: the second of IO's four. Written as leveldata.6502inc describes,
+; and as level1.6502inc's header explains; src/io.6502 makes its bytes from
+; this. A mission doesn't keep its levels' trigger names (MISSION names them
+; "Puzzle 1" to "Puzzle 32" when it saves one as a level file), so these
+; have none.
 level_2 = {
-    ; The editing code: MISSION wants it before it saves a locked mission's
-    ; level, and the game shows it once the level's done.
+    ; The editing code, six digits: the Level Designer asks for it before it
+    ; will edit the level, MISSION before it saves one of a locked mission's
+    ; levels as a level file, and the game shows it once the level's done.
     "878702",
-    ; The palette: logical colours 0-3.
+    ; The palette: the physical colours of logical colours 0-3, the "." and
+    ; "1" to "3" the pictures are drawn in.
     {COLOUR_BLACK, COLOUR_BLUE, COLOUR_WHITE, COLOUR_RED},
-    ; The setup.
+    ; The setup. The last byte picks, for cell types 5 (#), 8 (=), 7 (o)
+    ; and A (~), two bits each from bit 7 down, which squares of a
+    ; checkerboard show the type's second picture: none, the odd ones
+    ; (x + y odd), the even ones or all (ALTERNATE_*).
     {
         54, 23,                         ; the player starts here
-        84,                             ; sulphur to collect before the exit opens
-        250,                            ; the clock
+        84,                             ; sulphur to collect before the exit can be lit
+        250,                            ; the clock's starting value
         63, 63,                         ; the exit
-        CELL_SULPHUR * 16 + CELL_LAVA,  ; a monster reaching lava (~) goes out, leaving sulphur (o)
+        CELL_SULPHUR * 16 + CELL_LAVA,  ; a monster meeting lava (~) turns it to sulphur (o) and is gone
         %00000101                       ; second pictures: o on odd squares, ~ on odd squares
     },
-    ; The objects: x, y, icon, uses and flags.
+    ; The objects: x, y, icon, then the number of uses plus OBJECT_* flags.
     {
         {35, 37, 14, OBJECT_VANISHES + 1},                   ; 0: Explosives
         {22, 61, 0, OBJECT_NO_THROW + 1},                    ; 1: Remote C.D.1
@@ -28,17 +34,21 @@ level_2 = {
         {15, 48, 10, OBJECT_NO_THROW + 1},                   ; 6: Fire Blanket
         {10, 0, 12, OBJECT_NO_THROW + 8}                     ; 7: Extinguisher
     },
-    ; The monsters: x, y, the way they're going, and which ways they try.
-    ; Monster 0's cell isn't fire on the map, so the game takes it as gone at
-    ; the first think (26 points) until trigger 14, 15 or 28 puts it out.
+    ; The monsters: x, y, the way each is going, and the order it tries
+    ; turns in at each step (PATTERN_*, or four TURN_* fields, the first in
+    ; bits 0-1, written out in the comment: "on" is straight on).
+    ; Monster 0's cell isn't fire (*) on the map, so on the game's first
+    ; cycle the monster counts as gone (and the player scores 26 points for
+    ; it), until trigger 14, 15 or 28 puts it back on the map.
     {
         {21, 30, DIRECTION_LEFT, PATTERN_LEFT_WALL},        ; 0
         {19, 41, DIRECTION_RIGHT, PATTERN_BACK_AND_FORTH},  ; 1
         {14, 61, DIRECTION_DOWN, PATTERN_LEFT_WALL},        ; 2
         {28, 20, DIRECTION_DOWN, PATTERN_FOLLOW_EDGES}      ; 3
     },
-    ; The triggers: name, action and flags, where, the action's A, X and Y,
-    ; and a condition.
+    ; The triggers: name, action (PUZZLE_*) and flags, where (x, y), the
+    ; action's arguments A, X and Y, and the condition. The comment above
+    ; each says what it does, then what the condition asks for.
     {
         ; 0: blows up object 0
         {"", PUZZLE_DETONATE_OBJECT + PUZZLE_USES_OBJECT, 19, 63, &00, &18, &00, &2F},
@@ -84,7 +94,7 @@ level_2 = {
         {"", PUZZLE_MOVE_BLOCK, 56, 7, &07, &39, &09, &A0},
         ; 21: turns on trigger 22; when facing up
         {"", PUZZLE_TURN_ON + PUZZLE_REUSABLE, 37, 31, &16, &16, &16, &A0},
-        ; 22: pushes the cell in front to the right; when facing a pipe down (|)
+        ; 22: pushes the cell in front to the player's right; when facing a pipe down (|)
         {"", PUZZLE_MOVE_NEXT_BLOCK + PUZZLE_OFF + PUZZLE_REUSABLE, IGNORE + 32, IGNORE + 32, &08, &A0, &A0, &6D},
         ; 23: turns off trigger 22; when facing down
         {"", PUZZLE_TURN_OFF + PUZZLE_REUSABLE, 37, 31, &16, &16, &16, &B0},
@@ -105,7 +115,7 @@ level_2 = {
         ; 31: turns off triggers 22, 24 and 17
         {"", PUZZLE_TURN_OFF + PUZZLE_REUSABLE, 54, 23, &16, &18, &11, &20}
     },
-    ; The map.
+    ; The map: 64 rows of 64 cells, in MAP_KEY's characters.
     {
         "+--------.$------------------o|-+------------------------------+",
         "|=========|.|-----.+-------+####|.r############################|",

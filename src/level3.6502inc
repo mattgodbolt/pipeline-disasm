@@ -1,23 +1,29 @@
-; Level 3: the third of IO's four. Written as leveldata.6502inc describes;
-; src/io.6502 makes its bytes from this. A mission doesn't keep its levels'
-; trigger names (MISSION names them "Puzzle 1" to "Puzzle 32" when it saves
-; one as a level file), so these have none.
+; Level 3: the third of IO's four. Written as leveldata.6502inc describes,
+; and as level1.6502inc's header explains; src/io.6502 makes its bytes from
+; this. A mission doesn't keep its levels' trigger names (MISSION names them
+; "Puzzle 1" to "Puzzle 32" when it saves one as a level file), so these
+; have none.
 level_3 = {
-    ; The editing code: MISSION wants it before it saves a locked mission's
-    ; level, and the game shows it once the level's done.
+    ; The editing code, six digits: the Level Designer asks for it before it
+    ; will edit the level, MISSION before it saves one of a locked mission's
+    ; levels as a level file, and the game shows it once the level's done.
     "218652",
-    ; The palette: logical colours 0-3.
+    ; The palette: the physical colours of logical colours 0-3, the "." and
+    ; "1" to "3" the pictures are drawn in.
     {COLOUR_BLACK, COLOUR_BLUE, COLOUR_YELLOW, COLOUR_MAGENTA},
-    ; The setup.
+    ; The setup. The last byte picks, for cell types 5 (#), 8 (=), 7 (o)
+    ; and A (~), two bits each from bit 7 down, which squares of a
+    ; checkerboard show the type's second picture: none, the odd ones
+    ; (x + y odd), the even ones or all (ALTERNATE_*).
     {
         32, 63,                         ; the player starts here
-        250,                            ; sulphur to collect before the exit opens
-        240,                            ; the clock
+        250,                            ; sulphur to collect before the exit can be lit
+        240,                            ; the clock's starting value
         32, 43,                         ; the exit
-        CELL_LAVA * 16 + CELL_LAVA,     ; a monster reaching lava (~) goes out, leaving lava (~)
+        CELL_LAVA * 16 + CELL_LAVA,     ; a monster meeting lava (~) is gone, the lava staying
         %01110111                       ; second pictures: # on odd squares, = on all, o on odd squares, ~ on all
     },
-    ; The objects: x, y, icon, uses and flags.
+    ; The objects: x, y, icon, then the number of uses plus OBJECT_* flags.
     {
         {32, 47, 0, OBJECT_NO_CHARGES + OBJECT_NO_THROW},  ; 0: Remote C.D.1
         {43, 22, 3, OBJECT_NO_THROW + 3},                  ; 1: Blueprints
@@ -28,15 +34,18 @@ level_3 = {
         {27, 60, 2, OBJECT_NO_CHARGES + OBJECT_NO_THROW},  ; 6: Remote C.D.3
         {0, 63, 4, 4}                                      ; 7: Mallet
     },
-    ; The monsters: x, y, the way they're going, and which ways they try.
+    ; The monsters: x, y, the way each is going, and the order it tries
+    ; turns in at each step (PATTERN_*, or four TURN_* fields, the first in
+    ; bits 0-1, written out in the comment: "on" is straight on).
     {
         {25, 7, DIRECTION_RIGHT, %01010101},            ; 0: tries on, on, on, on
         {7, 15, DIRECTION_UP, PATTERN_LEFT_WALL},       ; 1
         {17, 10, DIRECTION_UP, PATTERN_RIGHT_WALL},     ; 2
         {1, 56, DIRECTION_RIGHT, PATTERN_FOLLOW_EDGES}  ; 3
     },
-    ; The triggers: name, action and flags, where, the action's A, X and Y,
-    ; and a condition.
+    ; The triggers: name, action (PUZZLE_*) and flags, where (x, y), the
+    ; action's arguments A, X and Y, and the condition. The comment above
+    ; each says what it does, then what the condition asks for.
     {
         ; 0: (38, 51) becomes the floor (.); when facing right at a barricade (@)
         {"", PUZZLE_PLACE_BLOCK + PUZZLE_USES_OBJECT, 37, 51, &00, &26, &33, &D9},
@@ -103,7 +112,7 @@ level_3 = {
         ; 31: the cell in front becomes a crate (c); when facing the floor (.)
         {"", PUZZLE_NEXT_BLOCK + PUZZLE_OFF + PUZZLE_REUSABLE, IGNORE + 32, IGNORE + 44, &06, &2E, &27, &60}
     },
-    ; The map.
+    ; The map: 64 rows of 64 cells, in MAP_KEY's characters.
     {
         "ooo.---+----.========+--.-------+--|---|-----...........#####o.o",
         "*~*~*..|....|=.....|.|c-----+----|---|----..###########.....##.#",
