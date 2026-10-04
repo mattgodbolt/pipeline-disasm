@@ -8,9 +8,10 @@
 ; built to be loaded at &3000 but to run lower down: the loader at the start
 ; copies the rest into the stack page, page 8, &0400-&07FF and &0900-&23AC,
 ; sets up the screen and the sound event, and jumps to the game, which then
-; loads the mission file IO over the loader. A mission is four levels with
-; their graphics, object names and settings, as MISSION (the Mission
-; Generator) saves them (io.6502inc has IO's layout).
+; loads the mission file IO over the loader. A mission is four levels (from
+; the Level Designer) with their graphics (from the Graphics Designer),
+; object names and settings, as MISSION (the Mission Generator) packs them
+; into one file (io.6502inc has IO's layout).
 ;
 ; Memory while the game runs:
 ;   &00-&9B      zero page: the variables below
@@ -4507,10 +4508,11 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     JSR delay
     JMP delay
 
-; All four levels done. If the last one was finished properly the palette goes
-; wild for a while. Then the last level's edit code, "Praise and
-; felicitations!", and for the locked (competition) mission played from the
-; start, an entry code; wait for Space.
+; All four levels done. If the last one was finished properly (got clear of
+; the lit exit) the palette goes wild for a while. Then the last level's edit
+; code, "Praise and felicitations!", and for a locked mission (io_locked, as
+; the shipped one is) played from the start, a competition entry code;
+; wait for Space.
 ; Clobbers: everything.
 .mission_done
     LDA #0
@@ -4552,12 +4554,12 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
 .mission_done_wait
     JMP wait_for_space
 
-; The entry code: the score, scrambled, and a checksum of the whole of the
-; mission's level data (io_attrs to the end of the maps) so the code shows
-; which mission was played, printed in the 1-9, A-W alphabet: ten
-; characters, in a box of background colour 2. In order: a digit of the
-; checksum's sum, the score's low byte (two), four more of the checksum, one
-; of the score mixed, and the score's high byte (two).
+; The entry code, for a player to send in: the score, scrambled, and a
+; checksum of the whole of the mission's level data (io_attrs to the end of
+; the maps) so the code shows which mission was played, printed in the 1-9,
+; A-W alphabet: ten characters, in a box of background colour 2. In order: a
+; digit of the checksum's sum, the score's low byte (two), four more of the
+; checksum, one of the score mixed, and the score's high byte (two).
 .show_entry_code
     JSR print_inline
     TEXT_AT 4, 19
@@ -4667,8 +4669,9 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     RTS
 
 ; After a level: the backpack screen with the edit code of the level just
-; finished (level is already the next level, and the codes are read from one
-; before io_edit_code_*).
+; finished, the code MISSION asks for before it will save an edited copy of
+; that level. (level is already the next level, so the codes are read from
+; one before io_edit_code_*.)
 ; In: A = the lives to show; the carry set to leave out the mission text.
 ; Clobbers: everything.
 .show_edit_code
