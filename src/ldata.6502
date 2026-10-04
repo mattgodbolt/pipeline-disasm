@@ -1,11 +1,21 @@
 ; $.LDATA: the Level Designer's title picture, "PIPELINE Level Designer"
-; over a landscape, with "Press SPACE" below.
+; over a landscape, with "Press SPACE" below (docs/img/levdes-title.png).
 ;
-; It is screen memory, *LOADed by the designer straight onto the screen at
-; &3400: character rows 2-26 of its MODE 1 screen narrowed to 64 columns
-; (512 bytes a row, each column 8 bytes, one per scan line, 4 pixels a byte),
-; in the title palette (black, blue, yellow, red). None of it is code; the
-; exec address &3820 means nothing. tools/screen2png.py draws it.
-SECTION ldata, filename="LDATA", org=&3400, load=&3400, exec=&3820
+; It is screen memory, *LOADed by the designer straight onto its screen:
+; character rows 2-26 of MODE 1 narrowed to 64 columns (levdes.6502inc's
+; layout: 512 bytes a row, each column 8 bytes, one per scan line, 4 pixels
+; a byte), in the title palette (black, blue, yellow, red). None of it is
+; code; the exec address &3820 means nothing. Draw it with
+; `tools/beebscreen.py 1 data/ldata.bin OUT.png --columns 64 --offset 400
+; --palette 0,4,3,1`.
+INCLUDE "osconst.6502inc"
+INCLUDE "levdes.6502inc"
+
+FIRST_ROW = 2
+ROWS      = 25
+
+SECTION ldata, filename="LDATA", org=screen_address(0, FIRST_ROW), load=&3400, exec=&3820
+.title_picture
     INCBIN "../data/ldata.bin"
+    ASSERT P% = screen_address(0, FIRST_ROW + ROWS)
 ENDSECTION
