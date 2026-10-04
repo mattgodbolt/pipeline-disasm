@@ -281,12 +281,12 @@ trigger_condition = trigger_args + 3            ; its condition
 bit4_mask = show_map_centre + 1         ; the byte there is &10
 bit6_mask = fire_object_vanishes + 1    ; the byte there is &40
 
-; Entered from the GAME stub. Copies MENU's ten keys where the game wants
-; them, copies the game into place, sets up the screen and the sound event,
-; and starts the game.
+; Entered at &3000 from the GAME stub. Copies MENU's ten keys where the game
+; wants them, copies the game into place, sets up the screen and the sound
+; event, and starts the game. Never returns.
 ; In: menu_keys = the ten keys MENU set up, as negative INKEY numbers.
 .loader
-    LDX #&FF                            ; the event handler lives in the stack page
+    LDX #&FF                            ; a fresh stack, clear of the event handler below
     TXS
     LDY #MENU_KEYS - 1
 .copy_keys_loop
@@ -298,6 +298,8 @@ bit6_mask = fire_object_vanishes + 1    ; the byte there is &40
     BPL copy_keys_loop
 
 ; Each copy_block call is followed by its source, destination and length.
+; First the OS's extended vectors, saved since the game's code is about to
+; cover them; then each piece of the game, to where it runs.
     JSR copy_block
     EQUW MOS_EXTENDED_VECTORS, saved_extended_vectors, &100 - LO(MOS_EXTENDED_VECTORS)
     JSR copy_block
@@ -331,7 +333,8 @@ bit6_mask = fire_object_vanishes + 1    ; the byte there is &40
     STA EVNTV + 1
     CLI
 
-; The game's screen is SCREEN to SCREEN_END, scrolled by the hardware.
+; Make the hardware wrap the screen round at 8K, so that the game's screen
+; runs from SCREEN to SCREEN_END and the hardware scroll wraps within it.
     LDA #SCREEN_WRAP_8K
     STA SYSVIA_ORB
     JMP game_start
@@ -476,9 +479,9 @@ SECTION event_handler, org=&0131
 .event_handler_end
 ENDSECTION
 
-; The tune played during a level, in the printer buffer, and the four sound
-; envelopes, written straight into the OS's envelope store rather than with
-; OSWORD 8.
+; The tune played during a level, in the OS's printer buffer (nothing is
+; printed), and the four sound envelopes, written straight into the OS's
+; envelope store rather than with OSWORD 8.
 .sound_data_load
 SECTION sound_data, org=&0880
 .sound_data
@@ -510,7 +513,7 @@ ENDSECTION
 .sound_data_padding
     SKIP 32
 
-; Map view patterns and the code that scrolls the playing area.
+; The map view's patterns, and the code that draws and scrolls the view.
 .low_code_load
 SECTION low_code, org=&0400
 .low_code
@@ -718,9 +721,9 @@ SECTION low_code, org=&0400
     BMI draw_row_part_next
 
 ; Draw one character row of a map cell's picture across X character cells
-; from screen: the cell's whole width, or with X = ~2 its last two columns
-; (the view's left edge cuts the first cell in half). An icon is drawn with
-; the floor round it.
+; from screen: the cell's whole width, or with X = ~2 (2 EOR &FF) its last
+; two columns (the view's left edge cuts the first cell in half). An icon is
+; drawn with the floor round it.
 ; In: picture, picture_size (as cell_picture leaves them); view_sub_y = the
 ; row within the map cell; draw_step = the columns to the cell's right edge.
 ; Clobbers: A, X, Y, picture, screen, draw_step, picture_stride.
@@ -745,7 +748,7 @@ SECTION low_code, org=&0400
     LDA view_sub_y                      ; the row within the picture
     INY
     BMI draw_row_part_offset
-    LSR A                               ; (an icon's rows are 1 and 2: 0 and 1)
+    LSR A                               ; (an icon's rows 0-1 are the cell's rows 1-2)
 .draw_row_part_offset
     ASL A                               ; * CHAR_BYTES
     ASL A
@@ -834,8 +837,9 @@ SECTION low_code, org=&0400
 
 ; Point map_pointer at the byte holding map cell (cell_x, cell_y): the map is
 ; stored a column at a time, MAP_COLUMN_BYTES a column, two cells a byte.
-; Out: map_pointer; cell_low_nibble = 1 for an odd cell_y, in the low nibble.
-; Clobbers: A, Y.
+; Out: map_pointer; cell_low_nibble = 1 if cell_y is odd (the cell is in the
+; byte's low nibble), else 0; Y = 0.
+; Clobbers: A.
 .map_address
     LDA cell_x
     LDY #0
@@ -891,7 +895,7 @@ ASSERT MAP_COLUMN_BYTES = 1 << 5 AND LO(map) = 0
     LDA view_sub_x                      ; the column within the picture
     INY
     BMI draw_column_part_offset
-    LSR A                               ; (an icon's columns are 1 and 2: 0 and 1)
+    LSR A                               ; (an icon's columns 0-1 are the cell's 1-2)
 .draw_column_part_offset
     LSR A                               ; * PICTURE_COLUMN_BYTES
     ROR A
@@ -1046,10 +1050,10 @@ ASSERT MAP_COLUMN_BYTES = 1 << 5 AND LO(map) = 0
     BNE scroll_up_done
 
 ; Walk the player a cell down: scroll the view a character row at a time,
-; four times, drawing each new bottom row of map cells. The player, drawn on
-; the screen, would scroll with it, so each step rubs out their trail and
-; draws them back in the middle; and things that move by themselves move a
-; character a step.
+; four times, drawing the row of character cells that comes into view at the
+; bottom each time. The player, drawn in screen memory, would scroll with it,
+; so each time their trail is rubbed out and they're drawn back in the
+; middle; and things that move by themselves move a character.
 ; Clobbers: A, X, Y and the drawing variables.
 .walk_down
     JSR next_player_frame               ; the player's walking picture
@@ -1088,6 +1092,7 @@ ASSERT MAP_COLUMN_BYTES = 1 << 5 AND LO(map) = 0
     RTS
 
 ; Walk a cell up, drawing each new top row.
+; Clobbers: as walk_down.
 .walk_up
     JSR next_player_frame
     LDA #1
@@ -1129,6 +1134,7 @@ ASSERT MAP_COLUMN_BYTES = 1 << 5 AND LO(map) = 0
     RTS
 
 ; Walk a cell right, drawing each new right-hand column.
+; Clobbers: as walk_down.
 .walk_right
     JSR next_player_frame
     LDA #2
@@ -1166,6 +1172,7 @@ ASSERT MAP_COLUMN_BYTES = 1 << 5 AND LO(map) = 0
     RTS
 
 ; Walk a cell left, drawing each new left-hand column.
+; Clobbers: as walk_down.
 .walk_left
     JSR next_player_frame
     LDA #1
@@ -1968,6 +1975,7 @@ NEXT
 ; down only to view_y + 28, so none hangs off the bottom at VIEW_PAST_END.)
 ; Out: sprite_skip_y, sprite_rows and sprite_screen_high (added to it); or
 ; returns from draw_sprite.
+; Clobbers: A, clip_position.
 .clip_sprite_y
     STY clip_position
     LDA view_y
@@ -2089,7 +2097,9 @@ NEXT
 .map_view_return
     RTS
 
-; Scroll the map view one column, drawing the column that comes into view.
+; Scroll the map view a column left (map_view_scroll_left) or right
+; (map_view_scroll_right), unless it's at the map's edge, drawing the column
+; that comes into view.
 ; Clobbers: as draw_map_view.
 .map_view_scroll_left
     LDA screen_start                    ; already at the left?
@@ -2251,6 +2261,7 @@ ASSERT LO(map_view_patterns) = 0
 
 ; Read map cell (X, Y), on the map.
 ; Out: A = the cell type, Z set if it's empty floor; carry clear.
+; Clobbers: X, Y, cell_x, cell_y, map_pointer, cell_low_nibble.
 .read_map_cell
     STX cell_x
     STY cell_y
@@ -2272,7 +2283,8 @@ ASSERT LO(map_view_patterns) = 0
 ; cells further on in the middle of it, and empty their cell: the start of a
 ; level, or a teleport. (X, Y) become where the level starts again after a
 ; life is lost, so a teleport moves that too.
-; Clobbers: A, X, Y, work0, cell_x, cell_y, map_pointer, cell_low_nibble.
+; Clobbers: A, X, Y, work0, cell_x, cell_y, map_pointer, cell_low_nibble,
+; front_x, front_y, front_cell.
 .place_player
     STX start_x
     STY start_y
@@ -2446,7 +2458,7 @@ ASSERT P% - turns = (TURN_ANTICLOCKWISE + 1) * TURN_ROW
     BPL draw_title_flame
     LDA #HI(player_facing(DIRECTION_UP)) ; the player
     STA sprite_high
-    LDX #16
+    LDX #16                             ; at character (16, 27), the bottom middle
     LDY #27
     SEC
     JMP draw_sprite
@@ -2788,7 +2800,8 @@ ASSERT OBJECT_NAME_LENGTH = 12
     NOP
     RTS
 
-; Never called: the level after a TAB to the right of the title screen's.
+; Never called: print the level at column 24 of row 13, to the right of where
+; the title screen prints it.
 .print_level_at
     JSR print_inline
     TEXT_AT 24, 13
@@ -2932,10 +2945,10 @@ WELL_DONE_SHADOW = &0C
 ; the sprite variables.
 .burn_up
     JSR wait_a_second
-    LDA view_x                          ; on the player (a character higher)
-    CLC
+    LDA view_x                          ; the square starts at the player's top
+    CLC                                 ; left, a character higher
     ADC #PLAYER_CHAR
-    STA view_sub_x                      ; (the square's top left)
+    STA view_sub_x                      ; (view_sub_x and _y: its top left)
     LDA view_y
     CLC
     ADC #PLAYER_CHAR - 1
@@ -3113,8 +3126,9 @@ ASSERT P% - game_start = OBJECTS * OBJECT_BYTES
     JSR clear_screen
     DEC fill_screen
 
-; Lose a life. With none left, burn up and back to the title; if the exit
-; had been lit the level counts as done.
+; Lose a life. With none left, the player burns up and it's back to the
+; title. Otherwise the level starts again, unless the exit had been lit, in
+; which case it counts as done.
 .lose_life
     JSR flush_buffers
     JSR sound_trigger                   ; a sound
@@ -3216,8 +3230,8 @@ ASSERT P% - game_start = OBJECTS * OBJECT_BYTES
 .set_palette_entry
     LDX io_palettes, Y                  ; logical << 4 | physical
 
-; VDU 19, X >> 4, X, 0, 0, 0: logical colour X's high nibble is physical
-; colour X's low.
+; VDU 19, X >> 4, X, 0, 0, 0: logical colour X >> 4 becomes physical colour
+; X AND 15 (the OS ignores the physical colour's high nibble).
 ; Clobbers: A.
 .vdu_palette
     LDA #VDU_PALETTE
@@ -3263,7 +3277,7 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
 .resync_timer
     JSR wait_vsync
     SEI
-    LDY #9                              ; a little more
+    LDY #9                              ; and about 6 ms more
     JSR delay
     LDA SYSVIA_T1LL                     ; timer 1 from its latch
     STA SYSVIA_T1LL
@@ -3289,7 +3303,7 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     TEXT_AT 6, 11                       ; and above it the score
     NOP
     JSR print_score
-    LDX #1                              ; just the input buffers
+    LDX #1                              ; just the input buffer
     LDA #OSBYTE_FLUSH_BUFFERS
     JSR OSBYTE
 .title_screen_key
@@ -3431,7 +3445,8 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     LDY start_y
     JSR place_player
 
-; Forget which direction keys were down; also the do-nothing action.
+; Forget which direction keys were down. Also action_table's entry for
+; ACTION_NONE and ACTION_STOP, which do nothing more.
 ; Clobbers: A, X.
 .clear_keys_down
     LDX #3
@@ -3557,7 +3572,8 @@ ASSERT OBJECTS * OBJECT_BYTES = PUZZLES AND LO(io_maps) = 0 AND LO(IO_MAP_SIZE) 
     BNE set_monster_cells
 
 ; Move a thrown object on a cell, advance the frame counter, decide where each
-; monster goes next, and take the monsters off the map.
+; monster goes next, and take the monsters' fire cells off the map while they
+; move (play_cycle puts them back).
 ; Clobbers: everything.
 .think
     JSR fly_thrown                      ; a thrown object
@@ -3586,7 +3602,9 @@ ASSERT OBJECTS * OBJECT_BYTES = PUZZLES AND LO(io_maps) = 0 AND LO(IO_MAP_SIZE) 
     BPL think_monster
     LDA #CELL_FLOOR                     ; and take them off the map
 
-; Set the cells of the monsters that are out to type A.
+; Set the cells of the monsters in play to type A.
+; Clobbers: A, X, Y, work0, work4, work5, cell_x, cell_y, map_pointer,
+; cell_low_nibble.
 .set_monster_cells
     STA work5
     LDA #MONSTERS - 1
@@ -3634,8 +3652,8 @@ ASSERT OBJECTS * OBJECT_BYTES = PUZZLES AND LO(io_maps) = 0 AND LO(IO_MAP_SIZE) 
     STX lives
 .give_up_life
     INC player_dead
-    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE      ; also, as pipe_move, the player isn't
-    STA pipe_move                       ; drawn again
+    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE      ; stored as pipe_move too, so the player
+    STA pipe_move                       ; isn't drawn again
     JMP OSBYTE
 .player_turn_no_escape
     JSR find_front
@@ -4076,7 +4094,7 @@ ASSERT DIRECTION_UP = 2 AND DIRECTION_DOWN = 3 AND CELL_PIPE_DOWN = CELL_PIPE_AC
     BCS move_on
     LDA front_cell
     JSR check_deadly                    ; something in the way: lava or fire kill
-    PLA                                 ; no step: drop the cell pushed
+    PLA                                 ; no step: drop the x and y pushed
     PLA
     JMP draw_player
 
@@ -4112,7 +4130,7 @@ ASSERT DIRECTION_UP = 2 AND DIRECTION_DOWN = 3 AND CELL_PIPE_DOWN = CELL_PIPE_AC
 .move_done
     PLA                                 ; two bytes off the stack: after a step,
     PLA                                 ; the return to play_cycle, so this ends the
-    JMP mark_monsters                   ; cycle; if stopped, the cell pushed
+    JMP mark_monsters                   ; cycle; if stopped, the x and y pushed
 
 ; The walk routines, by direction.
 .walks
@@ -5292,8 +5310,8 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
     LDX player_x                        ; ...where the player is
     LDY player_y
 
-; Empty the 9 cells round map cell (X, Y), and if the player's in one of
-; them, they die.
+; Empty map cell (X, Y) and the eight round it, and if the player's in one
+; of them, they die.
 ; Clobbers: A, X, Y, work0-work4 and the drawing variables.
 .blast
     LDA #DIRECTION_NONE                 ; the eight neighbours and the cell itself
@@ -5606,9 +5624,10 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
 
 ; Decide where a monster goes next. If its fire cell has gone (something's
 ; been put there, or the level's map never had it: level 2's monster 0 goes
-; at the first think), it's gone, for 26 points. Otherwise it tries up to four
-; ways, each a 2-bit field of its turns (from the bottom) picking from turns:
-; back, ahead, clockwise or anticlockwise. It goes into an empty cell or an
+; at the first call of think), it's gone, for 26 points. Otherwise it tries up
+; to four ways, each a 2-bit field of monster_turns (the lowest first)
+; picking a row of the turns table: back, ahead, clockwise or anticlockwise
+; from the way it was going. It goes into an empty cell or an
 ; object's; if the cell is what it eats (monster_food) it turns that into
 ; what it leaves, and is gone. If it can't go anywhere it's stuck.
 ; At the map's edge the way off it is lava (cell_at), so a monster that eats
