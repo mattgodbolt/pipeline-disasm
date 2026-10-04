@@ -10,22 +10,26 @@
 ;
 ; The file is a packed picture and a little code to unpack it. It loads into
 ; MODE 1 screen memory itself, and the picture unpacks over it from the top
-; of the screen (&3000) down; the packed data is always further on than the
-; unpacking until the last few bytes, so it's never overwritten before it's
-; read. The code would be, so it first copies itself out of the way, to the
-; page below the screen.
+; of the screen (&3000) down; the packed data stays ahead of the unpacking
+; until its last 41 bytes, below the picture. The code wouldn't, so it first
+; copies itself out of the way, to the page below the screen.
 ;
 ; The packing is runs of zeros: a nonzero byte stands for itself; a zero is
-; followed by how many zeros it stands for (0 meaning 256). The stream runs on
-; past the picture, writing past the end of the screen (into the paged ROM's
-; space at &8000, harmless on a model B) and over its own unread end, so the
-; last 2K of the screen, below the picture, is cleared when it's done.
+; followed by how many zeros it stands for (0 meaning 256). By the time the
+; unpacker reaches the packed data's last 41 bytes (&78D7 on), it has
+; written zeros over them, so they read as runs of 256 zeros, which carry
+; the writing on through this code's old page and past the end of the screen
+; to &8DB1, in the paged ROM's space (harmless on a model B, where it's ROM).
+; The last 2K of the screen, below the picture, is then cleared, though the
+; overrun has already left it all zero. (Simulated, and seen in jsbeeb's
+; record of what the code writes.)
 
 INCLUDE "os.6502inc"
 INCLUDE "osconst.6502inc"
 
-; Where the unpacker runs: the page below the screen, free: the menu's BASIC
-; program and its variables (LOMEM reset to TOP) end well below it.
+; Where the unpacker runs: the page below the screen. It's inside MENU's C%
+; block, but by now the scroller there is stopped and LOMEM=TOP has dropped
+; the DIMs, so the menu's program and variables end well below it.
 RELOCATED_PAGE = &2F00
 
 ; Zero page: user workspace.
@@ -45,8 +49,9 @@ SECTION title, filename="TITLE", org=&6300, load=&6300, exec=&7900
     ASSERT LO(picture_end) = 0, "the unpacker stops at a page boundary"
 
 ; Entry, from *RUN. Copies this page down to RELOCATED_PAGE and carries on
-; there. Y isn't set: the copy starts at whatever Y *RUN leaves (5, under
-; DFS 1.2), which is fine as long as it's below unpack's offset in the page.
+; there. Y isn't set: the copy starts at whatever Y *RUN leaves (5 under DFS
+; 1.2, seen in jsbeeb), which is fine as long as it's below unpack's offset
+; in the page.
 .start
     LDA #0
     STA relocate_to
@@ -67,6 +72,7 @@ SECTION title_relocated, org=RELOCATED_PAGE + LO(P%)
 ; Unpack the picture into the screen from MODE1_SCREEN, clear the bottom
 ; 2K, flush the keyboard and return to BASIC. X stays 0 for (packed,X) except
 ; while it counts a run.
+; Clobbers: A, X, Y, packed and screen_ptr (clear_ptr shares packed).
 .unpack
     LDA #0
     TAX
@@ -113,8 +119,8 @@ SECTION title_relocated, org=RELOCATED_PAGE + LO(P%)
     CMP #HI(picture_end)
     BNE next_code
 
-    ; Clear what's under the picture: the packed data's overrun, and where
-    ; the end of the packed data and this code were.
+    ; Clear what's under the picture: where the end of the packed data and
+    ; this code were, and the overrun (all zeros already, as it happens).
 .clear_bottom
     LDA #HI(PICTURE_BOTTOM)
     STA clear_ptr+1

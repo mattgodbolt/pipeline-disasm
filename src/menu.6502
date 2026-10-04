@@ -25,7 +25,7 @@ SCROLL_RIGHT = 37
 ; The scroller's zero page. It runs on the vsync event, under whatever BASIC
 ; is doing, so it keeps to the user's area (&70-&8F) - except for &60, and
 ; the character definition, which spills into &90-&93.
-scroll_phase        = &60   ; &49 or 0, flipped each frame: the column moves on when it's 0
+scroll_phase        = &60   ; &49 or 0, flipped each frame: the column moves on as it becomes &49
 scroll_row_temp     = &70   ; (2) the row being set up, at start
 scroll_text_ptr     = &72   ; (2) the character being scrolled in
 scroll_column_mask  = &74   ; which pixel of the character's rows is the next column
@@ -62,16 +62,21 @@ BASIC
 80ONERRORAWopBabaLuMopALopBamBoom
 ; Put every vector in page 2 back to the MOS's defaults (?&FFB6 bytes from
 ; the table at !&FFB7), undoing anything hooked in before the disc booted,
-; but keep BRKV's low half pointing at BASIC's error handler.
+; but keep BRKV (the low half of the word at &202) pointing at BASIC's error
+; handler.
 90E%=!&202 AND&FFFF
 100FORN%=0TO?&FFB6-1
 110N%?&200=N%?!&FFB7:NEXT
 120!&202=!&202 AND&FFFF0000ORE%
-; Plain BREAK boots the disc (start-up option bit 3) and clears memory
-; (*FX200 2); Escape becomes an ordinary key (*FX229 1). Then keyboard
-; defaults (auto-repeat, function keys, cursor keys giving 136-139, no ADC
-; sampling), flash colours every frame, drive 0, and *TV255 1: the picture
-; one line up, interlace off.
+; *FX255 8 247 sets start-up option bit 3, so SHIFT+BREAK boots the disc
+; and plain BREAK doesn't, whatever the keyboard links say (seen in jsbeeb:
+; with the bit clear, plain BREAK boots). BREAK also clears memory (*FX200
+; 2), and Escape becomes an ordinary key (*FX229 1). Then keyboard defaults
+; (*FX12 auto-repeat, *FX18 no function key strings, *FX4 1 cursor keys
+; giving 136-139, *FX16 no ADC sampling), flash colours every frame, the
+; disc filing system and directory $ (on the current drive: *DISC doesn't
+; go back to drive 0, seen in jsbeeb), no file messages (*OPT), and *TV255
+; 1: the picture one line up, interlace off.
 130*FX255 8 247
 140*FX200 2
 150*FX229 1
@@ -97,7 +102,8 @@ BASIC
 280RESTORE650:FORN%=&50TO&59:READ?N%:NEXT:?&FFFF7C00=128:?&7C00=0
 ; Line 290 holds two invisible raw bytes: VDU 21 just before the quote that
 ; ends "...re-load this program.", and VDU 6 after `*/PL "`. LIST shows
-; nothing between them, hiding the cheat: T and W held down here run PL.
+; nothing between them, hiding the cheat (T and W held down here run PL),
+; and the line reads as if it printed the message and waited for a key.
 ; The `":IFGET` belongs to the star command and DFS ignores it. Were the
 ; second-processor test ever true, OSBYTE 151 would write &7F to the system
 ; VIA's IER (&FE4E), turning off its interrupts, and the loop would hang.
@@ -110,10 +116,14 @@ BASIC
 296*FX15,1
 297I%=INKEY(1000):VDU28;24,39,18:CLS
 300PROCmenu:!&75=(C%+&49)*65536+C%+&C9:CALLC%
-; The menu. Digits 1-6 or the cursor keys move the highlight (L% is the
-; option, 0 for none yet) and RETURN takes it. An option that leaves the
-; menu (all but 2, and 6 when it isn't confirmed) first stops the scroller
-; (*FX13 4 disables the vsync event) and lets Escape work again.
+; The menu. A digit 1-6 lights its option (L%, 0 for none yet), the down
+; and up cursor keys (138, 139) step the light round once one is lit, and
+; RETURN takes it; left and right do nothing (seen in jsbeeb). Options 1, 3,
+; 4 and 5, which leave the menu, first stop the scroller (*FX13 4 disables
+; the vsync event), let Escape work again, and set LOMEM=TOP, dropping C%
+; and S%: with them, BASIC's variables end above &3000, and option 1's
+; MODE 1 would stop with "Bad MODE" (tried in jsbeeb), which line 80's
+; handler turns into a hang. Option 6 skips all this: confirmed, it resets.
 310REPEAT
 320L%=0:REPEAT
 330REPEATA%=GET:*FX15
@@ -137,7 +147,9 @@ BASIC
 480L%=A%-48:PRINTTAB(11,L%+3)CHR$157;
 490ENDPROC
 ; PROCcheck: refuses key P% (sets it to 0) if one of the N% keys already
-; chosen is P%, or if it has no name in the table (A$).
+; chosen is P%, or if it has no name in the table (A$). Line 780 calls it
+; only from the second key on; the first can't repeat, and the keys with
+; no name are ones a B's keyboard doesn't have.
 500DEFPROCcheck:FORA%=0TON%-1
 510IFA%?&50=256-P%P%=0
 520NEXT:IFA$=""P%=0
@@ -160,14 +172,16 @@ BASIC
 650DATA-98,-67,-73,-105,-56,-51,-74,-36,-2,-102
 660DATA MOVE WEST,MOVE EAST,MOVE NORTH,MOVE SOUTH,PICK UP OBJECT,DROP OBJECT,USE OBJECT,THROW OBJECT,VIEW BACKPACK,VIEW MAP
 ; Key names by internal key number (the first is INKEY -1, SHIFT). A blank
-; name is a key that can't be chosen. ESCAPE's place holds "!", never seen,
-; since ESCAPE starts the list again instead.
+; name is a key that can't be chosen: the keyboard links (internal 2-9) and
+; the matrix columns 10-15, which a B's keyboard doesn't have. ESCAPE's
+; place holds "!", never seen, since ESCAPE starts the list again instead.
 670DATA SHIFT,CTRL,,,,,,,,,,,,,,,Q,3,4,5,f4,8,f7,=,^,LEFT CURSOR,,,,,,,f0,W,E,T,7,I,9,0,`,DOWN CURSOR,,,,,,,1,2,D,R,6,U,O,P,[,UP CURSOR,,,,,,,CAPS LOCK,A,X,F,Y,J,K,@,*,RETURN,,,,,,,SHIFT LOCK
 680DATAS,C,G,H,N,L,+,],DELETE,,,,,,,TAB,Z,SPACE,V,B,M,<,>,?,COPY,,,,,,,!,f1,f2,f3,f5,f6,f8,f9,|,RIGHT CURSOR
-; Option 2, redefine keys (a GOSUB): for each action, scan every key until
-; one is down; repeats and unnamed keys are refused. ESCAPE (113) ends the
-; per-key REPEAT with UNTIL TRUE, then loops the outer one with UNTIL
-; FALSE: back to the first key.
+; Option 2, redefine keys (a GOSUB): for each action, scan INKEY -1 to
+; -122 until a key is down, taking the highest-numbered one held; the links
+; and missing columns (K% 3-16) are skipped, and repeats and unnamed keys
+; refused. ESCAPE (113) ends the per-key REPEAT with UNTIL TRUE, then loops
+; the outer one with UNTIL FALSE: back to the first key.
 690REPEAT:CLS
 700RESTORE660:FORN%=0TO9
 710READA$:PRINTTAB(8)CHR$131A$": "CHR$130CHR$156;
@@ -185,15 +199,18 @@ BASIC
 830UNTILN%=10:*FX15 1
 840PRINT'CHR$134"Are these keys correct?";
 850UNTILFNyes:RETURN
-; Option 6, quit: CALL !-4 goes through the 6502's reset vector at &FFFC.
+; Option 6, quit: CALL !-4 goes through the 6502's reset vector at &FFFC,
+; which the MOS takes as a BREAK: with *FX200 2 memory is cleared, and the
+; machine is left at BASIC's prompt, not rebooted (seen in jsbeeb).
 860CLS:FORN%=1TO2
 870PRINTTAB(0,N%)CHR$141CHR$132CHR$157CHR$131"Exiting from Pipeline:  "CHR$156:NEXT
 880PRINT'CHR$134"Are you sure?";
 890IFFNyes=0RETURN
 900CALL!-4
-; Option 1, play: TITLE draws its page in MODE 1 with every colour black,
-; then line 940 reveals it with the palette in line 1000, for three
-; seconds.
+; Option 1, play: Escape without its side effects (*FX230 1) and no
+; auto-repeat (*FX11) for the game, then TITLE draws its page in MODE 1
+; with every colour black, and line 940 reveals it with the palette in line
+; 1000, for three seconds or a key.
 910*FX230 1
 920*FX11
 930MODE1:FORN%=0TO3:VDU19,N%,0;0;:NEXT:VDU23;8202;0;0;0;:*RUN TITLE
@@ -222,12 +239,12 @@ ENDBASIC
 
 .scroller
 {
-; Starts the scroller (CALL C% in line 300, which has already set
-; scroll_text_start and scroll_handler_addr). Marks the left of each
+; Starts the scroller (CALL C% in line 300). Marks the left of each
 ; scroller row as separated cyan graphics, aims scroll_cell_ptrs at each
 ; row's right-hand cell, points EVNTV at the handler and enables the vsync
 ; event.
-; Clobbers A, X, Y and scroll_row_temp.
+; In: scroll_text_start = the message, scroll_handler_addr = the handler.
+; Clobbers: A, X, Y, scroll_row_temp, scroll_cell_ptrs - 2 (the spare slot).
 .start
     LDA #&80
     STA scroll_column_mask          ; the character's leftmost pixel first
@@ -240,8 +257,10 @@ ENDBASIC
     STA scroll_text_ptr + 1
 
     ; Each row's pointer is the one below it less a row, starting from the
-    ; bottom one; the loop goes one further than it needs, leaving row 16's
-    ; in the spare slot before the table.
+    ; bottom one. Each pass makes the pointer for the row above and, through
+    ; it, puts the colour codes at the start of this row, so the last pass
+    ; (row 17's codes) leaves a pointer to row 16 in the spare slot before
+    ; the table.
     LDA #LO(mode7_address(SCROLL_RIGHT, SCROLL_TOP + SCROLL_ROWS - 1))
     STA scroll_cell_ptrs + 2 * (SCROLL_ROWS - 1)
     LDA #HI(mode7_address(SCROLL_RIGHT, SCROLL_TOP + SCROLL_ROWS - 1))
@@ -292,7 +311,8 @@ vsync_entry = enable_vsync_event + 1
 ; A column stays for two frames, so a character is 16 cells wide and 8
 ; tall, and the message wraps when it reaches its terminating zero.
 ; Doesn't check which event it was called for: vsync is the only one on.
-; Clobbers A, X, Y and char_definition.
+; In: scroll_text_ptr, scroll_column_mask and scroll_phase, as left last frame.
+; Clobbers: A, X, Y, char_definition.
 .vsync_handler
 shift_from = &100 - (SCROLL_RIGHT - SCROLL_LEFT)    ; Y counts up to zero
     LDY #shift_from

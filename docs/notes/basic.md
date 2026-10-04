@@ -256,3 +256,91 @@ and loading IO shows its name as "Collect the" / "Sulphur!".
 - The PL notes on main agree with the editing code here: PL asks for a
   level file and a six-digit code, and LEVEL1's is 677636 - the code
   MISSION wants for IO's level 1, which is LEVEL1.
+
+## 2026-10-03 20:54 — Second review: corrections and checks
+
+Every comment in menu.6502 and mission.6502 read against the BASIC, and
+the behavioural claims tried in jsbeeb (boot, wait ~32 s for the menu, then
+keys; `--boot no` for BASIC-level tests). Corrections first.
+
+### MENU: corrections
+
+- **`*FX255 8 247` stops plain BREAK booting**; it doesn't make it boot.
+  It sets start-up option bit 3, and in jsbeeb a plain BREAK boots the
+  disc with that bit clear and doesn't with it set (SHIFT+BREAK then boots,
+  as usual). Why MENU forces it isn't clear.
+- **Quit (option 6)**: `CALL !-4` enters the MOS reset code, which takes it
+  as a BREAK; with `*FX200 2` memory is cleared (&1900 holds &0D &FF after)
+  and the machine sits at BASIC's prompt, not rebooted.
+- **No drive 0**: `*DISC` and `*DIR $` keep the current drive (after
+  `*DRIVE 1`, DFS's current drive at &10CA is still 1). `*OPT` with no
+  numbers turns DFS's file messages off.
+- **The menu keys**: only digits 1-6 light an option; the down and up
+  cursor keys (138, 139) step it only once one is lit; left and right do
+  nothing.
+- **Why `LOMEM=TOP`**: with C% and S% DIM'd, BASIC's variables end above
+  &3000, so option 1's MODE 1 fails with "Bad MODE" (tried: `DIM` the same
+  blocks from LOMEM=&2300, then MODE 1), which line 80's handler would
+  turn into a hang. LOMEM=TOP drops the DIMs; the scroller is stopped first
+  because the heap now starts over its code.
+- The scroller's phase: the column moves on as &60 *becomes* &49; the
+  start loop's eighth pass isn't spare (it writes row 17's colour codes),
+  only the pointer it leaves at &79 is.
+- The blank key names are the keyboard links (internal 2-9) and the matrix
+  columns 10-15, which a B doesn't have; PROCcheck isn't called for the
+  first key, which can't repeat. ESCAPE's "!" is at internal &70, as said.
+
+### MISSION: corrections
+
+- **The code in line 60 scrambles, it doesn't unscramble.** A level stores
+  its editing code scrambled (leveldata.6502inc's `code_byte`: BCD, swap
+  adjacent bits, rotate right); `CALL PAGE+198` puts the typed code through
+  the same steps so PROCsavelev can compare. Nothing turns a stored code
+  back into digits except the game (`show_edit_code`). The routine is now
+  `scramble_editing_code`. (CLAUDE.md's table still says "unscrambler".)
+- **Backpack size is 2-4**, stored 1-3, not 1-4: the input range is
+  `1,49,53` (exclusive), and in jsbeeb 1 and 5 are refused, 4 is taken.
+  The game's `io_backpack_last` holds that plus one, so the shown number
+  is how many things it holds. The fifth DATA triple (`1,48,52`) belongs to
+  no feature.
+- **The lock keys**: lower case only, so Caps Lock must be off (with it on,
+  H does nothing). Seen: i stores 1, h &FF. Both stop MISSION saving the
+  mission again (refused before a filename is asked) or a level without its
+  code (a wrong code returns quietly; IO's level 1 with 677636 goes on to
+  "Please wait..."). Only h's &FF matters to the game: `io_locked` is
+  tested for negative, so only an h-locked mission shows the competition
+  entry code at the end.
+- **Line 90's Escape branch can't run**: Escape is only a key (`*FX229 1`)
+  until line 140, so "Sorry about the GOTO" is never reached by an error.
+- **PROCtitle** draws a blue panel (rows 4-24, blue background from column
+  1, yellow text, black from column 38) under a yellow-on-red double-height
+  title, not "blue bars down both sides" (screenshot). The menu highlight is
+  green with blue text; the features page's "]" shows as an arrow.
+- **A blank mission's field 3 is the palette**: 1319473 is &31 &22 &14 &00,
+  palette_entry for 3 red, 2 green, 1 blue, 0 black. The &FF fill starts
+  inside field 3 (numlev*4) and line 760 then writes the palettes.
+- **The names block** (&134) is the graphics set's last slot (SLOT_NO_OBJECT,
+  &28: the picture for an object cell with no object) and the 15 object
+  names; the 18:10 table called its first &80 bytes "look like graphics".
+- The mission text: the game prints it as stored, through the OS, on its
+  backpack screen (`draw_backpack_screen`), which is also the screen
+  between levels with the edit code; the end-of-mission screen leaves it
+  out.
+
+### Checked against io.6502inc and leveldata.6502inc
+
+MISSION's arithmetic is what the includes compute: `addr` is `io_start`
+(&242D), L% is `io_levels`, `L% + numlev*pnt + S%*ext` is the includes'
+`io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[f] + s * LEVEL_FIELD_SIZES[f]`,
+the maps at `L% + numlev*data + S%*&800` are `io_maps + s * MAP_BYTES`, and
+G% is `io_graphics`. Field sizes (DATA 2090) are LEVEL_FIELD_SIZES; the four
+levels' codes (677636, 878702, 218652, 114226) are the level*.6502inc
+descriptions'.
+
+### Resolved from earlier lists
+
+- H.GAME does read the keys at &50-&59 (`menu_keys`, copied by its loader),
+  and moves itself out of IO's way before loading it.
+- `OSWORD_READ_CHAR_DEFINITION`, `EVENT_VSYNC`, `MODE7_SCREEN`,
+  `mode7_address()` and `SOLID_BLOCK` are in osconst.6502inc and
+  teletext.6502inc now.

@@ -191,3 +191,82 @@ into the load area.
   - `original/README.md` says any protection is in the software; the hidden
     runs' deleted data marks say otherwise.
   - CLAUDE.md's table: PL is "Ian's cheat" (W+T at boot), not just "&400".
+
+## 2026-10-03 20:54 — Second review: corrections and checks
+
+Every claim in the small pieces' comments was read against the code, and
+the behavioural ones run in jsbeeb (headless, `tools/beeb.mjs` and small
+scripts using its `startBeeb`). Corrections first, then what was confirmed.
+
+### Corrections
+
+- **TITLE's overrun** was described as catching up with "its own unread
+  tail only at &78D6". Precisely: simulating the unpacker, and recording
+  what it writes in jsbeeb, the unpacking passes the read pointer there and
+  zeros the packed data's last 41 bytes (&78D7-&78FF) before reading them.
+  They read as `0, 0` pairs, runs of 256 zeros, which carry the writing to
+  **&8DB1** (jsbeeb's write record: &8000-&8DB1, 3506 bytes into paged ROM
+  space). The output from those stale bytes all lands at &79B2 and above,
+  under the picture. So the final clear of &7800-&7FFF changes nothing: the
+  overrun has already left it zero.
+- **PL's cheat**, mapped onto hidden_game.6502 (H.GAME as loaded at &3000;
+  the game runs the code copied down to &0900 on):
+  - &3FC6 is `new_game`'s `LDX #START_LIVES : STX lives`: the cheat gives
+    **31 lives**.
+  - &4874 is `mission_done_screen`'s `BEQ show_entry_code` over `JMP
+    wait_for_space`: made BEQ +0, so **the competition entry code is never
+    shown** - a cheat can't win one.
+  - &4F31 is `load_mission`'s `STA furthest_level` (&61): made NOPs, with
+    &61 set to 3, so **the title screen's S offers all four levels**, even
+    after loading another mission.
+  PL's names are now `game_set_lives`, `game_entry_code_test`,
+  `game_clear_furthest_level`, `game_furthest_level`, `CHEAT_LIVES`,
+  `CHEAT_FURTHEST_LEVEL` instead of names after the instructions.
+- **PL's code check** takes X from OSBYTE, not from its own code: `*FX200`
+  hands back the old setting, 2 (as set at the start), which is also the
+  last code byte's index. So changing the *FX200 setting breaks the check -
+  one more anti-tamper the notes missed. (Seen: X = 2 at
+  `check_code_byte`.) The "decoy" test can't fail because PHP always pushes
+  B set; the comment had leaned on I as well.
+- **LDATA's header** named `tools/screen2png.py`, which doesn't exist; it's
+  `tools/beebscreen.py 1 data/ldata.bin OUT.png --columns 64 --offset 400
+  --palette 0,4,3,1`. Its address is now `screen_address(0, 2)` from
+  levdes.6502inc, with its 25 rows asserted.
+- **WARNING**: MENU clears rows 18-24 after it, but the scroller is on rows
+  17-24 (row 17 is blank already).
+- **MRUN**'s doubled `LDX #6`, overwritten before use, is EVENT_ESCAPE's
+  number; "exactly as at power-on" was too strong (nothing's cleared; the
+  boot file just runs again).
+- Stale from the 18:35 list: `src/loaders.6502inc` is gone (its names are
+  in os.6502inc and osconst.6502inc); `make test` does run the PL check
+  (tests/test_pl.py); original/README.md and CLAUDE.md are updated.
+
+### Confirmed in jsbeeb
+
+- **The stubs on an 80-track drive** (previously untested): jsbeeb models
+  the 96 tpi surface, so a 40-track disc can be put in a drive stepping one
+  surface track per step (`fdc.loadDisc(0, disc, 1)` with the disc loaded
+  as `DiscLayout.expanded40`). Each stub reads ID track 2 off the probe,
+  sets double_step to &FF, and reads its run correctly; with the drive
+  stepping two (a 40-track drive) double_step stays 0. Logging writes to
+  the 8271's registers shows the stub's commands arrive unchanged: seek
+  &3A (2 * 29), write special &12 := &1D, read &57 track &1D, &12 := &3A,
+  seek &3C... so DFS 1.2 passes OSWORD &7F straight through. But DFS 1.2
+  doesn't double-step its own reads, so the game, once loaded, fails to
+  load IO ("Disk fault 18 at 08/08" on its error screen). The stub's care
+  only pays with a DFS that double-steps its own reads.
+- The recalibrate: a seek to track 0 steps out until the drive signals
+  track 0 (jsbeeb's 8271 model, from beebjit, treats it so).
+- On the HFE (deleted marks) every read returns &20 once; DFS doesn't
+  retry it.
+- TITLE is entered with Y = 5 and copies &2F05-&2FFF (251 bytes).
+- MRUN: stopped at BASIC's OSCLI after `*/MRUN`, &0700 holds `*E.!BOOT  `
+  and the mode is 7 (it was 4 before).
+- PL: Y = 0 going into its first `*FX200` (left so by `*FX4`), so it sets
+  2 whatever was there; the listing of LEVEL1 with 677636 works; what's
+  typed is echoed (there's just no prompt). It waits only for the key last
+  pressed to be let go (MOS_KEY_PRESSED): booting with W and T held, then
+  letting go of T alone, it carries on; the comment said W and T "(and
+  RETURN)".
+- !BOOT's NETV claim: the only &24 &02 byte pairs on the disc are in IO
+  and LEVEL1's level data, not code.
