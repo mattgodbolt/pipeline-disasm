@@ -1,18 +1,21 @@
 ; $.TITLE: &1679 bytes at sector &027, loaded at &6300 and run at &7900.
 ; The title page shown before the game: "PIPELINE by IAN HOLMES and WILLIAM
 ; REEVE" in red, blue and white MODE 1 lettering (docs/img/title.png, made
-; with `tools/beebscreen.py 1 ... --palette 0,1,4,7 --title`).
+; with `tools/beebscreen.py 1 data/title_picture.bin OUT.png --palette
+; 0,1,4,7 --title`).
 ;
 ; MENU's option 1 selects MODE 1, makes all four colours black, *RUNs this,
 ; then sets the palette to black, red, blue, white (VDU 19 to 0, 1, 4, 7),
 ; so the picture appears at once, whole, for up to three seconds before the
 ; game loads.
 ;
-; The file is a packed picture and a little code to unpack it. It loads into
-; MODE 1 screen memory itself, and the picture unpacks over it from the top
-; of the screen (&3000) down; the packed data stays ahead of the unpacking
-; until its last 41 bytes, below the picture. The code wouldn't, so it first
-; copies itself out of the way, to the page below the screen.
+; The file is a packed picture and a little code to unpack it, in its last
+; page (&7900). It loads into MODE 1 screen memory itself, and the picture
+; unpacks over it, from the start of screen memory (&3000, the top of the
+; picture) upwards. The packed data keeps ahead of the unpacking until its
+; last 41 bytes, which lie below the picture. The code wouldn't keep ahead:
+; the unpacking reaches its page before it has finished, so it first copies
+; itself out of the way, to the page below the screen.
 ;
 ; The packing is runs of zeros: a nonzero byte stands for itself; a zero is
 ; followed by how many zeros it stands for (0 meaning 256). By the time the
@@ -21,18 +24,19 @@
 ; the writing on through this code's old page and past the end of the screen
 ; to &8DB1, in the paged ROM's space (harmless on a model B, where it's ROM).
 ; The last 2K of the screen, below the picture, is then cleared, though the
-; overrun has already left it all zero. (Simulated, and seen in jsbeeb's
-; record of what the code writes.)
+; overrun has already left it all zero. (docs/notes/loaders.md has the
+; simulation and jsbeeb's record of the writes.)
 
 INCLUDE "os.6502inc"
 INCLUDE "osconst.6502inc"
 
-; Where the unpacker runs: the page below the screen. It's inside MENU's C%
-; block, but by now the scroller there is stopped and LOMEM=TOP has dropped
-; the DIMs, so the menu's program and variables end well below it.
+; Where the unpacker runs: the page below the screen. It's inside the block
+; MENU DIMs as C% for its scrolling message (&2300-&31FF), but by now MENU
+; has stopped the scroller and set LOMEM=TOP, which gives that memory back,
+; so the menu's program and variables end well below it.
 RELOCATED_PAGE = &2F00
 
-; Zero page: user workspace.
+; Zero page: user workspace. (A number in brackets is a size in bytes.)
 relocate_to = &70           ; (2) where this page is copied to
 relocate_from = &72         ; (2) and from
 packed = &70                ; (2) the next packed byte
@@ -50,8 +54,7 @@ SECTION title, filename="TITLE", org=&6300, load=&6300, exec=&7900
 
 ; Entry, from *RUN. Copies this page down to RELOCATED_PAGE and carries on
 ; there. Y isn't set: the copy starts at whatever Y *RUN leaves (5 under DFS
-; 1.2, seen in jsbeeb), which is fine as long as it's below unpack's offset
-; in the page.
+; 1.2), which is fine as long as it's below unpack's offset in the page.
 .start
     LDA #0
     STA relocate_to
@@ -67,7 +70,8 @@ SECTION title, filename="TITLE", org=&6300, load=&6300, exec=&7900
     BNE relocate
     JMP unpack
 
-; Assembled for where it runs, carried here.
+; The rest of the page runs from RELOCATED_PAGE, so it's assembled for
+; there, though it sits here in the file.
 SECTION title_relocated, org=RELOCATED_PAGE + LO(P%)
 ; Unpack the picture into the screen from MODE1_SCREEN, clear the bottom
 ; 2K, flush the keyboard and return to BASIC. X stays 0 for (packed,X) except

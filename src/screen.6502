@@ -4,16 +4,17 @@
 ; to &7FFF, saved as it stood (docs/img/loading-screen.png, or render it with
 ; `tools/beebscreen.py 5 data/screen.bin OUT.png --palette 0,1,3,5`).
 ;
-; MENU *LOADs it straight into screen memory first thing (line 250: MODE 5,
-; cursor off, VDU 19,3,5 to make colour 3 magenta), so the palette is black,
-; red, yellow, magenta; it stays up for ten seconds or until a key
-; (INKEY(1000)). *LOAD runs nothing, so the catalogued exec address is
-; unused.
+; MENU *LOADs it straight into screen memory as soon as its setup is done
+; (line 250: MODE 5, cursor off, VDU 19,3,5 to make colour 3 magenta), so
+; the palette is black, red, yellow, magenta; it stays up for ten seconds or
+; until a key (INKEY(1000)). *LOAD runs nothing, so the catalogued exec
+; address is unused.
 ;
 ; Layout is the MOS's for MODE 5: 32 character rows of 320 bytes, each row
-; 40 cells of 8 bytes, one byte per pixel line of the cell; a byte is 4
-; pixels, pixel p's colour taking bit 7-p as its high bit and bit 3-p as its
-; low. The picture fills the top 27 character rows; the last five are blank.
+; 40 blocks of 8 bytes (a block is 4 pixels wide, so a MODE 5 character is
+; two), one byte per pixel line of the block; a byte is 4 pixels, pixel p's
+; colour taking bit 7-p as its high bit and bit 3-p as its low. The picture
+; fills the top 27 character rows; the last five are blank.
 
 INCLUDE "osconst.6502inc"
 

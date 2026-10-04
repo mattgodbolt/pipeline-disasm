@@ -6,19 +6,22 @@
 ; - *BASIC makes sure BASIC is the current language before the rest.
 ; - *FX200,3: Escape disabled, and memory cleared on BREAK, so BREAK can't
 ;   be used to stop the game and look at it.
-; - ?&224=?(&24+!&FFB7): &FFB7 holds the address of the MOS's table of
-;   default vector contents, and &24 is NETV's offset in it (as in page 2),
-;   so this puts back the low byte of NETV. That byte is all a ROM changes
-;   to claim NETV through the extended vectors (making it &FF36, where MOS
-;   1.20's default is &FFA6), and Econet's NFS does that at every reset, so
-;   this disconnects the NFS; nothing on the disc touches NETV. Presumably
-;   it's because OSWORD 0 calls NETV after every line it reads, and the
-;   game reads a file name that way while its code fills page &0D, where
-;   the extended vectors are kept. In jsbeeb with Econet fitted it changes
-;   nothing seen: the NFS ignores those calls, MENU restores every vector
-;   but BRKV anyway, and the game's own service calls, when it loads IO,
-;   have the NFS claim NETV again before that read, which then jumps through
-;   game code.
+; - ?&224=?(&24+!&FFB7) disconnects an Econet filing system (NFS) from
+;   NETV, the network vector at &224. !&FFB7 is the address of the MOS's
+;   table of default vector contents, laid out as page 2 is, so &24 bytes
+;   in is NETV's default, and this copies back its low byte. A ROM claims a
+;   vector through the MOS's extended vectors: it points the vector at an
+;   entry in page &FF that jumps on through a table in page &0D. For NETV
+;   that entry is &FF36, and MOS 1.20's default is &FFA6, so the low byte
+;   is all that changes. Econet's NFS claims NETV this way at every reset.
+;   Nothing on the disc touches NETV. Presumably the worry is that OSWORD 0
+;   calls NETV after every line it reads, and the game reads a file name
+;   that way while its code fills page &0D, the extended vectors' table.
+;   The line makes no visible difference, though: the NFS ignores those
+;   calls, MENU soon puts back every vector but BRKV anyway, and when the
+;   game loads IO its own service calls make the NFS claim NETV again, so
+;   its file name read goes through game code regardless
+;   (docs/notes/loaders.md).
 ; - CHAIN"MENU" runs the BASIC menu.
 
 INCLUDE "osconst.6502inc"   ; CR: *EXEC lines end with one, as typed

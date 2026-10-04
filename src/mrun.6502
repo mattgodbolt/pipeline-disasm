@@ -1,6 +1,8 @@
-; $.MRUN: &80 bytes at sector &100, loaded and run at &0780 (page 7, BASIC's
-; string buffer, free while the editors run). The Graphics Designer and the
-; Level Designer leave through `*/MRUN` to get back to the menu.
+; $.MRUN: &80 bytes at sector &100, loaded and run at &0780. That's the top
+; half of page 7, BASIC's keyboard input buffer: free while the editors run,
+; and the command MRUN types for BASIC lands in the bottom half. The
+; Graphics Designer, the Level Designer and MISSION all run `*/MRUN` to get
+; back to the menu.
 ;
 ; It undoes the editors' hooks - RDCHV (the Level Designer's, still in place
 ; when it runs /MRUN) and EVNTV with the Escape event (the Graphics
@@ -9,13 +11,15 @@
 ; from the top, and the menu comes back as it did at boot.
 ;
 ; What's left of the file past the text is whatever was in memory when it
-; was saved. The disc's slack past the file is in src/disc.toml.
+; was saved. The rest of its sector on the disc holds more stale bytes,
+; which src/disc.toml records.
 
 INCLUDE "os.6502inc"
 INCLUDE "osconst.6502inc"
 
 ; Zero page: BASIC's, unused until BASIC starts, which is the last thing
-; this does. &50 serves twice, in turn.
+; this does. &50 serves twice, in turn. (A number in brackets is a size in
+; bytes.)
 default_vectors = &50       ; (2) the MOS's table of default vector contents
 typed_index = &50           ; next character of boot_command to type
 
@@ -24,8 +28,8 @@ SECTION mrun, filename="MRUN", org=&0780, load=&780, exec=&780
 {
 ; Entry from *RUN; never returns.
 .start
-    ; Twice over, and X is set again before it's used: a leftover, perhaps
-    ; of the Escape event's OSBYTE below once coming first.
+    ; Twice over, and X is set again before it's used: perhaps left over
+    ; from when the Escape event's OSBYTE, below, came first.
     LDX #EVENT_ESCAPE
     LDX #EVENT_ESCAPE
 
@@ -66,17 +70,16 @@ SECTION mrun, filename="MRUN", org=&0780, load=&780, exec=&780
     CMP #CR
     BNE type_next
 
-    ; *BASIC enters BASIC as the current language, which finds the typing.
+    ; *BASIC makes BASIC the current language, and BASIC reads what was
+    ; typed as its first command.
     LDX #LO(start_basic)
     LDY #HI(start_basic)
     JMP OSCLI
 
 ; Typed into the keyboard buffer for BASIC to read. BASIC's line input
-; echoes the control codes as it reads them, so CTRL-V CTRL-G clears to a
-; MODE 7 screen before the boot file starts, but only stores printable
-; characters: the command BASIC runs is "*E.!BOOT  ". (Seen in jsbeeb: when
-; BASIC hands the line to OSCLI, &0700 holds "*E.!BOOT  " and the screen is
-; in MODE 7.)
+; echoes the control codes as it reads them, so CTRL-V CTRL-G (VDU 22,7)
+; clears to a MODE 7 screen before the boot file starts, but stores only
+; printable characters: the command BASIC runs is "*E.!BOOT  ".
 .boot_command
     EQUS "*E.!BOOT"
     EQUB VDU_MODE, 7            ; MODE 7
