@@ -1,0 +1,164 @@
+; Names the Level Designer (hidden_levdes.6502) and its windows (wdata.6502)
+; use that no shared include has yet. Some belong in shared includes in the
+; end: the cell types and level flags in level.6502inc (whose TILE_* names
+; are wrong for 6, 8, 9, A, B, E and F), the OS numbers and key numbers in
+; osconst.6502inc. docs/notes/levdes.md lists them.
+
+; The map's cell types: the game's names (io.6502inc's CELL_*) where it has
+; them, and the designer's own block menu names in the comments. The keys
+; 0-9 and A-F pick the block menu's items in order, which isn't this order.
+CELL_FLOOR       = &0           ; Blank
+CELL_SE_CURVE    = &1           ; SE curve: the four curves are wall shapes
+CELL_SW_CURVE    = &2           ; SW curve
+CELL_NE_CURVE    = &3           ; NE curve
+CELL_NW_CURVE    = &4           ; NW curve
+CELL_WALL_1      = &5           ; Wall 1
+CELL_CRATE       = &6           ; Crate
+CELL_SULPHUR     = &7           ; Collectable
+CELL_WALL        = &8           ; Wall 2
+CELL_BARRICADE   = &9           ; Barricade
+CELL_LAVA        = &A           ; Fatal trap
+CELL_JUNCTION    = &B           ; Junction, of pipes
+CELL_PIPE_ACROSS = &C           ; Horz.Pipe
+CELL_PIPE_DOWN   = &D           ; Vert.Pipe
+CELL_FIRE        = &E           ; S.Monster: the designer marks monsters with it
+CELL_OBJECT      = &F           ; Marker: the start, finish and objects
+
+; Compass directions, as a level keeps them for monsters and for the puzzles
+; that move things or check which way the player is going.
+COMPASS_WEST       = 0
+COMPASS_EAST       = 1
+COMPASS_NORTH      = 2
+COMPASS_SOUTH      = 3
+COMPASS_NORTH_WEST = 4          ; the diagonals only for Move block
+COMPASS_NORTH_EAST = 5
+COMPASS_SOUTH_WEST = 6
+COMPASS_SOUTH_EAST = 7
+MONSTER_DEAD       = 8          ; a walking monster's direction when it's gone
+
+; Turns, relative to the way a monster is going: the two-bit fields of a
+; monster's pattern (first choice in bits 0-1), and Move next block's
+; direction (times 4).
+TURN_BACK     = 0
+TURN_FORWARDS = 1
+TURN_RIGHT    = 2
+TURN_LEFT     = 3
+
+; An object's fourth byte: the charges below its three flags.
+OBJECT_CHARGES = &1F
+
+; A puzzle's fourth effect byte, its conditions.
+CONDITION_BLOCK           = &0F ; the next block must be this...
+CONDITION_DIRECTION       = &30 ; the player must be going this way...
+CONDITION_CHECK_BLOCK     = &40 ; ...if this is set
+CONDITION_CHECK_DIRECTION = &80 ; ...if this is set
+
+; Set levels' first effect byte.
+SET_LEVELS_KEEP_TIME     = &80  ; leave the time alone
+SET_LEVELS_KEEP_COLLECTS = &01  ; leave the collectables needed alone
+
+; Two bits a block in the level's sprites byte: which squares, on a
+; checkerboard, show the block's second picture (the game's alternate_cells).
+SPRITES_A         = 0           ; Sprite A: the first picture everywhere
+SPRITES_ODD       = 1           ; Patterned: the odd squares
+SPRITES_EVEN      = 2           ; (not offered)
+SPRITES_B         = 3           ; Sprite B: the second everywhere
+
+; Physical colours, for VDU 19.
+BLACK   = 0
+RED     = 1
+GREEN   = 2
+YELLOW  = 3
+BLUE    = 4
+MAGENTA = 5
+CYAN    = 6
+WHITE   = 7
+; A palette entry as set_palette_entry (and a level) keeps it.
+FUNCTION palette_entry(logical, physical) = logical * 16 + physical
+
+; The screen: MODE 1 narrowed to 64 columns of 8 bytes (four pixels), so a
+; character row is 512 bytes, and 32 rows fill &3000-&6FFF. A map cell is a
+; column's byte by four scan lines, two cells to a character row.
+screen          = &3000
+SCREEN_COLUMNS  = 64
+SCREEN_ROWS     = 32
+SCREEN_ROW      = SCREEN_COLUMNS * 8
+SCREEN_END      = screen + SCREEN_ROWS * SCREEN_ROW
+FUNCTION screen_address(column, row) = screen + row * SCREEN_ROW + column * 8
+
+; VDU codes.
+VDU_NOTHING       = 0
+VDU_RIGHT         = 9           ; the cursor right a character, painting nothing
+VDU_CLS           = 12
+VDU_COLOUR        = 17          ; VDU 17, colour: COLOUR (128 up: background)
+VDU_PALETTE       = 19          ; VDU 19, logical, physical, 0, 0, 0
+VDU_MODE          = 22
+VDU_RESET_WINDOWS = 26
+VDU_TEXT_WINDOW   = 28          ; VDU 28, left, bottom, right, top
+VDU_TAB           = 31          ; VDU 31, x, y
+
+; The OS's text output still thinks the screen is MODE 1's 40 columns of 640
+; bytes, so to print at a column and row of ours, TAB to the OS character
+; that lands there.
+OS_ROW = 640
+FUNCTION os_tab(column, row)
+    offset = row * SCREEN_ROW + column * 8
+    ASSERT offset MOD 16 == 0, "no OS character starts at ", column, ", ", row
+= {VDU_TAB, (offset MOD OS_ROW) DIV 16, offset DIV OS_ROW}
+
+; The message box: character rows 14-17 and columns 2-61. print_line1 and
+; print_line2 print on its first and third rows, four columns in.
+MESSAGE_BOX_ROW     = 14
+MESSAGE_BOX_ROWS    = 4
+MESSAGE_BOX_COLUMN  = 2
+MESSAGE_BOX_COLUMNS = 60
+MESSAGE_LINE_1      = MESSAGE_BOX_ROW
+MESSAGE_LINE_2      = MESSAGE_BOX_ROW + 2
+MESSAGE_LEFT        = MESSAGE_BOX_COLUMN + 2
+
+; MODE 1 pixels as characters, " " colour 0 (black), "." 1, "#" 2 and "o" 3
+; (blue, yellow and red in the designer's own palette), four to a byte.
+FUNCTION pixel_colours(s) = FIND(CODES(" .#o"), CODES(s))
+FUNCTION mode1_byte(s) = SUM((pixel_colours(s) >> 1) * {128, 64, 32, 16} + (pixel_colours(s) AND 1) * {8, 4, 2, 1})
+
+; OS calls osconst.6502inc doesn't have.
+OSBYTE_AUTO_REPEAT_PERIOD = &0C ; *FX12: X centiseconds between repeats
+OSBYTE_WAIT_VSYNC         = &13 ; *FX19
+OSBYTE_ACKNOWLEDGE_ESCAPE = &7E ; X = &FF if there was an escape condition
+OSBYTE_OPT                = &8B ; *OPT X, Y
+OSBYTE_KEYBOARD_STATUS    = &CA ; *FX202: bit 4 clear Caps Lock, bit 5 clear
+                                ; Shift Lock, bit 7 set Shift reverses Caps Lock
+OSBYTE_BELL_DURATION      = &D6 ; *FX214
+OSBYTE_SOFT_KEY_BASE      = &E1 ; *FX225: f0-f9 give X + n
+OSFILE_SAVE = &00
+OSFILE_LOAD = &FF
+; *FX4's settings.
+CURSOR_KEYS_EDIT = 0            ; copy editing
+CURSOR_KEYS_SOFT = 2            ; COPY and the cursor keys are soft keys 11-15
+
+; What the keys give with *FX225,128 and *FX4,2.
+KEYCODE_F0          = &80       ; f0-f9: &80-&89
+KEYCODE_CURSOR_DOWN = &8E       ; soft key 14
+KEYCODE_CURSOR_UP   = &8F       ; soft key 15
+DEL = &7F
+
+; Internal key numbers, for INKEY_TEST().
+KEY_SHIFT  = &00
+KEY_X      = &42
+KEY_COLON  = &48
+KEY_RETURN = &49
+KEY_DELETE = &59
+KEY_Z      = &61
+KEY_SLASH  = &68
+
+; 6845 CRTC registers.
+CRTC_HORIZ_DISPLAYED = 1
+CRTC_HORIZ_SYNC      = 2
+CRTC_CURSOR_START    = 10       ; bits 5-6: 01 no cursor, 11 blinking
+CURSOR_NONE  = &20
+CURSOR_BLINK = &67              ; MODE 1's own: blinking, from scan line 7
+
+; The startup options byte (the keyboard links) that opens the back door.
+DEVELOPERS_LINKS = &CF
+; The designer's own error number for Escape.
+ERROR_ESCAPE_KEY = &1B

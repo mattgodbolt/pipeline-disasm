@@ -20,6 +20,7 @@
 
 INCLUDE "os.6502inc"
 INCLUDE "level.6502inc"
+INCLUDE "levdes.6502inc"
 INCLUDE "wdata.6502inc"
 
 FUNCTION asc(s) = CODES(s)[0]  ; a character's code, as BASIC's ASC
@@ -81,16 +82,7 @@ menu_first_item = &89
 
 error_ptr       = &FD           ; the OS's pointer to the last error
 
-screen          = &3000
-SCREEN_ROW      = 512           ; bytes per character row: 64 columns of 8
-SCREEN_END      = &7000
-FUNCTION screen_address(column, row) = screen + row * SCREEN_ROW + column * 8
-; The message box, character rows 14-17 and columns 2-61; the OS's TAB(10,11)
-; and TAB(34,12) land on its first and third rows.
-MESSAGE_BOX_ROW = 14
-MESSAGE_BOX_ROWS = 4
-MESSAGE_BOX_COLUMNS = 60
-message_box     = screen_address(2, MESSAGE_BOX_ROW)
+message_box     = screen_address(MESSAGE_BOX_COLUMN, MESSAGE_BOX_ROW)
 
 SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 
@@ -129,7 +121,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 ; Open a window, let the user pick from its menu, close it.
 ; choose_from_window starts on the first item; choose_from_window_at on item
 ; Y. Window W_SELECT_BLOCK is special: Y and the result are blocks, not menu
-; items, translated through tile_menu_map.
+; items, translated through block_menu_map.
 ; In: A = window number, Y = first item.
 ; Out: A = the item (or block) chosen.
 ; Clobbers: X, Y, ptr; Escape restarts the main loop.
@@ -140,7 +132,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     DEX
     STX menu_window
     BNE choose_show_window
-    LDA tile_menu_map, Y        ; the block's position in the menu
+    LDA block_menu_map, Y       ; the block's position in the menu
     LSR A
     LSR A
     LSR A
@@ -159,7 +151,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     LDX menu_window
     BNE choose_done
     TAY
-    LDA tile_menu_map, Y        ; the menu item's block
+    LDA block_menu_map, Y       ; the menu item's block
     AND #&0F
 .choose_done
     RTS
@@ -657,7 +649,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     JSR test_key
     BNE get_key_check_return
     INC keys_acted_on
-    LDA #TILE_BLANK
+    LDA #CELL_FLOOR
     JSR plot_at_cursor
 .get_key_check_return
     LDX #&B6                    ; Return
@@ -756,11 +748,11 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     RTS
 
 ; Move the cursor a cell, if it can go there. Normally it can go anywhere on
-; the map; while simulating (the Help menu's Simulate) it moves like the
-; player: it walks onto blank cells and collectables, dies on wall 2, a
-; barricade or the map's edge, and enters a pipe that runs its way, which
-; starts it travelling (simulating) until it comes out. Shift lets it go
-; anywhere regardless.
+; the map; with the simulator on it moves like the player: it walks onto
+; blank cells and collectables, loses a life in a fatal trap, an S.Monster or
+; off the map's edge, and enters a pipe that runs its way, which starts it
+; travelling (simulating) until it comes out. Anything else stops it. Shift
+; lets it go anywhere on the map regardless, and stops any travelling.
 ; In: Y = direction, 0 left, 1 up, 2 right, 3 down.
 ; Out: C clear and X, Y = the new position if it moved.
 ; Clobbers: A, ptr, work.
@@ -786,11 +778,11 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     BEQ move_to_neighbour       ; anyone can go onto a blank
     LDX simulate_window
     BEQ move_to_neighbour       ; and anywhere when not simulating
-    CMP #TILE_COLLECTABLE
+    CMP #CELL_SULPHUR
     BEQ move_to_neighbour
-    CMP #TILE_WALL_2
+    CMP #CELL_LAVA
     BEQ simulate_lose_life
-    CMP #TILE_BARRICADE
+    CMP #CELL_FIRE
     BEQ simulate_lose_life
     TAX
     BMI simulate_lose_life
@@ -849,22 +841,24 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 
 ; One step of travelling: along pipes whatever their direction, out onto a
 ; blank or a collectable (which stops it), back the way it came off curves,
-; walls, crates, markers, traps and junctions, and at an S.Monster block into
-; the first pipe it finds turning one way, the other, or straight on.
+; walls, crates, barricades and markers, and at a junction into the first
+; pipe running its way that it finds turning left, right or going straight on
+; (or back, if there's none). Fatal traps, S.Monsters and the map's edge cost
+; a life.
 .simulate_travel
     LDY direction
     JSR neighbour
     JSR vector_read_map
     BEQ simulate_set_running
     BMI simulate_lose_life
-    CMP #TILE_COLLECTABLE
+    CMP #CELL_SULPHUR
     BEQ simulate_collect
-    CMP #TILE_MONSTER
-    BEQ simulate_monster
-    CMP #TILE_WALL_2
+    CMP #CELL_JUNCTION
+    BEQ simulate_junction
+    CMP #CELL_LAVA
     BEQ simulate_lose_life
     BCC simulate_bounce
-    CMP #TILE_BARRICADE
+    CMP #CELL_FIRE
     BEQ simulate_lose_life
     BCC move_to_neighbour       ; the two pipes
 .simulate_bounce
@@ -877,7 +871,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .simulate_set_running
     STA simulating
     BEQ move_to_neighbour
-.simulate_monster
+.simulate_junction
     PLA
     JSR move_push
     LDY direction
@@ -976,7 +970,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     ADC #asc("9")               ; A-F follow 0-9 (the carry adds one)
 .hex_key_tile
     TAY
-    LDA tile_menu_map - asc("0"), Y
+    LDA block_menu_map - asc("0"), Y
     AND #&0F
     STA brush
 .beep
@@ -1129,8 +1123,9 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     JMP open_window
 ; Options menu, Start and Finish: Define lets the user put the start or
 ; finish with the cursor; Display just moves the cursor there. The start is
-; kept 4 less than where it's put in each direction. The position is marked
-; in the map with a junction block.
+; kept 4 less than where it's put in each direction (the game keeps the top
+; left of its 8x8 view, the player being 4 cells in). The position is marked
+; in the map with a marker block.
 .option_start
     LDY #level_start_x - level_start_x
     BEQ edit_marker
@@ -1178,7 +1173,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     CLC
     ADC cursor_y
     STA level_start_y, Y
-    LDA #TILE_JUNCTION
+    LDA #CELL_OBJECT
 ; Mark a position in the map: put block A at the cursor, and blank the old
 ; position if it has the same block.
 ; In: A = the block; work = the old position.
@@ -1218,7 +1213,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     BPL option_object_loop
 
 ; Object window, Position: put it with the cursor, marked in the map with a
-; junction.
+; marker block.
 .object_position
     JSR vector_close_window
     LDY record
@@ -1242,7 +1237,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     STA level_objects, Y
     LDA cursor_y
     STA level_objects+1, Y
-    LDA #TILE_JUNCTION
+    LDA #CELL_OBJECT
     JSR plot_marker
 ; Open the object window with ticks showing the object's flags.
 .show_object_window
@@ -1389,8 +1384,8 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     PLA
     BPL option_monster_loop
 
-; Monster window, Position: put it with the cursor, marked in the map with a
-; barricade.
+; Monster window, Position: put it with the cursor, marked in the map with an
+; S.Monster block (the game marks a monster's cell with it, as fire).
 .monster_position
     JSR vector_close_window
     LDY record
@@ -1420,7 +1415,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     ASL A
     ASL A
     STA level_monsters+1, Y
-    LDA #TILE_BARRICADE
+    LDA #CELL_FIRE
     JSR plot_marker
 .show_monster_window
     LDA #W_MONSTER
@@ -1645,7 +1640,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     LDA (ptr), Y
     PHA
     AND #&0F
-    CMP #TILE_COLLECTABLE
+    CMP #CELL_SULPHUR
     BNE option_collects_high
     JSR count_collectable
 .option_collects_high
@@ -1654,7 +1649,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     LSR A
     LSR A
     LSR A
-    CMP #TILE_COLLECTABLE
+    CMP #CELL_SULPHUR
     BNE option_collects_next
     JSR count_collectable
 .option_collects_next
@@ -2907,7 +2902,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 
 ; The pipe a direction (0 left, 1 up, 2 right, 3 down) can go into.
 .pipe_across
-    EQUB TILE_HORZ_PIPE, TILE_VERT_PIPE, TILE_HORZ_PIPE, TILE_VERT_PIPE
+    EQUB CELL_PIPE_ACROSS, CELL_PIPE_DOWN, CELL_PIPE_ACROSS, CELL_PIPE_DOWN
 ; A direction's step: dy for direction n is at direction_dy+n, dx at
 ; direction_dx+n, the two tables overlapping.
 .direction_dy
@@ -2915,27 +2910,16 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 .direction_dx
     EQUB -1, 0, 1, 0
 
-; The blocks in the order of the block menu, and the order of the keys 0-9,
-; A-F that choose them directly: for each key, the block's menu item * 16 +
-; the block.
-FUNCTION key_block(item, tile) = item * 16 + tile
-.tile_menu_map
-    EQUB key_block(0, TILE_BLANK)           ; 0
-    EQUB key_block(1, TILE_SE_CURVE)        ; 1
-    EQUB key_block(2, TILE_SW_CURVE)        ; 2
-    EQUB key_block(3, TILE_NE_CURVE)        ; 3
-    EQUB key_block(4, TILE_NW_CURVE)        ; 4
-    EQUB key_block(5, TILE_WALL_1)          ; 5
-    EQUB key_block(10, TILE_CRATE)          ; 6
-    EQUB key_block(7, TILE_COLLECTABLE)     ; 7
-    EQUB key_block(6, TILE_WALL_2)          ; 8
-    EQUB key_block(15, TILE_BARRICADE)      ; 9
-    EQUB key_block(8, TILE_FATAL_TRAP)      ; A
-    EQUB key_block(14, TILE_JUNCTION)       ; B
-    EQUB key_block(12, TILE_HORZ_PIPE)      ; C
-    EQUB key_block(13, TILE_VERT_PIPE)      ; D
-    EQUB key_block(9, TILE_MONSTER)         ; E
-    EQUB key_block(11, TILE_MARKER)         ; F
+; The block menu's blocks, in order. The keys 0-9 and A-F pick its items by
+; number, so 6 is wall 2, not a crate.
+block_menu = {CELL_FLOOR, CELL_SE_CURVE, CELL_SW_CURVE, CELL_NE_CURVE,
+    CELL_NW_CURVE, CELL_WALL_1, CELL_WALL, CELL_SULPHUR, CELL_LAVA, CELL_FIRE,
+    CELL_CRATE, CELL_OBJECT, CELL_PIPE_ACROSS, CELL_PIPE_DOWN, CELL_JUNCTION,
+    CELL_BARRICADE}
+; Two tables in one, a nibble each: entry n's top nibble is block n's item
+; in the block menu, and its bottom nibble is item n's block.
+.block_menu_map
+    EQUB FIND(block_menu, 0..15) * 16 + block_menu
 
 ; Each menu's handlers, one per item (zero page points at these tables).
 .options_handlers
@@ -3147,7 +3131,7 @@ FUNCTION key_block(item, tile) = item * 16 + tile
     EQUB 0                      ; collectables needed
     EQUB 250                    ; time
     EQUB 32, 32                 ; finish
-    EQUB TILE_WALL_2 * 16 + TILE_WALL_2         ; monsters die on wall 2
+    EQUB CELL_LAVA * 16 + CELL_LAVA             ; monsters die in fatal traps
     EQUB 0                      ; sprites
 ; Each monster: at (32, 32), dead, back and forth.
 .default_monster
@@ -3313,11 +3297,8 @@ FUNCTION key_block(item, tile) = item * 16 + tile
     LSR A
     RTS
 
-; Pixel art for the font and the map's blocks: each character a pixel in
-; MODE 1 colours " " 0 (black), "." 1, "#" 2, "o" 3 (blue, yellow and red
-; in the designer's palette).
-FUNCTION pixel_colours(s) = FIND(CODES(" .#o"), CODES(s))
-FUNCTION mode1_byte(s) = SUM((pixel_colours(s) >> 1) * {128, 64, 32, 16} + (pixel_colours(s) AND 1) * {8, 4, 2, 1})
+; Pixel art for the font and the map's blocks, a character a pixel as
+; mode1_byte() takes them.
 ; A glyph: eight rows of eight pixels, kept as the left four pixels of each
 ; row and then the right four, as they go on the screen.
 MACRO GLYPH r0, r1, r2, r3, r4, r5, r6, r7
@@ -3349,16 +3330,16 @@ ENDMACRO
     TILE "####", " ###", "  ##", "   #"   ; 3: NE curve
     TILE "####", "### ", "##  ", "#   "   ; 4: NW curve
     TILE "####", "####", "####", "####"   ; 5: wall 1
-    TILE " .. ", ".##.", ".##.", " .. "   ; 6: fatal trap
-    TILE "oooo", " oo ", " oo ", " oo "   ; 7: collectable
-    TILE "...o", "..o.", ".o..", "o..."   ; 8: crate
-    TILE "oooo", " ## ", " ## ", "oooo"   ; 9: marker
-    TILE " ## ", "#  #", "#  #", " ## "   ; A: wall 2
-    TILE " .. ", "....", "....", " .. "   ; B: S.monster
+    TILE " .. ", ".##.", ".##.", " .. "   ; 6: crate
+    TILE "oooo", " oo ", " oo ", " oo "   ; 7: collectable (sulphur)
+    TILE "...o", "..o.", ".o..", "o..."   ; 8: wall 2
+    TILE "oooo", " ## ", " ## ", "oooo"   ; 9: barricade
+    TILE " ## ", "#  #", "#  #", " ## "   ; A: fatal trap (lava)
+    TILE " .. ", "....", "....", " .. "   ; B: junction: both pipes at once
     TILE "    ", "....", "....", "    "   ; C: horizontal pipe
     TILE " .. ", " .. ", " .. ", " .. "   ; D: vertical pipe
-    TILE "####", "#..#", "#..#", "####"   ; E: barricade
-    TILE " oo ", "oooo", "oooo", " oo "   ; F: junction
+    TILE "####", "#..#", "#..#", "####"   ; E: S.monster (fire)
+    TILE " oo ", "oooo", "oooo", " oo "   ; F: marker (an object)
     EQUB 0                      ; spare
 ; Zero page as entry leaves it: pointers to the menus' handler tables, which
 ; jump_to_handler finds by number (from 1), and spare bytes.
