@@ -2297,7 +2297,7 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
 
 ; Draw the selected sprite in the editing grid and put the pixel cursor
 ; back on it.
-; In:  carry set to take an undo copy of the sprite first
+; In:  sprite, carry set to take an undo copy of the sprite first
 ; Clobbers: A, X, Y, and as draw_grid
 .redraw_grid
 {
@@ -2314,6 +2314,8 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
 ; OptionsA Flip X (CTRL-X): mirror the sprite left to right, pixel by pixel,
 ; swapping each pixel in the left half of a row with its opposite. colour
 ; carries the pixels across (main_loop puts it back).
+; In:  sprite
+; Clobbers: everything
 .cmd_flip_x
 {
     LDA sprite
@@ -2336,8 +2338,8 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     SBC count_x
     TAX
     LDY count_y
-    STX flip_x
-    STY flip_y
+    STX mirror_x
+    STY mirror_y
     LDA sprite
     JSR read_pixel
     PHA
@@ -2346,8 +2348,8 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     LDA sprite
     JSR read_pixel
     STA colour
-    LDX flip_x
-    LDY flip_y
+    LDX mirror_x
+    LDY mirror_y
     LDA sprite
     JSR plot_pixel
     LDX count_x
@@ -2380,22 +2382,28 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
 }
 
 ; Flip X's mirrored pixel.
-.flip_x
+.mirror_x
     EQUB &00
 
-.flip_y
+.mirror_y
     EQUB &00
 
 ; The OSGBPB block for moving sprites and names to and from files: the
-; handle, the address in memory, the byte count, the pointer in the file.
-.gbpb_block
-    EQUB 0                          ; handle
-    EQUD 0                          ; address
-    EQUD 0                          ; count
-    EQUD 0                          ; pointer
+; handle, the address in memory, the byte count, the pointer in the file;
+; then three spare bytes, which check_filing_system clears with it.
+.gbpb_block                         ; the handle
+    EQUB 0
+.gbpb_address
+    EQUD 0
+.gbpb_count
+    EQUD 0
+.gbpb_pointer
+    EQUD 0
     EQUB 0, 0, 0
 
 ; OptionsA Flip Y (CTRL-Y): turn the sprite upside down.
+; In:  sprite
+; Clobbers: everything
 .cmd_flip_y
 {
     JSR flip_vertically
@@ -2404,7 +2412,7 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
 }
 
 ; Turn the selected sprite upside down, by reversing each column of bytes.
-; In:  sprite = the sprite (Animate uses this on its frame buffers)
+; In:  sprite (Animate uses this on its frame buffers)
 ; Clobbers: A, X, Y, data_ptr, count_x, count_y, sprite_width
 .flip_vertically
 {
@@ -2415,7 +2423,7 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     ASL A
     ASL A
     ASL A
-    STA count_y
+    STA count_y                     ; a column's bytes
 .column
     LDY count_y
     DEY
@@ -2449,6 +2457,8 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
 
 ; OptionsA Undo (CTRL-U): swap the sprite with the copy taken when it was
 ; selected, so a second Undo puts the changes back.
+; In:  sprite
+; Clobbers: everything
 .cmd_undo
 {
     LDA sprite
@@ -2472,8 +2482,10 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     JMP wait_key_release
 }
 
-; OptionsB Underlay: put this sprite under another - fill the other's
-; colour 0 pixels from this one.
+; OptionsB Underlay (no shortcut): put this sprite under another - fill the
+; other's colour 0 pixels from this one.
+; In:  sprite
+; Clobbers: everything
 .cmd_underlay
 {
     LDX #LO(text_underlay)
@@ -2485,18 +2497,22 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
 }
 
 ; OptionsB Backing (CTRL-B): fill the sprite's colour 0 pixels from the
-; background tile (sheet position 0).
+; floor (sheet position 0). No second sprite to pick: it goes straight on.
+; In:  sprite
+; Clobbers: everything
 .cmd_backing
 {
     LDX sprite
     STX combine_test
-    LDA #&00                        ; the background tile
+    LDA #&00                        ; the floor
     CLC
     JMP combine_sprites
 }
 
 ; OptionsB Overlay (CTRL-O): put this sprite over another - copy its
 ; pixels other than colour 0 onto the other.
+; In:  sprite
+; Clobbers: everything
 .cmd_overlay
 {
     LDX #LO(text_overlay)
@@ -2506,12 +2522,13 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     SEC
 }
 
-; Combine two sprites a pixel at a time.
+; Combine two sprites a pixel at a time, then show them both again
+; (redraw_pair).
 ; In:  X = the sprite to change, A = the sprite to take pixels from,
 ;      combine_test = the sprite whose pixels decide, carry set to copy
 ;      combine_test's pixels where they aren't colour 0 (overlay), clear to
 ;      copy A's pixels where combine_test's are colour 0 (underlay, backing)
-; Then shows both sprites again, through redraw_pair.
+; Clobbers: everything
 .combine_sprites
 {
     STX combine_target
@@ -2522,14 +2539,14 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     LDA sprite_width                ; count_x = the last pixel across
     ASL A
     ASL A
-    SBC #&00
+    SBC #&00                        ; (carry clear from the ASL)
     STA count_x
 .column
     LDA sprite_width                ; count_y = the last row
     ASL A
     ASL A
     ASL A
-    SBC #&00
+    SBC #&00                        ; (carry clear from the ASL)
     STA count_y
 .pixel
     LDA combine_test
@@ -2579,6 +2596,8 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
 
 ; OptionsB Remove (CTRL-R): take this sprite from another - clear to 0 the
 ; other's pixels that match this one's.
+; In:  sprite
+; Clobbers: everything
 .cmd_remove
 {
     LDX #LO(text_remove)
@@ -2586,13 +2605,13 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     JSR pick_second_sprite
     STX combine_target
     STA combine_source
-    LDA sprite_width
+    LDA sprite_width                ; count_x = the last pixel across
     ASL A
     ASL A
-    SBC #&00
+    SBC #&00                        ; (carry clear from the ASL)
     STA count_x
 .column
-    LDA sprite_width
+    LDA sprite_width                ; count_y = the last row
     ASL A
     ASL A
     ASL A
@@ -2625,6 +2644,8 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
 }
 
 ; OptionsB Copy (CTRL-COPY): copy this sprite onto another.
+; In:  sprite
+; Clobbers: everything
 .cmd_copy
 {
     LDX #LO(text_copy)
@@ -2641,7 +2662,9 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
 }
 
 ; OptionsB Swap (CTRL-S): swap this sprite with another, and two objects'
-; names with them (not the exit's: it has none).
+; names with them (unless one is the exit, which has none).
+; In:  sprite
+; Clobbers: everything
 .cmd_swap
 {
     LDX #LO(text_swap)
@@ -2674,7 +2697,7 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     PHA
     JSR name_offset.of_a
     STA aux_ptr
-    LDX #12-1                       ; count the name's bytes in data_ptr+1
+    LDX #OBJECT_NAME_LENGTH - 1     ; count the name's bytes in data_ptr+1
     STX data_ptr+1
 .names
     LDY aux_ptr
@@ -2693,9 +2716,9 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     PLA
 }
 
-; Show both sprites of a two-sprite command as they are now, select the
-; first again and close the picking window.
-; In:  A = the other sprite
+; Show both sprites of a two-sprite command as they are now and close the
+; picking window. The selection stays on the second sprite, the one picked.
+; In:  A = the first sprite (or, for Backing, the floor), sprite = the second
 ; Clobbers: A, X, Y, and as draw_grid
 .redraw_pair
 {
@@ -2712,17 +2735,19 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
 }
 
 ; Ask for the second sprite of a two-sprite command: show the question with
-; a picture of this sprite, and let the selection move until Return.
-; In:  X/Y = the question
-; Out: X = the sprite picked, A = this sprite, data_ptr = the picked one's
-;      bytes, aux_ptr = this one's, Y = the offset of their last byte
-; If they are different sizes it says "Wrong Types"; then, as on Escape, it
-; abandons the command and goes back to the main loop.
+; a picture of this sprite, and let the selection move until Return. If the
+; two are different sizes it says "Wrong Types"; then, as on Escape (or
+; f0-f3), it abandons the command and goes back to the main loop.
+; In:  sprite, X/Y = the question
+; Out: sprite = X = the sprite picked, A = the first one, data_ptr = the
+;      picked one's bytes, aux_ptr = the first one's, Y = the offset of
+;      their last byte, carry set
+; Clobbers: everything else
 .pick_second_sprite
 {
     LDA #WINDOW_PICK
     JSR open_window
-    LDX #INKEY_TEST(KEY_RETURN)                 ; the Return that chose the command
+    LDX #INKEY_TEST(KEY_RETURN)     ; the Return that chose the command
     JSR wait_key_release
     LDA sprite
     PHA
@@ -2731,11 +2756,11 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     STA first_address
     LDA data_ptr+1
     STA first_address+1
-    LDA window_address+2*4          ; the picture goes on the window's right, two rows down
+    LDA window_address + 2*WINDOW_PICK      ; the picture goes on the right, two rows down
     CLC
     ADC #LO(2*ROW + 8*CELL)
     STA screen_ptr
-    LDA window_address+2*4+1
+    LDA window_address + 2*WINDOW_PICK + 1
     ADC #HI(2*ROW + 8*CELL)
     STA screen_ptr+1
     JSR draw_sheet_sprite.at_screen_ptr
@@ -2743,7 +2768,7 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     STA first_width
 .select
     LDA #&01
-    JSR select_sprite               ; move the selection; function keys escape
+    JSR select_sprite               ; move the selection; f0-f3 raise an Escape
     BIT MOS_ESCAPE_FLAG
     BMI abandon
     LDX #INKEY_TEST(KEY_RETURN)
@@ -2779,9 +2804,11 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     LDA #WINDOW_ERROR
     JSR close_window
 .abandon
-    PLA                             ; drop this sprite and our return address
+    PLA                             ; drop the first sprite and the return into the command
     PLA
     PLA
+
+    ; Give up a command: also where input_line goes on Escape.
 .abandon_command
     LDA #WINDOW_PICK
     JSR close_window
@@ -2793,6 +2820,7 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
 ; Show an error in the error window until a key other than Escape is
 ; pressed, then go back to the main loop.
 ; In:  X/Y = the error's text
+; Out: doesn't return
 .show_error
 {
     STX error_text
