@@ -1892,7 +1892,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
 .sprite_items
     EQUB FIND(sprites_menu, SPRITES_A..SPRITES_B)
 ; Options menu, Puzzle: which one, then its window for ever (its OK pops
-; back out of here).
+; back out of here). Help's Find puzzle comes in at edit_puzzle.
 .option_puzzle
     LDA #PUZZLES
     LDX #M_WHICH_PUZZLE
@@ -1917,7 +1917,10 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     JSR jump_to_handler
     JMP edit_puzzle_loop
 
-; Puzzle window, Type. A swap-next-block puzzle can't check the next block.
+; Puzzle window, Type. A swap next block puzzle looks at the next block
+; itself (block A becomes B, or B A), so its own next-block check is cleared
+; here, and the Conditions window then shows Check next: ticked and won't
+; change it or the block.
 .puzzle_type
     LDA #W_PUZZLE_TYPES
     JSR open_window
@@ -1940,16 +1943,16 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     STA level_puzzle_types, Y
     JMP vector_close_window
 
-; Print a puzzle's ten-character name: the first eight from record (or A),
-; the last two from puzzle.
-; In: A = the puzzle times 4, for print_puzzle_name_at.
+; Print a puzzle's ten-character name.
+; In: record (or A, for print_puzzle_name_at) = the puzzle times 4, for the
+; first eight characters; puzzle = the puzzle, for the last two.
 ; Clobbers: A, X, Y.
 .print_puzzle_name
     LDA record
 .print_puzzle_name_at
     ASL A
     TAY
-    LDX #8
+    LDX #NAME_HEAD
 .print_puzzle_name_loop
     LDA level_names, Y
     JSR OSWRCH
@@ -1986,7 +1989,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     STA level_names, Y
     INY
     INX
-    CPX #8
+    CPX #NAME_HEAD
     BCC puzzle_name_copy
     LDA puzzle
     ASL A
@@ -2000,8 +2003,10 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     JSR vector_close_message_box
     JMP vector_close_window
 
+; A character for a name.
 ; In: X = a position in the input buffer.
-; Out: A = the character there, the Return as a space.
+; Out: A = the character there, the Return (or anything below a space) as a
+; space.
 .name_char
     LDA input_buffer, X
     CMP #ascii(" ")
@@ -2011,7 +2016,10 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     RTS
 
 ; Puzzle window, Status: three flags in a window of their own, until OK. The
-; title gets a one-digit number, the puzzle's mod 8.
+; puzzle's object, its number mod 8 plus 1, goes over the 1 of "Use object
+; 1:": with that ticked, using or throwing that object is what tries the
+; puzzle (the game tries object n's puzzles n, n + 8, n + 16 and n + 24);
+; without, walking onto its position does.
 .puzzle_status
     LDA #W_PUZZLE_STATUS
     JSR open_window
@@ -2121,6 +2129,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     JMP puzzle_conditions_loop
 
 ; Return from the caller instead if the puzzle swaps the next block.
+; Clobbers: A, Y.
 .unless_swap_next
     LDY puzzle
     LDA level_puzzle_types, Y
@@ -2162,7 +2171,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     RTS
 
 ; Make the compass window offer four directions or eight, by changing its
-; height in WDATA.
+; height in WDATA (all eight lines are there).
 ; In: A = 4 or 8.
 ; Clobbers: X, Y, ptr.
 .set_direction_menu_size
@@ -2224,7 +2233,8 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     LDA #W_CONDITIONS
     JMP open_window
 
-; Conditions window, Position: where the puzzle is, with the cursor.
+; Conditions window, Position: where the puzzle is, with the cursor. The
+; position's IGNORE flags stay as they are.
 .condition_position
     JSR vector_close_window
     LDA puzzle
@@ -2255,8 +2265,9 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     ORA cursor_y
     STA level_puzzle_positions+1, Y
     JMP open_conditions_window
-; Files menu, Load level: ask for the file and its editing code, load it, and
-; keep it only if the code matches; otherwise start a new level.
+; Files menu, Load level: ask for the file and its editing code, load it over
+; the level being edited, and keep it only if the code matches; otherwise
+; start a new level, so the old one is lost either way.
 .files_load
     LDA #M_LOADING
     JSR ask_filename
@@ -2268,7 +2279,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     LDA #OSFILE_LOAD
     JSR level_file
     DEC loading
-    LDX #2
+    LDX #2                      ; three bytes
 .files_load_check_code
     LDA level_code, X
     CMP ptr+1, X
@@ -2289,14 +2300,14 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
 ; Read a six-digit editing code and encode it as level_code is kept: each
 ; pair of digits as a BCD byte, its odd and even bits swapped and then
 ; rotated right a place.
-; Out: ptr+1 to ptr+3 = the code.
-; Clobbers: A, X, Y, ptr, the input buffer.
+; Out: ptr+1 to ptr+3 = the code (overlapping work).
+; Clobbers: A, X, Y, ptr, work, the input buffer.
 .input_editing_code
     LDA #ascii("0")
     STA input_min_char
     LDA #ascii("9")
     STA input_max_char
-    LDA #6
+    LDA #6                      ; digits
     LDX #M_ENTER_CODE
     JSR input_line
     LDY #2
@@ -2354,7 +2365,9 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     JMP vector_close_message_box
 
 ; Load or save the level, with a one-line text window for the filing
-; system's messages, then set the level's palette.
+; system's messages and interrupts off (as entry has them for its loads),
+; then set the level's palette. level_file_done undoes the window and the
+; SEI; brk_handler uses it too, after an error in OSFILE.
 ; In: A = the OSFILE call; osfile_block filled in by ask_filename.
 ; Clobbers: A, X, Y.
 .level_file
@@ -2372,7 +2385,8 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     LDA #M_RESET_WINDOWS
     JMP vector_print_message
 
-; Ask for a filename and set up osfile_block for it.
+; Ask for a filename and set up osfile_block for it; the name is copied with
+; its Return, as OSFILE wants it.
 ; In: A = the message saying what's happening.
 ; Clobbers: A, X, Y, ptr, the input buffer.
 .ask_filename
@@ -2397,7 +2411,11 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     BPL ask_filename_block
     RTS
 
-; Room for a filename of 12 characters, with an author's mark in it.
+; Room for a filename of 12 characters, with an author's mark in it until
+; then. A 12-character name's Return lands on osfile_block, which
+; ask_filename then fills in, leaving the name followed by "0" and &1E (the
+; low and high bytes of this address): in jsbeeb, Save level to ":0.$.ABCDEFG"
+; saves nothing; ":0.$.ABCDEF" saves.
 .filename
     EQUS "_Ian Holmes_"
 .filename_end
@@ -2422,8 +2440,8 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
 ; conditions); see each editor below. Most run a window of their own until
 ; its OK.
 
-; Place monster: +0 x * 4 + monster number, +1 pattern, +2 y * 4 +
-; direction (north, south, east or west, as compass_codes).
+; Place monster: +0 x * 4 + monster number (0-3), +1 pattern, +2 y * 4 +
+; direction (COMPASS_*, one of the four).
 .effect_place_monster
     JSR vector_close_window
     LDY record
@@ -2446,8 +2464,8 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     LDA #W_PLACE_MONSTER
     LDY #handlers(place_monster_handlers_ptr)
     BNE effect_editor
-; Move monster: +0 direction (as choose_direction), +1 monster number * 4
-; (4 for all of them).
+; Move monster: +0 direction (COMPASS_*, or MONSTER_DEAD), +1 monster number
+; * 4, the fifth item, All monsters, making it 16.
 .effect_move_monster
     LDA #W_MOVE_MONSTER
     LDY #handlers(move_monster_handlers_ptr)
@@ -2462,7 +2480,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     LDA #W_THROW_OBJECT
     LDY #handlers(throw_handlers_ptr)
     BNE effect_editor
-; Move block: +0 direction (compass_codes, eight ways), +1 x, +2 y.
+; Move block: +0 direction (COMPASS_*, any of the eight), +1 x, +2 y.
 .effect_move_block
     LDA #W_MOVE_BLOCK
     LDY #handlers(move_block_handlers_ptr)
@@ -2472,7 +2490,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     LDA #W_PLACE_BLOCK
     LDY #handlers(place_block_handlers_ptr)
 ; Run an effect's window: its menu goes to its handler table, until the
-; handler for OK pops out of here.
+; handler for OK pops out of here, back to edit_puzzle_loop.
 ; In: A = the window; Y = the handler table's number.
 .effect_editor
     STA effect_window
@@ -2490,6 +2508,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     JSR jump_to_handler
     JMP effect_editor_loop
 
+; Puzzle window, Effects: the editor for the puzzle's type.
 .puzzle_effects
     LDY puzzle
     LDA level_puzzle_types, Y
@@ -2512,6 +2531,8 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
 ; Teleport: +1 and +2 where to, kept 4 less as the start is.
 .effect_teleport
     LDA #4
+; Put the effect's position with the cursor (Space leaves it as it was).
+; In: arg = what's kept less: 0, or 4 for the view's top left.
 .effect_position
     STA arg
     JSR vector_close_window
@@ -2545,7 +2566,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
 .effect_position_done
     RTS
 
-; Next block, and the place block window's Block type: +0 block.
+; Next block, and the place block window's Block type: +0 block (CELL_*).
 .effect_block_type
     LDX record
     LDY level_puzzle_effects, X
@@ -2555,8 +2576,8 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     STA level_puzzle_effects, Y
     RTS
 
-; Set levels: +0 bit 7 set to leave the time alone, bit 0 set to leave the
-; collectables needed alone; +1 the new time, +2 the new number needed.
+; Set levels: +0 SET_LEVELS_KEEP_TIME and SET_LEVELS_KEEP_COLLECTS, +1 the
+; new time, +2 the new number of collectables needed.
 .effect_set_levels
     LDA #W_SET_LEVELS
     JSR open_window
@@ -2614,7 +2635,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     STA level_puzzle_effects, Y
     RTS
 
-; Swap next block: +0 block A, +1 block B.
+; Swap next block: +0 block A, +1 block B (an item's number is its byte).
 .effect_swap_next
     LDA #0
     PHA
@@ -2655,9 +2676,9 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     RTS
 
 ; Choose from the compass window, four directions or eight.
-; In: A = the current direction code; X = 4 or 8.
-; Out: A = the code chosen.
-; Clobbers: X, Y, ptr.
+; In: A = the current direction, COMPASS_*; X = 4 or 8.
+; Out: A = the direction chosen.
+; Clobbers: X, Y, ptr, the low code's zero page.
 .choose_compass_direction
     PHA
     TXA
@@ -2668,7 +2689,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     CMP compass_codes, Y
     BEQ choose_compass_menu
     DEY
-    BNE choose_compass_find
+    BNE choose_compass_find     ; north, item 0, if nothing else
 .choose_compass_menu
     LDA #W_COMPASS
     JSR choose_from_window_at
@@ -2690,7 +2711,8 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     STA level_puzzle_effects+2, Y
     RTS
 
-; Throw and charge object windows, Object no.: +0, asked 1-8, kept 0-7.
+; Throw and charge object windows, Object no., and Detonate object: +0,
+; asked 1-8, kept 0-7.
 ; Out: A = it; Y = record.
 .choose_object_number
     CLC
@@ -2719,6 +2741,9 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     LDX #0
     LDY #OBJECT_CHARGES
     SEC
+; Ask for +2 with ask_number_limited, a masked old value of 0 offered as X.
+; In: A = the message; X = the value offered for 0; Y = the most, also the
+; mask; C set if 0 is allowed.
 .effect_ask_amount
     PHA
     STX ptr
@@ -2737,7 +2762,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
 
 ; Turn on and turn off puzzle: +0, +1, +2 puzzles A, B and C, asked 1-32 and
 ; kept 0-31. "Single:" is ticked when they're all the same, and choosing it
-; makes them so.
+; makes them so (B and C copy A); choosing it again does nothing.
 .effect_turn_puzzle
     LDA #0
 .effect_turn_puzzle_loop
@@ -2791,7 +2816,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     PLA
     BPL effect_turn_puzzle_loop
 
-; Push crates: +0 how many.
+; Push crates: +0 how many (0-255).
 .effect_push_crates
     LDY record
     LDX level_puzzle_effects, Y
@@ -2801,7 +2826,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     STA level_puzzle_effects, Y
     RTS
 
-; Move monster window, Monster no.
+; Move monster window, Monster no.: +1 the item * 4.
 .move_monster_number
     LDY record
     LDA level_puzzle_effects+1, Y
@@ -2816,7 +2841,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     STA level_puzzle_effects+1, Y
     RTS
 
-; Move monster window, Direction.
+; Move monster window, Direction: +0.
 .move_monster_direction
     LDY record
     LDX level_puzzle_effects, Y
@@ -2824,8 +2849,8 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     STA level_puzzle_effects, Y
     RTS
 
-; Move next block: +0 a pattern field (0 backwards, 1 forwards, 2 right,
-; 3 left) times 4.
+; Move next block: +0 a turn (TURN_*) times 4, the way the game indexes its
+; turns.
 .effect_move_next_block
     LDY record
     LDA level_puzzle_effects, Y
@@ -2838,8 +2863,9 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     STA level_puzzle_effects, Y
     RTS
 
-; Place monster window: Monster no., Position, Direction and Pattern work
-; on copies until OK (place_monster_ok) puts them back.
+; Place monster window: Monster no., Position and Direction work on copies
+; (arg, the cursor and work+1) until OK (place_monster_ok) puts them back;
+; Pattern goes straight into +1.
 .place_monster_number
     LDA #M_MONSTER_NUMBER
     LDY #MONSTERS
@@ -2886,6 +2912,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     STA level_puzzle_effects+1, Y
     RTS
 
+; help_find_puzzle's next puzzle down, or give up.
 .find_puzzle_next
     DEC record
     BPL find_puzzle_compare
@@ -2900,11 +2927,12 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
 .pad_input_loop
     STA input_buffer, Y
     INY
-    CPY #NAME_LENGTH + 1
+    CPY #NAME_LENGTH + 1        ; over the Return too
     BCC pad_input_loop
     RTS
-; Help menu, Find puzzle: look a puzzle up by name, ignoring case, and edit
-; it.
+; Help menu, Find puzzle: look a puzzle up by name, ignoring case (bit 5),
+; say which it is and edit it. It searches from the last puzzle down, so of
+; two with one name it finds the later; with none it just closes the box.
 .help_find_puzzle
     JSR vector_close_window
     JSR vector_open_message_box
@@ -2918,17 +2946,17 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
     LDA record
     ASL A
     ASL A
-    ASL A
+    ASL A                       ; times NAME_HEAD
     TAY
     LDX #0
 .find_puzzle_compare_name
     LDA level_names, Y
     EOR input_buffer, X
-    AND #&DF
+    AND #&FF EOR &20
     BNE find_puzzle_next
     INY
     INX
-    CPX #8
+    CPX #NAME_HEAD
     BCC find_puzzle_compare_name
     LDA record
     ASL A
@@ -2936,7 +2964,7 @@ sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
 .find_puzzle_compare_end
     LDA level_name_ends, Y
     EOR input_buffer, X
-    AND #&DF
+    AND #&FF EOR &20
     BNE find_puzzle_next
     INY
     INX

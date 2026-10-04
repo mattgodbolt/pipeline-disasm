@@ -57,6 +57,10 @@ OBJECT_KINDS   = 15
 ; A puzzle's type byte: the type below its flags.
 PUZZLE_TYPE = &0F
 
+; A puzzle name's first eight characters are in level_names, the other two
+; in level_name_ends.
+NAME_HEAD = 8
+
 ; A puzzle's fourth effect byte, its conditions.
 CONDITION_BLOCK           = &0F ; the next block must be this...
 CONDITION_DIRECTION       = &30 ; the player must be going this way...
