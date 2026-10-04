@@ -3,10 +3,11 @@
 ; (load &25A1, exec &8380), and LEVEL1 on the disc is one. MISSION *LOADs
 ; such files and packs them into IO for the game. What a level holds, and the
 ; names for its values, are in leveldata.6502inc; this is where the designer
-; keeps each part.
+; keeps each part. LEVEL1 and PL include it too.
 ;
-; Up to 8 objects, 4 walking monsters and 32 puzzles; positions are map
-; cells, x across and y down, 0-63.
+; Up to 8 objects, 4 walking monsters and 32 puzzles (the designer's word for
+; the game's triggers: things that happen when the player walks onto a place
+; or uses an object); positions are map cells, x across and y down, 0-63.
 INCLUDE "leveldata.6502inc"
 
 level           = &25A1
@@ -21,7 +22,8 @@ level_name_ends = level_names + PUZZLES * PUZZLE_NAME_HEAD  ; 32 x 2 characters
 ; designer won't keep a loaded level unless the user types its six digits.
 level_code      = level_name_ends + PUZZLES * (PUZZLE_NAME_LENGTH - PUZZLE_NAME_HEAD)
 level_palette   = level_code + LEVEL_FIELD_OFFSETS[3]
-; Where the player starts, less 4 in each coordinate.
+; Where the player starts, less 4 in each coordinate: the top left of the
+; game's view, 8 cells by 8, with the player 4 cells in.
 level_start_x   = level_code + LEVEL_FIELD_OFFSETS[4] + LEVEL_START_X
 level_start_y   = level_code + LEVEL_FIELD_OFFSETS[4] + LEVEL_START_Y
 level_collects  = level_code + LEVEL_FIELD_OFFSETS[4] + LEVEL_TO_COLLECT
@@ -31,8 +33,8 @@ level_finish_y  = level_code + LEVEL_FIELD_OFFSETS[4] + LEVEL_EXIT_Y
 ; Bits 0-3: the block that kills a monster; bits 4-7: the block it leaves.
 level_monster_rules = level_code + LEVEL_FIELD_OFFSETS[4] + LEVEL_MONSTER_FOOD
 ; Two bits each for cell types 5, 8, 7 and A (the designer's wall one, wall
-; two, collectable and trap), 5 in the top two: which squares show their
-; second sprite.
+; two, collectable and fatal trap), 5 in the top two: which squares show
+; their second sprite (ALTERNATE_*).
 level_sprites   = level_code + LEVEL_FIELD_OFFSETS[4] + LEVEL_ANIMATE
 level_objects   = level_code + LEVEL_FIELD_OFFSETS[5]
 level_monsters  = level_code + LEVEL_FIELD_OFFSETS[6]
@@ -45,18 +47,18 @@ level_map       = level_code + LEVEL_FIELDS_SIZE
 ASSERT level_map + MAP_BYTES = level_end
 
 ; The designer's names for the map's blocks, from its block menu, against the
-; game's cell types (CELL_* in leveldata.6502inc). They agree on what each
-; block is; the menu just lists them in its own order (see block_menu_map in
-; hidden_levdes.6502, and docs/notes/levdes.md):
+; game's cell types (CELL_* in leveldata.6502inc). Block n is cell type n;
+; the menu just lists them in its own order (block_menu_map in
+; hidden_levdes.6502 translates):
 ;
 ;   block  menu name     the game
 ;   0      Blank         CELL_FLOOR
-;   1-4    SE/SW/NE/NW curve   walls, curved
-;   5      Wall 1        a wall
+;   1-4    SE/SW/NE/NW curve   CELL_SE_CURVE to CELL_NW_CURVE, curved walls
+;   5      Wall 1        CELL_WALL_1
 ;   6      Crate         CELL_CRATE
 ;   7      Collectable   CELL_SULPHUR
 ;   8      Wall 2        CELL_WALL
-;   9      Barricade     a wall
+;   9      Barricade     CELL_BARRICADE
 ;   A      Fatal trap    CELL_LAVA
 ;   B      Junction      CELL_JUNCTION
 ;   C      Horz.Pipe     CELL_PIPE_ACROSS

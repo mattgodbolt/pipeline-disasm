@@ -1,4 +1,6 @@
-; WDATA: the Level Designer's windows and messages, loaded at &7000.
+; WDATA: the Level Designer's windows and messages, which its entry *LOADs
+; at &7000. The designer names each by its number (W_* and M_* below), and
+; window_address finds it.
 ;
 ; A table of 2-byte pointers at &7000, ended by a zero word; entry n-1 is
 ; window or message n, so numbering starts at 1.
@@ -7,16 +9,16 @@
 ; then one per menu item. x and width are in screen columns (of the 64; a
 ; glyph is two wide), y in character rows, and height counts the items. Each
 ; line is a length byte, bit 7 set to start it at the left rather than
-; centre it, and that many glyph codes (see glyphs below). With bit 7 of x
+; centre it, and that many glyph codes (see wdata_glyphs below). With bit 7 of x
 ; set the window stays where it says; clear, it moves out of the cursor's
 ; way, measured from the right when the cursor is in the left half and from
 ; the bottom when it is in the top half. Space in a window's menu picks its
 ; last item (usually OK), or with bit 7 of y set, the item the menu started
 ; on.
 ;
-; A message: VDU codes and text ended by "|" (MESSAGE_END); HIGHLIGHT
-; switches to highlighted colours. A message without the "|" runs on into
-; the next.
+; A message: VDU codes and text ended by "|" (MESSAGE_END), which
+; print_message sends to the OS; HIGHLIGHT switches to highlighted colours,
+; black on red. A message without the "|" runs on into the next.
 
 wdata = &7000
 WINDOW_HEIGHT = 3               ; where a window's height is in its header
@@ -35,7 +37,8 @@ W_OPTIONS           = 2
 W_OPTIONS_LOCATION  = 3     ; "Select location:" for the start and finish
 M_WHICH_OBJECT      = 4
 W_OBJECT            = 5
-M_RECORD_NUMBER     = 6     ; where a window's title number goes
+M_RECORD_NUMBER     = 6     ; where an object's or monster's number goes,
+                            ; after its window's title
 M_OLD_SPRITE        = 7
 M_CHARGES           = 8
 M_ERROR             = 9     ; runs into M_PRESS_ANY_KEY

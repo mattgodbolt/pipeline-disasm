@@ -1,5 +1,7 @@
-; $.WDATA: the Level Designer's windows and messages, loaded at &7000
-; (format and numbering in wdata.6502inc).
+; $.WDATA: the Level Designer's windows and messages, *LOADed at &7000 by
+; the designer's entry (format and numbering in wdata.6502inc). Each window
+; is a WINDOW line (x, y, width, height) then its title and items; each
+; message is a string.
 INCLUDE "osconst.6502inc"
 INCLUDE "levdes.6502inc"
 INCLUDE "wdata.6502inc"
@@ -546,9 +548,10 @@ SECTION wdata, filename="WDATA", org=wdata, load=wdata, exec=0
     LINE "Special"
 
 .msg_filing_window
-    ; After print_line2's TAB: blank the start of the line, then a text
-    ; window of the rest, the OS's row 13, columns 0-22 (our row 16 from
-    ; column 16), cleared.
+    ; Printed after print_line2's TAB: seven spaces blank the start of the
+    ; line, then a text window over the rest of it (the OS's row 13, columns
+    ; 0-22, which is our row 16 from column 16) is set and cleared, so the
+    ; filing system's messages stay on that line.
     EQUS "       ", VDU_TEXT_WINDOW, 0, 13, 22, 13, VDU_CLS, "|"
 
 .msg_too_many
