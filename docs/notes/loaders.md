@@ -264,6 +264,9 @@ scripts using its `startBeeb`). Corrections first, then what was confirmed.
   and the mode is 7 (it was 4 before).
 - PL: Y = 0 going into its first `*FX200` (left so by `*FX4`), so it sets
   2 whatever was there; the listing of LEVEL1 with 677636 works; what's
-  typed is echoed (there's just no prompt).
+  typed is echoed (there's just no prompt). It waits only for the key last
+  pressed to be let go (MOS_KEY_PRESSED): booting with W and T held, then
+  letting go of T alone, it carries on; the comment said W and T "(and
+  RETURN)".
 - !BOOT's NETV claim: the only &24 &02 byte pairs on the disc are in IO
   and LEVEL1's level data, not code.
