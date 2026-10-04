@@ -44,8 +44,18 @@ TURN_FORWARDS = 1
 TURN_RIGHT    = 2
 TURN_LEFT     = 3
 
-; An object's fourth byte: the charges below its three flags.
+; A position byte: the coordinate, 0-63, below two flags (bit 7 an object's
+; OBJECT_ABSENT, or a puzzle's IGNORE).
+COORDINATE_BITS = &3F
+POSITION_FLAGS  = &C0
+
+; An object's fourth byte: the charges below its three flags. Its sprite is
+; one of the game's 15 kinds of object, icons 0-14 (icon 15 is the exit).
 OBJECT_CHARGES = &1F
+OBJECT_KINDS   = 15
+
+; A puzzle's type byte: the type below its flags.
+PUZZLE_TYPE = &0F
 
 ; A puzzle's fourth effect byte, its conditions.
 CONDITION_BLOCK           = &0F ; the next block must be this...

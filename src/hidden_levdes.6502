@@ -1216,11 +1216,11 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     JSR vector_close_window
     LDY record
     LDA level_objects, Y
-    AND #&3F
+    AND #COORDINATE_BITS
     STA cursor_x
     STA work
     LDA level_objects+1, Y
-    AND #&3F
+    AND #COORDINATE_BITS
     STA cursor_y
     STA work+1
 .object_position_define
@@ -1245,7 +1245,7 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     LDY record
     LDA level_objects, Y
     ORA level_objects+1, Y
-    AND #&C0
+    AND #POSITION_FLAGS
     BEQ show_object_exists
     LDA #1
 .show_object_exists
@@ -1254,25 +1254,26 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     JSR vector_tick_line
     LDY record
     LDA level_objects+3, Y
-    AND #&20
-    EOR #&20
+    AND #OBJECT_NO_CHARGES
+    EOR #OBJECT_NO_CHARGES
     LDY #item_line(I_OBJECT_CHARGES)
     JSR vector_tick_line
     LDY record
     LDA level_objects+3, Y
     PHA
-    AND #&40
+    AND #OBJECT_VANISHES
     LDY #item_line(I_OBJECT_VANISH)
     JSR vector_tick_line
     PLA
-    AND #&80
-    EOR #&80
+    AND #OBJECT_NO_THROW
+    EOR #OBJECT_NO_THROW
     LDY #item_line(I_OBJECT_THROW)
     JMP vector_tick_line
 
-; Object window, Charge: how many charges, 0-31 (which gives it charges).
+; Object window, Charge: how many charges, 0-31, which also makes them count
+; (clearing OBJECT_NO_CHARGES).
 .object_charge
-    LDY #31
+    LDY #OBJECT_CHARGES
     TYA
     LDX record
     AND level_objects+3, X
@@ -1283,18 +1284,19 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
     STA ptr
     LDY record
     LDA level_objects+3, Y
-    AND #&C0
+    AND #OBJECT_VANISHES OR OBJECT_NO_THROW
     ORA ptr
     STA level_objects+3, Y
     JMP show_object_window
 
-; Object window, Sprite no.: 1-15, kept as 0-14.
+; Object window, Sprite no.: 1-15, kept as 0-14 (the game's object icons;
+; its sixteenth, the exit, isn't offered).
 .object_sprite
     LDY record
     LDX level_objects+2, Y
     INX
     LDA #M_OLD_SPRITE
-    LDY #15
+    LDY #OBJECT_KINDS
     CLC                         ; 0 not allowed
     JSR ask_number_limited
     SEC
@@ -1305,30 +1307,31 @@ SECTION hidden_levdes, filename="H.LEVDES", org=&1100
 
 ; Object window, Charges:, Vanish: and Throw:, which flip a flag.
 .object_charges_toggle
-    LDA #&20
+    LDA #OBJECT_NO_CHARGES
     BNE object_toggle_flag
 .object_vanish_toggle
-    LDA #&40
+    LDA #OBJECT_VANISHES
     BNE object_toggle_flag
 .object_throw_toggle
-    LDA #&80
+    LDA #OBJECT_NO_THROW
 .object_toggle_flag
     LDY record
     EOR level_objects+3, Y
     STA level_objects+3, Y
     JMP show_object_ticks
 
-; Object window, Exists ?: flip OBJECT_ABSENT in both coordinates.
+; Object window, Exists ?: flip OBJECT_ABSENT in both coordinates (and clear
+; the other flag, bit 6).
 .object_exists_toggle
     LDY record
     LDA level_objects, Y
-    AND #&BF
+    AND #OBJECT_ABSENT OR COORDINATE_BITS
     EOR #OBJECT_ABSENT
     STA level_objects, Y
     AND #OBJECT_ABSENT
     STA ptr
     LDA level_objects+1, Y
-    AND #&3F
+    AND #COORDINATE_BITS
     ORA ptr
     STA level_objects+1, Y
     JMP show_object_ticks
@@ -1803,12 +1806,14 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     LDX work
     STA choices, X
     BPL option_graphics_next
-; The code for each item of the sprites menu (sprite A, sprite B,
-; patterned), and the item for each code; nothing chooses code 2.
+; The code for each item of the sprites menu (Sprite A, Sprite B, Patterned,
+; and a fourth it hasn't got), and the item for each code. SPRITES_EVEN's
+; item is past the end, so the menu starts at the top for it.
+sprites_menu = {SPRITES_A, SPRITES_B, SPRITES_ODD, SPRITES_EVEN}
 .sprite_codes
-    EQUB 0, 3, 1, 2
+    EQUB sprites_menu
 .sprite_items
-    EQUB 0, 2, 3, 1
+    EQUB FIND(sprites_menu, SPRITES_A..SPRITES_B)
 ; Options menu, Puzzle: which one, then its window for ever (its OK pops
 ; back out of here).
 .option_puzzle
@@ -1841,19 +1846,19 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     JSR open_window
     LDY puzzle
     LDA level_puzzle_types, Y
-    AND #&0F
+    AND #PUZZLE_TYPE
     JSR menu_select
     STA ptr
     CMP #PUZZLE_SWAP_NEXT
     BNE puzzle_type_store
     LDY record
     LDA level_puzzle_effects+3, Y
-    AND #&BF
+    AND #&FF EOR CONDITION_CHECK_BLOCK
     STA level_puzzle_effects+3, Y
 .puzzle_type_store
     LDY puzzle
     LDA level_puzzle_types, Y
-    AND #&F0
+    AND #&FF EOR PUZZLE_TYPE
     ORA ptr
     STA level_puzzle_types, Y
     JMP vector_close_window
@@ -1936,7 +1941,7 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     LDA #M_STATUS_NUMBER_AT
     JSR vector_print_message
     LDA puzzle
-    AND #7
+    AND #OBJECTS - 1
     CLC
     ADC #ascii("1")
     JSR OSWRCH
@@ -1946,17 +1951,17 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     LDY puzzle
     LDA level_puzzle_types, Y
     PHA
-    AND #&80
+    AND #PUZZLE_USES_OBJECT
     LDY #item_line(I_STATUS_USE_OBJECT)
     JSR vector_tick_line
     PLA
     PHA
-    AND #&20
-    EOR #&20
+    AND #PUZZLE_OFF
+    EOR #PUZZLE_OFF
     LDY #item_line(I_STATUS_TURNED_ON)
     JSR vector_tick_line
     PLA
-    AND #&10
+    AND #PUZZLE_REUSABLE
     LDY #item_line(I_STATUS_REUSABLE)
     JSR vector_tick_line
     LDA work+1
@@ -1968,16 +1973,16 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
 
 ; Conditions window, Collects.:, and the status window's flags.
 .condition_collects
-    LDA #&40
+    LDA #PUZZLE_COUNTS_COLLECTS
     BNE puzzle_toggle_flag
 .status_use_object
-    LDA #&80
+    LDA #PUZZLE_USES_OBJECT
     BNE puzzle_toggle_flag
 .status_turned_on
-    LDA #&20
+    LDA #PUZZLE_OFF
     BNE puzzle_toggle_flag
 .status_reusable
-    LDA #&10
+    LDA #PUZZLE_REUSABLE
 .puzzle_toggle_flag
     LDY puzzle
     EOR level_puzzle_types, Y
@@ -1997,15 +2002,15 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     PHA
     TAY
     LDA level_puzzle_positions, Y
-    AND #&80
-    EOR #&80
+    AND #IGNORE
+    EOR #IGNORE
     LDY #item_line(I_CHECK_X)
     JSR vector_tick_line
     PLA
     TAY
     LDA level_puzzle_positions+1, Y
-    AND #&80
-    EOR #&80
+    AND #IGNORE
+    EOR #IGNORE
     LDY #item_line(I_CHECK_Y)
     JSR vector_tick_line
     LDY record
@@ -2013,22 +2018,22 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     PHA
     LDY puzzle
     LDA level_puzzle_types, Y
-    AND #&0F
+    AND #PUZZLE_TYPE
     CMP #PUZZLE_SWAP_NEXT
-    BEQ puzzle_conditions_check_next
+    BEQ puzzle_conditions_check_next    ; ticked: A is nonzero
     PLA
     PHA
-    AND #&40
+    AND #CONDITION_CHECK_BLOCK
 .puzzle_conditions_check_next
     LDY #item_line(I_CHECK_NEXT)
     JSR vector_tick_line
     PLA
-    AND #&80
+    AND #CONDITION_CHECK_DIRECTION
     LDY #item_line(I_CHECK_DIRECTION)
     JSR vector_tick_line
     LDY puzzle
     LDA level_puzzle_types, Y
-    AND #&40
+    AND #PUZZLE_COUNTS_COLLECTS
     LDY #item_line(I_CONDITION_COLLECTS)
     JSR vector_tick_line
     LDA work+1
@@ -2042,7 +2047,7 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
 .unless_swap_next
     LDY puzzle
     LDA level_puzzle_types, Y
-    AND #&0F
+    AND #PUZZLE_TYPE
     CMP #PUZZLE_SWAP_NEXT
     BNE unless_swap_next_done
     PLA
@@ -2053,10 +2058,10 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
 ; Conditions window, Check next: and Check dir.: flags.
 .condition_check_next
     JSR unless_swap_next
-    LDA #&40
+    LDA #CONDITION_CHECK_BLOCK
     BNE condition_toggle_flag
 .condition_check_direction
-    LDA #&80
+    LDA #CONDITION_CHECK_DIRECTION
 .condition_toggle_flag
     LDY record
     EOR level_puzzle_effects+3, Y
@@ -2074,8 +2079,8 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     ROL A
     TAY
     LDA level_puzzle_positions, Y
-    AND #&BF
-    EOR #&80
+    AND #IGNORE OR COORDINATE_BITS
+    EOR #IGNORE
     STA level_puzzle_positions, Y
     RTS
 
@@ -2100,21 +2105,21 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     JSR unless_swap_next
     LDY record
     LDA level_puzzle_effects+3, Y
-    AND #&0F
+    AND #CONDITION_BLOCK
     TAY
     LDA #W_SELECT_BLOCK
     JSR choose_from_window_at
-    ORA #&40
-    LDX #&B0
+    ORA #CONDITION_CHECK_BLOCK
+    LDX #CONDITION_CHECK_DIRECTION OR CONDITION_DIRECTION   ; what to keep
     BMI condition_store
 ; Conditions window, Direction: which way the player must be going, which
 ; also turns the check on.
 .condition_direction
-    LDA #4
+    LDA #4                      ; north, south, east and west
     JSR set_direction_menu_size
     LDY record
     LDA level_puzzle_effects+3, Y
-    AND #&30
+    AND #CONDITION_DIRECTION
     LSR A
     LSR A
     LSR A
@@ -2129,8 +2134,8 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     ASL A
     ASL A
     ASL A
-    ORA #&80
-    LDX #&4F
+    ORA #CONDITION_CHECK_DIRECTION
+    LDX #CONDITION_CHECK_BLOCK OR CONDITION_BLOCK           ; what to keep
 .condition_store
     STA ptr
     LDY record
@@ -2149,10 +2154,10 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     ASL A
     TAY
     LDA level_puzzle_positions, Y
-    AND #&3F
+    AND #COORDINATE_BITS
     STA cursor_x
     LDA level_puzzle_positions+1, Y
-    AND #&3F
+    AND #COORDINATE_BITS
     STA cursor_y
 .condition_position_define
     LDX #W_PUZZLE_LOCATION
@@ -2165,11 +2170,11 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     ASL A
     TAY
     LDA level_puzzle_positions, Y
-    AND #&80
+    AND #IGNORE
     ORA cursor_x
     STA level_puzzle_positions, Y
     LDA level_puzzle_positions+1, Y
-    AND #&80
+    AND #IGNORE
     ORA cursor_y
     STA level_puzzle_positions+1, Y
     JMP open_conditions_window
@@ -2351,7 +2356,7 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     LSR A
     STA cursor_x
     PLA
-    AND #3
+    AND #MONSTERS - 1
     STA arg                     ; monster number
     LDA level_puzzle_effects+2, Y
     PHA
@@ -2411,7 +2416,7 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
 .puzzle_effects
     LDY puzzle
     LDA level_puzzle_types, Y
-    AND #&0F
+    AND #PUZZLE_TYPE
     LDY #handlers(effect_handlers_ptr)
     JMP jump_to_handler
 
@@ -2437,12 +2442,12 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     LDA level_puzzle_effects+1, Y
     CLC
     ADC arg
-    AND #&3F
+    AND #COORDINATE_BITS
     STA cursor_x
     LDA level_puzzle_effects+2, Y
     CLC
     ADC arg
-    AND #&3F
+    AND #COORDINATE_BITS
     STA cursor_y
 .effect_position_define
     LDX #W_PUZZLE_LOCATION
@@ -2484,13 +2489,13 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     LDY record
     LDA level_puzzle_effects, Y
     PHA
-    AND #&80
-    EOR #&80
+    AND #SET_LEVELS_KEEP_TIME
+    EOR #SET_LEVELS_KEEP_TIME
     LDY #item_line(I_TIME_CHANGE)
     JSR vector_tick_line
     PLA
-    AND #1
-    EOR #1
+    AND #SET_LEVELS_KEEP_COLLECTS
+    EOR #SET_LEVELS_KEEP_COLLECTS
     LDY #item_line(I_COLLECTS_CHANGE)
     JSR vector_tick_line
     PLA
@@ -2500,10 +2505,10 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     JSR jump_to_handler
     JMP effect_set_levels_loop
 .levels_change_time
-    LDA #&80
+    LDA #SET_LEVELS_KEEP_TIME
     BMI levels_toggle_flag
 .levels_change_collects
-    LDA #1
+    LDA #SET_LEVELS_KEEP_COLLECTS
 .levels_toggle_flag
     LDY record
     EOR level_puzzle_effects, Y
@@ -2517,7 +2522,7 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     JSR ask_number
     LDY record
     STA level_puzzle_effects+1, Y
-    LDA #1
+    LDA #SET_LEVELS_KEEP_COLLECTS   ; keep only the other flag
     BPL levels_clear_flag
 .levels_collects
     LDY record
@@ -2526,7 +2531,7 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     JSR ask_number
     LDY record
     STA level_puzzle_effects+2, Y
-    LDA #&80
+    LDA #SET_LEVELS_KEEP_TIME
 .levels_clear_flag
     AND level_puzzle_effects, Y
     STA level_puzzle_effects, Y
@@ -2566,7 +2571,7 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     LDY record
     LDA level_puzzle_effects, Y
     AND #7
-    LDX #8
+    LDX #8                      ; all eight ways
     JSR choose_compass_direction
     LDY record
     STA level_puzzle_effects, Y
@@ -2593,10 +2598,11 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     TAY
     LDA compass_codes, Y
     RTS
-; The direction code for each item: north, south, east, west, north-west,
-; north-east, south-west, south-east.
+; The direction for each item.
 .compass_codes
-    EQUB 2, 3, 1, 0, 4, 5, 6, 7
+    EQUB COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST
+    EQUB COMPASS_NORTH_WEST, COMPASS_NORTH_EAST
+    EQUB COMPASS_SOUTH_WEST, COMPASS_SOUTH_EAST
 .compass_codes_end
 
 ; Detonate object: +0 object number, +2 the same times 4.
@@ -2627,14 +2633,14 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
 .throw_distance
     LDA #M_DISTANCE
     LDX #1                      ; the first value offered
-    LDY #63                     ; the most (and a mask for the old value)
+    LDY #MAP_SIZE - 1           ; the most (and a mask for the old value)
     CLC
     BNE effect_ask_amount
 ; Charge object window, No.of charges: +2, 0-31.
 .charge_count
     LDA #M_CHARGES
     LDX #0
-    LDY #31
+    LDY #OBJECT_CHARGES
     SEC
 .effect_ask_amount
     PHA
@@ -2791,7 +2797,7 @@ direction_menu = {COMPASS_NORTH, COMPASS_SOUTH, COMPASS_EAST, COMPASS_WEST,
     PLA
     RTS
 .place_monster_direction
-    LDX #4
+    LDX #4                      ; just north, south, east and west
     LDA work+1
     JSR choose_compass_direction
     STA work+1
@@ -3027,7 +3033,7 @@ block_menu = {CELL_FLOOR, CELL_SE_CURVE, CELL_SW_CURVE, CELL_NE_CURVE,
     STA level_names + 29*8 + 7
     STA level_names + 30*8 + 7
     STA level_names + 31*8 + 7
-    LDX #79
+    LDX #10 * 8 - 1
 .new_level_tens
     LDA #ascii(" ")
     STA level_names, X
@@ -3087,10 +3093,12 @@ block_menu = {CELL_FLOOR, CELL_SE_CURVE, CELL_SW_CURVE, CELL_NE_CURVE,
     BCC new_level_monster
     DEC ptr
     BNE new_level_monsters
-    ; Objects absent, and every puzzle byte (types, positions and effects)
-    ; &A0: needs object 1, turned off, type place block, at x 32 but with
-    ; neither coordinate checked.
-    LDA #OBJECT_ABSENT + &20
+    ; Every byte of the objects &A0, so absent; and of the puzzles, from the
+    ; types to the effects, the same: a place block puzzle needing its object
+    ; and turned off, at x 32 with neither coordinate checked, and a
+    ; condition of going north.
+    LDA #PUZZLE_USES_OBJECT OR PUZZLE_OFF OR PUZZLE_PLACE_BLOCK
+    ASSERT (PUZZLE_USES_OBJECT OR PUZZLE_OFF) == (OBJECT_ABSENT OR MAP_SIZE / 2)
     LDX #OBJECTS * 4 - 1
 .new_level_objects
     STA level_objects, X
@@ -3129,16 +3137,17 @@ block_menu = {CELL_FLOOR, CELL_SE_CURVE, CELL_SW_CURVE, CELL_NE_CURVE,
 ; rules and sprites.
 .default_header
     EDITING_CODE "123456"
-    EQUB &00, &14, &23, &31     ; black, blue, yellow, red
-    EQUB 28, 28                 ; start (32, 32)
+    EQUB palette_entry(0, BLACK), palette_entry(1, BLUE)
+    EQUB palette_entry(2, YELLOW), palette_entry(3, RED)
+    EQUB MAP_SIZE / 2 - 4, MAP_SIZE / 2 - 4     ; start (32, 32)
     EQUB 0                      ; collectables needed
     EQUB 250                    ; time
-    EQUB 32, 32                 ; finish
+    EQUB MAP_SIZE / 2, MAP_SIZE / 2             ; finish
     EQUB CELL_LAVA * 16 + CELL_LAVA             ; monsters die in fatal traps
-    EQUB 0                      ; sprites
-; Each monster: at (32, 32), dead, back and forth.
+    EQUB SPRITES_A              ; sprites: the first picture for all four
+; Each monster: in the middle, dead, back and forth.
 .default_monster
-    MONSTER 32, 32, 8, PATTERN_BACK_AND_FORTH
+    MONSTER MAP_SIZE / 2, MAP_SIZE / 2, MONSTER_DEAD, PATTERN_BACK_AND_FORTH
 
 ; Print a message on the message box's second line (print_line2), its first
 ; (print_line1), or wherever the text cursor is (print_message). The OS
