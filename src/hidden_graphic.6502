@@ -72,6 +72,12 @@ SMALL_WIDTH = SMALL_SPRITE_WIDTH / 4    ; sprite_width: bytes across
 LARGE_WIDTH = LARGE_SPRITE_WIDTH / 4
 ASSERT SLOT_EXIT = LAST_SMALL
 
+; The sheet: 5 rows of 5 large sprites, then 4 rows of 4 small ones.
+LARGE_COLUMNS = 5
+LARGE_ROWS    = 5
+SMALL_COLUMNS = 4
+SMALL_ROWS    = 4
+
 ; Sprite numbers beyond the sheet: the two buffers Animate shows frames in.
 SPRITE_FRAME_A = &57
 SPRITE_FRAME_B = &58
@@ -1271,10 +1277,10 @@ ASSERT LO(SET_SMALL) = 0 AND LO(SET_MORE_LARGE) = 0
 {
     LDX #&00
 .loop
-    CMP #5
+    CMP #LARGE_COLUMNS
     BCC done
     INX
-    SBC #5
+    SBC #LARGE_COLUMNS
     BCS loop
 .done
     RTS
@@ -2867,11 +2873,13 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
 ; A menu with nothing in it: the palette window opens empty and
 ; show_palette fills it.
 .empty_text
-    EQUB &FF, &FF
+    EQUB MENU, TEXT_END
 
 ; Environment Def. Colour (CTRL-C): change the palette. Up and down pick a
 ; logical colour, left and right step its physical colour through the eight;
-; Return, Space, Escape or a function key finish.
+; Return, Space, Escape or a function key finish. The change lasts until
+; the designer next sets MODE 5 (not after an error: see start).
+; Clobbers: everything
 .cmd_def_colour
 {
     LDA #WINDOW_QUESTION
@@ -2911,7 +2919,7 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     CMP #CODE_DOWN
     BNE not_down
     LDX item
-    CPX #&03
+    CPX #&03                        ; logical colours 0-3
     BEQ not_down
     INC item
 .not_down
@@ -2922,7 +2930,7 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     DEC item
 .moved
     PHA
-    JSR palette_highlight.toggle
+    JSR palette_highlight.toggle    ; off the old line, on the new (or the same)
     JSR palette_highlight
     PLA
     LDX #&01                        ; right: the next physical colour
@@ -2939,11 +2947,11 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     ADC colour_step
     AND #&07
     PHA
-    JSR show_palette
+    JSR show_palette                ; rub out the old names...
     PLA
     LDX item
     JSR write_palette
-    JMP redraw
+    JMP redraw                      ; ...and show the new
 }
 
 ; Set the palette.
@@ -2964,12 +2972,15 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     EQUB &00
 
 ; Write each logical colour's physical colour's name into the palette
-; window's text, and show the text again in place.
+; window's text, then exclusive-OR the text onto the window again without
+; opening it: so one call shows the names and the next rubs them out, and
+; Def. Colour calls it before and after each change.
+; In:  the palette window open, so count_x = its width less one
 ; Clobbers: A, X, Y, screen_ptr, data_ptr, save_ptr, aux_ptr, border_ptr,
-;      count_y, osfile_block
+;      count_y, osfile_block (its first byte counts the colours)
 .show_palette
 {
-    LDA #&03
+    LDA #&03                        ; logical colours 3 to 0
     STA osfile_block
     LDA #LO(palette_lines + 3*PALETTE_LINE)
     STA save_ptr
@@ -2978,12 +2989,12 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
 .entry
     LDA osfile_block
     JSR read_palette
-    ASL A                           ; eight characters to each name
+    ASL A                           ; eight characters to each name...
     ASL A
     ASL A
-    ORA #&06                        ; the end of the seventh
+    ORA #PALETTE_LINE - 2           ; ...of which a line takes seven
     TAX
-    LDY #&06
+    LDY #PALETTE_LINE - 2
 .name
     LDA colour_names, X
     STA (save_ptr), Y
@@ -2992,7 +3003,7 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     BPL name
     LDA save_ptr
     SEC
-    SBC #&08
+    SBC #PALETTE_LINE
     STA save_ptr
     BCS next
     DEC save_ptr+1
@@ -3000,11 +3011,11 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     DEC osfile_block
     BPL entry
 
-    ; Rewrite the window's text without opening it again.
-    LDA window_address+2*5
+    ; Write the window's text again, without opening it.
+    LDA window_address + 2*WINDOW_QUESTION
     STA save_ptr
     STA screen_ptr
-    LDA window_address+2*5+1
+    LDA window_address + 2*WINDOW_QUESTION + 1
     STA save_ptr+1
     STA screen_ptr+1
     LDX #LO(text_palette)
@@ -3017,24 +3028,30 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     RTS
 }
 
-; The parameter block for OSFILE, also used for OSWORD 11 and 12: the
-; filename's address, then load and exec addresses, start (or length) and
-; end (or attributes), four bytes each.
-.osfile_block
-    EQUW 0                          ; filename
-    EQUD 0                          ; load address
-    EQUD 0                          ; exec address
-    EQUD 0                          ; start address, or length
-    EQUD 0                          ; end address, or attributes
+; The parameter block for OSFILE: the filename's address, then the load and
+; exec addresses, the start address (from OSFILE_READ_INFO, the length) and
+; the end address (the attributes), four bytes each; then two spare bytes.
+; The palette routines use its first two bytes for OSWORD's block, and
+; show_palette its first as a counter.
+.osfile_block                       ; the filename's address
+    EQUW 0
+.osfile_load
+    EQUD 0
+.osfile_exec
+    EQUD 0
+.osfile_start                       ; or the length
+    EQUD 0
+.osfile_end                         ; or the attributes
+    EQUD 0
     EQUB 0, 0
 
 ; Where each line of the palette window is, from its corner.
 .palette_row_offset
     EQUW 1*ROW, 2*ROW, 3*ROW, 4*ROW
 
-; Highlight the palette window's selected line.
+; Highlight the palette window's line for a logical colour. Also entered at
+; toggle, to highlight or unhighlight the line highlighted last.
 ; In:  item = the logical colour, 0-3
-; Entry toggle: unhighlight the line highlighted last
 ; Clobbers: A, X, Y, screen_ptr
 .palette_highlight
 {
@@ -3043,10 +3060,10 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     TAY
     LDA palette_row_offset, Y
     CLC
-    ADC window_address+2*5
+    ADC window_address + 2*WINDOW_QUESTION
     STA highlight_address
     LDA palette_row_offset+1, Y
-    ADC window_address+2*5+1
+    ADC window_address + 2*WINDOW_QUESTION + 1
     STA highlight_address+1
 .toggle
     LDA highlight_address
@@ -3064,13 +3081,19 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
 .animate_sprite
     EQUB &00
 
-; OptionsA Animate (CTRL-A): for a sprite with a partner, show the two in
-; turn, six vsyncs each, in the animation window and the editing grid until
-; Space or Escape (a function key counts as Escape). The flames, &0E and &0F,
-; alternate; &20 and &21 each alternate with themselves upside down, and &22
-; and &23 with each other upside down. Nothing happens for other sprites.
-; Both frames are copied to frame_a and frame_b first, so the turning upside
-; down doesn't touch the graphics set.
+; How long Animate shows each frame, in vsyncs.
+FRAME_VSYNCS = 6
+
+; OptionsA Animate (CTRL-A): preview how the game animates a picture, a
+; frame every six vsyncs, in the animation window and the editing grid,
+; until Space or Escape (f0-f3 count as Escape). The monster (slots &0E and
+; &0F) alternates its two pictures; the player facing left or right (&20,
+; &21) alternates with itself upside down; facing up or down, &22 alternates
+; with &23 upside down, and &23 with &22 upside down. Nothing happens for
+; other sprites. The frames are copied to frame_a and frame_b first, so
+; turning them over leaves the set alone.
+; In:  sprite
+; Clobbers: everything
 .cmd_animate
 {
     LDA #&FF
@@ -3078,37 +3101,37 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     LDA sprite
     STA animate_sprite
     TAX
-    AND #&10
+    AND #&10                        ; a small sprite: no
     BNE none
     TXA
     JSR slot_index
     TAX
     LDA slot_of_position, X
-    CMP #&24                        ; slots &24-&28: no
+    CMP #SLOT_ALTERNATE             ; slots &24-&28: no
     BCS none
-    CMP #&20                        ; slots &20-&23
-    BCS machine
-    CMP #&0E
+    CMP #SLOT_PLAYER
+    BCS player
+    CMP #SLOT_MONSTER
     BEQ flames
-    CMP #&0F
+    CMP #SLOT_MONSTER + 1
     BEQ flames
 .none
     RTS
 .flames
     PHA
-    AND #&FE                        ; &0E: copy &0E and &0F
-    BNE copy_pair
-.machine
+    AND #&FE                        ; copy both pictures, from the first
+    BNE copy_pair                   ; always
+.player
     PHA
 .copy_pair
-    CMP #&22                        ; &22 and &23 copy both; &20 and &21 copy themselves
-    BCC copy_from
+    CMP #SLOT_PLAYER + 2            ; up and down copy both, from the first;
+    BCC copy_from                   ; left and right copy themselves (and the next)
     AND #&FE
 .copy_from
     JSR sprite_address
     LDY #&00
 .copy
-    LDA (data_ptr), Y               ; two sprites' worth: the frame and the next slot
+    LDA (data_ptr), Y               ; two sprites' worth: this slot and the next
     STA frame_a, Y
     DEY
     BNE copy
@@ -3120,24 +3143,24 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     JSR slot_index
     TAX
     LDA slot_of_position, X
-    CMP #&10
-    BCS machine_frames
-    LDA #&08                        ; the flames' pair of entries
-    BNE chosen
-.machine_frames
-    AND #&03                        ; &20-&23: their own pair
+    CMP #&10                        ; the monster's slots are below, the player's above
+    BCS player_frames
+    LDA #monster_frames - animation_frames
+    BNE chosen                      ; always
+.player_frames
+    AND #&03                        ; the player's: a pair each
     ASL A
 .chosen
     STA frame_index
 .show
     TAX
-    LDA #&06
+    LDA #FRAME_VSYNCS
     STA frame_delay
     LDA animation_frames, X
     STA sprite
     BPL draw                        ; upside down?
     JSR flip_vertically
-    LDA #&06
+    LDA #FRAME_VSYNCS
     STA frame_delay
 .draw
     LDA sprite
@@ -3169,7 +3192,7 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     PLA
     JMP show
 .stop
-    PLA                             ; drop the slot
+    PLA                             ; drop the slot pushed at the start
     LDX animate_sprite
     STX sprite
     LDA #OSBYTE_ACKNOWLEDGE_ESCAPE
@@ -3177,20 +3200,21 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     LDA #WINDOW_PICK                ; by_slot bit 7 clear: sheet positions again
     STA by_slot
     JSR close_window
-    JMP redraw_grid
+    JMP redraw_grid                 ; carry clear from close_window: no undo copy
 }
 
 ; Turn a sheet position into an index into slot_of_position: positions
-; &20-&28 follow &00-&0F.
+; &20-&28 follow &00-&0F. It borrows repeat_key's RTS.
 ; In:  A = a large sprite's position
 ; Out: A = the index
+; Clobbers: nothing else
 .slot_index
 {
     CMP #FIRST_SMALL
     BCC repeat_key.done
     CMP #AFTER_SMALL
     BCC repeat_key.done
-    SBC #&10
+    SBC #AFTER_SMALL - FIRST_SMALL
     RTS
 }
 
@@ -3205,15 +3229,19 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
 ; Animate's frames, a pair for each animated slot: SPRITE_FRAME_A or _B,
 ; with UPSIDE_DOWN to show it turned over.
 .animation_frames
-    EQUB SPRITE_FRAME_A, SPRITE_FRAME_A + UPSIDE_DOWN    ; &20
-    EQUB SPRITE_FRAME_A, SPRITE_FRAME_A + UPSIDE_DOWN    ; &21
-    EQUB SPRITE_FRAME_A, SPRITE_FRAME_B + UPSIDE_DOWN    ; &22
-    EQUB SPRITE_FRAME_B, SPRITE_FRAME_A + UPSIDE_DOWN    ; &23
-    EQUB SPRITE_FRAME_B, SPRITE_FRAME_A                  ; &0E, &0F
+    EQUB SPRITE_FRAME_A, SPRITE_FRAME_A + UPSIDE_DOWN    ; &20, the player facing left
+    EQUB SPRITE_FRAME_A, SPRITE_FRAME_A + UPSIDE_DOWN    ; &21, facing right
+    EQUB SPRITE_FRAME_A, SPRITE_FRAME_B + UPSIDE_DOWN    ; &22, facing up
+    EQUB SPRITE_FRAME_B, SPRITE_FRAME_A + UPSIDE_DOWN    ; &23, facing down
+.monster_frames
+    EQUB SPRITE_FRAME_B, SPRITE_FRAME_A                  ; &0E and &0F, the monster
 
-; Read one of the cursor keys that move the selection, with auto-repeat:
-; a press moves at once, then after twenty passes of the main loop every
-; five.
+; The selection's auto-repeat, in passes of the main loop: a press moves it
+; at once, then after REPEAT_DELAY passes, then every REPEAT_RATE.
+REPEAT_DELAY = 20
+REPEAT_RATE  = 5
+
+; Read one of the cursor keys that move the selection, with auto-repeat.
 ; In:  X = INKEY_TEST() of the key
 ; Out: Y = &FF (N set) to move now, else 0
 ; Clobbers: A, X
@@ -3225,7 +3253,7 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     LDY repeat_count                ; 0: time to repeat
     BEQ move
     STY key_repeating
-    CPY #&14                        ; &14: a fresh press
+    CPY #REPEAT_DELAY               ; a fresh press
     BEQ move
 .not_now
     LDY #&00
@@ -3236,17 +3264,20 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     RTS
 }
 
-; The selection's auto-repeat countdown: &14 while no key is held.
+; The selection's auto-repeat countdown: REPEAT_DELAY while no key is held.
 .repeat_count
     EQUB &00
 
-; Move the selection with the cursor keys, and pace the main loop: it waits
-; until two centiseconds have passed since the last call. If the selection
-; moves, the old sprite is drawn again without its box, the new one is boxed
-; and drawn in the editing grid (with an undo copy).
-; In:  A = 0 normally, else function keys count as Escape (picking a second
-;      sprite)
-; Out: N set if nothing changed (or CTRL is held: then nothing is done)
+; The main loop's pace: a pass takes at least this long.
+PASS_CENTISECONDS = 2
+
+; Move the selection with the cursor keys, and pace the main loop: unless
+; CTRL is held, it waits until PASS_CENTISECONDS have passed since the
+; last call. If the selection moves, the old sprite is drawn again without
+; its box, and the new one boxed and drawn in the editing grid (with an
+; undo copy).
+; In:  A = 0 normally; else, picking a second sprite, f0-f3 raise an Escape
+; Out: N set if nothing moved (or CTRL is held: then nothing is done)
 ; Clobbers: A, X, Y, and as draw_grid
 .select_sprite
 {
@@ -3269,7 +3300,7 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     LDA sprite
     CMP #FIRST_SMALL
     BNE wrap_right
-    LDA #&20                        ; after &0F comes &20
+    LDA #AFTER_SMALL                ; after &0F comes &20
 .wrap_right
     STA sprite
 .left
@@ -3283,7 +3314,7 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     LDA sprite
     CMP #LAST_SMALL
     BNE wrap_left
-    LDA #&0F                        ; before &20 comes &0F
+    LDA #FIRST_SMALL - 1            ; before &20 comes &0F
 .wrap_left
     STA sprite
 .left_done
@@ -3291,10 +3322,10 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     JSR repeat_key
     BPL down_done
     JSR sheet_row
-    CPX #&08                        ; the bottom row of small sprites
+    CPX #LARGE_ROWS + SMALL_ROWS - 1    ; the bottom row of small sprites
     BEQ down_done
     LDA sprite
-    CMP #&28                        ; nothing below the last large sprite
+    CMP #LAST_SPRITE                ; no small sprite below the last large one
     BEQ down_done
     CMP #&0F                        ; &0F, at the start of row 3, has &24 below it...
     BNE not_a
@@ -3330,18 +3361,19 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
 .step_up
     SEC
     LDA sprite
-    SBC row_down_step-1, X
+    SBC row_down_step-1, X          ; the row above's step (X is 1 or more)
 .store_up
     STA sprite
 
-    ; The auto-repeat: back to &14 while no key is held, else count down.
+    ; The auto-repeat: back to REPEAT_DELAY while no key is held, else
+    ; count down, and after a repeat start again from REPEAT_RATE.
 .up_done
     LDA repeat_count
     BNE delay
-    LDA #&04
+    LDA #REPEAT_RATE - 1
     STA repeat_count
 .delay
-    LDX #&14
+    LDX #REPEAT_DELAY
     LDA key_held
     BEQ store_delay
     LDX repeat_count
@@ -3354,7 +3386,7 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     BEQ wait
     JSR menu_keys_escape
 
-    ; Wait until the interval timer reaches two centiseconds.
+    ; Wait until the interval timer reaches PASS_CENTISECONDS.
 .wait
     LDA #OSWORD_READ_INTERVAL_TIMER
     JSR reset_timer.osword
@@ -3367,7 +3399,7 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     CMP #&00
     BNE waited
     LDA timer_value
-    CMP #&02
+    CMP #PASS_CENTISECONDS
     BCC wait
 .waited
     LDA #&00
@@ -3385,15 +3417,15 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     CMP #SMALL_WIDTH
     BNE changed
     LDX cursor_x
-    CPX #&08
+    CPX #SMALL_SPRITE_WIDTH
     BCC clamp_y
-    LDX #&07
+    LDX #SMALL_SPRITE_WIDTH - 1
     STX cursor_x
 .clamp_y
     LDY cursor_y
-    CPY #&10
+    CPY #SMALL_SPRITE_HEIGHT
     BCC changed
-    LDY #&0F
+    LDY #SMALL_SPRITE_HEIGHT - 1
     STY cursor_y
 .changed
     LDA sprite                      ; and take an undo copy
@@ -3403,15 +3435,17 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
     RTS
 }
 
-; How far down a step moves the selection from each row of the sheet:
-; large rows 0-4, then small rows 0-3. Up uses the row above's. (Some
-; moves are special cases in select_sprite.)
+; How far down a step moves the selection from each row of the sheet (but
+; the last), large rows 0-4 and then small rows 0-2. Up uses the row
+; above's. (Some moves are special cases in select_sprite.)
 .row_down_step
     EQUB 5, 5, &15, 5               ; large rows: &0B-&0E go to &20-&23
     EQUB LO(-&14)                   ; from the bottom large row to the small sprites
     EQUB 4, 4, 4                    ; small rows
 
-; Set the interval timer to zero, the start of the main loop's pacing.
+; Set the interval timer to zero, the start of the main loop's pacing. Also
+; entered at osword, with A = an OSWORD number, to read or write the timer
+; from timer_value.
 ; Clobbers: A, X, Y
 .reset_timer
 {
@@ -3432,50 +3466,53 @@ ASSERT graphics_end = object_names + (SLOT_EXIT - FIRST_SMALL_SLOT) * OBJECT_NAM
 .key_repeating
     EQUB &00
 
-; The selected sprite's row in the sheet.
+; The selected sprite's row in the sheet. Its last two bytes are also
+; select_sprite's exit with nothing moved.
+; In:  sprite
 ; Out: X = row (0-4 for the large sprites, 5-8 for the small ones),
 ;      last_column = 4; A = its column for a large sprite, &80 for a small
 .sheet_row
 {
-    LDX #&04
+    LDX #LARGE_COLUMNS - 1
     STX last_column
     LDA sprite
     CMP #FIRST_SMALL
     BCC sheet_column.large
     CMP #AFTER_SMALL
-    BCS large
+    BCS high
     LSR A
     LSR A
     AND #&03
     CLC
-    ADC #&05
+    ADC #LARGE_ROWS
     TAX
 .return_negative
     LDA #&80
     RTS
-.large
-    SBC #&10
-    BCS sheet_column.large
+.high
+    SBC #AFTER_SMALL - FIRST_SMALL  ; positions &20-&28 follow &00-&0F
+    BCS sheet_column.large          ; always
 }
 
 ; The selected sprite's column in the sheet.
+; In:  sprite
 ; Out: A = column, last_column = the last in its row (4 large, 3 small)
 ; Clobbers: X
 .sheet_column
 {
-    LDA #&04
+    LDA #LARGE_COLUMNS - 1
     STA last_column
     LDA sprite
     CMP #FIRST_SMALL
     BCC large
     CMP #AFTER_SMALL
-    BCS small
+    BCS high
     AND #&03
-    LDX #&03
+    LDX #SMALL_COLUMNS - 1
     STX last_column
     RTS
-.small
-    SBC #&10
+.high
+    SBC #AFTER_SMALL - FIRST_SMALL  ; positions &20-&28 follow &00-&0F
 .large
     JMP divide_by_5
 }
