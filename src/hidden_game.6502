@@ -293,7 +293,7 @@ bit6_mask = fire_object_vanishes + 1    ; the byte there is &40
     LDX key_order, Y
     LDA menu_keys, X                    ; MENU's key
     STA menu_key_left, X                ; as MENU left it
-    STA action_keys, Y                  ; in the order the game tests its actions
+    STA action_keys, Y                  ; in the game's own order (key_order)
     DEY
     BPL copy_keys_loop
 
@@ -348,8 +348,9 @@ bit6_mask = fire_object_vanishes + 1    ; the byte there is &40
     EQUB 0, 0, 0, 0, 0, 0, CRTC_CURSOR_OFF, CRTC_CURSOR_START, 0, VDU_DEFINE
 .cursor_off_vdu_end
 
-; For each of the action keys in the order the game tests them (action_keys),
-; then the direction keys (key_left...), which of MENU's ten it is.
+; For each of the action keys in the order the game keeps them (action_keys,
+; by ACTION_*), then the direction keys (key_left...), which of MENU's ten it
+; is.
 .key_order
     EQUB MENU_KEY_PICK_UP, MENU_KEY_DROP, MENU_KEY_MAP, MENU_KEY_BACKPACK
     EQUB MENU_KEY_THROW, MENU_KEY_USE
@@ -599,7 +600,7 @@ SECTION low_code, org=&0400
     LDY cell_y
     JSR cell_at_checked                 ; carry set: off the map
     BCC cell_picture_on_map
-    LDX #LO(io_alternates + 3 * PICTURE_BYTES) ; outside the map is lava (its second picture)
+    LDX #LO(io_alternates + 3 * PICTURE_BYTES) ; off the map: lava's second picture, io_alternates' fourth
     LDY #HI(io_alternates + 3 * PICTURE_BYTES)
     BCS cell_picture_found
 .cell_picture_on_map
@@ -1054,7 +1055,7 @@ ASSERT MAP_COLUMN_BYTES = 1 << 5 AND LO(map) = 0
 ; bottom each time. The player, drawn in screen memory, would scroll with it,
 ; so each time their trail is rubbed out and they're drawn back in the
 ; middle; and things that move by themselves move a character.
-; Clobbers: A, X, Y and the drawing variables.
+; Clobbers: A, X, Y, monster_index and the drawing variables.
 .walk_down
     JSR next_player_frame               ; the player's walking picture
     LDA #2                              ; the new row is half way through a cell
@@ -1673,7 +1674,7 @@ NEXT
     RTS
 
 ; Move everything that moves by itself one character cell: a thrown object,
-; then each monster that's out, the way it's going (one that's stuck is drawn
+; then each monster in play, the way it's going (one that's stuck is drawn
 ; where it is).
 ; Clobbers: A, X, Y, monster_index and the drawing variables.
 .move_things
@@ -1730,7 +1731,7 @@ NEXT
     BEQ monster_right
     CMP #DIRECTION_UP
     BEQ monster_up
-    CMP #MONSTER_GONE                   ; not out
+    CMP #MONSTER_GONE                   ; gone
     BCS next_monster
     CMP #DIRECTION_DOWN
     BNE monster_stuck
@@ -3139,7 +3140,7 @@ ASSERT P% - game_start = OBJECTS * OBJECT_BYTES
     JSR close_view
     JMP new_game
 .lose_life_again
-    LDX #COLOUR_RED + 8                 ; colour 0 flashes red and cyan
+    LDX #COLOUR_RED + 8                 ; colour 0 to physical 9: flashing red and cyan
     JSR vdu_palette
     JSR close_view
     LDA stage                           ; died after lighting the exit?
@@ -3149,7 +3150,7 @@ ASSERT P% - game_start = OBJECTS * OBJECT_BYTES
 ; The level's done: flash the palette, WELL DONE, 101 points (add_points).
 .level_complete
     JSR flush_buffers
-    LDA #5
+    LDA #5                              ; a noise
     JSR sound_effect_4
     JSR flash_palette                   ; flash
     JSR show_well_done
@@ -3432,7 +3433,7 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     STX clock_fraction
     LDX exit_x
     LDY exit_y
-    LDA #CELL_OBJECT                    ; the exit's icon on its cell
+    LDA #CELL_OBJECT                    ; the exit's icon on its cell (lit, it was fire)
     JSR set_cell
     LDA level
     ASL A
@@ -3614,7 +3615,7 @@ ASSERT OBJECTS * OBJECT_BYTES = PUZZLES AND LO(io_maps) = 0 AND LO(IO_MAP_SIZE) 
     ASL A
     ASL A
     TAX
-    LDA monster_direction, X            ; not out?
+    LDA monster_direction, X            ; gone?
     CMP #MONSTER_GONE
     BCS set_monster_cell_next
     JSR monster_cell
@@ -4987,6 +4988,10 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
     SEC
     LDA #&80
     RTS
+
+; Try trigger A for an object: use_trigger or throw_trigger, whichever use or
+; fly_thrown last patched in.
+; Clobbers: everything.
 .try_object_trigger
     LDY #PUZZLE_USES_OBJECT             ; triggers fired by an object
 .try_object_trigger_jump
@@ -5417,7 +5422,7 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
     ASL A
     TAX
     STY work0
-    LDA object_flags, X                 ; Y uses, its flags (and NO_CHARGES) kept
+    LDA object_flags, X                 ; Y uses, keeping its flags (OBJECT_NO_CHARGES too)
     AND #OBJECT_NO_CHARGES OR OBJECT_VANISHES OR OBJECT_NO_THROW
     ORA work0
     STA object_flags, X
@@ -5497,7 +5502,7 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
     LDY monster_direction, X            ; its old direction
     STA monster_direction, X
     TYA
-    EOR #MONSTER_GONE                   ; was out and now isn't?
+    EOR #MONSTER_GONE                   ; was in play and now gone?
     AND monster_direction, X
     CMP #MONSTER_GONE
     BCC set_monster_done
@@ -5642,7 +5647,7 @@ ASSERT SET_LEVELS_KEEP_TIME = &80 AND SET_LEVELS_KEEP_COLLECTS = &01
 .monster_think
     LDA work2
     CMP #MONSTER_GONE
-    BCS monster_think_done              ; not out?
+    BCS monster_think_done              ; gone: nothing to decide
     AND #3                              ; stuck or not, the way it was going
     STA work2
     LDA #DIRECTION_NONE                 ; its own cell
