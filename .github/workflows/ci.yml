@@ -13,7 +13,7 @@ jobs:
       # Baron is pre-1.0 and its syntax still moves; pin it, and bump
       # deliberately (the verify step proves a bump changed nothing).
       BARON_REPO: https://github.com/waitingforvsync/baron
-      BARON_REF: 016a7641b44850f22abffeeaf5a4635e8961294a
+      BARON_REF: accc35c74426ed5e11da62b929cc67051d4b8fdd
     steps:
       - uses: actions/checkout@v5
 
