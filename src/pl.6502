@@ -5,8 +5,9 @@
 ; What it does, once it has decrypted itself:
 ;
 ; 1. MODE 7, cursor off, paged mode on, and nothing on the screen. It waits
-;    for the keys to be let go, then reads, with no prompt (what's typed is
-;    echoed), a filename (up to 12 characters) and a six-digit code.
+;    for the last key pressed to be let go, then reads, with no prompt
+;    (what's typed is echoed), a filename (up to 12 characters) and a
+;    six-digit code.
 ; 2. *LOADs the file - a level file as the Level Designer saves it, like
 ;    LEVEL1, at &25A1 - and checks the code against the three bytes the file
 ;    keeps at &26E1. A wrong code resets the machine.
@@ -163,8 +164,9 @@ SECTION pl_decrypted, filename="PLDEC", org=pl.encrypted - 1
     DEY
     BPL send_screen_setup
     CLI
-    ; Wait for every key to be let go (W and T were held to get here), or
-    ; they'd be typed.
+    ; Wait for the key last pressed (W or T, held to get here) to be let go;
+    ; then, with auto-repeat off and the buffer flushed, nothing still held
+    ; gets typed. (Seen in jsbeeb: letting go of T alone is enough.)
 .wait_keys_up
     LDA MOS_KEY_PRESSED
     BMI wait_keys_up
