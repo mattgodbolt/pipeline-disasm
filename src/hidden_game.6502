@@ -19,34 +19,34 @@ SECTION hidden_game, filename="H.GAME", org=&3000
 INCLUDE "game.6502inc"
 
 ; Zero page. The loader's block copy uses &00-&07 too (copy_return...).
-monster_x = &00                         ; 4 monsters of 4 bytes; x, y in character cells
+monster_x = &00                         ; MONSTERS of MONSTER_BYTES: x, y in character cells
 monster_y = &01
-monster_direction = &02                 ; 0-3 moving, 4-7 stuck, 8 up: not out
-monster_turns = &03                     ; which ways it tries when it's blocked
+monster_direction = &02                 ; DIR_*; + MONSTER_STUCK: stuck; MONSTER_GONE and up: not out
+monster_turns = &03                     ; four 2-bit TURN_* fields, tried from the bottom
 thrown_x = &10                          ; a thrown object in flight, in character cells
 thrown_y = &11
-thrown_direction = &12                  ; 0: nothing in flight, else direction + 1
-thrown_picture = &13
+thrown_direction = &12                  ; THROWN_*: its direction + 1, or 0 for nothing in flight
+thrown_picture = &13                    ; its icon; once it lands, the cell type it hit
 thrown_picture_high = &14
-front_x = &15                           ; the cell in front of the player
+front_x = &15                           ; the cell in front of the player (or a thrown object hit)
 front_y = &16
-action = &17                            ; the action to do next (see action_table)
-frame_counter = &18                     ; +&20 a cycle; bit 7 picks the monsters' frame
-thrown_object = &19                     ; the object in flight, + &80
+action = &17                            ; ACTION_*: the action to do next
+frame_counter = &18                     ; +&20 a cycle; bit 7 picks the monsters' picture
+thrown_object = &19                     ; the object thrown; + &80 while it lands; then &FF
 backpack_slot = &1A                     ; the selected slot
 throw_range = &1B                       ; cells the thrown object has left to fly
 started_late = &1C                      ; nonzero: the game didn't start on level 1
 pushes_left = &1D                       ; how many more crates the player may push
 clock_fraction = &1E                    ; io_time_rate is added each cycle
-clip_position = &1F
-player_x = &20                          ; the player's cell
+clip_position = &1F                     ; the sprite's x or y, being clipped to the view
+player_x = &20                          ; the player's map cell
 player_y = &21
 score = &22                             ; BCD: the low two digits
 score_high = &23                        ; and the high two
-backpack = &24                          ; 4 slots: an object, or negative for empty
-menu_key_left = &29                     ; the direction keys as MENU set them
-menu_key_right = &2A
-menu_key_up = &2B
+backpack = &24                          ; BACKPACK_SLOTS: an object, or negative for empty
+menu_key_left = &29                     ; the direction keys as MENU set them (the loader
+menu_key_right = &2A                    ; copies all ten here, but the rest are soon
+menu_key_up = &2B                       ; overwritten)
 menu_key_down = &2C
 empty_channel = &2D                     ; the sound channel the event says ran dry
 lives = &2E
@@ -68,16 +68,16 @@ tune_duration = &3E
 tune_duration_high = &3F
 tune_position = &40                     ; voice 1's next note
 tune_position_2 = &41                   ; voice 2's
-tune_swap = &42                         ; which voice plays alone
-tune_transpose = &43                    ; 0 or &14
-tune_together = &44                     ; both voices play, or one
-triggers_fired = &48                    ; counts triggers that matched
+tune_swap = &42                         ; which voice plays alone: 0 voice 1, 1 voice 2
+tune_transpose = &43                    ; 0 or TRANSPOSE_FOURTH
+tune_together = &44                     ; nonzero: both voices play
+triggers_fired = &48                    ; counts triggers that matched and acted
 level = &49                             ; 0-3
-draw_step = &4A                         ; drawing: cells to a picture's edge, a screen step, or flip the player
+draw_step = &4A                         ; drawing: cells to a picture's edge, a step from cell to cell, or flip the player
 draw_step_high = &4B
 monster_index = &4C
-picture_stride = &4E                    ; bytes from one character cell of a picture to the next across
-picture_size = &4F                      ; negative: 4x4 cells; 1: a 2x2 icon on the floor
+picture_stride = &4E                    ; bytes from one column of a picture to the next
+picture_size = &4F                      ; negative: a whole picture; 1: an icon on the floor
 work0 = &50                             ; scratch, used for all sorts
 work1 = &51
 work2 = &52
@@ -94,15 +94,15 @@ monster_food = &5C                      ; low nibble: a cell monsters eat; high:
 alternate_cells = &5D                   ; 2 bits a cell type: which squares use its second picture
 player_dead = &5E                       ; nonzero: lose a life
 pipe_move = &5F                         ; inside a pipe: the move action that carries the player on
-stage = &60                             ; 0 collecting; 1 exit found; 2 the last few seconds; 3 done
+stage = &60                             ; STAGE_*
 furthest_level = &61                    ; the title screen's start level goes up to this
 front_cell = &62                        ; what's in the cell in front of the player
-fill_screen = &63                       ; clear_screen fills with the floor pattern, not black
+fill_screen = &63                       ; nonzero: clear_screen fills with the floor pattern, not black
 tune_off = &64
 effects_off = &65
-action_keys = &66                       ; P, D, M, CTRL, T, Return: actions 1-6
-key_map = &68
-key_left = &6C                          ; this level's direction keys: actions 7-10
+action_keys = &66                       ; by action: P, D, M, CTRL, T, Return (actions 1-6)
+key_map = action_keys + ACTION_MAP - 1  ; M
+key_left = &6C                          ; this level's direction keys (actions 7-10)
 key_right = &6D
 key_up = &6E
 key_down = &6F
@@ -110,17 +110,17 @@ cell_x = &70                            ; the map cell being looked at or drawn
 cell_y = &71
 screen_start = &72                      ; the CRTC's start address
 screen_start_high = &73
-view_sub_x = &74                        ; view_x MOD 4: which character column of the left cell shows
-view_sub_y = &75
+view_sub_x = &74                        ; the character column, within its map cell, being drawn
+view_sub_y = &75                        ; the character row, likewise
 picture = &76                           ; the picture being drawn
 picture_high = &77
 screen = &78                            ; where it's being drawn
 screen_high = &79
-strip_cells = &7A
+strip_cells = &7A                       ; map cells drawn along a row so far
 cell_low_nibble = &7B                   ; the cell is in its map byte's low nibble
 map_pointer = &7C
 map_pointer_high = &7D
-strip_cells_down = &7E
+strip_cells_down = &7E                  ; map cells drawn down a column so far
 steps = &7F
 view_screen = &80                       ; the screen address of the view's top left
 view_screen_high = &81
@@ -128,10 +128,10 @@ count_across = &82
 count_down = &83
 player_screen = &84
 player_screen_high = &85
-player_screen_base = &86
+player_screen_base = &86                ; the player's top left on the screen
 player_screen_base_high = &87
-player_frame = &88                      ; +&20 a step
-facing = &89                            ; 0 left, 1 right, 2 up, 3 down
+player_frame = &88                      ; +&20 a cell walked; bit 7 flips the player's picture
+facing = &89                            ; DIR_*
 view_x = &8A                            ; the view's top left, in character cells (4 to a map cell)
 view_y = &8B
 sprite_columns = &8E                    ; character cells to draw, less 1
@@ -146,15 +146,14 @@ temp = &96
 sprite = &97                            ; the picture being drawn
 sprite_high = &98
 sprite_skip_x = &99                     ; character cells cut off the left
-sprite_skip_y = &9A
-player_steps = &9B
+sprite_skip_y = &9A                     ; and the top
+steps_since_drawn = &9B                 ; steps scrolled in a pipe since the player was last drawn
 
 ; Elsewhere.
-trigger_flags = &0100                   ; a byte per trigger, from io_level_trigger_flags
-keys_were_down = &0120                  ; a byte per direction key, for repeat
+trigger_flags = &0100                   ; TRIGGERS bytes, from io_level_trigger_flags
+keys_were_down = &0120                  ; a byte per direction key: 1 if it was down last time
 step_y = &0124                          ; step's scratch
-saved_extended_vectors = &037F          ; the OS's cassette workspace
-trigger_args = &23AD                    ; 4 bytes a trigger, from io_level_trigger_args
+saved_extended_vectors = &037F          ; over the cassette filing system's workspace
 map = &5800                             ; the level being played's map, copied from io_maps
 
 menu_keys = &50                         ; where MENU leaves the ten keys
@@ -162,18 +161,31 @@ copy_return = &00
 copy_from = &02
 copy_to = &04
 copy_count = &06
-objects = game_start                    ; 8 objects of 4 bytes: x, y, icon, uses and flags
+
+; A level's objects, OBJECT_BYTES each, laid over code that runs once.
+objects = game_start
+object_x = objects + 0
+object_y = objects + 1
+object_icon = objects + 2
+object_flags = objects + 3
+
+; The triggers' places and arguments, laid over the end of the game's own
+; code by setup_level (trigger_places) and just past it.
+trigger_args = trigger_places + 2 * TRIGGERS     ; 4 bytes a trigger
+trigger_condition = trigger_args + 3
+
+; Masks for BIT that are other instructions' operands.
 bit4_mask = show_map_centre + 1         ; the byte there is &10
 bit6_mask = fire_object_vanishes + 1    ; the byte there is &40
 
-; Entered from the GAME stub with the ten keys MENU set up in menu_keys, as
-; negative INKEY numbers. Copies the keys where the game wants them, copies
-; the game into place, sets up the screen and the sound event, and starts the
-; game. The stack is reset because the event handler lives in the stack page.
+; Entered from the GAME stub. Copies MENU's ten keys where the game wants
+; them, copies the game into place, sets up the screen and the sound event,
+; and starts the game.
+; In: menu_keys = the ten keys MENU set up, as negative INKEY numbers.
 .loader
     LDX #&FF                            ; the event handler lives in the stack page
     TXS
-    LDY #&09
+    LDY #MENU_KEYS - 1
 .copy_keys_loop
     LDX key_order, Y
     LDA menu_keys, X                    ; MENU's key
@@ -196,11 +208,11 @@ bit6_mask = fire_object_vanishes + 1    ; the byte there is &40
 
 ; MODE 5, then VDU 23,0,10,32;0;0;0 (CRTC register 10: no cursor), sent from
 ; the end of cursor_off_vdu backwards.
-    LDA #22
+    LDA #VDU_MODE
     JSR OSWRCH
     LDA #5
     JSR OSWRCH
-    LDY #&09
+    LDY #cursor_off_vdu_end - cursor_off_vdu - 1
 .cursor_off_loop
     LDA cursor_off_vdu, Y
     JSR OSWRCH
@@ -216,37 +228,43 @@ bit6_mask = fire_object_vanishes + 1    ; the byte there is &40
     STA EVNTV + 1
     CLI
 
-; Addressable latch bit 5 clear (with bit 4 set by MODE 5): the screen wraps
-; round at 8K, so the game's screen is &6000-&7FFF with hardware scrolling.
-    LDA #&05
+; The game's screen is SCREEN to SCREEN_END, scrolled by the hardware.
+    LDA #SCREEN_WRAP_8K
     STA SYSVIA_ORB
     JMP game_start
 
 ; Never printed: a note for whoever looks.
 .message_to_crackers
     EQUS " GET YOUR GRUBBY LITTLE HANDS OFF THIS PROGRAM! "
+
+; VDU 23, 0, CRTC_CURSOR_START, 32, 0, 0, 0, 0, 0, 0, backwards.
 .cursor_off_vdu
-    EQUB 0, 0, 0, 0, 0, 0, 32, 10, 0, 23
+    EQUB 0, 0, 0, 0, 0, 0, 32, CRTC_CURSOR_START, 0, VDU_DEFINE
+.cursor_off_vdu_end
 
 ; For each of the action keys in the order the game tests them (action_keys),
-; which of MENU's ten it is.
+; then the direction keys (key_left...), which of MENU's ten it is.
 .key_order
-    EQUB 4, 5, 9, 8, 7, 6, 0, 1, 2, 3     ; P, D, M, CTRL, T, Return, Z, X, :, /
+    EQUB MENU_KEY_PICK_UP, MENU_KEY_DROP, MENU_KEY_MAP, MENU_KEY_BACKPACK
+    EQUB MENU_KEY_THROW, MENU_KEY_USE
+    EQUB MENU_KEY_LEFT, MENU_KEY_RIGHT, MENU_KEY_UP, MENU_KEY_DOWN
+ASSERT P% - key_order = MENU_KEYS
+ASSERT key_left = action_keys + ACTION_LEFT - 1
 
-; Copy a block of memory, then return past the six bytes that follow the JSR:
-; the source, the destination and the length.
+; Copy a block of memory, then return past the six bytes that follow the JSR.
+; In: after the JSR, the source, the destination and the length, a word each.
 ; Clobbers: A, X, Y, copy_return, copy_from, copy_to, copy_count.
 .copy_block
     PLA                                 ; the JSR's return address, less 1
     STA copy_return
     PLA
     STA copy_return + 1
-    LDY #&01
+    LDY #1
 .copy_block_params
     LDA (copy_return), Y                ; the parameters into copy_from, copy_to, copy_count
     STA copy_from - 1, Y
     INY
-    CPY #&07
+    CPY #1 + 6
     BNE copy_block_params
     LDX copy_count
     TYA                                 ; step the return address past them
@@ -277,50 +295,49 @@ bit6_mask = fire_object_vanishes + 1    ; the byte there is &40
 .copy_block_return
     JMP (copy_return)                   ; return past the parameters
 
-; Never used.
+; Never used: zeros to the end of the page.
 .loader_unused
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00
-    EQUB &00
+    SKIP 25
 
 ; The sound event handler, run in the stack page (the stack never gets this
 ; deep).
 .event_handler_load
 SECTION event_handler, org=&0131
 
-; EVNTV handler for the "output buffer empty" event (the only one enabled):
-; X is the buffer, 4-7 for sound channels 0-3. Plays the tune's next note on
-; the channel that ran out, and when the first voice reaches its end, starts
-; the tune again with the next variation. Preserves A, X and Y.
+; EVNTV, for the "output buffer empty" event (the only one enabled): play the
+; tune's next note on the channel that ran dry, and when a voice has played
+; its last note, start the tune again with the next variation.
+; In: X = the buffer that's empty (BUFFER_SOUND_0 + the sound channel).
+; Preserves A, X and Y.
 .event_handler
     PHA
     TXA
     PHA
     TYA
     PHA
-    DEX                                 ; X - 4: the sound channel that's run dry
+    DEX                                 ; X - BUFFER_SOUND_0: the channel that's run dry
     DEX
     DEX
     DEX
     STX empty_channel
     JSR play_tune                       ; play its next note
     LDA tune_position                   ; has the first voice finished?
-    CMP #30
+    CMP #TUNE_NOTES
     BEQ restart_tune
     TAX                                 ; the first voice is part way through
     BNE event_handler_return
     LDA tune_position_2                 ; or the second, when only it is playing
-    CMP #30
+    CMP #TUNE_NOTES
     BNE event_handler_return
 
 ; Both voices back to the start, each with a silent note to get the event
-; going again; then step the variation: every other time round, transpose
-; up a fourth (&14, 5 semitones), and every other time that, swap the voices.
+; going again; then step the variation. The tune goes round voice 1 alone,
+; both, voice 1 alone a fourth up, both a fourth up, then the same with voice
+; 2 alone instead.
 .restart_tune
-    LDY #&01
+    LDY #1
     STY tune_channel                    ; channel 1
-    STY tune_channel_high               ; in step with the other voice (SOUND &101)
+    STY tune_channel_high               ; SOUND_SYNC_1: in step with the other voice
     DEY
     STY tune_position                   ; both voices to their first note
     STY tune_position_2
@@ -336,7 +353,7 @@ SECTION event_handler, org=&0131
     STA tune_together
     BNE event_handler_return
     LDA tune_transpose
-    EOR #&14
+    EOR #TRANSPOSE_FOURTH
     STA tune_transpose
     BNE event_handler_return
     LDA tune_swap
@@ -352,19 +369,21 @@ SECTION event_handler, org=&0131
 
 ; Copied but never used.
 .event_handler_unused
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00
-    EQUB &00, &00, &00, &00
+    SKIP 12
 .event_handler_end
 ENDSECTION
 
-; The title tune, in the printer buffer, and the four sound envelopes, written
-; straight into the OS's envelope store rather than with OSWORD 8.
+; The tune played during a level, in the printer buffer, and the four sound
+; envelopes, written straight into the OS's envelope store rather than with
+; OSWORD 8.
 .sound_data_load
 SECTION sound_data, org=&0880
 .sound_data
 
-; The tune: two voices of 32 notes, each a byte with the pitch step in the
-; high nibble and the duration in the low. See play_tune_note.
+; The tune: two voices of TUNE_VOICE_BYTES notes, each a byte with the pitch
+; (in semitones up from the voice's lowest note) in the high nibble and the
+; duration (in twentieths of a second) in the low; see play_voice. Only the
+; first TUNE_NOTES of each are played.
 .tune
     EQUB &59, &73, &86, &D6, &C9, &A3, &86, &76, &59, &73, &86, &56, &79, &43, &16, &06
     EQUB &59, &73, &86, &D6, &C9, &A3, &86, &76, &59, &73, &86, &46, &5C, &5C, &70, &00
@@ -374,8 +393,9 @@ SECTION sound_data, org=&0880
 
 ; Envelopes 1-4, as the OS keeps them (ENVELOPE's parameters after its
 ; number, padded to 16 bytes): T, PI1-3, PN1-3, AA, AD, AS, AR, ALA, ALD.
-; 1 and 2 are the tune's voices, 3 and 4 sound effects.
-.envelope_1
+; See ENVELOPE_VOICE_1 and the rest.
+.envelopes
+ASSERT envelopes = MOS_ENVELOPES
     EQUB 4, 1, -1, 1, 1, 2, 1, 70, 10, -12, -15, 70, 100, 0, 0, 0
     EQUB 5, 1, -1, 0, 1, 1, 0, 100, -10, 0, -12, 100, 0, 0, 0, 0
     EQUB &84, 0, 8, -8, 3, 1, 1, 126, -5, -10, -20, 126, 0, 0, 0, 0
@@ -383,10 +403,9 @@ SECTION sound_data, org=&0880
 .sound_data_end
 ENDSECTION
 
-; Not copied.
+; Not copied: zeros to the end of the page.
 .sound_data_padding
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00
-    EQUB &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00, &00
+    SKIP 32
 
 ; Map view patterns and the code that scrolls the playing area.
 .low_code_load
@@ -1283,7 +1302,7 @@ NEXT
     INY
     STY draw_step_high
 .rub_out_trail
-    LDX player_steps                    ; inside a pipe...
+    LDX steps_since_drawn               ; inside a pipe...
     LDA pipe_move
     BEQ rub_out_trail_draw
     INX
@@ -1291,7 +1310,7 @@ NEXT
     BCC rub_out_trail_draw
     RTS
 .rub_out_trail_draw
-    STX player_steps
+    STX steps_since_drawn
     LDX #&04
 .rub_out_trail_cell
     LDY #&07
@@ -1332,7 +1351,7 @@ NEXT
     BEQ draw_player_cells
     RTS
 .draw_player_cells
-    STA player_steps
+    STA steps_since_drawn
     LDA #&03
     STA count_across
     STA count_down
@@ -1405,7 +1424,7 @@ NEXT
     STA count_across
     STA screen
     TAY
-    STA player_steps
+    STA steps_since_drawn
     LDA #HI(SCREEN)
     STA screen_high
     LDA #&FF                            ; &7F, &3F, &1F...: stripes
@@ -2616,7 +2635,7 @@ NEXT
     BCC show_well_done_bit
     ROR cell_low_nibble                 ; the carry: back to the top bit
     INX
-    CPX #well_done_block - well_done_bitmap; 11 rows of 4 bytes
+    CPX #well_done_block - well_done_bitmap ; 11 rows of 4 bytes
     BCC show_well_done_bit
     LDA #200                            ; 4 seconds
     BITABS                                  ; skip the next LDA
@@ -2722,8 +2741,8 @@ NEXT
     BCC no_object_picture
 
 ; Object Y / 4's icon.
-.object_icon
-    LDA objects + 2, Y
+.object_icon_picture
+    LDA object_icon, Y
     ORA #&10                            ; &10 + the icon
     JMP thing_picture
 .no_object_picture
@@ -3310,7 +3329,7 @@ NEXT
 ; at what's in front of the player and underneath, try every trigger, and do
 ; an action: the one pressed, or the pipe's move while in a pipe.
 .player_turn
-    BIT MOS_ESCAPE_FLAG                     ; Escape?
+    BIT MOS_ESCAPE_FLAG                 ; Escape?
     BPL player_turn_no_escape
 .give_up
     LDX #INKEY_TEST(KEY_SHIFT)          ; SHIFT too?
@@ -3380,10 +3399,10 @@ NEXT
     JSR draw_page_picture               ; ...drawn
     JSR print_status
 .backpack_screen_loop
-    BIT MOS_ESCAPE_FLAG                     ; Escape: lose a life
+    BIT MOS_ESCAPE_FLAG                 ; Escape: lose a life
     BMI give_up
     JSR backpack_keys                   ; the backpack screen's keys
-    LDX #INKEY_TEST(KEY_SPACE)                  ; Space
+    LDX #INKEY_TEST(KEY_SPACE)          ; Space
     JSR key_pressed
     BNE backpack_screen_loop
 .backpack_screen_done
@@ -3416,10 +3435,10 @@ NEXT
     PLA
     JMP show_map
 .backpack_keys_sound
-    LDX #INKEY_TEST(KEY_S)                      ; S: sound effects
+    LDX #INKEY_TEST(KEY_S)              ; S: sound effects
     JSR key_pressed
     BEQ backpack_toggle_effects
-    LDX #INKEY_TEST(KEY_T)                      ; T: the tune
+    LDX #INKEY_TEST(KEY_T)              ; T: the tune
     JSR key_pressed
     BNE backpack_keys_done
     LDA tune_off
@@ -3564,7 +3583,7 @@ NEXT
     JSR draw_screen_frame
     PLP
     BCS draw_lives
-    LDY #LO(io_mission_text - io_object_names); the mission text
+    LDY #LO(io_mission_text - io_object_names) ; the mission text
     LDX #IO_MISSION_SIZE - 1
     JSR print_names_text
 .draw_lives
@@ -3598,7 +3617,7 @@ NEXT
     ASL A
     ASL A
     TAY
-    JSR object_icon                     ; its icon
+    JSR object_icon_picture             ; its icon
     STX sprite
     STY sprite_high
     LDA work0                           ; at slot * 6 + 7, 7
@@ -3658,7 +3677,7 @@ NEXT
     BNE show_map_space
     JSR map_view_scroll_right
 .show_map_space
-    LDX #INKEY_TEST(KEY_SPACE)                  ; Space
+    LDX #INKEY_TEST(KEY_SPACE)          ; Space
     JSR key_pressed
     BNE show_map_loop
     JSR clear_screen                    ; back to the game
@@ -3688,7 +3707,7 @@ NEXT
     ASL A
     ASL A
     TAY
-    LDA objects + 2, Y
+    LDA object_icon, Y
     JSR print_object_name
 .print_selected_done
     JSR print_inline                    ; COLOUR 128
@@ -4019,9 +4038,9 @@ NEXT
     BCC move_cell_draw
 .move_object
     LDA work4                           ; it moves too
-    STA objects, Y
+    STA object_x, Y
     LDA work5
-    STA objects + 1, Y
+    STA object_y, Y
 .move_cell_draw
     LDX work2
     LDY work3
@@ -4195,7 +4214,7 @@ NEXT
     STA work0, X
     DEX
     BPL entry_code_clear
-    LDX #HI(io_graphics - 1) - HI(io_attrs); ...to the end of the maps
+    LDX #HI(io_graphics - 1) - HI(io_attrs) ; ...to the end of the maps
     LDY #LO(io_attrs)
     CLC
 .entry_code_sum
@@ -4253,11 +4272,11 @@ NEXT
 
 ; Wait for Space to be pressed and let go.
 .wait_for_space
-    LDX #INKEY_TEST(KEY_SPACE)                  ; Space down...
+    LDX #INKEY_TEST(KEY_SPACE)          ; Space down...
     JSR key_pressed
     BNE wait_for_space
 .wait_for_space_up
-    LDX #INKEY_TEST(KEY_SPACE)                  ; ...and up
+    LDX #INKEY_TEST(KEY_SPACE)          ; ...and up
     JSR key_pressed
     BEQ wait_for_space_up
 
@@ -4305,10 +4324,10 @@ NEXT
     LDY #7 * 4
     LDX #&07
 .find_object_loop
-    LDA objects, Y
+    LDA object_x, Y
     CMP work0
     BNE find_object_next
-    LDA objects + 1, Y
+    LDA object_y, Y
     CMP work1
     BEQ find_object_done
 .find_object_next
@@ -4352,7 +4371,7 @@ NEXT
     JSR find_object                     ; the object in front
     BCC action_done
     LDA #&80                            ; off the map
-    STA objects, Y
+    STA object_x, Y
     LDY backpack_slot
     STX backpack, Y                     ; into the backpack
     LDX front_x
@@ -4440,8 +4459,8 @@ NEXT
     ASL A
     TAY
     LDA #&80                            ; off the map
-    STA objects, Y
-    JSR object_icon                     ; it flies as its icon
+    STA object_x, Y
+    JSR object_icon_picture             ; it flies as its icon
     STX thrown_picture
     STY thrown_picture_high
     LDX facing                          ; the way the player faces, + 1
@@ -4500,7 +4519,7 @@ NEXT
     ASL A
     ASL A
     TAY
-    LDA objects + 3, Y                  ; its flags
+    LDA object_flags, Y                 ; its flags
     SEC
     BMI thrown_landed                   ; bit 7: it does nothing thrown
     JSR fire_object_triggers
@@ -4549,7 +4568,7 @@ NEXT
     TAY
     LDA triggers_fired                  ; did any fire?
     BEQ fire_object_nothing
-    LDA objects + 3, Y
+    LDA object_flags, Y
     PHA
     AND #&C0
     STA work0
@@ -4563,7 +4582,7 @@ NEXT
     SEC
     PHA
     ORA work0
-    STA objects + 3, Y
+    STA object_flags, Y
     PLA
     BNE fire_object_done
     LDA work0
@@ -4595,7 +4614,7 @@ NEXT
     ASL A
     ASL A
     TAY
-    LDA objects + 3, Y
+    LDA object_flags, Y
     JSR fire_object_triggers            ; fire them
     BMI delay_done                      ; none fired
     BCS use_pause                       ; kept
@@ -4644,7 +4663,7 @@ NEXT
     TYA
     ASL A
     TAY
-    LDA trigger_args + 3, Y             ; the condition
+    LDA trigger_condition, Y            ; the condition
     STA work0
     BPL throw_trigger_cell              ; no direction needed
     AND #&30
@@ -4707,7 +4726,7 @@ NEXT
     TYA
     ASL A
     TAY
-    LDA trigger_args + 3, Y             ; the condition
+    LDA trigger_condition, Y            ; the condition
     STA work0
     BPL use_trigger_cell                ; no direction needed
     AND #&30
@@ -4828,10 +4847,10 @@ NEXT
     JSR trigger_arguments
     JSR find_carried                    ; carried or in flight?
     BEQ explode_carried
-    LDA objects, Y                      ; where it is
+    LDA object_x, Y                     ; where it is
     PHA
     TAX
-    LDA objects + 1, Y
+    LDA object_y, Y
     PHA
     TAY
     JSR cell_at                         ; still there?
@@ -4983,10 +5002,10 @@ NEXT
     ASL A
     TAX
     STY work0
-    LDA objects + 3, X                  ; Y uses, its flags kept
+    LDA object_flags, X                 ; Y uses, its flags kept
     AND #&E0
     ORA work0
-    STA objects + 3, X
+    STA object_flags, X
     LDA #&01                            ; a flash
     TAX
     JSR flash_palette_times
@@ -5333,7 +5352,7 @@ NEXT
     STA furthest_level                  ; A = 0: no starting late on a new mission
     JSR swap_memory                     ; the game's code out of the way
     LDA #&40                            ; RTI
-    STA MOS_NMI_ROUTINE                     ; NMIs are ignored until the DFS sets them up
+    STA MOS_NMI_ROUTINE                 ; NMIs are ignored until the DFS sets them up
     LDY #&100 - LO(MOS_EXTENDED_VECTORS) - 1
 .load_mission_vectors
     LDA saved_extended_vectors, Y       ; the extended vectors back

@@ -14,6 +14,10 @@ SERVICE_CLAIM_PRIVATE     = 2     ; claim private workspace
 OSWORD_SOUND              = &07   ; YX: channel, amplitude, pitch, duration (2 bytes each)
 OSFILE_LOAD               = &FF
 
+; Where the OS keeps the envelopes ENVELOPE defines, 16 bytes each (a
+; candidate for os.6502inc).
+MOS_ENVELOPES = &08C0
+
 ; The "output buffer empty" event: X is the buffer, and the sound channels'
 ; buffers are 4-7.
 EVENT_OUTPUT_EMPTY = 0
