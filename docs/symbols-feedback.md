@@ -120,3 +120,16 @@ discs without a record. Commented on the PR:
   prompt, and one mission (all of H.GAME) or one graphics set (H.GAME's
   loader) stops the game, so the example should drop "hasn't changed"
   rather than say "one level saved".
+- Answered the jsbeeb side's three questions (2026-10-04):
+  - No other title on the STH discs, Superior's included, holds PIPELINE's
+    code at the same address, and no other image holds the stub loader.
+    Only `start` in H.GRAPH (`*FX4,1`) and the BASIC programs' first line
+    make anchors that collide.
+  - Splitting linked names by range misplaces the Level Designer's level
+    (it sits over its start-up code), IO's names in H.GAME (over the
+    loader as loaded) and IO's layout in H.GRAPH, which uses it only for
+    offsets. Neither baron's dump nor its listing says which `=` names are
+    addresses; using a name as a memory operand is a good test.
+  - The game's variables reach &9B, its envelopes sit on the MOS's own,
+    and its code covers &0900-&0DFF. A system global shouldn't name an
+    address inside another set's matching region.
