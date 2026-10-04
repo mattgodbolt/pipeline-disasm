@@ -16,7 +16,7 @@ INCLUDE "io.6502inc"
 SECTION hidden_game, filename="H.GAME", org=&3000
 .game
 {
-INCLUDE "game.6502inc"
+INCLUDE "game.6502inc"                  ; in the scope: its names are the game's own
 
 ; Zero page. The loader's block copy uses &00-&07 too (copy_return...).
 monster_x = &00                         ; MONSTERS of MONSTER_BYTES: x, y in character cells
@@ -274,7 +274,7 @@ ASSERT key_left = action_keys + ACTION_LEFT - 1
     INC copy_return + 1
 .copy_block_data
     STA copy_return
-    LDY #&00
+    LDY #0
 .copy_block_loop
     LDA (copy_from), Y
     STA (copy_to), Y
@@ -1183,6 +1183,7 @@ SECTION main_code, org=&0900
     STA tune_duration
 
 ; SOUND with the block at tune_channel.
+; Clobbers: A, X, Y.
 .sound_tune_block
     LDX #LO(tune_channel)
     LDY #HI(tune_channel)
@@ -1192,6 +1193,7 @@ SECTION main_code, org=&0900
 ; Add A to picture, halved for an icon: to skip columns or rows of a picture.
 ; In: Y = picture_size + 1, from the caller's INY. This increments it again,
 ; and it stays negative for a whole picture.
+; Clobbers: A.
 .skip_picture_columns
     INY                                 ; an icon's columns are half as big
     BMI advance_picture
@@ -1207,6 +1209,7 @@ SECTION main_code, org=&0900
 
 ; Count a cell walked: every four, the player's picture turns upside down or
 ; back (see draw_player).
+; Clobbers: A.
 .next_player_frame
     LDA player_frame
     CLC
@@ -1740,6 +1743,7 @@ NEXT
 ; Draw the icon at sprite in the middle of a floor picture at character
 ; position (X, Y): copy it into the middle of the floor's own picture, draw
 ; that, then (by an RTS to a pushed address) put the floor's middle back.
+; Clobbers: as draw_sprite.
 .draw_icon_on_floor
     TXA
     PHA
@@ -1815,6 +1819,7 @@ NEXT
 ; map's right edge, or from &F1, one hanging off its left edge.
 ; Out: sprite_skip_x, sprite_columns, sprite_screen; or if none of the
 ; picture is in view, returns from the caller (draw_sprite) instead.
+; Clobbers: A, clip_position.
 .clip_sprite_x
     STX clip_position
     LDA view_x
@@ -1941,6 +1946,7 @@ NEXT
     LDA #0
 
 ; CRTC register X = A.
+; Preserves A, X, Y.
 .set_crtc_register
     STX CRTC_ADDR                       ; register
     STA CRTC_DATA                       ; value
@@ -2112,6 +2118,7 @@ ASSERT LO(map_view_patterns) = 0
 
 ; As cell_at but without the exit.
 ; Out: A = the cell type, Z set if it's empty floor; carry set off the map.
+; Clobbers: as cell_at.
 .cell_at_checked
     CPX #MAP_SIZE                       ; off the map?
     BCS cell_off_map
@@ -2174,6 +2181,7 @@ ASSERT LO(map_view_patterns) = 0
     JSR find_front
 
 ; Empty the player's cell.
+; Clobbers: as set_cell.
 .clear_player_cell
     LDX player_x
     LDY player_y
@@ -2576,6 +2584,7 @@ ASSERT IO_NAME_LENGTH = 12
     JSR print_level
 
 ; The tune and sound effects settings; also printed when T or S changes them.
+; Clobbers: A, X, Y, work0, work1.
 .print_sound_settings
     JSR print_inline
     TEXT_AT 10, 21
@@ -3201,6 +3210,7 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     RTS
 
 ; Empty the cell under monster X / 4.
+; Clobbers: as set_cell_and_draw.
 .empty_monster_cell
     JSR monster_cell
     LDA #CELL_FLOOR
@@ -3251,6 +3261,7 @@ ASSERT player_y = player_x + 1 AND exit_y = exit_x + 1
     JMP draw_sprite
 
 ; The exit's icon, top left of the backpack screen once the exit is lit.
+; Clobbers: A, X, Y and the sprite variables.
 .draw_exit_icon
     LDA #4                              ; character position 4, 4
     STA sprite
@@ -3537,6 +3548,7 @@ ASSERT OBJECTS * OBJECT_BYTES = PUZZLES AND LO(io_maps) = 0 AND LO(IO_MAP_SIZE) 
     LDA action_table + 1, Y
 
 ; Jump to X + 256 * A.
+; Clobbers: work0, work1.
 .jump_to
     STX work0
     STA work1
@@ -4096,6 +4108,7 @@ ASSERT TURN_ANTICLOCKWISE - TURN_CLOCKWISE = TURN_CLOCKWISE - TURN_AHEAD AND TUR
 
 ; Lava and fire kill.
 ; In: A = a cell type.
+; Out: player_dead nonzero if it's deadly.
 .check_deadly
     CMP #CELL_LAVA
     BEQ kill_player
@@ -4111,6 +4124,7 @@ ASSERT TURN_ANTICLOCKWISE - TURN_CLOCKWISE = TURN_CLOCKWISE - TURN_AHEAD AND TUR
 ; and after); in a pipe, sulphur is collected, and on the floor, out of the
 ; pipe's end, the pipe lets go.
 ; In: A = the cell underfoot.
+; Clobbers: everything.
 .check_pipe_end
     LDX pipe_move
     BEQ underfoot_on_foot
@@ -4487,6 +4501,7 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     BEQ wait_for_space_up
 
 ; Clear an Escape.
+; Clobbers: A, X, Y.
 .acknowledge_escape
     LDA #OSBYTE_ACKNOWLEDGE_ESCAPE
     JMP OSBYTE
@@ -4524,6 +4539,7 @@ ASSERT CRTC_HSYNC_POSITION = CRTC_HORIZONTAL_DISPLAYED + 1 AND CRTC_VSYNC_POSITI
     LDA io_edit_code_low - 1, Y
 
 ; A byte of an edit code, unscrambled, as two digits.
+; Clobbers: A, X, work0.
 .print_code_pair
     JSR scramble
     LDX #3                              ; zeros print
@@ -4854,7 +4870,7 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
 ; Wait Y * 256 turns of a DEX loop (Y = 0: 65536).
 ; Clobbers: X, Y.
 .delay
-    LDX #&00
+    LDX #0
 .delay_loop
     DEX
     BNE delay_loop
@@ -5406,6 +5422,7 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
 
 ; Look at the cell in front, preserving Y.
 ; Out: front_cell; the carry set if it's the exit or off the map.
+; Clobbers: A, X, cell_x, cell_y, map_pointer, cell_low_nibble.
 .front_blocked
     TYA
     PHA
@@ -5536,6 +5553,7 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
 ; What's in the cell beside the monster (work0, work1) in direction A
 ; (DIRECTION_NONE: its own).
 ; Out: A, Z and carry as cell_at.
+; Clobbers: as cell_at.
 .cell_beside_monster
     JSR step_from_monster
     JMP cell_at
@@ -5576,10 +5594,10 @@ ASSERT OBJECT_VANISHES = &40            ; for bit6_mask
     SED                                 ; BCD
     LDA score
     CLC
-    ADC #&01
+    ADC #1
     STA score
     LDA score_high
-    ADC #&00
+    ADC #0
     STA score_high
     CLD
     RTS
