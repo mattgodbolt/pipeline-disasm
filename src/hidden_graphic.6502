@@ -585,7 +585,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Clobbers: Y
 .key_pressed
 {
-    LDA #&81
+    LDA #OSBYTE_INKEY
     TAY                             ; Y >= &80: scan for one key
     JSR OSBYTE
     TXA
@@ -637,11 +637,11 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDY #&00
     STY aux_ptr+1
     LDX #&00
-    CMP #&20
+    CMP #ascii(" ")
     BCS printable
-    LDA #&21                        ; below &20: a space (carry is clear)
+    LDA #ascii("!")                 ; a control code: a space (carry is clear)
 .printable
-    SBC #&20
+    SBC #ascii(" ")
     ASL A
     ASL A
     ROL aux_ptr+1
@@ -703,23 +703,23 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR invert_menu_row
     INC item
 .no_list
-    LDA #&04                        ; cursor keys give codes
+    LDA #OSBYTE_CURSOR_EDITING      ; the cursor keys give codes
     LDX #&01
     JSR OSBYTE
-    LDA #&E1                        ; f0-f9 give &E0-&E9
-    LDX #&E0
+    LDA #OSBYTE_FUNCTION_KEY_BASE   ; f0-f9 give CODE_F0 up
+    LDX #CODE_F0
     LDY #&00
     JSR OSBYTE
 .read_key
-    LDA #&0F                        ; flush the keyboard buffer
+    LDA #OSBYTE_FLUSH_BUFFERS       ; empty the keyboard buffer
     LDX #&00
     JSR OSBYTE
     JSR OSRDCH
     BCC got_key
 .cancel
-    LDA #&7E                        ; acknowledge any Escape
+    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE  ; if there was an Escape
     JSR OSBYTE
-    LDA #&E1                        ; function keys back to strings
+    LDA #OSBYTE_FUNCTION_KEY_BASE   ; function keys back to strings
     LDX #&01
     LDY #&00
     JSR OSBYTE
@@ -735,7 +735,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     CMP count_y                     ; ...other than this menu's own closes it
     BNE cancel
 .not_fkey
-    CMP #&20
+    CMP #ascii(" ")
     BEQ cancel
     CMP #CR
     BEQ chosen
@@ -771,7 +771,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .chosen
     PLA
     JSR close_window
-    LDA #&0F                        ; flush the keyboard buffer
+    LDA #OSBYTE_FLUSH_BUFFERS       ; empty the keyboard buffer
     LDX #&00
     JSR OSBYTE
     LDX #INKEY_TEST(KEY_RETURN)
@@ -1399,7 +1399,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .escape_event
 {
     PHP
-    CMP #&06
+    CMP #EVENT_ESCAPE
     BNE other_event
     ROR MOS_ESCAPE_FLAG                 ; carry is set (A >= 6): bit 7 of the Escape flag
     TXA
@@ -1415,30 +1415,33 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     TAY
     PLA
     TAX
-    LDA #&06
+    LDA #EVENT_ESCAPE
 .other_event
     PLP
     RTS
 }
 
-; VDU codes for the screen's furniture: clear it, and draw boxes in
-; blue round the colour swatch and the name box under the editing grid. &EA
-; ends the list.
+; VDU codes for the screen's furniture: clear it, and draw boxes in blue
+; round the colour swatch and the name box under the editing grid.
+; LAYOUT_END ends the list.
+LAYOUT_END = &EA
 .screen_layout
-    EQUB 26, 12                     ; default windows; clear the screen
-    EQUB 18, 0, 1                   ; GCOL 0,1
-    EQUB 25, 4 : EQUW 24, 380       ; MOVE 24,380
-    EQUB 25, 1 : EQUW 0, 36         ; and round the colour swatch
-    EQUB 25, 1 : EQUW 72, 0
-    EQUB 25, 1 : EQUW 0, -36
-    EQUB 25, 1 : EQUW -72, 0
-    EQUB 28, 0, 17, 19, 0           ; text window: the top 18 rows
-    EQUB 25, 0 : EQUW 96, 4         ; MOVE by 96,4
-    EQUB 25, 1 : EQUW 0, 32         ; and round the name box
-    EQUB 25, 1 : EQUW 488, 0
-    EQUB 25, 1 : EQUW 0, -36
-    EQUB 25, 1 : EQUW -488, 0
-    EQUB &EA
+    EQUB VDU_RESET_WINDOWS, VDU_CLS
+    EQUB VDU_GCOL, 0, 1                             ; draw in colour 1
+    EQUB VDU_PLOT, PLOT_MOVE : EQUW 24, 380         ; round the colour swatch
+    EQUB VDU_PLOT, PLOT_DRAW_RELATIVE : EQUW 0, 36
+    EQUB VDU_PLOT, PLOT_DRAW_RELATIVE : EQUW 72, 0
+    EQUB VDU_PLOT, PLOT_DRAW_RELATIVE : EQUW 0, -36
+    EQUB VDU_PLOT, PLOT_DRAW_RELATIVE : EQUW -72, 0
+    ; Text only in the top 18 rows, so that the CLS on tape (for the filing
+    ; system's messages) leaves these boxes and the logo alone.
+    EQUB VDU_TEXT_WINDOW, 0, 17, 19, 0
+    EQUB VDU_PLOT, PLOT_MOVE_RELATIVE : EQUW 96, 4  ; round the name box
+    EQUB VDU_PLOT, PLOT_DRAW_RELATIVE : EQUW 0, 32
+    EQUB VDU_PLOT, PLOT_DRAW_RELATIVE : EQUW 488, 0
+    EQUB VDU_PLOT, PLOT_DRAW_RELATIVE : EQUW 0, -36
+    EQUB VDU_PLOT, PLOT_DRAW_RELATIVE : EQUW -488, 0
+    EQUB LAYOUT_END
 
 ; The names of the physical colours, eight characters each, for the palette
 ; window (seven are shown).
@@ -1555,7 +1558,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     EQUB PLAIN
     EQUS "E  R  R  O  R  !", CR, CR
 .error_message
-    EQUB REPEATED(61, CODES(" ")[0])
+    EQUB REPEATED(61, ascii(" "))
 ; The Escape window's flag byte doubles as the end of the error message.
 .text_escape
     EQUB MENU
@@ -1653,11 +1656,11 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA screen_ptr
     LDA #HI(name_box)
     STA screen_ptr+1
-    LDX #CODES(" ")[0]              ; objects 1-9: no tens
+    LDX #ascii(" ")              ; objects 1-9: no tens
     LDA sprite
     CMP #&19
     BCC tens
-    LDX #CODES("1")[0]
+    LDX #ascii("1")
 .tens
     SEC
     TXA
@@ -1670,9 +1673,9 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     SBC #&0A
 .units
     SEC                             ; carry set: store the characters
-    ORA #CODES("0")[0]
+    ORA #ascii("0")
     JSR print_char_advance
-    LDA #CODES(":")[0]
+    LDA #ascii(":")
     SEC
     JSR print_char_advance
     JSR name_offset
@@ -1798,7 +1801,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; red).
 .disc_fs
     EQUB 0
-    EQUB 4, 3, 1
+    EQUB COLOUR_BLUE, COLOUR_YELLOW, COLOUR_RED
 
 ; The graphics set to start with, and the command that goes back to the menu.
 .default_name
@@ -1822,30 +1825,30 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     AND #&0F
     CMP #&0F
     BNE store
-    LDA #&0D
+    LDA #CR
     STA error_message-1, X
     INX
 .store
     LDA (MOS_ERROR_PTR), Y
     STA error_message-1, X
     BNE copy
-    LDA #&0D
+    LDA #CR
     STA error_message-1, X
-    LDA #&FF
+    LDA #TEXT_END
     STA error_message, X
     JSR close_all_windows
     LDX #LO(text_error)
     LDY #HI(text_error)
     LDA #WINDOW_ERROR
     JSR open_window
-    LDA #&0F                        ; flush the keyboard buffer
+    LDA #OSBYTE_FLUSH_BUFFERS       ; empty the keyboard buffer
     LDX #&00
     LDY #&00
     JSR OSBYTE
 .wait
     JSR OSRDCH                      ; wait for a key, acknowledging any Escape
     BCC restart
-    LDA #&7E                        ; acknowledge Escape
+    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE
     JSR OSBYTE
     JMP wait
 .restart
@@ -1861,7 +1864,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; sprite. main_loop then runs until Escape.
 .start
 {
-    LDA #&04                        ; cursor keys give codes
+    LDA #OSBYTE_CURSOR_EDITING      ; the cursor keys give codes
     LDX #&01
     JSR OSBYTE
     LDA BRKV+1                      ; BRKV still in the ROMs: not ours yet
@@ -1884,18 +1887,18 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDA #HI(escape_event)
     STA EVNTV+1
     CLI
-    LDA #&0E                        ; enable event 6, Escape (A = &0E)
+    LDA #OSBYTE_ENABLE_EVENT        ; the Escape event
     STA escape_latch
-    LDX #&06
+    LDX #EVENT_ESCAPE
     JSR OSBYTE
 .installed
-    LDA #&87                        ; read the screen mode into Y
+    LDA #OSBYTE_READ_CHAR_AND_MODE  ; the screen mode, into Y
     JSR OSBYTE
     CPY #&05
     BEQ setup
-    LDA #&16                        ; MODE 5
+    LDA #VDU_MODE                   ; MODE 5
     JSR OSWRCH
-    LDA #&05
+    LDA #5
     JSR OSWRCH
     LDA #&03                        ; logical colours 3 to 1
 .palette
@@ -1908,17 +1911,17 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     SBC #&01
     BNE palette
 .setup
-    LDA #&97                        ; CRTC register 10: no cursor
-    LDX #&00
-    LDY #&0A
+    LDA #OSBYTE_WRITE_SHEILA        ; no cursor
+    LDX #LO(CRTC_ADDR)
+    LDY #CRTC_CURSOR_START
     JSR OSBYTE
-    LDY #&20
-    INX
+    LDY #CRTC_CURSOR_OFF
+    INX                             ; LO(CRTC_DATA)
     JSR OSBYTE
-    LDA #&00                        ; the filing system's number
+    LDA #OSARGS_READ_FS             ; the filing system's number
     TAY
     JSR OSARGS
-    CMP #&04                        ; carry set for a disc filing system
+    CMP #FS_DISC                    ; carry set for a disc filing system
     LDA #&00
     STA by_slot
     TAY
@@ -1927,7 +1930,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BMI opt
     INY
 .opt
-    LDA #&00                        ; *OPT 1,Y: messages off on disc (Y = 0), on for tape
+    LDA #FSCV_OPT                   ; *OPT 1,Y: messages off on disc (Y = 0), on for tape
     LDX #&01
     JSR fscv
     JSR reset_timer
@@ -1942,7 +1945,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .layout
     INY
     LDA screen_layout, Y
-    CMP #&EA                        ; the end of the list
+    CMP #LAYOUT_END
     BEQ layout_done
     JSR OSWRCH
     JMP layout
@@ -1998,7 +2001,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA default_name, X
     DEX
     BPL tape_name
-    LDA #&22                        ; a quote
+    LDA #ascii("""")
     STA default_name
     STA default_name+1
     BNE redraw
@@ -2007,7 +2010,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA osfile_block
     LDA #HI(default_name)
     STA osfile_block+1
-    LDA #&FF
+    LDA #OSFILE_LOAD                ; &FF, as graphics_loaded wants too
     STA graphics_loaded
     JSR osfile_graphics
 
@@ -2015,7 +2018,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .redraw
     BIT disc_fs
     BMI cls_done
-    LDA #&0C
+    LDA #VDU_CLS
     JSR OSWRCH
 .cls_done
     LDX #12-1                       ; "Finish Block"
@@ -2071,14 +2074,14 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .command_done
     LDA saved_colour
     STA colour
-    LDA #&13                        ; wait for the vsync, which leaves A = &13...
+    LDA #OSBYTE_WAIT_VSYNC          ; wait for the vsync, which leaves A = &13...
     JSR OSBYTE
     STA by_slot                     ; ...so by_slot bit 7 is clear again
     LDA MOS_ESCAPE_FLAG                 ; Escape, or SHIFT-Escape latched
     ORA escape_latch
     BPL loop
     LSR escape_latch
-    LDA #&7E                        ; acknowledge Escape
+    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE
     JSR OSBYTE
     JSR close_all_windows
     LDX #LO(text_escape)
@@ -2091,12 +2094,12 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDY #HI(text_insert_disc)
     LDA #WINDOW_INPUT
     JSR open_window
-    LDA #&0F                        ; flush the keyboard buffer
+    LDA #OSBYTE_FLUSH_BUFFERS       ; empty the keyboard buffer
     JSR OSBYTE
 .wait_key
     JSR OSRDCH                      ; wait for a key, acknowledging any Escape
     PHP
-    LDA #&7E                        ; acknowledge Escape
+    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE
     JSR OSBYTE
     PLP
     BCS wait_key
@@ -2110,15 +2113,15 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA EVNTV
     LDA IND2V+1
     STA EVNTV+1
-    LDA #&04                        ; X = &FF from open_window, so OSBYTE 4,0: cursor keys edit again
+    LDA #OSBYTE_CURSOR_EDITING      ; X = &FF from open_window, so OSBYTE 4,0: cursor keys edit again
     INX
     JSR OSBYTE
-    LDA #&E1                        ; function keys back to strings
+    LDA #OSBYTE_FUNCTION_KEY_BASE   ; function keys back to strings
     LDX #&01
     JSR OSBYTE
     BIT disc_fs
     BMI run_mrun
-    LDA #&C8                        ; *FX200,3: on tape, BREAK clears memory...
+    LDA #OSBYTE_BREAK_EFFECT        ; *FX200,3: on tape, BREAK clears memory...
     LDX #&03
     JSR OSBYTE
     JMP (CPU_RESET_VECTOR)              ; ...and here is a BREAK
@@ -2676,13 +2679,13 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDX #LO(text_wrong_types)
     LDY #HI(text_wrong_types)
     JSR open_window
-    LDA #&0F                        ; flush the keyboard buffer
+    LDA #OSBYTE_FLUSH_BUFFERS       ; empty the keyboard buffer
     LDX #&00
     JSR OSBYTE
 .wait_space
     JSR OSRDCH
     BCS close
-    CMP #&20                        ; until Space
+    CMP #ascii(" ")
     BNE wait_space
 .close
     LDA #WINDOW_ERROR
@@ -2694,7 +2697,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .abandon_command
     LDA #WINDOW_PICK
     JSR close_window
-    LDA #&7E                        ; acknowledge Escape
+    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE
     JSR OSBYTE
     JMP main_loop.command_done
 }
@@ -2707,7 +2710,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STX error_text
     STY error_text+1
 .show
-    LDA #&7E                        ; acknowledge Escape
+    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE
     JSR OSBYTE
     LDA #WINDOW_ERROR
     LDX error_text
@@ -2739,7 +2742,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA osfile_block
     LDX #LO(osfile_block)
     LDY #HI(osfile_block)
-    LDA #&0B
+    LDA #OSWORD_READ_PALETTE
     JSR OSWORD
     LDA osfile_block+1
     RTS
@@ -2759,14 +2762,14 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDX #LO(empty_text)
     LDY #HI(empty_text)
     JSR open_window
-    LDA #&04                        ; cursor keys give codes
+    LDA #OSBYTE_CURSOR_EDITING      ; the cursor keys give codes
     LDX #&01
     JSR OSBYTE
-    LDA #&E1                        ; f0-f9 give &E0-&E9
-    LDX #&E0
+    LDA #OSBYTE_FUNCTION_KEY_BASE   ; f0-f9 give CODE_F0 up
+    LDX #CODE_F0
     LDY #&00
     JSR OSBYTE
-    LDA #&0F                        ; flush the keyboard buffer
+    LDA #OSBYTE_FLUSH_BUFFERS       ; empty the keyboard buffer
     LDX #&00
     JSR OSBYTE
     LDA #&00
@@ -2777,7 +2780,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 .read_key
     JSR OSRDCH
     BCC got_key
-    LDA #&7E                        ; acknowledge Escape
+    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE
     JSR OSBYTE
 .done
     JMP show_palette.done
@@ -2787,7 +2790,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BCS done
     CMP #CR
     BEQ done
-    CMP #&20
+    CMP #ascii(" ")
     BEQ done
     CMP #CODE_DOWN
     BNE not_down
@@ -2836,7 +2839,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STX osfile_block
     LDX #LO(osfile_block)
     LDY #HI(osfile_block)
-    LDA #&0C
+    LDA #OSWORD_WRITE_PALETTE
     JMP OSWORD
 }
 
@@ -3034,7 +3037,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDX #INKEY_TEST(KEY_SPACE)
     JSR key_pressed
     BMI stop
-    LDA #&13                        ; wait for the vsync
+    LDA #OSBYTE_WAIT_VSYNC
     JSR OSBYTE
     DEC frame_delay
     BNE wait
@@ -3053,7 +3056,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     PLA                             ; drop the slot
     LDX animate_sprite
     STX sprite
-    LDA #&7E                        ; acknowledge Escape
+    LDA #OSBYTE_ACKNOWLEDGE_ESCAPE
     JSR OSBYTE
     LDA #WINDOW_PICK                ; by_slot bit 7 clear: sheet positions again
     STA by_slot
@@ -3237,7 +3240,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 
     ; Wait until the interval timer reaches two centiseconds.
 .wait
-    LDA #&03                        ; OSWORD 3: read the interval timer
+    LDA #OSWORD_READ_INTERVAL_TIMER
     JSR reset_timer.osword
     LDX #&04
     LDA #&00
@@ -3302,7 +3305,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA timer_value, X
     DEX
     BPL clear
-    LDA #&04
+    LDA #OSWORD_WRITE_INTERVAL_TIMER
 .osword
     LDX #LO(timer_value)
     LDY #HI(timer_value)
@@ -3429,7 +3432,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR close_window
     JSR file_info
     BCS done
-    CMP #&01                        ; it exists
+    CMP #OSFILE_TYPE_FILE           ; it exists
     BNE new
     JMP file_exists
 .new
@@ -3462,7 +3465,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     STA osfile_block+15
     LDA #LO(graphics_end)
     STA osfile_block+14
-    LDA #&00                        ; OSFILE 0: save
+    LDA #OSFILE_SAVE
     JSR osfile_graphics
 .done
     RTS
@@ -3643,10 +3646,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Clobbers: A, X, Y
 .open_file
 {
-    LDA #&40
+    LDA #OSFIND_OPEN_INPUT
     BITABS
 .update
-    LDA #&C0
+    LDA #OSFIND_OPEN_UPDATE
     LDX osfile_block
     LDY osfile_block+1
     JSR OSFIND
@@ -3731,10 +3734,10 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Clobbers: A, X, Y
 .read_block
 {
-    LDA #3
+    LDA #OSGBPB_READ_AT
     BITABS
 .write
-    LDA #1
+    LDA #OSGBPB_WRITE_AT
     LDX #LO(gbpb_block)
     LDY #HI(gbpb_block)
     JMP OSGBPB
@@ -3743,8 +3746,8 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 ; Close all open files.
 .close_files
 {
-    LDA #&00
-    TAY
+    LDA #OSFIND_CLOSE
+    TAY                             ; all of them
     JMP OSFIND
 }
 
@@ -3765,7 +3768,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR close_window
     JSR file_info
     BCS found
-    CMP #&01                        ; not there
+    CMP #OSFILE_TYPE_FILE           ; not there
     BNE cmd_load_file.no_file
 .found
     LDA #&00
@@ -3805,7 +3808,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     JSR ask_load_name
     BIT io_file
     BMI load_io
-    LDA #&FF                        ; OSFILE &FF: load
+    LDA #OSFILE_LOAD
     JSR osfile_graphics
     JMP start.redraw
 .no_file
@@ -3873,7 +3876,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     SEC
     BIT disc_fs
     BPL cmd_obj_name.done
-    LDA #&05
+    LDA #OSFILE_READ_INFO
 }
 
 ; OSFILE on the graphics set at &4000.
@@ -3892,7 +3895,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BIT disc_fs
     BMI call
     PHA
-    LDA #&0C                        ; on tape, clear the screen for the filing system's messages
+    LDA #VDU_CLS                    ; on tape, clear the screen for the filing system's messages
     JSR OSWRCH
     PLA
 .call
@@ -3961,17 +3964,17 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDY #12
     STY input_limit
     LDY #&00
-    LDA #&0F                        ; flush the keyboard buffer
+    LDA #OSBYTE_FLUSH_BUFFERS       ; empty the keyboard buffer
     JSR OSBYTE
     LDY #&0F
-    LDA #&20
+    LDA #ascii(" ")
 .blank
     STA input_buffer, Y
     DEY
     BPL blank
     INY
 .read
-    LDA #&20                        ; the end of the line, so far
+    LDA #ascii(" ")                 ; the end of the line, so far
     STA input_buffer, Y
     JSR OSRDCH
     BCC got_key
@@ -3985,14 +3988,14 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     RTS
 .edit
     AND #&7F
-    CMP #&15                        ; CTRL-U
+    CMP #ctrl("U")
     BNE not_wipe
     TYA
     TAX
     BNE rub_out
     BEQ read
 .not_wipe
-    CMP #&7F                        ; Delete
+    CMP #DEL
     BNE add
     CPY #&00
     BEQ read
@@ -4013,7 +4016,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     BNE rub_out
     JMP read
 .add
-    CMP #&20
+    CMP #ascii(" ")
     BCC read
     CPY input_limit
     BCS read
@@ -4439,7 +4442,7 @@ SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
     LDX menu_keys, Y
     JSR key_pressed
     BPL next
-    LDA #&7D                        ; raise an Escape
+    LDA #OSBYTE_RAISE_ESCAPE
     JSR OSBYTE
 .next
     PLA
