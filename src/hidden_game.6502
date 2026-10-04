@@ -5624,7 +5624,8 @@ ASSERT TURN_ROW = 4
     RTS
 
 ; L on the title screen: ask for a mission file name (up to 12 characters, in
-; a box between arrows) and load it.
+; a box between arrows) and load it. Fails on a B with Econet (see
+; load_mission's service calls).
 .ask_for_mission
     JSR draw_title_screen
     JSR print_inline
@@ -5669,6 +5670,12 @@ NEXT
     STA MOS_EXTENDED_VECTORS, Y
     DEY
     BPL load_mission_vectors
+; On a B with Econet, these claims also wake the NFS, which takes NETV back
+; through the extended vector entry at &0DD5. Once the game is swapped back,
+; its code fills that entry, so the next OSWORD 0 (ask_for_mission's, which
+; calls NETV after the line) jumps into the game and ends on its error screen;
+; title-screen L can never load a mission there (seen in jsbeeb with Econet
+; fitted, docs/notes/loaders.md). Without Econet the NFS stays asleep.
     LDA #OSBYTE_SERVICE_CALL
     LDX #SERVICE_CLAIM_ABSOLUTE
     LDY #&0E                            ; (the page the claims start from)

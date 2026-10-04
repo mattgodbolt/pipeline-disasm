@@ -484,3 +484,15 @@ columns 13 (from its sixth line) to 31: a band through the tops of "esig" in
 - Drawing it: `tools/beebscreen.py 1 build/files/LDATA OUT.png --columns 64
   --offset 400 --palette 0,4,3,1` draws the picture; inverting LDATA's
   &206D-&20FF first shows where the strip is.
+
+## 2026-10-03 23:45 — On a B with Econet, title-screen L fails
+
+Found while settling !BOOT's NETV line (docs/notes/loaders.md, section
+"What !BOOT's NETV line undoes", with the jsbeeb commands). `load_mission`'s
+service calls (OSBYTE &8F, X=1 and 2) re-run the NFS's reset handling when
+an Econet interface is fitted, and the NFS points NETV back at its extended
+vector entry (&0DD5). With the game swapped back in, that entry holds game
+code (0A 0A A0), so `ask_for_mission`'s OSWORD 0, which calls NETV after the
+line, jumps into it and ends on the game's error screen. The first load of
+IO works, since it asks for no name; only L fails.
+Comments at `load_mission` and `ask_for_mission` say so.

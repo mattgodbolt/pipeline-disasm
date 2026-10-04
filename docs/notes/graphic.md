@@ -261,3 +261,13 @@ How the source is now:
   (4,214 of them `@`) to 1,064 (159), and build/symbols.json from 837,247
   to 718,726 bytes. sprites.6502inc's SPRITE_COLUMNS and SCREEN_PICTURE
   now have no users.
+
+## 2026-10-03 23:45 — The leftover at the end of H.GRAPH
+
+Correction: `leftover` (&3ADC-&3BAF, file offsets &202C-&20FF) isn't a
+pointer table and graphics. It's H.GAME's bytes at the same offsets: the
+last &41 bytes of the game's code, then the strip of LDATA's picture H.GAME
+ends with (docs/notes/game.md). The hidden files were written whole sectors
+at a time from one buffer, H.GAME, H.GRAPH, then H.LEVDES, each ending with
+what the one before left there. Checked by comparing the files' tails:
+H.GRAPH equals H.GAME from &202C, and both equal LDATA from &206D.

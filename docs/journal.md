@@ -585,3 +585,32 @@ Details in the newest sections of `docs/notes/basic.md` and
   "DFS 1.2" observation was DFS 1.20 in that ROM.
 - tools/beeb.mjs: `--links HEX`, `--econet STATION`, `log ADDR`, `poke`
   and `break [shift|ctrl]`, merged alongside the Level Designer's `ssd`.
+
+## 2026-10-03 23:45 — Merged: the game's clipping thresholds, and the files' leftovers
+
+Details in the newest sections of `docs/notes/game.md` and
+`docs/notes/graphic.md`.
+
+- `view_x` and `view_y` run from &F2 (the player in the map's first
+  column or row) round through 0 to &EE (its last); &EF-&F1 never happen.
+  The clip routines' &E2 and &F1 sort a view into on the map, off its right
+  (bottom) edge and off its left (top) edge. Both are exact for everything on
+  the map: running the game's own `draw_sprite` for every view and every
+  position against an exact clip matched in all 64,009 cases each way, and
+  any value from &E0 to &E4, and from &EF to &F2, would do as well. They're
+  now `VIEW_PAST_END` and `VIEW_BEFORE_START` in game.6502inc, with ASSERTs
+  holding them in those ranges. Only `burn_up`'s game-over flames go off the
+  map: none is drawn whose top left is off it, and with the player in column
+  60 one at &FF leaves its last column at the view's left edge, a row down
+  (seen in jsbeeb). The interpreter that checked this wasn't kept.
+- The hidden files' tails: H.GAME's last &93 bytes are LDATA's at the same
+  offsets (a strip of the Level Designer's title picture), H.GRAPH's last
+  &D4 are H.GAME's, and H.LEVDES's last &E1 are H.GRAPH's. They were written
+  a whole number of sectors each from one buffer that had held LDATA, in
+  disc order. H.GRAPH's `leftover` comment, which guessed a pointer table and
+  graphics, now says so (on main).
+- On main: the Econet failure of title-screen L is noted at `load_mission`
+  and `ask_for_mission`.
+- Noticed by the agent, not chased: monsters eat lava, and off the map reads
+  as lava, so a monster walking into the map's edge in level 1 eats its way
+  out and is gone for 26 points.

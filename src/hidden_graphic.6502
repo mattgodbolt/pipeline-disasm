@@ -4678,8 +4678,11 @@ SHORTCUTS = P% - shortcut_keys
     RTS
 }
 
-; Not part of the program: what was in memory after it when it was saved
-; (a pointer table and graphics, from the look of it).
+; Not part of the program: what the buffer the hidden files were written from
+; held past its end. These are H.GAME's bytes at the same file offsets
+; (&202C on): the last &41 bytes of the game's code (&232C-&236C where it
+; runs), then the strip of LDATA's picture that H.GAME ends with (see its
+; leftover). H.LEVDES, written next, ends with this file's last bytes.
 .leftover
     EQUB &FF, &9A, &4C, &C3, &12, &FC, &1F, &01
     EQUB &1F, &44, &1F, &CD, &1F, &D7, &20, &56
