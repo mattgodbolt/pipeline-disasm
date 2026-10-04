@@ -10,6 +10,7 @@ FUNCTION mode5_byte(pixels)
     p = FIND(CODES(".123"), CODES(pixels))
 = SUM((p DIV 2) * {128, 64, 32, 16} + (p MOD 2) * {8, 4, 2, 1})
 
+; One character a pixel.
 MACRO SPRITE_COLUMNS rows
     FOR c = 0..LEN(rows[0]) DIV 4 - 1
         FOR r = 0..LEN(rows) - 1
@@ -18,23 +19,28 @@ MACRO SPRITE_COLUMNS rows
     NEXT
 ENDMACRO
 
-; A large sprite: 16x32 pixels, &80 bytes.
-MACRO LARGE_SPRITE rows
-    ASSERT LEN(rows) = 32 AND LEN(rows[0]) = 16, "a large sprite is 16x32"
-    SPRITE_COLUMNS rows
-ENDMACRO
+; The game's pictures (src/default.6502inc) are drawn two characters a pixel,
+; as a MODE 5 pixel is twice as wide as it is tall, so they look in the
+; source as they do on the screen. mode5_pictures turns a list of same-sized
+; pictures into their bytes, one picture after another, in one go: as a
+; FUNCTION over whole lists rather than a FOR over bytes, it adds a handful of
+; entries to the symbol dump rather than one per byte.
 
-; A small sprite: 8x16 pixels, &20 bytes.
-MACRO SMALL_SPRITE rows
-    ASSERT LEN(rows) = 16 AND LEN(rows[0]) = 8, "a small sprite is 8x16"
-    SPRITE_COLUMNS rows
-ENDMACRO
+; Where each byte's leftmost pixel starts in count pictures of height rows
+; of width characters, run together: picture by picture, then a column of
+; four pixels (eight characters) at a time, then down the rows.
+FUNCTION picture_byte_starts(count, height, width) = FLATTEN(ZIP(ZIP((0..count-1) * height * width)) + ZIP((0..width DIV 8 - 1) * 8) + (0..height-1) * width)
 
-; An object's name, exactly 12 characters.
-MACRO OBJECT_NAME text
-    ASSERT LEN(text) = 12, "an object name is 12 characters"
-    EQUS text
-ENDMACRO
+; Pixel n's bits in a byte (n = 0 leftmost), for each pixel's character in
+; chars: the colour's high bit in bit 7-n and its low bit in bit 3-n.
+FUNCTION pixel_bits(chars, n) = {0, 8, 128, 136}[FIND(CODES(".123"), CODES(chars))] >> n
+
+FUNCTION mode5_pictures(pictures)
+    text = CHR(CODES(pictures))
+    ASSERT text[0..2..] = text[1..3..], "a pixel is two characters the same"
+    ASSERT LEN(text) = LEN(pictures) * LEN(pictures[0]) * LEN(pictures[0][0]), "pictures of different sizes"
+    starts = picture_byte_starts(LEN(pictures), LEN(pictures[0]), LEN(pictures[0][0]))
+= pixel_bits(text[starts], 0) + pixel_bits(text[starts + 2], 1) + pixel_bits(text[starts + 4], 2) + pixel_bits(text[starts + 6], 3)
 
 ; A picture laid out as MODE 5 screen memory: a band of eight rows at a time,
 ; each band a cell (four pixels across, eight down) after another, left to
