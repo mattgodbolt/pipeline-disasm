@@ -14,9 +14,10 @@
 ;   entry in page &FF that jumps on through a table in page &0D. For NETV
 ;   that entry is &FF36, and MOS 1.20's default is &FFA6, so the low byte
 ;   is all that changes. Econet's NFS claims NETV this way at every reset.
-;   Nothing on the disc touches NETV. Presumably the worry is that OSWORD 0
-;   calls NETV after every line it reads, and the game reads a file name
-;   that way while its code fills page &0D, the extended vectors' table.
+;   Nothing else on the disc writes NETV. Presumably the worry is that
+;   OSWORD 0 calls NETV after every line it reads, and the game's title
+;   screen reads a mission's file name that way while the game's code fills
+;   page &0D, the extended vectors' table.
 ;   The line makes no visible difference, though: the NFS ignores those
 ;   calls, MENU soon puts back every vector but BRKV anyway, and when the
 ;   game loads IO its own service calls make the NFS claim NETV again, so
