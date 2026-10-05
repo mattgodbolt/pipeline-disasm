@@ -115,7 +115,7 @@ class Source:
 @dataclass(eq=False)
 class Region:
     name: str
-    label: str              # set/region, for messages
+    full_name: str          # set/region, for messages
     source: Source
     section: object
     start: int
@@ -298,7 +298,7 @@ class Builder:
 
         stores = [store for source in sources for store in self.stores(spec, source)]
         for region in regions:
-            self.choose_anchors(spec, region, stores)
+            self.choose_anchors(region, stores)
 
         out = {"format": FORMAT, "title": spec["title"], "licence": self.config["licence"],
                "source": f"{self.config['repository']}/tree/{self.commit}"}
@@ -334,8 +334,7 @@ class Builder:
         for s in source.listing.statements:
             if not s.mnemonic or s.data[0] not in STORES:
                 continue
-            labels = {l.address for l in source.listing.labels if l.address == s.address and l.section is s.section}
-            if labels & moves:
+            if s.address in moves:
                 used.add(s.address)
                 continue
             mode = STORES[s.data[0]]
@@ -468,10 +467,10 @@ class Builder:
         return statement.data[0] in (OPCODE_JSR, OPCODE_JMP) and len(statement.data) == 3 \
             and (statement.data[1] | statement.data[2] << 8) >= MOS_START
 
-    def choose_anchors(self, spec, region, stores):
+    def choose_anchors(self, region, stores):
         pool = self.candidates(region, self.blocked(region, stores))
         if not pool:
-            self.errors.append(f"{region.label}: nothing to anchor on")
+            self.errors.append(f"{region.full_name}: nothing to anchor on")
             return
         chosen = []
 
@@ -505,11 +504,11 @@ class Builder:
             telling = [c for c in pool if c.fails_on(memory) and not any(c.covers(o) for o in chosen)]
             if telling:
                 take(telling)
-                self.reasons.append(f"{region.label}: an anchor at &{chosen[-1].at:04X} for {name}")
+                self.reasons.append(f"{region.full_name}: an anchor at &{chosen[-1].at:04X} for {name}")
             elif collides:
-                self.errors.append(f"{region.label}: its anchors all match {name}")
+                self.errors.append(f"{region.full_name}: its anchors all match {name}")
             else:
-                self.notes.append(f"{region.label}: no anchor where {name} differs")
+                self.notes.append(f"{region.full_name}: no anchor where {name} differs")
         region.anchors = sorted(chosen, key=lambda c: c.at)
 
 

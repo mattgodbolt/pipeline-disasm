@@ -10,7 +10,8 @@
 // SCENARIO is one of those below (all of them by default): menu, title, game,
 // play (random play), levdes, graphic, tour-NAME (each of
 // tools/graphic_tours.mjs's tours of the Graphics Designer), mrun and pl.
-// Exits 1 if any moment matches other regions than expected.
+// Exits 1 if any moment matches other regions than expected, or regions of
+// two sets over the same addresses.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BBC } from "jsbeeb/src/keymap.js";
@@ -57,15 +58,36 @@ function matching(session) {
 const hex4 = (n) => n.toString(16).toUpperCase().padStart(4, "0");
 let failures = 0;
 
+// Matching regions of two sets over the same addresses, which the debugger
+// would show neither of.
+function clashes(found) {
+    const range = (name) => {
+        const [set, region] = name.split("/");
+        const { start, end } = sets[set].regions[region];
+        return [set, parseInt(start, 16), parseInt(end, 16)];
+    };
+    const out = [];
+    for (const [i, a] of found.entries()) {
+        for (const b of found.slice(i + 1)) {
+            const [setA, startA, endA] = range(a);
+            const [setB, startB, endB] = range(b);
+            if (setA !== setB && startA < endB && startB < endA) out.push(`${a} and ${b}`);
+        }
+    }
+    return out;
+}
+
 function check(session, moment, expected) {
     const found = matching(session);
     const want = [...expected].sort();
-    const ok = found.length === want.length && found.every((r, i) => r === want[i]);
+    const clash = clashes(found);
+    const ok = found.length === want.length && found.every((r, i) => r === want[i]) && !clash.length;
     const pc = session._machine.processor.pc;
     console.log(`${ok ? "ok  " : "FAIL"} ${moment} (PC &${hex4(pc)}): ${found.join(", ") || "nothing"}`);
     if (!ok) {
         failures++;
         console.log(`     expected: ${want.join(", ")}`);
+        for (const pair of clash) console.log(`     overlapping: ${pair}`);
     }
 }
 
