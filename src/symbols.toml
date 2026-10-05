@@ -22,6 +22,11 @@ licence = "LicenseRef-TBD"
 repository = "https://github.com/mattgodbolt/pipeline-disasm"
 os_names = "src/os.6502inc"     # left to jsbeeb's MOS set
 
+# The disc the build reproduces, by jsbeeb's tools/registry/fingerprint.js
+# (original/pipeline.ssd, the capture E447ED5E.hfe and our rebuilds all give
+# this key). `make verify` keeps it true.
+madeFrom = ["dc7201d5fb5bfa137e302dade0b519da"]
+
 # At least one anchor per this many bytes of a region, up to spread_anchors,
 # then more where another program's bytes need telling apart.
 bytes_per_anchor = 2048
@@ -65,12 +70,12 @@ name = "low_code"
 section = "low_code"
 
 [[set.region]]
-name = "main_code"
+name = "main_low"
 section = "main_code"
 to = "SWAP_START"
 
 [[set.region]]
-name = "swapped"
+name = "main_swapped"
 section = "main_code"
 from = "SWAP_START"
 to = "game_start"
@@ -83,13 +88,13 @@ to = "new_game"
 overwritten = true
 
 [[set.region]]
-name = "swapped_after_start"
+name = "main_swapped_2"
 section = "main_code"
 from = "new_game"
 to = "SWAP_END"
 
 [[set.region]]
-name = "main_code_end"
+name = "main_high"
 section = "main_code"
 from = "SWAP_END"
 
@@ -102,7 +107,7 @@ title = "PIPELINE: the Graphics Designer"
 sources = ["hidden_graphic"]
 
 [[set.region]]
-name = "graphics_designer"
+name = "main"
 section = "hidden_graphic"
 
 # ---------------------------------------------------------------------------
@@ -119,7 +124,7 @@ globals_sections = ["zero_page_init"]
 moves = ["entry_copy_code_store", "entry_copy_font_store"]
 
 [[set.region]]
-name = "level_designer"
+name = "main"
 section = "hidden_levdes"
 to = "level"
 
@@ -153,7 +158,7 @@ sources = ["game"]
 strip_scope = "game_loader"
 
 [[set.region]]
-name = "stub"
+name = "main"
 section = "game"
 
 [[set]]
@@ -163,7 +168,7 @@ sources = ["graphic"]
 strip_scope = "graphic_loader"
 
 [[set.region]]
-name = "stub"
+name = "main"
 section = "graphic"
 
 [[set]]
@@ -173,7 +178,7 @@ sources = ["levdes"]
 strip_scope = "levdes_loader"
 
 [[set.region]]
-name = "stub"
+name = "main"
 section = "levdes"
 
 # ---------------------------------------------------------------------------
@@ -186,7 +191,7 @@ sources = ["mrun"]
 strip_scope = "mrun"
 
 [[set.region]]
-name = "mrun"
+name = "main"
 section = "mrun"
 
 # ---------------------------------------------------------------------------

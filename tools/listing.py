@@ -74,6 +74,7 @@ class Section:
     org: int | None = None
     end: int | None = None
     statements: list = field(default_factory=list)
+    children: list = field(default_factory=list)
 
     @property
     def filename(self):
@@ -98,6 +99,15 @@ class Section:
         for s in self.statements:
             for i, byte in enumerate(s.data):
                 out[s.address + i] = byte
+        return out
+
+    def image(self):
+        """{address: byte} as this section's addresses hold it once loaded:
+        its own bytes, and those of the sections inside it where they're
+        stored."""
+        out = self.memory()
+        for child in self.children:
+            out |= {child.stored_at + a - child.org: b for a, b in child.image().items()}
         return out
 
 
@@ -144,6 +154,7 @@ def parse(path):
                 section = Section(name, line, parent)
                 if parent is not None:
                     section.stored_at = position.get(id(parent), parent.org)
+                    parent.children.append(section)
                 sections.append(section)
                 stack.append(section)
                 current = None

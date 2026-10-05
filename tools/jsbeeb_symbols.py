@@ -199,7 +199,7 @@ class Builder:
         for path in sorted(self.listings.glob("*.txt")):
             source = self.source(path.stem)
             for section in source.listing.sections:
-                memory = section.memory()
+                memory = section.image()
                 if memory:
                     out.append((f"{source.name}:{section.name}", memory, source.name in self.program_sources))
         for inf in sorted(self.files.glob("*.inf")):
@@ -228,7 +228,7 @@ class Builder:
             region = Region(r["name"], f"{spec['id']}/{r['name']}", source, section, start, end,
                             r.get("overwritten", False),
                             [(evaluate(a, find), evaluate(b, find)) for a, b in r.get("avoid", [])])
-            region.memory = {a: b for a, b in section.memory().items() if start <= a < end}
+            region.memory = {a: b for a, b in section.image().items() if start <= a < end}
             region.image = bytes(region.memory.get(a, 0) for a in range(start, end))
             regions.append(region)
 
