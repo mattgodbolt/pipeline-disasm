@@ -1,0 +1,270 @@
+# The symbol sets `make jsbeeb-symbols` writes for jsbeeb's debugger, one
+# JSON file per set in build/jsbeeb-symbols (tools/jsbeeb_symbols.py; the
+# format is "Symbol sets" in jsbeeb's docs/media-registry-proposal.md, and
+# docs/notes/symbols.md says how the names and anchors are chosen).
+#
+# Each set is one program's names, cut into regions where its memory
+# changes while it runs. A region is a SECTION, or part of one between two
+# names (`from` and `to`, expressions in the source's own names). Nothing
+# here is an address list: the names come from the build.
+#
+#   overwritten  run-once code that something else writes over when it's
+#                done, so only its own stores keep anchors off its bytes
+#   avoid        [from, to) ranges no anchor may cover, beyond what the
+#                generator finds itself (stores, SKIP, and labels named
+#                *unused*, *leftover*, *junk*, *spare* or *stray*)
+#   moves        labels of copies that put the program in place: their
+#                stores don't keep anchors off what they copy
+#   globals_sections  sections whose labels are the program's globals
+
+# Matt's call, not yet made: one setting for every set.
+licence = "LicenseRef-TBD"
+repository = "https://github.com/mattgodbolt/pipeline-disasm"
+os_names = "src/os.6502inc"     # left to jsbeeb's MOS set
+
+# At least one anchor per this many bytes of a region, up to spread_anchors,
+# then more where another program's bytes need telling apart.
+bytes_per_anchor = 2048
+spread_anchors = 4
+
+# ---------------------------------------------------------------------------
+# The game. The loader copies four pieces to where they run, and IO, loaded
+# over the loader, replaces it; the start-up code becomes the level's object
+# table, and load_mission swaps SWAP_START to SWAP_END into the screen while
+# IO loads.
+
+[[set]]
+id = "game"
+title = "PIPELINE: the game"
+sources = ["hidden_game"]
+strip_scope = "game"
+
+# Tables in zero page and the stack page, written with an index: how far the
+# index goes. Counted in full, their stores would reach event_handler.
+[set.table_sizes]
+action_keys = "MENU_KEYS"               # the loader's copy of all ten keys
+work0 = "MONSTER_BYTES"                 # think_monster's copy of a monster
+trigger_flags = "PUZZLES"
+keys_were_down = "4"                    # a byte per direction key
+
+[[set.region]]
+name = "loader"
+section = "hidden_game"
+overwritten = true
+
+[[set.region]]
+name = "event_handler"
+section = "event_handler"
+
+[[set.region]]
+name = "sound_data"
+section = "sound_data"
+
+[[set.region]]
+name = "low_code"
+section = "low_code"
+
+[[set.region]]
+name = "main_code"
+section = "main_code"
+to = "SWAP_START"
+
+[[set.region]]
+name = "swapped"
+section = "main_code"
+from = "SWAP_START"
+to = "game_start"
+
+[[set.region]]
+name = "game_start"
+section = "main_code"
+from = "game_start"
+to = "new_game"
+overwritten = true
+
+[[set.region]]
+name = "swapped_after_start"
+section = "main_code"
+from = "new_game"
+to = "SWAP_END"
+
+[[set.region]]
+name = "main_code_end"
+section = "main_code"
+from = "SWAP_END"
+
+# ---------------------------------------------------------------------------
+# The Graphics Designer: one file, run where it loads.
+
+[[set]]
+id = "graphics-designer"
+title = "PIPELINE: the Graphics Designer"
+sources = ["hidden_graphic"]
+
+[[set.region]]
+name = "graphics_designer"
+section = "hidden_graphic"
+
+# ---------------------------------------------------------------------------
+# The Level Designer. entry moves zero page, the low code and the font to
+# where they run, and the level being edited then fills &25A1-&2FFF over
+# entry and the pieces' load images. WDATA is loaded at &7000 at the start
+# and stays.
+
+[[set]]
+id = "level-designer"
+title = "PIPELINE: the Level Designer"
+sources = ["hidden_levdes"]
+globals_sections = ["zero_page_init"]
+moves = ["entry_copy_code_store", "entry_copy_font_store"]
+
+[[set.region]]
+name = "level_designer"
+section = "hidden_levdes"
+to = "level"
+
+[[set.region]]
+name = "startup"
+section = "hidden_levdes"
+from = "level"
+overwritten = true
+
+[[set.region]]
+name = "low_code"
+section = "low_code"
+
+[[set.region]]
+name = "font"
+section = "font"
+
+[[set.region]]
+name = "wdata"
+source = "wdata"
+section = "wdata"
+
+# ---------------------------------------------------------------------------
+# The stubs: one program assembled three times at &0900, differing only in
+# the run they read and where it goes.
+
+[[set]]
+id = "game-stub"
+title = "PIPELINE: the GAME stub loader"
+sources = ["game"]
+strip_scope = "game_loader"
+
+[[set.region]]
+name = "stub"
+section = "game"
+
+[[set]]
+id = "graphic-stub"
+title = "PIPELINE: the GRAPHIC stub loader"
+sources = ["graphic"]
+strip_scope = "graphic_loader"
+
+[[set.region]]
+name = "stub"
+section = "graphic"
+
+[[set]]
+id = "levdes-stub"
+title = "PIPELINE: the LEVDES stub loader"
+sources = ["levdes"]
+strip_scope = "levdes_loader"
+
+[[set.region]]
+name = "stub"
+section = "levdes"
+
+# ---------------------------------------------------------------------------
+# MRUN, run by the designers and MISSION to bring the menu back.
+
+[[set]]
+id = "mrun"
+title = "PIPELINE: MRUN"
+sources = ["mrun"]
+strip_scope = "mrun"
+
+[[set.region]]
+name = "mrun"
+section = "mrun"
+
+# ---------------------------------------------------------------------------
+# TITLE: a packed picture with its unpacker, which copies itself to the
+# page below the screen and unpacks the picture over the file.
+
+[[set]]
+id = "title"
+title = "PIPELINE: TITLE"
+sources = ["title"]
+strip_scope = "title"
+
+[[set.region]]
+name = "title"
+section = "title"
+overwritten = true
+
+[[set.region]]
+name = "unpack"
+section = "title_relocated"
+
+# ---------------------------------------------------------------------------
+# PL: a decryptor, then the cheat it decrypts in place.
+
+[[set]]
+id = "pl"
+title = "PIPELINE: PL, Ian's cheat"
+sources = ["pl"]
+
+[[set.region]]
+name = "decryptor"
+section = "pl"
+to = "pl.encrypted"
+
+[[set.region]]
+name = "encrypted"
+section = "pl"
+from = "pl.encrypted"
+overwritten = true
+
+[[set.region]]
+name = "cheat"
+section = "pl_decrypted"
+
+# ---------------------------------------------------------------------------
+# MENU: a BASIC program, then the scroller and the menu screen its DIMs
+# land on.
+
+[[set]]
+id = "menu"
+title = "PIPELINE: MENU"
+sources = ["menu"]
+
+[[set.region]]
+name = "program"
+section = "menu"
+to = "program_end"
+
+[[set.region]]
+name = "scroller"
+section = "menu"
+from = "scroller"
+to = "menu_screen"
+
+[[set.region]]
+name = "menu_screen"
+section = "menu"
+from = "menu_screen"
+avoid = [["menu_screen_end", "menu_screen + &700"]]
+
+# ---------------------------------------------------------------------------
+# MISSION: a BASIC program with a little machine code in a REM.
+
+[[set]]
+id = "mission"
+title = "PIPELINE: MISSION, the Mission Generator"
+sources = ["mission"]
+
+[[set.region]]
+name = "program"
+section = "mission"
