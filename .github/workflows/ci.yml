@@ -58,3 +58,4 @@ jobs:
             build/pipeline.hfe
             build/symbols.json
             build/listing.txt
+            build/jsbeeb-symbols/

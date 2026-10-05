@@ -66,7 +66,9 @@ override with `BARON=...`), Python 3.11 or later and node. It writes
 byte, and `build/pipeline.hfe`, which it compares sector by sector (IDs,
 data and data marks) with the original flux capture. `make test` adds the
 tools' own tests. Baron's symbol dump lands in `build/symbols.json`, and a
-listing in `build/listing.txt`.
+listing in `build/listing.txt`. `make jsbeeb-symbols` (part of `make test`)
+writes the symbol sets jsbeeb's debugger shows names from, one per program,
+to `build/jsbeeb-symbols` ([how](docs/notes/symbols.md)).
 
 `node tools/beeb.mjs` and `node tools/play.mjs` run the disc headless in
 jsbeeb, for screenshots, memory dumps and execution traces.
