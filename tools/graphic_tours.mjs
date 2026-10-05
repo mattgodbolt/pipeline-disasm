@@ -52,7 +52,7 @@ const step = (code, n) => Array(n).fill(`key ${code} 8`).flatMap((k) => [k, "wai
 // Load or save a file by name through an Environment menu item.
 const file = (item, name, secs = 5) => [...menu(2, item), ...typed(name), "key Enter 3", `wait ${secs}`];
 
-const TOURS = {
+export const TOURS = {
     // Painting: the pixel cursor, colours, plotting and clearing; every
     // sprite in the sheet, large and small; sprite edges.
     edit: (t) => [
