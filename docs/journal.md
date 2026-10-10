@@ -741,3 +741,29 @@ routines to read first with their addresses, and what to know before
 reading. It was written from the agents' reports. tests/test_symbols.py
 checks its 94 addresses against the build. The README gained a short "How
 the code works" that points to it.
+
+## 2026-10-10 10:02 — Baron 0.5
+
+Moved to baron v0.5.0 (CI pin 4227a03). The disc is byte-identical with it.
+What changed for us:
+- The `--symbols` dump is now format 2: each file's sections with their
+  attributes, and each symbol's value, source and line, grouped by kind
+  (`labels`, `assignments`, `params`, `loop_vars`...). tests/test_symbols.py
+  reads it through `load_symbols()`, which keeps labels, assignments,
+  ZA_AUTO addresses and defines, and drops parameters and FOR variables.
+  Before the pin moved, it read both formats; they gave the same names and
+  values for every file.
+- `0..2..2` works (baron#13), FUNCTION frames no longer collide across files
+  (baron#10), and character literals are documented. CLAUDE.md's notes on
+  these are updated.
+- The Makefile's disc rule now depends on the baron binary. Before, a
+  rebuilt baron left the old build in place and `make test` passed on it.
+- Virtual sections (`virtual = TRUE`) hand out addresses without emitting
+  bytes, and can be reopened. They could lay out zero page and IO's fields
+  as labels with sizes rather than `name = &70` lists, which would make
+  them labels (addresses) in the dump instead of assignments. Not done: it
+  touches every program's workspace definitions.
+
+The `{ ... }` BASIC splice (baron#12) isn't in 0.5, so MENU and MISSION
+still write their odd lines as EQUB records and `src/mission.6502` still
+holds raw bytes.

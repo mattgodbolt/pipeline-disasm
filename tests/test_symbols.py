@@ -17,13 +17,9 @@ NAMING_GROUPS = ("labels", "assignments", "za_autos", "defines")
 
 def load_symbols():
     """Each source file's symbols as {file: {dotted name: value}}, from
-    either baron's format-2 dump (sections, grouped by kind) or the older
-    flat one."""
+    baron's dump (format 2: each file's sections, symbols grouped by kind)."""
     dump = json.loads(SYMBOLS.read_text())
-    if "format" not in dump:
-        return {source: {name: value for name, value in symbols.items()
-                         if "@" not in name}
-                for source, symbols in dump.items()}
+    assert dump["format"] == 2, f"symbol dump format {dump['format']}"
     files = {}
     for assembly in dump["assemblies"]:
         names = files.setdefault(assembly["sources"][0], {})

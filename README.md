@@ -60,8 +60,8 @@ npm ci        # once: jsbeeb's disc code builds and checks the flux image
 make verify
 ```
 
-needs baron (looked for at `../baron/build/src/baron`, else on the `PATH`;
-override with `BARON=...`), Python 3.11 or later and node. It writes
+needs baron 0.5 or later (looked for at `../baron/build/src/baron`, else on
+the `PATH`; override with `BARON=...`), Python 3.11 or later and node. It writes
 `build/pipeline.ssd` and compares it with `original/pipeline.ssd` byte for
 byte, and `build/pipeline.hfe`, which it compares sector by sector (IDs,
 data and data marks) with the original flux capture. `make test` adds the

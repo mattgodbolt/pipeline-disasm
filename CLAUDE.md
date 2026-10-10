@@ -148,19 +148,21 @@ DEFAULT, LEVEL1 and IO are all emitted from these.
 - `INCBIN` takes a whole file; to convert part of a binary, split the binary.
 - List literals may span lines (`{1, 2,` newline `3}`); no need to build long
   tables in groups with CONCAT.
-- Stepped ranges whose limit equals their second element fail
-  (`0..2..2`: "Argument out of domain", baron#13); write `0..2..3` or a list.
 - Character literals: `'A'` is 65 (`'"'` works; `'` itself can't be written,
-  so it's 39). baron's docs only show `CODES("A")[0]`. Prefer `'A'` to a
-  FUNCTION: every FUNCTION call leaves a frame in the symbol dump.
+  so it's 39). Prefer `'A'` to a FUNCTION: every FUNCTION call leaves a
+  frame in the symbol dump.
 - `docs/baron-feedback.md` collects baron issues and wishes; check it before
   filing anything (issues are filed as Claude acting for Matt).
-- The symbol dump also holds FUNCTION and macro parameters under `@...`
-  scopes; anything feeding jsbeeb should drop names starting with `@`. Every
-  FUNCTION call leaves a frame of its parameters; a MACRO that calls a
-  FUNCTION leaves null frames in every file that includes it, even if it's
-  never used, so keep such macros out of widely included files. Every file's
-  dump also lists every constant its includes define.
+- The symbol dump (format 2, baron 0.5) gives each file's sections, with
+  their attributes, and each symbol's value, source and line, grouped by
+  kind: `labels` (always addresses), `assignments`, `params`, `loop_vars`...
+  FUNCTION and macro parameters and FOR variables sit under `@...` scopes;
+  anything feeding jsbeeb should drop them (`tests/test_symbols.py`'s
+  `load_symbols()` does). Every FUNCTION call leaves a frame of its
+  parameters; a MACRO that calls a FUNCTION leaves null frames in every file
+  that includes it, even if it's never used, so keep such macros out of
+  widely included files. Every file's dump also lists every constant its
+  includes define.
 - A scope may define a name its file already has outside it, and inside the
   scope the inner one silently wins. Don't rely on it (tests/test_symbols.py
   fails on it).
