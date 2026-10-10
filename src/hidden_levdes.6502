@@ -81,65 +81,71 @@ FUNCTION handlers(p) = (p - menu_tables) / 2 + 1
 ; (menu_tables, near the end of this file); the editor's variables follow.
 ; The low code keeps its own, from &72, which the routines' Clobbers lines
 ; call "the low code's zero page".
-input_buffer    = &40           ; OSWORD 0's line, 16 bytes (12 characters
-                                ; at most, then a Return)
-cursor_x        = &50           ; the map cursor, 0-63 across
-cursor_y        = &51           ; and down
-ptr             = &52           ; a pointer, or two bytes of scratch
-work            = &54           ; another; also a saved position or a count
+SECTION zero_page, org=&40, virtual=TRUE
+.input_buffer SKIP 16           ; OSWORD 0's line (12 characters at most,
+                                ; then a Return)
+.cursor_x SKIP 1                ; the map cursor, 0-63 across
+.cursor_y SKIP 1                ; and down
+.ptr SKIP 2                     ; a pointer, or two bytes of scratch
+.work SKIP 2                    ; another; also a saved position or a count
                                 ; (Ian's t2)
-cursor_shown    = &56           ; 1 while the cursor's cell is inverted
-key_pressed     = &57           ; what get_key read
-keys_acted_on   = &58           ; how many held keys get_key acted on this pass
-brush           = &59           ; the block Return plots
-plot_enabled    = &5A           ; nonzero lets Return and Delete plot
-record          = &5B           ; the object, monster or puzzle being edited,
+.cursor_shown SKIP 1            ; 1 while the cursor's cell is inverted
+.key_pressed SKIP 1             ; what get_key read
+.keys_acted_on SKIP 1           ; how many held keys get_key acted on this pass
+.brush SKIP 1                   ; the block Return plots
+.plot_enabled SKIP 1            ; nonzero lets Return and Delete plot
+.record SKIP 1                  ; the object, monster or puzzle being edited,
                                 ; times 4 (the size of its records); or 0 or
                                 ; 4 for the start or the finish
-puzzle          = &5C           ; the puzzle being edited
-kept_window     = &5D           ; a window to keep on screen while the cursor
+.puzzle SKIP 1                  ; the puzzle being edited
+.kept_window SKIP 1             ; a window to keep on screen while the cursor
                                 ; moves, or negative
-choices         = &5E           ; four two-bit fields, unpacked a byte each:
+.choices SKIP 4                 ; four two-bit fields, unpacked a byte each:
                                 ; a monster pattern's turns, or the four
                                 ; choices of level_sprites
-arg             = &62           ; a message number, an offset or a field
+.arg SKIP 1                     ; a message number, an offset or a field
                                 ; being worked on
-number          = &63           ; the number being asked for
-effect_window   = &64           ; the effect editor's window
-effect_table    = &65           ; and its handler table
-unused_66       = &66           ; set to &C0 at startup, never read
-loading         = &67           ; nonzero while a level loads, so an error
+.number SKIP 1                  ; the number being asked for
+.effect_window SKIP 1           ; the effect editor's window
+.effect_table SKIP 1            ; and its handler table
+.unused_66 SKIP 1               ; set to &C0 at startup, never read
+.loading SKIP 1                 ; nonzero while a level loads, so an error
                                 ; clears what was half loaded
-simulate_window = &68           ; W_SIMULATE + 1 while the simulator is on,
+.simulate_window SKIP 1         ; W_SIMULATE + 1 while the simulator is on,
                                 ; else 0; less 1, it's the window the main
                                 ; loop keeps on screen (negative for none)
-direction       = &69           ; the way the simulated player is going
+.direction SKIP 1               ; the way the simulated player is going
                                 ; (MOVE_*)
-travelling      = &6A           ; nonzero while it travels along pipes
-in_main_loop    = &6B           ; &FF while the main loop waits for a key, so
+.travelling SKIP 1              ; nonzero while it travels along pipes
+.in_main_loop SKIP 1            ; &FF while the main loop waits for a key, so
                                 ; function keys come back as keys rather than
                                 ; abandoning what's going on
-menu_window     = &6C           ; choose_from_window's window, less 1
+.menu_window SKIP 1             ; choose_from_window's window, less 1
+ENDSECTION
+
 ; The low code's.
-screen_ptr      = &72
-glyph_ptr       = &74           ; also a second screen pointer
-window_ptr      = &76           ; into a window definition or message
-byte_count      = &78           ; bytes across a window, or cells in a run
-line_count      = &79           ; lines (or menu items) to go
-saved_x         = &7A           ; draw_map_run's first cell's x
-nibble_mask     = &7B           ; &F0 or &0F: which half of a map byte
-run_length      = &7C           ; close_window's width
-map_ptr         = &7E           ; also draw_window's line start
-restore_x       = &80           ; close_window's left
-restore_row     = &81           ; and the cell row it's redrawing
-menu_item       = &82           ; window_menu's choice
-menu_shown_item = &83           ; and the item it has highlighted
-window_x        = &84           ; the window last drawn, in screen columns
-window_y        = &85           ; and cell rows (half character rows)
-window_width    = &86           ; in screen columns
-window_height   = &87           ; its number of menu items
-window_flags    = &88           ; its y byte, for SPACE_STAYS (bit 7)
-menu_first_item = &89           ; the item window_menu started on
+SECTION low_code_zero_page, org=&72, virtual=TRUE
+.screen_ptr SKIP 2
+.glyph_ptr SKIP 2               ; also a second screen pointer
+.window_ptr SKIP 2              ; into a window definition or message
+.byte_count SKIP 1              ; bytes across a window, or cells in a run
+.line_count SKIP 1              ; lines (or menu items) to go
+.saved_x SKIP 1                 ; draw_map_run's first cell's x
+.nibble_mask SKIP 1             ; &F0 or &0F: which half of a map byte
+.run_length SKIP 1              ; close_window's width
+    SKIP 1
+.map_ptr SKIP 2                 ; also draw_window's line start
+.restore_x SKIP 1               ; close_window's left
+.restore_row SKIP 1             ; and the cell row it's redrawing
+.menu_item SKIP 1               ; window_menu's choice
+.menu_shown_item SKIP 1         ; and the item it has highlighted
+.window_x SKIP 1                ; the window last drawn, in screen columns
+.window_y SKIP 1                ; and cell rows (half character rows)
+.window_width SKIP 1            ; in screen columns
+.window_height SKIP 1           ; its number of menu items
+.window_flags SKIP 1            ; its y byte, for SPACE_STAYS (bit 7)
+.menu_first_item SKIP 1         ; the item window_menu started on
+ENDSECTION
 
 ; The message box's top left on the screen, and the columns either side of
 ; its bottom row, where its side lines start.

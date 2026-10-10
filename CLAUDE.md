@@ -163,6 +163,16 @@ DEFAULT, LEVEL1 and IO are all emitted from these.
   that includes it, even if it's never used, so keep such macros out of
   widely included files. Every file's dump also lists every constant its
   includes define.
+- Workspace is laid out in virtual sections (`SECTION zero_page, org=&50,
+  virtual=TRUE` ... `ENDSECTION`): `.name SKIP n` gives each variable its
+  address and size, keeps no bytes, and puts it in the dump as a label
+  rather than an assignment. Zero page, buffers, the level the designer
+  edits (level.6502inc) and IO's layout (io.6502inc) are all written so; a
+  new variable goes in its program's section, not as `name = &addr`. Names
+  stacked on one SKIP share the byte in turn; a byte used a different way
+  in each phase can instead be a section per phase at the same `org`. An
+  `org` may be a label defined later (the game's objects over its own
+  code).
 - A scope may define a name its file already has outside it, and inside the
   scope the inner one silently wins. Don't rely on it (tests/test_symbols.py
   fails on it).

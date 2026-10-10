@@ -18,10 +18,11 @@ INCLUDE "os.6502inc"
 INCLUDE "osconst.6502inc"
 
 ; Zero page: BASIC's, unused until BASIC starts, which is the last thing
-; this does. &50 serves twice, in turn. (A number in brackets is a size in
-; bytes.)
-default_vectors = &50       ; (2) the MOS's table of default vector contents
-typed_index = &50           ; next character of boot_command to type
+; this does. &50 serves twice, in turn.
+SECTION zero_page, org=&50, virtual=TRUE
+.typed_index                ; next character of boot_command to type
+.default_vectors SKIP 2     ; the MOS's table of default vector contents
+ENDSECTION
 
 SECTION mrun, filename="MRUN", org=&0780, load=&780, exec=&780
 .mrun

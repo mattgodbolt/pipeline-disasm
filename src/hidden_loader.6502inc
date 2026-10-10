@@ -80,8 +80,11 @@ ASSERT hidden_length MOD SECTOR_SIZE = 0, "a hidden run is whole sectors"
 ASSERT sector_count < 256, "the sector count lives in one byte"
 
 ; Zero page: user workspace, free while the stub runs.
-sectors_this_read = &70     ; sectors the current read takes from this track
-sectors_left = &72          ; sectors of the run not yet asked for
+SECTION zero_page, org=&70, virtual=TRUE
+.sectors_this_read SKIP 1   ; sectors the current read takes from this track
+    SKIP 1
+.sectors_left SKIP 1        ; sectors of the run not yet asked for
+ENDSECTION
 
 ; Load the hidden run and enter it. *RUN enters here, at the stub's load
 ; address (MENU's */GAME, */GRAPHIC or */LEVDES).

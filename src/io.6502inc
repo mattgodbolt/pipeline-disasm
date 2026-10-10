@@ -23,58 +23,62 @@ IO_END           = &5800
 ASSERT IO_GRAPHICS_SIZE = SET_NAMES - LARGE_SPRITE_SIZE
 ASSERT IO_NAMES_SIZE = LARGE_SPRITE_SIZE + OBJECT_KINDS * OBJECT_NAME_LENGTH
 
-io_start = IO_END - IO_LEVELS * IO_LEVEL_SIZE - IO_GRAPHICS_SIZE - IO_ATTRS_SIZE - IO_MISSION_SIZE - IO_NAMES_SIZE
+SECTION io_layout, org=IO_END - IO_LEVELS * IO_LEVEL_SIZE - IO_GRAPHICS_SIZE - IO_ATTRS_SIZE - IO_MISSION_SIZE - IO_NAMES_SIZE, virtual=TRUE
+.io_start
 
 ; The names block, which the Graphics Designer keeps with the graphics (it is
 ; DEFAULT's last &134 bytes): a picture drawn for a map cell marked as
 ; holding an object when no object is there (SLOT_NO_OBJECT), then the
 ; OBJECT_KINDS object names, OBJECT_NAME_LENGTH characters each.
-io_no_object_picture = io_start
-io_object_names      = io_no_object_picture + LARGE_SPRITE_SIZE
+.io_no_object_picture SKIP LARGE_SPRITE_SIZE
+.io_object_names      SKIP OBJECT_KINDS * OBJECT_NAME_LENGTH
 
 ; The mission text: two VDU_TAB sequences and 12 characters each, with
 ; spaces stored as VDU_RIGHT so they don't paint over the background.
-io_mission_text = io_start + IO_NAMES_SIZE
+.io_mission_text SKIP IO_MISSION_SIZE
 
 ; The mission's attributes, set by MISSION's "change features".
-io_attrs            = io_mission_text + IO_MISSION_SIZE
-io_time_rate        = io_attrs + 0  ; added to a counter each cycle; the clock ticks when it carries
-io_map_levels       = io_attrs + 1  ; the map (M) works on levels below this
-io_backpack_last    = io_attrs + 2  ; the backpack's last slot: it holds this plus one
-io_throw_distance   = io_attrs + 3  ; how far a thrown object flies, in cells
-io_locked           = io_attrs + 4  ; negative: finishing the mission shows a competition entry
-                                    ; code, made from the score and a checksum of the levels
+.io_attrs
+.io_time_rate       SKIP 1  ; added to a counter each cycle; the clock ticks when it carries
+.io_map_levels      SKIP 1  ; the map (M) works on levels below this
+.io_backpack_last   SKIP 1  ; the backpack's last slot: it holds this plus one
+.io_throw_distance  SKIP 1  ; how far a thrown object flies, in cells
+.io_locked          SKIP 1  ; negative: finishing the mission shows a competition entry
+                            ; code, made from the score and a checksum of the levels
 
 ; The levels' fields, each stored as IO_LEVELS consecutive entries (level 0's,
 ; then level 1's...): field f of level s is at
 ;   io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[f] + s * LEVEL_FIELD_SIZES[f]
 ; (MISSION's L% + numlev * pnt + S% * ext).
-io_levels             = io_attrs + IO_ATTRS_SIZE
-io_edit_code_high     = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[0]  ; the editing code, which MISSION
-io_edit_code_middle   = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[1]  ; asks for before it saves a level
-io_edit_code_low      = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[2]  ; out of a locked mission
-io_palettes           = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[3]  ; 4 each: logical << 4 | physical
-io_level_setup        = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[4]  ; 8 each: LEVEL_*
-io_level_objects      = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[5]  ; 32 each: 8 objects of 4 bytes
-io_level_monsters     = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[6]  ; 16 each: 4 monsters of 4 bytes
-io_level_trigger_flags = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[7] ; 32 each: a byte per trigger
-io_level_trigger_places = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[8] ; 64 each: x, y per trigger
-io_level_trigger_args_0 = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[9] ; 64 each: triggers 0-15, 4 bytes each
-io_level_trigger_args_1 = io_levels + IO_LEVELS * LEVEL_FIELD_OFFSETS[10] ; 64 each: triggers 16-31
+.io_levels
+.io_edit_code_high     SKIP IO_LEVELS * LEVEL_FIELD_SIZES[0]  ; the editing code, which MISSION
+.io_edit_code_middle   SKIP IO_LEVELS * LEVEL_FIELD_SIZES[1]  ; asks for before it saves a level
+.io_edit_code_low      SKIP IO_LEVELS * LEVEL_FIELD_SIZES[2]  ; out of a locked mission
+.io_palettes           SKIP IO_LEVELS * LEVEL_FIELD_SIZES[3]  ; 4 each: logical << 4 | physical
+.io_level_setup        SKIP IO_LEVELS * LEVEL_FIELD_SIZES[4]  ; 8 each: LEVEL_*
+.io_level_objects      SKIP IO_LEVELS * LEVEL_FIELD_SIZES[5]  ; 32 each: 8 objects of 4 bytes
+.io_level_monsters     SKIP IO_LEVELS * LEVEL_FIELD_SIZES[6]  ; 16 each: 4 monsters of 4 bytes
+.io_level_trigger_flags SKIP IO_LEVELS * LEVEL_FIELD_SIZES[7] ; 32 each: a byte per trigger
+.io_level_trigger_places SKIP IO_LEVELS * LEVEL_FIELD_SIZES[8] ; 64 each: x, y per trigger
+.io_level_trigger_args_0 SKIP IO_LEVELS * LEVEL_FIELD_SIZES[9] ; 64 each: triggers 0-15, 4 bytes each
+.io_level_trigger_args_1 SKIP IO_LEVELS * LEVEL_FIELD_SIZES[10] ; 64 each: triggers 16-31
 
 ; The maps, 64 columns of 32 bytes: column x's cells y and y+1 share a byte,
 ; even y in the high nibble. The cell types are CELL_*.
-io_maps = io_levels + IO_LEVELS * IO_LEVEL_FIELDS
+.io_maps SKIP IO_LEVELS * IO_MAP_SIZE
 
 ; The graphics, as the Graphics Designer saves them (DEFAULT's first &E00
 ; bytes). Each 128-byte picture is 16 x 32 MODE 5 pixels: 4 x 4 of the game's
 ; character cells (a byte across and 8 lines down, half a MODE 5 character;
 ; game.6502inc), stored a column at a time. The object icons are 2 x 2.
-io_graphics      = io_maps + IO_LEVELS * IO_MAP_SIZE
-io_tiles         = io_graphics + SET_LARGE      ; 16 pictures, one per map cell type
-io_object_icons  = io_graphics + SET_SMALL      ; 16 icons of 32 bytes
-io_player        = io_graphics + SET_MORE_LARGE ; 4 pictures, facing each way (SLOT_PLAYER on)
-io_alternates    = io_player + (SLOT_ALTERNATE - SLOT_PLAYER) * LARGE_SPRITE_SIZE
-                                                ; second pictures for cell types 5, 7, 8, A
+.io_graphics
+.io_tiles        SKIP SET_SMALL - SET_LARGE         ; 16 pictures, one per map cell type
+.io_object_icons SKIP SET_MORE_LARGE - SET_SMALL    ; 16 icons of 32 bytes
+.io_player       SKIP (SLOT_ALTERNATE - SLOT_PLAYER) * LARGE_SPRITE_SIZE
+                                                    ; 4 pictures, facing each way (SLOT_PLAYER on)
+.io_alternates   SKIP IO_END - P%                   ; second pictures for cell types 5, 7, 8, A
+ENDSECTION
 
+ASSERT io_tiles = io_graphics + SET_LARGE
 ASSERT io_graphics + IO_GRAPHICS_SIZE = IO_END
+ASSERT io_levels + IO_LEVELS * LEVEL_FIELDS_SIZE = io_maps

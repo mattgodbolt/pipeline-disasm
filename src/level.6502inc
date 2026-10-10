@@ -10,41 +10,58 @@
 ; or uses an object); positions are map cells, x across and y down, 0-63.
 INCLUDE "leveldata.6502inc"
 
-level           = &25A1
-level_end       = &3000
+SECTION designer_level, org=&25A1, virtual=TRUE
+.level
 
 ; Puzzle names, PUZZLE_NAME_LENGTH characters each, kept as the first
 ; PUZZLE_NAME_HEAD in one table and the rest in another.
-level_names     = level                                     ; 32 x 8 characters
-level_name_ends = level_names + PUZZLES * PUZZLE_NAME_HEAD  ; 32 x 2 characters
+.level_names     SKIP PUZZLES * PUZZLE_NAME_HEAD
+.level_name_ends SKIP PUZZLES * (PUZZLE_NAME_LENGTH - PUZZLE_NAME_HEAD)
 
 ; The fields, in order, then the map. First a three-byte editing code; the
 ; designer won't keep a loaded level unless the user types its six digits.
-level_code      = level_name_ends + PUZZLES * (PUZZLE_NAME_LENGTH - PUZZLE_NAME_HEAD)
-level_palette   = level_code + LEVEL_FIELD_OFFSETS[3]
-; Where the player starts, less 4 in each coordinate: the top left of the
-; game's view, 8 cells by 8, with the player 4 cells in.
-level_start_x   = level_code + LEVEL_FIELD_OFFSETS[4] + LEVEL_START_X
-level_start_y   = level_code + LEVEL_FIELD_OFFSETS[4] + LEVEL_START_Y
-level_collects  = level_code + LEVEL_FIELD_OFFSETS[4] + LEVEL_TO_COLLECT
-level_time      = level_code + LEVEL_FIELD_OFFSETS[4] + LEVEL_TIME
-level_finish_x  = level_code + LEVEL_FIELD_OFFSETS[4] + LEVEL_EXIT_X
-level_finish_y  = level_code + LEVEL_FIELD_OFFSETS[4] + LEVEL_EXIT_Y
+.level_code      SKIP LEVEL_FIELD_OFFSETS[3]
+.level_palette   SKIP LEVEL_FIELD_SIZES[3]
+; The setup bytes (LEVEL_* in leveldata.6502inc). Where the player starts,
+; less 4 in each coordinate: the top left of the game's view, 8 cells by 8,
+; with the player 4 cells in.
+.level_setup
+.level_start_x   SKIP 1
+.level_start_y   SKIP 1
+.level_collects  SKIP 1
+.level_time      SKIP 1
+.level_finish_x  SKIP 1
+.level_finish_y  SKIP 1
 ; Bits 0-3: the block that kills a monster; bits 4-7: the block it leaves.
-level_monster_rules = level_code + LEVEL_FIELD_OFFSETS[4] + LEVEL_MONSTER_FOOD
+.level_monster_rules SKIP 1
 ; Two bits each for cell types 5, 8, 7 and A (the designer's wall one, wall
 ; two, collectable and fatal trap), 5 in the top two: which squares show
 ; their second sprite (ALTERNATE_*).
-level_sprites   = level_code + LEVEL_FIELD_OFFSETS[4] + LEVEL_ANIMATE
-level_objects   = level_code + LEVEL_FIELD_OFFSETS[5]
-level_monsters  = level_code + LEVEL_FIELD_OFFSETS[6]
-level_puzzle_types = level_code + LEVEL_FIELD_OFFSETS[7]
-level_puzzle_positions = level_code + LEVEL_FIELD_OFFSETS[8]
+.level_sprites   SKIP 1
+.level_objects   SKIP LEVEL_FIELD_SIZES[5]
+.level_monsters  SKIP LEVEL_FIELD_SIZES[6]
+.level_puzzle_types SKIP LEVEL_FIELD_SIZES[7]
+.level_puzzle_positions SKIP LEVEL_FIELD_SIZES[8]
 ; Each puzzle's three effect bytes, by type (see the effect editors in the
 ; designer), then its conditions byte.
-level_puzzle_effects = level_code + LEVEL_FIELD_OFFSETS[9]
-level_map       = level_code + LEVEL_FIELDS_SIZE
-ASSERT level_map + MAP_BYTES = level_end
+.level_puzzle_effects SKIP LEVEL_FIELD_SIZES[9] + LEVEL_FIELD_SIZES[10]
+.level_map       SKIP MAP_BYTES
+.level_end
+ENDSECTION
+
+ASSERT level_end = &3000
+ASSERT level_setup = level_code + LEVEL_FIELD_OFFSETS[4]
+ASSERT level_start_x = level_setup + LEVEL_START_X
+ASSERT level_start_y = level_setup + LEVEL_START_Y
+ASSERT level_collects = level_setup + LEVEL_TO_COLLECT
+ASSERT level_time = level_setup + LEVEL_TIME
+ASSERT level_finish_x = level_setup + LEVEL_EXIT_X
+ASSERT level_finish_y = level_setup + LEVEL_EXIT_Y
+ASSERT level_monster_rules = level_setup + LEVEL_MONSTER_FOOD
+ASSERT level_sprites = level_setup + LEVEL_ANIMATE
+ASSERT level_objects = level_code + LEVEL_FIELD_OFFSETS[5]
+ASSERT level_puzzle_effects = level_code + LEVEL_FIELD_OFFSETS[9]
+ASSERT level_map = level_code + LEVEL_FIELDS_SIZE
 
 ; The designer's names for the map's blocks, from its block menu, against the
 ; game's cell types (CELL_* in leveldata.6502inc). Block n is cell type n;

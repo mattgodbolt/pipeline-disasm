@@ -767,3 +767,28 @@ What changed for us:
 The `{ ... }` BASIC splice (baron#12) isn't in 0.5, so MENU and MISSION
 still write their odd lines as EQUB records and `src/mission.6502` still
 holds raw bytes.
+
+## 2026-10-10 12:44 — Workspace as virtual sections
+
+Every program's workspace is now laid out in baron 0.5's virtual sections
+instead of `name = &addr` lists: the zero page of every program, the game's
+stack-page bytes, saved vectors and map, the Graphics Designer's sprite
+buffers, window store and graphics set, the level the designer edits
+(level.6502inc) and IO's layout (io.6502inc). The point is the symbol dump:
+these names are now labels, which are always addresses, so whatever turns
+the dump into jsbeeb symbols doesn't have to guess which assignments are
+addresses. What's left as assignments is constants, plus a few aliases into
+code (operand bytes such as `bit4_mask`, `saved_rdchv`) and other files'
+addresses (`wdata`, PL's patch points in the game).
+
+Each conversion kept the disc byte-identical, and a comparison of every
+file's symbols before and after found the same value for every name (the
+level layout gained one, `level_setup`, for the setup bytes the LEVEL_*
+offsets index). Sizes now come from the SKIPs, so the old "(2)" size notes
+are gone. Gaps are bare SKIPs; the ones that looked unused were checked
+against the listings, and one wasn't: MENU's &79-&7A is reached only as
+`scroll_cell_ptrs - 2, X`, a ninth pointer for the row above the top.
+
+The org of a virtual section can be a label defined further on: the game's
+objects and trigger arguments, copied over its own code, are laid out from
+`game_start` and from past `trigger_places`.

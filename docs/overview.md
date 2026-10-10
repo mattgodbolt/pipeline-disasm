@@ -67,7 +67,7 @@ A name that only one program uses stays in that program's source.
 **Routine headers** say what the routine is for, then `In:`, `Out:` and `Clobbers:`, each left out when there's nothing to say. "Clobbers: everything" means the registers and whatever zero page the routines it calls use.
 
 **Conventions:**
-- **Sizes:** a number in brackets after a zero-page name, `(2)`, is its size in bytes.
+- **Workspace:** each program's variables (zero page, buffers, and the layouts of a level and of IO) are virtual sections: runs of `.name SKIP n` that give each name its address and size and assemble to no bytes. Names stacked on one `SKIP` share the byte, used in turn.
 - **Scopes:** each source file assembles with its own symbol table. The game also sits in the scope `game`, and many routines have a scope of their own for their local labels, which then read as `select_sprite.down_not_0f`.
 - **Moved code:** code that the program copies elsewhere at startup is a nested section assembled at the address it runs from. For example, the Level Designer's zero page, font and "low code" are assembled at &0000, &0400 and &0880 inside a file loaded at &1100.
 - **BASIC programs** are baron `BASIC` blocks, with `;` comments between the lines. A line that can't be written as source text, such as one with raw teletext bytes, is an `EQUB basic_line(...)` record before the block.

@@ -48,9 +48,10 @@ INCLUDE "osconst.6502inc"
 INCLUDE "teletext.6502inc"
 INCLUDE "level.6502inc"
 
-; Zero page. BASIC's, but BASIC is never coming back. (A number in
-; brackets is a size in bytes.)
-crypt_ptr = &70             ; (2) the decryptor's page pointer
+; Zero page. BASIC's, but BASIC is never coming back.
+SECTION decrypt_zero_page, org=&70, virtual=TRUE
+.crypt_ptr SKIP 2           ; the decryptor's page pointer
+ENDSECTION
 
 SECTION pl, filename="PL", org=&0400, load=&400, exec=&400
 .pl
@@ -151,16 +152,20 @@ game_furthest_level = &61
 CHEAT_FURTHEST_LEVEL = 3
 
 ; Zero page, once decrypted: BASIC's, as BASIC is never coming back. The
-; code is read from the keyboard straight into the bottom of it. (A number
-; in brackets is a size in bytes.)
-typed_digits = &00          ; (CODE_DIGITS + 1) the code as typed, then CR
-digit_pair = &70            ; packing two digits into one byte
-entry_index = &70           ; the puzzle being listed
-key_index = &70             ; which of the unlock keys is being tested
-format_index = &71          ; next character of format_chars to print
-swapped = &72               ; check_code_byte's scratch byte
-checks_left = &73           ; check_code_byte's count, a guard against patching
-code_bcd = &80              ; (CODE_BYTES) the code typed, as BCD
+; code is read from the keyboard straight into the bottom of it. &70
+; serves three routines.
+SECTION zero_page, org=&00, virtual=TRUE
+.typed_digits SKIP CODE_DIGITS + 1  ; the code as typed, then CR
+    SKIP &70 - P%
+.digit_pair                 ; packing two digits into one byte
+.entry_index                ; the puzzle being listed
+.key_index SKIP 1           ; which of the unlock keys is being tested
+.format_index SKIP 1        ; next character of format_chars to print
+.swapped SKIP 1             ; check_code_byte's scratch byte
+.checks_left SKIP 1         ; check_code_byte's count, a guard against patching
+    SKIP &80 - P%
+.code_bcd SKIP CODE_BYTES   ; the code typed, as BCD
+ENDSECTION
 
 DIGIT_0 = '0'
 CODE_DIGITS = 6             ; an editing code, two digits to a byte

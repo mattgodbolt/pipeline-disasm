@@ -37,21 +37,25 @@ SCROLL_RIGHT = 37
 
 ; The scroller's zero page. It runs on the vsync event, under whatever BASIC
 ; is doing, so it keeps to the user's area (&70-&8F) - except for &60, and
-; the character definition, which spills into &90-&93. (A number in
-; brackets is a size in bytes.)
+; the character definition, which spills into &90-&93.
 ;
 ; Each pixel column of a character is drawn for two frames: scroll_phase
 ; flips between 0 and &49 every frame, and the scroller moves on to the
 ; next column on the frames it becomes &49. scroll_column_mask is the
 ; column's bit in each row of the character's definition.
-scroll_phase        = &60   ; &49 or 0
-scroll_row_temp     = &70   ; (2) start's pointer into the row being set up
-scroll_text_ptr     = &72   ; (2) the character being scrolled in
-scroll_column_mask  = &74   ; the pixel column being drawn, as a bit
-scroll_text_start   = &75   ; (2) set by line 300 to C%+&C9, the message
-scroll_handler_addr = &77   ; (2) set by line 300 to C%+&49, for EVNTV
-scroll_cell_ptrs    = &7B   ; (2 x 8) each scroller row's right-hand cell, top first
-char_definition     = &8B   ; (9) OSWORD &0A's block: the character, then its 8 rows
+SECTION scroll_phase_zero_page, org=&60, virtual=TRUE
+.scroll_phase SKIP 1                ; &49 or 0
+ENDSECTION
+SECTION zero_page, org=&70, virtual=TRUE
+.scroll_row_temp SKIP 2             ; start's pointer into the row being set up
+.scroll_text_ptr SKIP 2             ; the character being scrolled in
+.scroll_column_mask SKIP 1          ; the pixel column being drawn, as a bit
+.scroll_text_start SKIP 2           ; set by line 300 to C%+&C9, the message
+.scroll_handler_addr SKIP 2         ; set by line 300 to C%+&49, for EVNTV
+    SKIP 2                          ; start leaves the row above the top's pointer here
+.scroll_cell_ptrs SKIP 2 * SCROLL_ROWS  ; each scroller row's right-hand cell, top first
+.char_definition SKIP 9             ; OSWORD &0A's block: the character, then its 8 rows
+ENDSECTION
 
 
 SECTION menu, filename="MENU", org=&1900, load=&1900, exec=&8023

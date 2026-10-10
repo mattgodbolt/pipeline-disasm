@@ -158,10 +158,12 @@ CELL   = 8
 ROW    = MODE5_ROW_BYTES
 ASSERT ROW = 40 * CELL
 
-graphics      = SET_LOAD_ADDRESS    ; the graphics set
-object_names  = graphics + SET_NAMES
-graphics_end  = graphics + SET_SIZE
-slot_28       = graphics + SET_NAMES - LARGE_SPRITE_SIZE    ; the last slot, stored apart in IO
+SECTION graphics_set, org=SET_LOAD_ADDRESS, virtual=TRUE
+.graphics     SKIP SET_NAMES - LARGE_SPRITE_SIZE    ; the graphics set
+.slot_28      SKIP LARGE_SPRITE_SIZE                ; the last slot, stored apart in IO
+.object_names SKIP SET_SIZE - SET_NAMES
+.graphics_end
+ENDSECTION
 
 ; Where the set's pieces are in an IO file (see io_segments).
 IO_SLOT_28_OFFSET  = io_no_object_picture - io_start
@@ -172,10 +174,16 @@ ASSERT LO(IO_SLOT_28_OFFSET) = LO(slot_28 - graphics)
 ASSERT LO(IO_NAMES_OFFSET) = LO(SET_NAMES)
 ASSERT IO_GRAPHICS_SIZE = slot_28 - graphics
 
-frame_a       = &3E00           ; Animate's frames: sprite number SPRITE_FRAME_A...
-frame_b       = frame_a + LARGE_SPRITE_SIZE     ; ...and SPRITE_FRAME_B
-undo_buffer   = &3F80           ; the sprite being edited, as it was when selected
-window_store  = &5000           ; what the open window covers
+SECTION sprite_buffers, org=&3E00, virtual=TRUE
+.frame_a      SKIP LARGE_SPRITE_SIZE    ; Animate's frames: sprite number SPRITE_FRAME_A...
+.frame_b      SKIP LARGE_SPRITE_SIZE    ; ...and SPRITE_FRAME_B
+ENDSECTION
+SECTION undo_sprite, org=&3F80, virtual=TRUE
+.undo_buffer  SKIP LARGE_SPRITE_SIZE    ; the sprite being edited, as it was when selected
+ENDSECTION
+SECTION window_backing, org=&5000, guard=SCREEN, virtual=TRUE
+.window_store SKIP &380                 ; what the open window covers (the biggest's size)
+ENDSECTION
 
 ; Places on the screen.
 edit_grid     = SCREEN + ROW + 2*CELL           ; each pixel a cell, two sprite rows to a character row
@@ -193,31 +201,36 @@ grid_frame_top   = SCREEN + 10*CELL + 7
 grid_frame_right = SCREEN + ROW + 18*CELL
 
 ; Zero page.
-screen_ptr   = &50              ; where on the screen to draw
-data_ptr     = &52              ; a sprite's bytes; window text
-save_ptr     = &54              ; where a window's background is kept; a line of its text
-pixel_x      = &56              ; the pixel pixel_address is finding
-pixel_y      = &57
-aux_ptr      = &58              ; a glyph; a window's corner; a second sprite
-line_count   = &60              ; lines of window text, less one
-temp         = &61
-count_x      = &62
-count_y      = &63
-item         = &64              ; the highlighted menu line, from 0; also scratch
-mask         = &65              ; one pixel's bits in a byte; also window text's flag byte
-sprite_width = &70              ; in bytes: 4 large, 2 small; the height in pixels is 8 times it
-sprite       = &71              ; the selected sprite
-old_sprite   = &72              ; the selection before select_sprite moved it
-cursor_x     = &73              ; the pixel cursor, in the sprite's pixels
-cursor_y     = &74
-old_cursor_x = &75              ; where it was before edit_pixels moved it
-old_cursor_y = &76
-colour       = &77              ; for plotting, 0-3
-repeat_delay = &78              ; the pixel cursor's key repeat, shortening as it repeats
-last_column  = &7A              ; the last column of the selected sprite's row in the sheet
-by_slot      = &7B              ; bit 7 set while sprite numbers are slots, not sheet places
-border_ptr   = &7C              ; where a window's frame is being drawn
-escape_latch = &7E              ; bit 7 set once SHIFT-Escape is pressed
+SECTION zero_page, org=&50, virtual=TRUE
+.screen_ptr SKIP 2              ; where on the screen to draw
+.data_ptr SKIP 2                ; a sprite's bytes; window text
+.save_ptr SKIP 2                ; where a window's background is kept; a line of its text
+.pixel_x SKIP 1                 ; the pixel pixel_address is finding
+.pixel_y SKIP 1
+.aux_ptr SKIP 2                 ; a glyph; a window's corner; a second sprite
+    SKIP 6
+.line_count SKIP 1              ; lines of window text, less one
+.temp SKIP 1
+.count_x SKIP 1
+.count_y SKIP 1
+.item SKIP 1                    ; the highlighted menu line, from 0; also scratch
+.mask SKIP 1                    ; one pixel's bits in a byte; also window text's flag byte
+    SKIP 10
+.sprite_width SKIP 1            ; in bytes: 4 large, 2 small; the height in pixels is 8 times it
+.sprite SKIP 1                  ; the selected sprite
+.old_sprite SKIP 1              ; the selection before select_sprite moved it
+.cursor_x SKIP 1                ; the pixel cursor, in the sprite's pixels
+.cursor_y SKIP 1
+.old_cursor_x SKIP 1            ; where it was before edit_pixels moved it
+.old_cursor_y SKIP 1
+.colour SKIP 1                  ; for plotting, 0-3
+.repeat_delay SKIP 1            ; the pixel cursor's key repeat, shortening as it repeats
+    SKIP 1
+.last_column SKIP 1             ; the last column of the selected sprite's row in the sheet
+.by_slot SKIP 1                 ; bit 7 set while sprite numbers are slots, not sheet places
+.border_ptr SKIP 2              ; where a window's frame is being drawn
+.escape_latch SKIP 1            ; bit 7 set once SHIFT-Escape is pressed
+ENDSECTION
 
 SECTION hidden_graphic, filename="H.GRAPH", org=&1AB0
 

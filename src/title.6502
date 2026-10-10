@@ -36,12 +36,18 @@ INCLUDE "osconst.6502inc"
 ; so the menu's program and variables end well below it.
 RELOCATED_PAGE = &2F00
 
-; Zero page: user workspace. (A number in brackets is a size in bytes.)
-relocate_to = &70           ; (2) where this page is copied to
-relocate_from = &72         ; (2) and from
-packed = &70                ; (2) the next packed byte
-screen_ptr = &72            ; (2) the screen page being unpacked into, with Y
-clear_ptr = &70             ; (2) the page being cleared
+; Zero page: user workspace, used three ways in turn.
+SECTION relocate_zero_page, org=&70, virtual=TRUE
+.relocate_to SKIP 2         ; where this page is copied to
+.relocate_from SKIP 2       ; and from
+ENDSECTION
+SECTION unpack_zero_page, org=&70, virtual=TRUE
+.packed SKIP 2              ; the next packed byte
+.screen_ptr SKIP 2          ; the screen page being unpacked into, with Y
+ENDSECTION
+SECTION clear_zero_page, org=&70, virtual=TRUE
+.clear_ptr SKIP 2           ; the page being cleared
+ENDSECTION
 
 SECTION title, filename="TITLE", org=&6300, load=&6300, exec=&7900
 .title
