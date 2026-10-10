@@ -30,8 +30,9 @@ all: $(TARGET) $(HFE)
 # Every source assembles on its own (baron gives each a fresh symbol table);
 # each SECTION with a filename lands in build/files with a .inf sidecar, and
 # mkssd places them as src/disc.toml says. The files directory is wiped first
-# so a renamed section can't leave a stale binary behind.
-$(TARGET): $(SOURCES) $(INCLUDES) $(DATA) $(LAYOUT) tools/mkssd.py tools/dfs.py
+# so a renamed section can't leave a stale binary behind. A rebuilt baron
+# rebuilds the disc too (the wildcard drops a bare `baron` from the PATH).
+$(TARGET): $(SOURCES) $(INCLUDES) $(DATA) $(LAYOUT) tools/mkssd.py tools/dfs.py $(wildcard $(BARON))
 	rm -rf build/files
 	mkdir -p build/files
 	$(BARON) -p build/files --inf --symbols build/symbols.json -v -log0 build/listing.txt $(SOURCES) > /dev/null

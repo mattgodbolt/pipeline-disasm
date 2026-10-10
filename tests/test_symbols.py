@@ -9,6 +9,31 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SYMBOLS = ROOT / "build" / "symbols.json"
 
+# The kinds of symbol that name something in the program. FUNCTION and
+# macro parameters and FOR variables are left out: every call or iteration
+# leaves its own frame of them, under `@...` scopes.
+NAMING_GROUPS = ("labels", "assignments", "za_autos", "defines")
+
+
+def load_symbols():
+    """Each source file's symbols as {file: {dotted name: value}}, from
+    either baron's format-2 dump (sections, grouped by kind) or the older
+    flat one."""
+    dump = json.loads(SYMBOLS.read_text())
+    if "format" not in dump:
+        return {source: {name: value for name, value in symbols.items()
+                         if "@" not in name}
+                for source, symbols in dump.items()}
+    files = {}
+    for assembly in dump["assemblies"]:
+        names = files.setdefault(assembly["sources"][0], {})
+        for section in assembly["sections"]:
+            for group in NAMING_GROUPS:
+                for name, symbol in section.get(group, {}).items():
+                    if "@" not in name:
+                        names[name] = symbol["value"]
+    return files
+
 
 @unittest.skipUnless(SYMBOLS.exists(), "no build/symbols.json: run make first")
 class ShadowingTest(unittest.TestCase):
@@ -18,10 +43,9 @@ class ShadowingTest(unittest.TestCase):
         # (os.6502inc, osconst.6502inc, io.6502inc...) are defined once each,
         # so a scoped name that repeats one is a stale copy or a label that
         # hides one: either way, a different name is wanted.
-        dump = json.loads(SYMBOLS.read_text())
         found = []
-        for source, symbols in dump.items():
-            names = [name for name in symbols if "@" not in name]
+        for source, symbols in load_symbols().items():
+            names = list(symbols)
             top = {name for name in names if "." not in name}
             found += [f"{source}: {name}" for name in names
                       if "." in name and name.rsplit(".", 1)[1] in top]
@@ -38,7 +62,7 @@ class OverviewTest(unittest.TestCase):
         # jsbeeb; a rename or a moved routine would leave them stale. Each
         # name may be given with any of the scopes it's nested in left off.
         addresses = {}
-        for symbols in json.loads(SYMBOLS.read_text()).values():
+        for symbols in load_symbols().values():
             for name, value in symbols.items():
                 if isinstance(value, int):
                     parts = name.split(".")
