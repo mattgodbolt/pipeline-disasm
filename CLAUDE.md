@@ -14,7 +14,7 @@ source a piece at a time; never commit a step that changes a byte. If a step
 needs the image to differ temporarily, it isn't a step yet: make it smaller.
 
 `make test` = verify + tool tests. CI (`.github/workflows/ci.yml`) runs the same
-with baron pinned by commit; bumping the pin is its own commit.
+with baron pinned to a release tag; bumping the pin is its own commit.
 
 ## How the build works
 
