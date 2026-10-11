@@ -548,3 +548,14 @@ instead.
 - The MRUN header had page 7 as BASIC's string buffer; it's BASIC's
   keyboard input buffer (the string buffer is page 6), which is why the
   `*E.!BOOT` MRUN types for BASIC turns up at &0700.
+
+## 2026-10-11 — Splices (baron 0.5.2)
+
+Superseded parts of the above: baron 0.5.2 lets a BASIC line end in `{`,
+take assembler (EQUBs, or code with labels visible outside), and resume
+the same line after `}`. MENU's lines 10-40 and MISSION's 10-60 are now
+in their BASIC blocks, the codes in lines 40, 60, 290, 1430 and 2780 are
+named EQUBs, MISSION line 60's routine sits in its splice, and
+`src/mission.6502` is plain ASCII. `basic_line()` is left only for MENU's
+leftover fragment past `&0D &FF`. `tools/basic.py` writes such bytes as
+splices, so its listing of either program reassembles to the original.

@@ -70,7 +70,7 @@ A name that only one program uses stays in that program's source.
 - **Workspace:** each program's variables (zero page, buffers, and the layouts of a level and of IO) are virtual sections: runs of `.name SKIP n` that give each name its address and size and assemble to no bytes. Names stacked on one `SKIP` share the byte, used in turn.
 - **Scopes:** each source file assembles with its own symbol table. The game also sits in the scope `game`, and many routines have a scope of their own for their local labels, which then read as `select_sprite.down_not_0f`.
 - **Moved code:** code that the program copies elsewhere at startup is a nested section assembled at the address it runs from. For example, the Level Designer's zero page, font and "low code" are assembled at &0000, &0400 and &0880 inside a file loaded at &1100.
-- **BASIC programs** are baron `BASIC` blocks, with `;` comments between the lines. A line that can't be written as source text, such as one with raw teletext bytes, is an `EQUB basic_line(...)` record before the block.
+- **BASIC programs** are baron `BASIC` blocks, with `;` comments between the lines. Bytes with no text form, such as teletext colour codes in a REM, are spliced in: a line ending in `{` drops into assembler (`EQUB TT_ALPHA_RED`), and `}` carries on with the same line.
 
 **Data as pictures and maps.** The levels and the graphics are written so
 they look like what they are: maps as 64 strings of 64 characters, and
@@ -413,9 +413,6 @@ places to start:
 - **PROClock (1390):** the secret i and h keys that lock a mission.
 - **FNn (1160) and the machine code hidden in line 60:** the editing codes.
 - **PROCsavemss (2000):** the save, which goes to whatever disc is in the drive. On the PIPELINE disc it lands on the hidden runs, which DFS thinks are free space.
-
-The file isn't valid UTF-8 (two REMs hold raw teletext bytes), so edit it
-as bytes.
 
 ### PL (`src/pl.6502`)
 

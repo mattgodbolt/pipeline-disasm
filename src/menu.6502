@@ -13,8 +13,8 @@
 ;   &3200  S%: the top 16 rows of the menu screen, then leftovers, among
 ;          them a tune program at PAGE+&1C00
 ;
-; The source follows the same order: lines 10-40 as EQUB records, the
-; BASIC block (lines 50-1020), then C% and S% as code and data.
+; The source follows the same order: the BASIC block (lines 10-1020),
+; then C% and S% as code and data.
 ;
 ; The game and the two designers are each started through a stub: the
 ; small catalogued file GAME, GRAPHIC or LEVDES, which reads the real
@@ -60,17 +60,20 @@ ENDSECTION
 
 SECTION menu, filename="MENU", org=&1900, load=&1900, exec=&8023
 .program
-; Lines 10-40 are EQUB records. Line 40's REM is teletext codes, which LIST
-; prints as a blue band reading "Hello, all my friends!" in double height:
-; the quote makes LIST copy the bytes rather than expand them as keywords,
-; and VDU_DELETE wipes the quote. In a BASIC block those bytes would make
-; this file invalid UTF-8, and ENDBASIC ends the program, so these lines
-; have to come before it.
-    EQUB basic_line(10, CHR(BASIC_TOKEN_REM) + " PIPELINE menu prog")
-    EQUB basic_line(20, CHR(BASIC_TOKEN_REM) + " By Ian Holmes")
-    EQUB basic_line(30, CHR(BASIC_TOKEN_REM) + " Originally: GUILDMASTER")
-    EQUB basic_line(40, CHR(BASIC_TOKEN_REM) + """" + CHR({VDU_DELETE, TT_ALPHA_BLUE, TT_NEW_BACKGROUND, TT_ALPHA_GREEN, TT_DOUBLE_HEIGHT}) + "Hello," + CHR({TT_ALPHA_YELLOW, TT_FLASH}) + "all my friends!  " + CHR(TT_BLACK_BACKGROUND) + "          " + CHR({TT_ALPHA_BLUE, TT_NEW_BACKGROUND, TT_ALPHA_GREEN, TT_DOUBLE_HEIGHT}) + "Hello," + CHR({TT_ALPHA_YELLOW, TT_FLASH}) + "all my friends!  " + CHR(TT_BLACK_BACKGROUND))
 BASIC
+10REM PIPELINE menu prog
+20REM By Ian Holmes
+30REM Originally: GUILDMASTER
+; Line 40's REM is teletext codes, which LIST prints as a blue band reading
+; "Hello, all my friends!" in double height: the quote makes LIST copy the
+; bytes rather than expand them as keywords, and VDU_DELETE wipes the quote.
+40REM"{
+    EQUB VDU_DELETE, TT_ALPHA_BLUE, TT_NEW_BACKGROUND, TT_ALPHA_GREEN, TT_DOUBLE_HEIGHT }Hello,{
+    EQUB TT_ALPHA_YELLOW, TT_FLASH }all my friends!  {
+    EQUB TT_BLACK_BACKGROUND }          {
+    EQUB TT_ALPHA_BLUE, TT_NEW_BACKGROUND, TT_ALPHA_GREEN, TT_DOUBLE_HEIGHT }Hello,{
+    EQUB TT_ALPHA_YELLOW, TT_FLASH }all my friends!  {
+    EQUB TT_BLACK_BACKGROUND }
 ; Setup. LOMEM=PAGE+&A00 starts the heap exactly where the program ends, so
 ; the DIMs land on the scroller and screen this file carries after it (C%
 ; and S%, below): DIM doesn't clear memory.
@@ -129,15 +132,17 @@ BASIC
 ; can't work: BASIC's indirection uses only the low 16 bits of an address,
 ; so ?&FFFF7C00 is ?&7C00, and reads back the 0 just written.
 280RESTORE650:FORN%=&50TO&59:READ?N%:NEXT:?&FFFF7C00=128:?&7C00=0
-; Line 290 holds two invisible raw bytes: VDU 21 just before the quote that
-; ends "...re-load this program.", and VDU 6 after `*/PL "`. LIST shows
+; Line 290 hides two bytes: VDU_DISABLE just before the quote that ends
+; "...re-load this program.", and VDU_ENABLE after `*/PL "`. LIST shows
 ; nothing between them, hiding the cheat (with T and W held down here, the
 ; line runs PL), and the line reads as if it printed the message and waited
 ; for a key. The `":IFGET` belongs to the star command and DFS ignores it.
 ; Were the second-processor test ever true, OSBYTE 151 would write &7F to
 ; the system VIA's IER (&FE4E), turning off its interrupts, and the loop
 ; would hang.
-290IF?&FFFF7C00>0PRINT''"Please turn off your Second Processor,  press Break, and re-load this program.":A%=151:X%=78:Y%=127:CALL&FFF4:REPEATUNTIL0ELSEIFINKEY-36ANDINKEY-34THEN*/PL "":IFGET
+290IF?&FFFF7C00>0PRINT''"Please turn off your Second Processor,  press Break, and re-load this program.{
+EQUB VDU_DISABLE }":A%=151:X%=78:Y%=127:CALL&FFF4:REPEATUNTIL0ELSEIFINKEY-36ANDINKEY-34THEN*/PL "{
+EQUB VDU_ENABLE }":IFGET
 ; The warning page (a Mode 7 screen loaded straight into screen memory),
 ; for ten seconds or a key, then clear its warning text (rows 18-24), draw
 ; the menu over its top 16 rows and start the scroller: line 300 passes the

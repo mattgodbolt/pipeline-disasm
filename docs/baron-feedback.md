@@ -8,7 +8,7 @@ issues say they're from Claude acting for Matt. Symbol-dump points are in
 
 | Issue | What | Why it matters here | Status |
 |---|---|---|---|
-| [baron#12](https://github.com/waitingforvsync/baron/issues/12) | A way to put a byte by value into a BASIC line, or to interleave EQUB'd records with a BASIC block | MENU and MISSION hide control and teletext codes in lines; `src/mission.6502` has to carry raw bytes, which aren't valid UTF-8 | Open. Rich proposes `{ ... }` splices inside a BASIC line; we said it covers every line we write as bytes (2026-10-06) |
+| [baron#12](https://github.com/waitingforvsync/baron/issues/12) | A way to put a byte by value into a BASIC line, or to interleave EQUB'd records with a BASIC block | MENU and MISSION hide control and teletext codes in lines; `src/mission.6502` has to carry raw bytes, which aren't valid UTF-8 | Done in 0.5.2 as `{ ... }` splices inside a BASIC line. MENU and MISSION are each one BASIC block now, and every source file is plain text |
 | [baron#13](https://github.com/waitingforvsync/baron/issues/13) | `a..b..b` (limit equal to the second element) fails with "Argument out of domain" | Hit building tables in the Level Designer | Fixed in 0.5 |
 | [baron#10](https://github.com/waitingforvsync/baron/issues/10) (filed from another session) | FUNCTION frames collide when called at the same offset in two files of one assembly | We call FUNCTIONs from several includes; `make verify` would catch a wrong byte | Fixed in 0.5 |
 | [baron#14](https://github.com/waitingforvsync/baron/issues/14) (filed for jsbeeb#1215) | Each instruction's address and the symbol its operand was written with | Lets jsbeeb name operands as the source did | Open; Rich proposes `--map`, with questions for the jsbeeb side |

@@ -103,12 +103,9 @@ fails if a scope redefines a name its file already has outside it.
   writes it as picture source; `tools/graphic_tours.mjs` drives the Graphics
   Designer through scripted tours for traces and screenshots.
 - `tools/basic.py` lists a tokenised BASIC program as text a baron `BASIC`
-  block takes back; `src/basic.6502inc` has `basic_line()` for lines that
-  must be EQUB records.
-- `src/mission.6502` is NOT valid UTF-8: two REMs hold raw teletext bytes
-  (&81-&86). Editors that decode as UTF-8 (including Claude's Edit tool)
-  silently replace them and break the build; edit it with byte-safe tools
-  (sed, or Python reading and writing bytes).
+  block takes back (bytes with no text form as `{&XX}`, to be written as
+  splices); `src/basic.6502inc` has `basic_line()` for records outside a
+  program (MENU's leftovers past its end).
 
 ## The pieces
 
@@ -148,6 +145,11 @@ DEFAULT, LEVEL1 and IO are all emitted from these.
 - `INCBIN` takes a whole file; to convert part of a binary, split the binary.
 - List literals may span lines (`{1, 2,` newline `3}`); no need to build long
   tables in groups with CONCAT.
+- A BASIC line ending in `{` drops into assembler and `}` resumes the same
+  line (baron 0.5.2): teletext and VDU codes go in as named EQUBs
+  (`40REM"{` / `EQUB TT_ALPHA_CYAN }PIPELINE`), and labels inside are
+  visible outside (MISSION line 60's routine). Keep every source file
+  plain text: control and top-bit-set bytes go in splices, never raw.
 - Character literals: `'A'` is 65 (`'"'` works; `'` itself can't be written,
   so it's 39). Prefer `'A'` to a FUNCTION: every FUNCTION call leaves a
   frame in the symbol dump.

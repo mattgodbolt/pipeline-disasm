@@ -8,9 +8,9 @@
 ; sizes everything; docs/notes/basic.md has the file layouts. Escape, then
 ; Y, leaves: on disc through */MRUN, back to the menu (PROCquit).
 ;
-; The file: lines 10-60 as EQUB records (REMs that LIST in colour, and line
-; 60 hiding the machine code FNn calls), then the BASIC block: start-up and
-; the main menu (lines 70-430); PROCinit and the screen and input helpers
+; The file is one BASIC block: REMs that LIST in colour (lines 10-60), line
+; 60 also hiding the machine code FNn calls; start-up and the main menu
+; (lines 70-430); PROCinit and the screen and input helpers
 ; (440-1430); loading and saving (1450-2070); the level fields' sizes and
 ; the features page (2090-2430); the name page (2450), the catalogue
 ; (2520), and errors and quitting (2630-2890).
@@ -27,11 +27,9 @@
 ; that disc overwrites them (PROCsavemss has how). The catalogued GAME,
 ; GRAPHIC and LEVDES are only stubs that read those runs.
 ;
-; NOT UTF-8: lines 1430 and 2780 hold raw teletext colour codes (bytes
-; &81-&86) inside REMs, because a BASIC block takes its text byte for byte
-; and has no escape for them. An editor that rewrites the file as UTF-8
-; (Claude's Edit tool does) corrupts them; `make verify` will then point
-; at those two lines. Edit with sed or a byte-preserving editor.
+; Bytes a line can't hold as text (teletext codes, VDU codes, the machine
+; code) are spliced in: a line ending in `{` drops into assembler, and `}`
+; carries on with the same line.
 INCLUDE "osconst.6502inc"
 INCLUDE "basic.6502inc"
 INCLUDE "teletext.6502inc"
@@ -41,20 +39,32 @@ swap_temp    = BASIC_USER_ZP
 
 SECTION mission, filename="MISSION", org=&1900, load=&FFFF1900, exec=&FFFF8023
 .program
-; Lines 10-60 are EQUB records: REMs of teletext codes that LIST shows as
-; the title and credits in colour (the quote makes LIST copy the bytes
-; rather than expand them as keywords, and VDU_DELETE wipes it), then
-; MENU's "Hello, all my friends!" band. Line 60 also carries machine code,
-; with a newline byte in it, and ENDBASIC ends the program, so these lines
-; have to come before the BASIC block.
-    EQUB basic_line(10, CHR(BASIC_TOKEN_REM) + """" + CHR(VDU_DELETE) + "   " + CHR(TT_ALPHA_CYAN) + " PIPELINE")
-    EQUB basic_line(20, CHR(BASIC_TOKEN_REM) + """" + CHR({VDU_DELETE, TT_ALPHA_YELLOW}) + "MISSION GENERATOR.")
-    EQUB basic_line(30, CHR(BASIC_TOKEN_REM) + """" + CHR({VDU_DELETE, TT_ALPHA_MAGENTA}) + "By" + CHR(TT_ALPHA_GREEN) + "Ian Holmes !")
-    EQUB basic_line(40, CHR(BASIC_TOKEN_REM) + """" + CHR({VDU_DELETE, TT_ALPHA_MAGENTA}) + "Game by" + CHR(TT_ALPHA_GREEN) + "IAN HOLMES")
-    EQUB basic_line(50, CHR(BASIC_TOKEN_REM) + """" + CHR({VDU_DELETE, TT_ALPHA_MAGENTA}) + "and" + CHR(TT_ALPHA_GREEN) + "WILLIAM REEVE")
-.line_60
-    EQUB &0D, HI(60), LO(60), line_70 - line_60
-    EQUB CHR(BASIC_TOKEN_REM) + """" + CHR({VDU_DELETE, TT_ALPHA_BLUE, TT_NEW_BACKGROUND, TT_ALPHA_GREEN, TT_DOUBLE_HEIGHT}) + "Hello," + CHR({TT_ALPHA_YELLOW, TT_FLASH}) + "all my friends!  " + CHR(TT_BLACK_BACKGROUND) + "          " + CHR({TT_ALPHA_BLUE, TT_NEW_BACKGROUND, TT_ALPHA_GREEN, TT_DOUBLE_HEIGHT}) + "Hello," + CHR({TT_ALPHA_YELLOW, TT_FLASH}) + "all my friends!  " + CHR(TT_BLACK_BACKGROUND)
+BASIC
+; Lines 10-60 are REMs of teletext codes that LIST shows as the title and
+; credits in colour (the quote makes LIST copy the bytes rather than expand
+; them as keywords, and VDU_DELETE wipes it), then MENU's "Hello, all my
+; friends!" band. Line 60 also carries machine code.
+10REM"{
+    EQUB VDU_DELETE }   {
+    EQUB TT_ALPHA_CYAN } PIPELINE
+20REM"{
+    EQUB VDU_DELETE, TT_ALPHA_YELLOW }MISSION GENERATOR.
+30REM"{
+    EQUB VDU_DELETE, TT_ALPHA_MAGENTA }By{
+    EQUB TT_ALPHA_GREEN }Ian Holmes !
+40REM"{
+    EQUB VDU_DELETE, TT_ALPHA_MAGENTA }Game by{
+    EQUB TT_ALPHA_GREEN }IAN HOLMES
+50REM"{
+    EQUB VDU_DELETE, TT_ALPHA_MAGENTA }and{
+    EQUB TT_ALPHA_GREEN }WILLIAM REEVE
+60REM"{
+    EQUB VDU_DELETE, TT_ALPHA_BLUE, TT_NEW_BACKGROUND, TT_ALPHA_GREEN, TT_DOUBLE_HEIGHT }Hello,{
+    EQUB TT_ALPHA_YELLOW, TT_FLASH }all my friends!  {
+    EQUB TT_BLACK_BACKGROUND }          {
+    EQUB TT_ALPHA_BLUE, TT_NEW_BACKGROUND, TT_ALPHA_GREEN, TT_DOUBLE_HEIGHT }Hello,{
+    EQUB TT_ALPHA_YELLOW, TT_FLASH }all my friends!  {
+    EQUB TT_BLACK_BACKGROUND
     EQUB VDU_DISABLE                ; LIST shows nothing from here...
 
 ; Scrambles the editing code FNn has read into E% (CALL PAGE+198, line
@@ -88,8 +98,7 @@ SECTION mission, filename="MISSION", org=&1900, load=&FFFF1900, exec=&FFFF8023
     BPL each_byte
     RTS
     EQUB VDU_ENABLE                 ; ...to here
-.line_70
-BASIC
+}
 ; Start-up. Line 90's error handler covers only the set-up: it reports the
 ; error and skips to line 130. For Escape (error 17) it would ask whether
 ; to quit and, if not, fall into line 100 and start afresh ("Sorry about
@@ -309,7 +318,9 @@ BASIC
 1420:
 ; Line 1430 is a REM of teletext codes, which LIST shows as "Hello, Soni" in
 ; colour.
-1430REM"ÇHello,ÉSoni
+1430REM"{
+    EQUB VDU_DELETE, TT_ALPHA_GREEN }Hello,{
+    EQUB TT_ALPHA_YELLOW }Soni
 1440:
 ; PROCloadgrf: a graphics file (DEFAULT, or the Graphics Designer's) goes
 ; to G%, and the tail after its graphics (names: see PROCinit) becomes the
@@ -504,7 +515,11 @@ BASIC
 2770:
 ; Line 2780 is a REM of teletext codes, which LIST shows in colour as "This
 ; subroutine was written by William Reeve (mainly)": PROCreport, below.
-2780REM"ÜThis subroutine was written by             ÅWilliamÉReeveÇ(mainly)
+2780REM"{
+    EQUB TT_ALPHA_CYAN }This subroutine was written by             {
+    EQUB TT_ALPHA_RED }William{
+    EQUB TT_ALPHA_YELLOW }Reeve{
+    EQUB TT_ALPHA_GREEN }(mainly)
 2790:
 ; PROCreport (William Reeve's): opens a white box from row 20 outwards, a
 ; row a frame (rows 20, 21, 19, 22, 18, 23), then shows the error.
