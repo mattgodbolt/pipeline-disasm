@@ -7,9 +7,11 @@ Each line prints as `NUMBERtext` (LISTO 0: no padding, the spaces after the
 number are the program's own), which is what goes between `BASIC` and
 `ENDBASIC`. Keywords are expanded; REM, DATA and `*` commands, and strings,
 are copied as stored, since the tokeniser passes them through untouched.
-A byte with no plain-text form (a control code, or a top-bit-set byte where
-no keyword would be) prints as `{&XX}`, and that line is flagged with `!`
-after its number in --offsets mode: baron can't take it as text.
+Bytes with no plain-text form (control codes, or top-bit-set bytes where no
+keyword would be) are written as a splice: the line ends in `{`, the bytes
+follow as an EQUB, and `}` carries on with the line, which is how baron's
+BASIC block takes them back. Such a line is flagged with `!` after its
+address in --offsets mode, a reminder to name the codes.
 
 --offsets prefixes each line with its record's address (PAGE + offset; PAGE
 defaults to &1900), and the end shows where the program's `0D FF` ends,
@@ -76,18 +78,31 @@ def plain(c: int) -> str | None:
     return chr(c) if 0x20 <= c < 0x7F else None
 
 
+def splice(out: list) -> str:
+    """Join text pieces and byte values (ints) into a line, each run of bytes
+    as a splice."""
+    if out and out[-1] == "{":
+        out[-1] = ord("{")  # a line ending in a brace would open a splice
+    text, run = [], []
+    for piece in out + [""]:
+        if isinstance(piece, int):
+            run.append(piece)
+            continue
+        if run:
+            text.append("{\n    EQUB " + ", ".join(f"&{c:02X}" for c in run) + " }")
+            run = []
+        text.append(piece)
+    return "".join(text)
+
+
 def detokenise(text: bytes) -> tuple[str, bool]:
-    """The line's text, and whether it is all plain (re-enterable) text."""
+    """The line's text, as baron's BASIC block takes it (bytes with no text
+    form spliced in), and whether it is all plain text."""
     out = []
-    clean = True
 
     def raw(c):
-        nonlocal clean
         ch = plain(c)
-        if ch is None:
-            clean = False
-            ch = f"{{&{c:02X}}}"
-        out.append(ch)
+        out.append(c if ch is None else ch)
 
     i = 0
     quoted = False
@@ -124,7 +139,8 @@ def detokenise(text: bytes) -> tuple[str, bool]:
         elif c != 0x20:
             statement_start = False
         i += 1
-    return "".join(out), clean
+    clean = not any(isinstance(piece, int) for piece in out) and out[-1:] != ["{"]
+    return splice(out), clean
 
 
 def main():

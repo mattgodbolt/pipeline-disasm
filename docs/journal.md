@@ -792,3 +792,25 @@ against the listings, and one wasn't: MENU's &79-&7A is reached only as
 The org of a virtual section can be a label defined further on: the game's
 objects and trigger arguments, copied over its own code, are laid out from
 `game_start` and from past `trigger_places`.
+
+## 2026-10-11 11:58 — BASIC splices (baron 0.5.2)
+
+Baron 0.5.2 has Rich's `{ ... }` splice (baron#12): a BASIC line ending in
+`{` drops into assembler, and `}` resumes the same line, the tokeniser in
+the state it left. With it:
+- MENU lines 10-40 and MISSION lines 10-60 moved from EQUB records into
+  their BASIC blocks. MISSION line 60's routine (`CALL PAGE+198`) now sits
+  in the splice, the ASSERT on its address unchanged; its `&0A` byte, the
+  reason line 60 couldn't be text, is just an `ASL A` there.
+- The teletext codes in MENU 40 and MISSION 10-60, 1430 and 2780, and
+  MENU 290's hidden VDU 21 and VDU 6, are named EQUBs (`TT_ALPHA_RED`,
+  `VDU_DISABLE`...). Every source file is now plain text, so CLAUDE.md's
+  warning about editing `src/mission.6502` as bytes is gone.
+- `basic_line()` stays for MENU's leftover fragment of an older program
+  past the `&0D &FF`, which isn't a program and is right as EQUB.
+- `tools/basic.py` writes bytes with no text form as splices, and its
+  round-trip test now reassembles whole programs: every line of MENU and
+  MISSION, line 60's machine code included.
+
+The disc is byte-identical; CI pins v0.5.2. The eight-hourly check for the
+splice is cancelled.

@@ -1,7 +1,8 @@
 """tools/basic.py must list a program as text baron's BASIC block takes back.
 
 The round trip lists each BASIC program the build produced and tokenises
-every plain-text line again with baron, which must give the same record.
+every line again with baron (bytes with no text form as splices), which
+must give the same program.
 Needs `make` to have run first, and baron (BARON=path, as make passes it).
 """
 
@@ -34,10 +35,18 @@ class DetokeniseTest(unittest.TestCase):
     def test_raw_regions(self):
         # REM keeps its bytes even when they look like tokens; a * command
         # at a statement start does too; strings aren't expanded.
-        self.assertEqual(basic.detokenise(bytes([0xF4]) + b" \xf1"), ("REM {&F1}", False))
+        self.assertEqual(basic.detokenise(bytes([0xF4]) + b" \xf1"), ("REM {\n    EQUB &F1 }", False))
         self.assertEqual(basic.detokenise(b"*FX15,1"), ("*FX15,1", True))
         self.assertEqual(basic.detokenise(bytes([0xF1]) + b'"AND"'), ('PRINT"AND"', True))
         self.assertEqual(basic.detokenise(bytes([0xE5, 0x8D, 0x54, 0x4A, 0x40])), ("GOTO10", True))
+
+    def test_splices(self):
+        # Runs of bytes with no text form become one splice each, the text
+        # carrying on after the `}`; a brace ending the line is spliced too,
+        # as baron would read it as opening one.
+        self.assertEqual(basic.detokenise(bytes([0xF4]) + b'"\x7f\x82Hi,\x83So'),
+                         ('REM"{\n    EQUB &7F, &82 }Hi,{\n    EQUB &83 }So', False))
+        self.assertEqual(basic.detokenise(bytes([0xF4]) + b" a{"), ("REM a{\n    EQUB &7B }", False))
 
 
 @unittest.skipUnless(FILES.is_dir() and BARON, "needs `make` run first and baron")
@@ -46,14 +55,12 @@ class RoundTripTest(unittest.TestCase):
         for name in PROGRAMS:
             with self.subTest(program=name):
                 data = (FILES / name).read_bytes()
-                lines, records = [], []
-                for offset, number, text in basic.records(data):
+                lines = []
+                for end, number, text in basic.records(data):
                     if number is None:
                         break
                     line, clean = basic.detokenise(text)
-                    if clean:
-                        lines.append(f"{number}{line}")
-                        records.append(data[offset:offset + 4 + len(text)])
+                    lines.append(f"{number}{line}")
                 self.assertGreater(len(lines), 90)
                 with tempfile.TemporaryDirectory() as tmp:
                     tmp = Path(tmp)
@@ -62,7 +69,7 @@ class RoundTripTest(unittest.TestCase):
                     (tmp / "t.6502").write_text(src)
                     subprocess.run([BARON, "-p", str(tmp), str(tmp / "t.6502")], check=True,
                                    capture_output=True)
-                    self.assertEqual((tmp / "OUT").read_bytes(), b"".join(records) + b"\r\xff")
+                    self.assertEqual((tmp / "OUT").read_bytes(), data[:end])
 
 
 if __name__ == "__main__":
