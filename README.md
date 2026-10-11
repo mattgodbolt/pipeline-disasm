@@ -91,3 +91,11 @@ detail for each piece.
 
 PIPELINE is by Ian Holmes and William Reeve, © 1988, published by Superior
 Software. This disassembly is by Matt Godbolt and Claude.
+
+## Licence
+
+The disassembly (the names, comments and annotation in `src/`, the tools,
+tests and docs) is released under the [MIT licence](LICENSE). The game
+itself isn't: PIPELINE, the original disc and flux capture in `original/`,
+the binary pieces in `data/` and the bytes the build reproduces remain the
+authors' and Superior Software's.

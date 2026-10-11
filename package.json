@@ -2,6 +2,7 @@
   "name": "pipeline-disasm",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Runtime harness for the PIPELINE disassembly: boots discs in headless jsbeeb",
   "dependencies": {
